@@ -1,4 +1,4 @@
-name: Withings Daily Sync (window rewrite, raw capture)
+name: Withings Daily Sync (window rewrite, raw capture, tolerant activity)
 
 on:
   schedule:
@@ -27,19 +27,16 @@ jobs:
 
       - name: Pull 45d window, capture RAW JSON, upsert CSVs, rewrite JSON history
         env:
-          # Pete E app config
           WITHINGS_CLIENT_ID:     ${{ vars.WITHINGS_CLIENT_ID }}
           WITHINGS_CLIENT_SECRET: ${{ secrets.WITHINGS_CLIENT_SECRET }}
           WITHINGS_REDIRECT_URI:  ${{ vars.WITHINGS_REDIRECT_URI }}
-          # Long-lived refresh token
           WITHINGS_REFRESH_TOKEN: ${{ secrets.WITHINGS_REFRESH_TOKEN }}
-          # Behaviour
           WINDOW_DAYS: "45"
           WEIGHT_CSV: knowledge/weight_log.csv
           ACTIVITY_CSV: knowledge/activity_log.csv
         run: |
           python - << 'PY'
-          import os, csv, json, requests, sys
+          import os, csv, json, requests, sys, math
           from pathlib import Path
           from datetime import datetime, timedelta, timezone, date
 
@@ -59,14 +56,13 @@ jobs:
           # --- config
           days = int(os.environ.get("WINDOW_DAYS", "45"))
           today_utc = datetime.now(timezone.utc).date()
-          start = today_utc - timedelta(days=days-1)  # inclusive window
+          start = today_utc - timedelta(days=days-1)
           weight_csv = os.environ.get("WEIGHT_CSV","knowledge/weight_log.csv")
           act_csv    = os.environ.get("ACTIVITY_CSV","knowledge/activity_log.csv")
 
-          # where to save raw json
           raw_dir = Path("docs/raw"); raw_dir.mkdir(parents=True, exist_ok=True)
 
-          # --- token refresh (capture RAW)
+          # --- token refresh (RAW capture)
           tok_resp = requests.post(TOKEN_URL, data={
               "action":"requesttoken",
               "grant_type":"refresh_token",
@@ -74,8 +70,6 @@ jobs:
               "client_secret":os.environ["WITHINGS_CLIENT_SECRET"],
               "refresh_token":os.environ["WITHINGS_REFRESH_TOKEN"]
           }, timeout=45)
-
-          # save raw token response
           try:
               tok_json = tok_resp.json()
           except Exception:
@@ -84,13 +78,12 @@ jobs:
               json.dumps({"status_code": tok_resp.status_code, "body": tok_json}, ensure_ascii=False, indent=2),
               encoding="utf-8"
           )
-
           if tok_json.get("status") != 0:
               print("Token refresh failed:", tok_json); sys.exit(1)
           access = tok_json["body"]["access_token"]
           hdr = {"Authorization": f"Bearer {access}"}
 
-          # --- fetch weights (RAW capture + parse)
+          # --- measures (RAW capture + parse)
           meas_resp = requests.get(MEASURE_URL, headers=hdr, params={
               "action":"getmeas",
               "meastypes":"1,6,76,77",  # weight, fat_ratio, muscle_mass, hydration
@@ -98,12 +91,10 @@ jobs:
               "startdate":ts_midnight_utc(start),
               "enddate":ts_midnight_utc(today_utc)+86399
           }, timeout=45)
-
           try:
               meas_json = meas_resp.json()
           except Exception:
               meas_json = {"non_json": meas_resp.text}
-
           (raw_dir / "withings_measures.json").write_text(
               json.dumps(meas_json, ensure_ascii=False, indent=2), encoding="utf-8"
           )
@@ -125,38 +116,57 @@ jobs:
                       "water_pct": f"{val(77):.2f}" if val(77) is not None else None,
                   }
 
-          # --- fetch activity (RAW capture + parse)
+          # --- activity (RAW capture + tolerant parse)
+          # Important: do NOT send data_fields - some tenants reject unknown keys.
           act_resp = requests.get(ACT_URL, headers=hdr, params={
               "action":"getactivity",
               "startdateymd": ymd(start),
-              "enddateymd": ymd(today_utc),
-              # Ask explicitly for fields; if Withings ignores, RAW file will show what's actually returned
-              "data_fields":"steps,calories,active_minutes,hr_average,hr_min"
+              "enddateymd": ymd(today_utc)
           }, timeout=45)
-
           try:
               act_json = act_resp.json()
           except Exception:
               act_json = {"non_json": act_resp.text}
-
           (raw_dir / "withings_activity.json").write_text(
               json.dumps(act_json, ensure_ascii=False, indent=2), encoding="utf-8"
           )
 
+          def to_minutes(v):
+              if v is None: return None
+              try:
+                  v = float(v)
+              except: return None
+              # Withings often returns durations in SECONDS. If suspiciously large, convert.
+              return int(round(v/60.0)) if v >= 600 else int(round(v))
+
           acts_by_day = {}
           if act_json.get("status") == 0:
               for a in act_json.get("body",{}).get("activities",[]) or []:
-                  d = a.get("date")
+                  d = a.get("date"); 
                   if not d: continue
+                  # tolerant extraction
+                  steps   = a.get("steps")
+                  cals    = a.get("calories", a.get("totalcalories"))
+                  hr_avg  = a.get("hr_average", a.get("hravg"))
+                  hr_min  = a.get("hr_min", a.get("hrmin"))
+
+                  # activity minutes: prefer 'active'; else sum soft/moderate/intense
+                  active  = a.get("active")
+                  if active is None:
+                      smi = sum(x for x in [
+                          a.get("soft"), a.get("moderate"), a.get("intense")
+                      ] if isinstance(x,(int,float)))
+                      active = smi if smi>0 else None
+
                   acts_by_day[d] = {
-                      "steps": a.get("steps"),
-                      "exercise_minutes": a.get("active_minutes"),
-                      "avg_hr_bpm": a.get("hr_average"),
-                      "resting_hr_bpm": a.get("hr_min"),
-                      "calories_out": a.get("calories"),
+                      "steps": steps,
+                      "exercise_minutes": to_minutes(active) if active is not None else None,
+                      "avg_hr_bpm": hr_avg,
+                      "resting_hr_bpm": hr_min,
+                      "calories_out": cals,
                   }
 
-          # --- upsert CSVs for whole window (overwrite per day)
+          # --- CSV upsert for whole window (overwrite window dates)
           w_hdr = ["date","weight_kg","body_fat_pct","muscle_mass_kg","water_pct","source","notes"]
           a_hdr = ["date","steps","exercise_minutes","avg_hr_bpm","resting_hr_bpm","calories_out","workout_type","workout_duration_min","source"]
           ensure_csv(weight_csv, w_hdr)
@@ -177,39 +187,23 @@ jobs:
           for d in window_dates:
               w = weights_by_day.get(d)
               a = acts_by_day.get(d)
-              if w:
-                  new_w[d] = {
-                      "date": d,
-                      "weight_kg": w.get("weight_kg") or "",
-                      "body_fat_pct": w.get("body_fat_pct") or "",
-                      "muscle_mass_kg": w.get("muscle_mass_kg") or "",
-                      "water_pct": w.get("water_pct") or "",
-                      "source": "withings", "notes": ""
-                  }
-              else:
-                  new_w[d] = {
-                      "date": d, "weight_kg":"", "body_fat_pct":"", "muscle_mass_kg":"",
-                      "water_pct":"", "source":"withings", "notes":""
-                  }
-
-              if a:
-                  new_a[d] = {
-                      "date": d,
-                      "steps": a.get("steps",""),
-                      "exercise_minutes": a.get("exercise_minutes",""),
-                      "avg_hr_bpm": a.get("avg_hr_bpm",""),
-                      "resting_hr_bpm": a.get("resting_hr_bpm",""),
-                      "calories_out": a.get("calories_out",""),
-                      "workout_type": "",
-                      "workout_duration_min": "",
-                      "source":"withings"
-                  }
-              else:
-                  new_a[d] = {
-                      "date": d,
-                      "steps":"", "exercise_minutes":"", "avg_hr_bpm":"", "resting_hr_bpm":"",
-                      "calories_out":"", "workout_type":"", "workout_duration_min":"", "source":"withings"
-                  }
+              new_w[d] = {
+                  "date": d,
+                  "weight_kg": (w or {}).get("weight_kg") or "",
+                  "body_fat_pct": (w or {}).get("body_fat_pct") or "",
+                  "muscle_mass_kg": (w or {}).get("muscle_mass_kg") or "",
+                  "water_pct": (w or {}).get("water_pct") or "",
+                  "source": "withings", "notes": ""
+              }
+              new_a[d] = {
+                  "date": d,
+                  "steps": (a or {}).get("steps") or "",
+                  "exercise_minutes": (a or {}).get("exercise_minutes") or "",
+                  "avg_hr_bpm": (a or {}).get("avg_hr_bpm") or "",
+                  "resting_hr_bpm": (a or {}).get("resting_hr_bpm") or "",
+                  "calories_out": (a or {}).get("calories_out") or "",
+                  "workout_type":"", "workout_duration_min":"", "source":"withings"
+              }
 
           for d,row in existing_w.items():
               if d not in new_w: new_w[d] = row
@@ -225,10 +219,9 @@ jobs:
           write_csv(weight_csv, w_hdr, new_w)
           write_csv(act_csv, a_hdr, new_a)
 
-          # --- build JSON per-day and history index
+          # --- JSON history + daily
           Path("docs/days").mkdir(parents=True, exist_ok=True)
           history = []
-
           for d in sorted(window_dates, reverse=True):
               w = new_w.get(d, {})
               a = new_a.get(d, {})
@@ -250,9 +243,8 @@ jobs:
               Path(f"docs/days/{d}.json").write_text(json.dumps(day, ensure_ascii=False, indent=2), encoding="utf-8")
               history.append(day)
 
-          latest = next((d for d in history if any([
-              d["weight_kg"], d["steps"], d["calories_out"], d["avg_hr_bpm"]
-          ])), history[0] if history else {"date": ymd(today_utc)})
+          latest = next((d for d in history if any([d["weight_kg"], d["steps"], d["calories_out"], d["avg_hr_bpm"]])),
+                        history[0] if history else {"date": ymd(today_utc)})
 
           Path("docs/history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
           Path("docs/daily.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -266,7 +258,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add knowledge/*.csv docs
-            git commit -m "chore: capture RAW Withings JSON, rewrite 45d history, update CSVs"
+            git commit -m "chore: tolerant activity parse + RAW capture"
             git push
           else
             echo "No changes to commit."
