@@ -1,4 +1,4 @@
-name: Withings Daily Sync (window rewrite, raw capture, tolerant activity)
+name: Withings Daily Sync (window rewrite, raw capture, activity + summary fallback)
 
 on:
   schedule:
@@ -42,7 +42,7 @@ jobs:
 
           TOKEN_URL   = "https://wbsapi.withings.net/v2/oauth2"
           MEASURE_URL = "https://wbsapi.withings.net/measure"
-          ACT_URL     = "https://wbsapi.withings.net/v2/measure"
+          ACT_URL     = "https://wbsapi.withings.net/v2/measure"  # getactivity / getsummary live here
 
           def ymd(d: date) -> str: return d.strftime("%Y-%m-%d")
           def ts_midnight_utc(d: date) -> int:
@@ -83,7 +83,7 @@ jobs:
           access = tok_json["body"]["access_token"]
           hdr = {"Authorization": f"Bearer {access}"}
 
-          # --- measures (RAW capture + parse)
+          # --- measures (RAW + parse)
           meas_resp = requests.get(MEASURE_URL, headers=hdr, params={
               "action":"getmeas",
               "meastypes":"1,6,76,77",  # weight, fat_ratio, muscle_mass, hydration
@@ -116,57 +116,108 @@ jobs:
                       "water_pct": f"{val(77):.2f}" if val(77) is not None else None,
                   }
 
-          # --- activity (RAW capture + tolerant parse)
-          # Important: do NOT send data_fields - some tenants reject unknown keys.
-          act_resp = requests.get(ACT_URL, headers=hdr, params={
-              "action":"getactivity",
-              "startdateymd": ymd(start),
-              "enddateymd": ymd(today_utc)
-          }, timeout=45)
-          try:
-              act_json = act_resp.json()
-          except Exception:
-              act_json = {"non_json": act_resp.text}
-          (raw_dir / "withings_activity.json").write_text(
-              json.dumps(act_json, ensure_ascii=False, indent=2), encoding="utf-8"
-          )
+          # --- activity via getactivity with pagination (RAW + parse)
+          activities = []
+          offset = 0
+          while True:
+              a_params = {
+                  "action":"getactivity",
+                  "startdateymd": ymd(start),
+                  "enddateymd": ymd(today_utc),
+                  "offset": offset
+              }
+              a_resp = requests.get(ACT_URL, headers=hdr, params=a_params, timeout=45)
+              try:
+                  a_json = a_resp.json()
+              except Exception:
+                  a_json = {"non_json": a_resp.text}
+              # save last page raw for reference
+              (raw_dir / f"withings_activity_offset_{offset}.json").write_text(
+                  json.dumps(a_json, ensure_ascii=False, indent=2), encoding="utf-8"
+              )
+              if a_json.get("status") != 0:
+                  break
+              body = a_json.get("body",{})
+              page = body.get("activities",[]) or []
+              activities.extend(page)
+              if not body.get("more"):
+                  break
+              offset = int(body.get("offset", 0))
+
+          # If still empty, try getsummary as fallback (RAW + parse)
+          summaries = []
+          if not activities:
+              s_params = {
+                  "action":"getsummary",
+                  "startdateymd": ymd(start),
+                  "enddateymd": ymd(today_utc),
+                  # intentionally omit data_fields to avoid 503 on unknown fields
+              }
+              s_resp = requests.get(ACT_URL, headers=hdr, params=s_params, timeout=45)
+              try:
+                  s_json = s_resp.json()
+              except Exception:
+                  s_json = {"non_json": s_resp.text}
+              (raw_dir / "withings_summary.json").write_text(
+                  json.dumps(s_json, ensure_ascii=False, indent=2), encoding="utf-8"
+              )
+              if s_json.get("status") == 0:
+                  summaries = s_json.get("body",{}).get("series",[]) or []
 
           def to_minutes(v):
               if v is None: return None
-              try:
-                  v = float(v)
+              try: v=float(v)
               except: return None
-              # Withings often returns durations in SECONDS. If suspiciously large, convert.
-              return int(round(v/60.0)) if v >= 600 else int(round(v))
+              return int(round(v/60.0)) if v>=600 else int(round(v))
 
           acts_by_day = {}
-          if act_json.get("status") == 0:
-              for a in act_json.get("body",{}).get("activities",[]) or []:
-                  d = a.get("date"); 
-                  if not d: continue
-                  # tolerant extraction
-                  steps   = a.get("steps")
-                  cals    = a.get("calories", a.get("totalcalories"))
-                  hr_avg  = a.get("hr_average", a.get("hravg"))
-                  hr_min  = a.get("hr_min", a.get("hrmin"))
 
-                  # activity minutes: prefer 'active'; else sum soft/moderate/intense
-                  active  = a.get("active")
+          # parse activities (daily rows)
+          for a in activities:
+              d = a.get("date")
+              if not d: continue
+              steps = a.get("steps")
+              cals  = a.get("calories", a.get("totalcalories"))
+              hr_a  = a.get("hr_average", a.get("hravg"))
+              hr_m  = a.get("hr_min", a.get("hrmin"))
+              active = a.get("active")
+              if active is None:
+                  smi = sum(x for x in [
+                      a.get("soft"), a.get("moderate"), a.get("intense")
+                  ] if isinstance(x,(int,float)))
+                  active = smi if smi>0 else None
+              acts_by_day[d] = {
+                  "steps": steps,
+                  "exercise_minutes": to_minutes(active) if active is not None else None,
+                  "avg_hr_bpm": hr_a,
+                  "resting_hr_bpm": hr_m,
+                  "calories_out": cals,
+              }
+
+          # parse summaries (fallback), schema: series is dict keyed by date
+          if summaries and isinstance(summaries, dict):
+              for d, s in summaries.items():
+                  if not d: continue
+                  steps = s.get("steps")
+                  cals  = s.get("calories", s.get("totalcalories"))
+                  hr_a  = s.get("hr_average", s.get("hravg"))
+                  hr_m  = s.get("hr_min", s.get("hrmin"))
+                  active = s.get("active")
                   if active is None:
                       smi = sum(x for x in [
-                          a.get("soft"), a.get("moderate"), a.get("intense")
+                          s.get("soft"), s.get("moderate"), s.get("intense")
                       ] if isinstance(x,(int,float)))
                       active = smi if smi>0 else None
-
+                  prev = acts_by_day.get(d, {})
                   acts_by_day[d] = {
-                      "steps": steps,
-                      "exercise_minutes": to_minutes(active) if active is not None else None,
-                      "avg_hr_bpm": hr_avg,
-                      "resting_hr_bpm": hr_min,
-                      "calories_out": cals,
+                      "steps": prev.get("steps") or steps,
+                      "exercise_minutes": prev.get("exercise_minutes") or (to_minutes(active) if active is not None else None),
+                      "avg_hr_bpm": prev.get("avg_hr_bpm") or hr_a,
+                      "resting_hr_bpm": prev.get("resting_hr_bpm") or hr_m,
+                      "calories_out": prev.get("calories_out") or cals,
                   }
 
-          # --- CSV upsert for whole window (overwrite window dates)
+          # --- CSV upsert (overwrite window)
           w_hdr = ["date","weight_kg","body_fat_pct","muscle_mass_kg","water_pct","source","notes"]
           a_hdr = ["date","steps","exercise_minutes","avg_hr_bpm","resting_hr_bpm","calories_out","workout_type","workout_duration_min","source"]
           ensure_csv(weight_csv, w_hdr)
@@ -258,7 +309,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add knowledge/*.csv docs
-            git commit -m "chore: tolerant activity parse + RAW capture"
+            git commit -m "chore: add getsummary fallback, pagination, and RAW captures"
             git push
           else
             echo "No changes to commit."
