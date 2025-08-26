@@ -1,4 +1,4 @@
-name: Withings Daily Sync (window rewrite, raw capture, activity + summary fallback)
+name: Withings Daily Sync (POST, raw capture, tolerant)
 
 on:
   schedule:
@@ -36,13 +36,13 @@ jobs:
           ACTIVITY_CSV: knowledge/activity_log.csv
         run: |
           python - << 'PY'
-          import os, csv, json, requests, sys, math
+          import os, csv, json, requests, sys
           from pathlib import Path
           from datetime import datetime, timedelta, timezone, date
 
-          TOKEN_URL   = "https://wbsapi.withings.net/v2/oauth2"
+          TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
+          V2_URL    = "https://wbsapi.withings.net/v2/measure"
           MEASURE_URL = "https://wbsapi.withings.net/measure"
-          ACT_URL     = "https://wbsapi.withings.net/v2/measure"  # getactivity / getsummary live here
 
           def ymd(d: date) -> str: return d.strftime("%Y-%m-%d")
           def ts_midnight_utc(d: date) -> int:
@@ -53,16 +53,15 @@ jobs:
                   with open(path, "w", newline="", encoding="utf-8") as f:
                       csv.writer(f).writerow(header)
 
-          # --- config
           days = int(os.environ.get("WINDOW_DAYS", "45"))
-          today_utc = datetime.now(timezone.utc).date()
-          start = today_utc - timedelta(days=days-1)
+          today = datetime.now(timezone.utc).date()
+          start = today - timedelta(days=days-1)
           weight_csv = os.environ.get("WEIGHT_CSV","knowledge/weight_log.csv")
           act_csv    = os.environ.get("ACTIVITY_CSV","knowledge/activity_log.csv")
 
           raw_dir = Path("docs/raw"); raw_dir.mkdir(parents=True, exist_ok=True)
 
-          # --- token refresh (RAW capture)
+          # ---- 1) Refresh token (capture RAW)
           tok_resp = requests.post(TOKEN_URL, data={
               "action":"requesttoken",
               "grant_type":"refresh_token",
@@ -74,95 +73,75 @@ jobs:
               tok_json = tok_resp.json()
           except Exception:
               tok_json = {"non_json": tok_resp.text}
-          (raw_dir / "withings_token.json").write_text(
-              json.dumps({"status_code": tok_resp.status_code, "body": tok_json}, ensure_ascii=False, indent=2),
-              encoding="utf-8"
-          )
+          (raw_dir/"withings_token.json").write_text(json.dumps({"status_code": tok_resp.status_code, "body": tok_json}, indent=2), encoding="utf-8")
           if tok_json.get("status") != 0:
               print("Token refresh failed:", tok_json); sys.exit(1)
           access = tok_json["body"]["access_token"]
           hdr = {"Authorization": f"Bearer {access}"}
 
-          # --- measures (RAW + parse)
+          # ---- 2) Measures (weight, fat%, muscle, water) - GET is correct for /measure
           meas_resp = requests.get(MEASURE_URL, headers=hdr, params={
-              "action":"getmeas",
-              "meastypes":"1,6,76,77",  # weight, fat_ratio, muscle_mass, hydration
-              "category":1,
+              "action":"getmeas", "meastypes":"1,6,76,77", "category":1,
               "startdate":ts_midnight_utc(start),
-              "enddate":ts_midnight_utc(today_utc)+86399
+              "enddate":ts_midnight_utc(today)+86399
           }, timeout=45)
-          try:
-              meas_json = meas_resp.json()
-          except Exception:
-              meas_json = {"non_json": meas_resp.text}
-          (raw_dir / "withings_measures.json").write_text(
-              json.dumps(meas_json, ensure_ascii=False, indent=2), encoding="utf-8"
-          )
+          try: meas_json = meas_resp.json()
+          except Exception: meas_json = {"non_json": meas_resp.text}
+          (raw_dir/"withings_measures.json").write_text(json.dumps(meas_json, indent=2), encoding="utf-8")
 
-          weights_by_day = {}
-          if meas_json.get("status") == 0:
+          weights_by_day={}
+          if meas_json.get("status")==0:
               for g in meas_json.get("body",{}).get("measuregrps",[]):
-                  d = datetime.fromtimestamp(g["date"], tz=timezone.utc).date()
-                  measures = g.get("measures",[])
+                  d = datetime.fromtimestamp(g["date"], tz=timezone.utc).date().strftime("%Y-%m-%d")
                   def val(t):
-                      for m in measures:
+                      for m in g.get("measures",[]):
                           if m.get("type")==t:
                               return m["value"]*(10**m["unit"])
                       return None
-                  weights_by_day[ymd(d)] = {
+                  weights_by_day[d] = {
                       "weight_kg": f"{val(1):.2f}" if val(1) is not None else None,
                       "body_fat_pct": f"{val(6):.2f}" if val(6) is not None else None,
                       "muscle_mass_kg": f"{val(76):.2f}" if val(76) is not None else None,
                       "water_pct": f"{val(77):.2f}" if val(77) is not None else None,
                   }
 
-          # --- activity via getactivity with pagination (RAW + parse)
-          activities = []
-          offset = 0
+          # ---- 3) Activity via POST getactivity with pagination
+          # Allowed data_fields from doc; use a safe subset first
+          data_fields = "steps,distance,elevation,soft,moderate,intense,active,calories,totalcalories,hr_average,hr_min,hr_max"
+          activities=[]
+          offset=0
           while True:
-              a_params = {
+              a_resp = requests.post(V2_URL, headers=hdr, data={
                   "action":"getactivity",
                   "startdateymd": ymd(start),
-                  "enddateymd": ymd(today_utc),
-                  "offset": offset
-              }
-              a_resp = requests.get(ACT_URL, headers=hdr, params=a_params, timeout=45)
-              try:
-                  a_json = a_resp.json()
-              except Exception:
-                  a_json = {"non_json": a_resp.text}
-              # save last page raw for reference
-              (raw_dir / f"withings_activity_offset_{offset}.json").write_text(
-                  json.dumps(a_json, ensure_ascii=False, indent=2), encoding="utf-8"
-              )
-              if a_json.get("status") != 0:
-                  break
-              body = a_json.get("body",{})
-              page = body.get("activities",[]) or []
+                  "enddateymd": ymd(today),
+                  "offset": offset,
+                  "data_fields": data_fields
+              }, timeout=45)
+              try: a_json = a_resp.json()
+              except Exception: a_json = {"non_json": a_resp.text}
+              (raw_dir/f"withings_activity_offset_{offset}.json").write_text(json.dumps(a_json, indent=2), encoding="utf-8")
+              if a_json.get("status")!=0: break
+              body=a_json.get("body",{})
+              page=body.get("activities",[]) or []
               activities.extend(page)
-              if not body.get("more"):
-                  break
-              offset = int(body.get("offset", 0))
+              if not body.get("more"): break
+              offset=int(body.get("offset",0))
 
-          # If still empty, try getsummary as fallback (RAW + parse)
-          summaries = []
+          # ---- 4) Fallback to POST getsummary if activities still empty
+          summaries={}
           if not activities:
-              s_params = {
+              s_resp = requests.post(V2_URL, headers=hdr, data={
                   "action":"getsummary",
                   "startdateymd": ymd(start),
-                  "enddateymd": ymd(today_utc),
-                  # intentionally omit data_fields to avoid 503 on unknown fields
-              }
-              s_resp = requests.get(ACT_URL, headers=hdr, params=s_params, timeout=45)
-              try:
-                  s_json = s_resp.json()
-              except Exception:
-                  s_json = {"non_json": s_resp.text}
-              (raw_dir / "withings_summary.json").write_text(
-                  json.dumps(s_json, ensure_ascii=False, indent=2), encoding="utf-8"
-              )
-              if s_json.get("status") == 0:
-                  summaries = s_json.get("body",{}).get("series",[]) or []
+                  "enddateymd": ymd(today)
+              }, timeout=45)
+              try: s_json = s_resp.json()
+              except Exception: s_json = {"non_json": s_resp.text}
+              (raw_dir/"withings_summary.json").write_text(json.dumps(s_json, indent=2), encoding="utf-8")
+              if s_json.get("status")==0:
+                  # summary series can be dict keyed by date
+                  summaries = s_json.get("body",{}).get("series",{}) or {}
 
           def to_minutes(v):
               if v is None: return None
@@ -170,84 +149,74 @@ jobs:
               except: return None
               return int(round(v/60.0)) if v>=600 else int(round(v))
 
-          acts_by_day = {}
-
-          # parse activities (daily rows)
+          acts_by_day={}
           for a in activities:
-              d = a.get("date")
+              d=a.get("date"); 
               if not d: continue
-              steps = a.get("steps")
-              cals  = a.get("calories", a.get("totalcalories"))
-              hr_a  = a.get("hr_average", a.get("hravg"))
-              hr_m  = a.get("hr_min", a.get("hrmin"))
-              active = a.get("active")
+              steps=a.get("steps")
+              cals=a.get("calories", a.get("totalcalories"))
+              hr_avg=a.get("hr_average", a.get("hravg"))
+              hr_min=a.get("hr_min", a.get("hrmin"))
+              active=a.get("active")
               if active is None:
-                  smi = sum(x for x in [
-                      a.get("soft"), a.get("moderate"), a.get("intense")
-                  ] if isinstance(x,(int,float)))
-                  active = smi if smi>0 else None
-              acts_by_day[d] = {
+                  s=sum(x for x in [a.get("soft"),a.get("moderate"),a.get("intense")] if isinstance(x,(int,float)))
+                  active=s if s>0 else None
+              acts_by_day[d]={
                   "steps": steps,
                   "exercise_minutes": to_minutes(active) if active is not None else None,
-                  "avg_hr_bpm": hr_a,
-                  "resting_hr_bpm": hr_m,
-                  "calories_out": cals,
+                  "avg_hr_bpm": hr_avg,
+                  "resting_hr_bpm": hr_min,
+                  "calories_out": cals
               }
 
-          # parse summaries (fallback), schema: series is dict keyed by date
           if summaries and isinstance(summaries, dict):
-              for d, s in summaries.items():
-                  if not d: continue
-                  steps = s.get("steps")
-                  cals  = s.get("calories", s.get("totalcalories"))
-                  hr_a  = s.get("hr_average", s.get("hravg"))
-                  hr_m  = s.get("hr_min", s.get("hrmin"))
-                  active = s.get("active")
+              for d,s in summaries.items():
+                  steps=s.get("steps")
+                  cals=s.get("calories", s.get("totalcalories"))
+                  hr_avg=s.get("hr_average", s.get("hravg"))
+                  hr_min=s.get("hr_min", s.get("hrmin"))
+                  active=s.get("active")
                   if active is None:
-                      smi = sum(x for x in [
-                          s.get("soft"), s.get("moderate"), s.get("intense")
-                      ] if isinstance(x,(int,float)))
-                      active = smi if smi>0 else None
-                  prev = acts_by_day.get(d, {})
-                  acts_by_day[d] = {
+                      t=sum(x for x in [s.get("soft"),s.get("moderate"),s.get("intense")] if isinstance(x,(int,float)))
+                      active=t if t>0 else None
+                  prev=acts_by_day.get(d,{})
+                  acts_by_day[d]={
                       "steps": prev.get("steps") or steps,
                       "exercise_minutes": prev.get("exercise_minutes") or (to_minutes(active) if active is not None else None),
-                      "avg_hr_bpm": prev.get("avg_hr_bpm") or hr_a,
-                      "resting_hr_bpm": prev.get("resting_hr_bpm") or hr_m,
-                      "calories_out": prev.get("calories_out") or cals,
+                      "avg_hr_bpm": prev.get("avg_hr_bpm") or hr_avg,
+                      "resting_hr_bpm": prev.get("resting_hr_bpm") or hr_min,
+                      "calories_out": prev.get("calories_out") or cals
                   }
 
-          # --- CSV upsert (overwrite window)
-          w_hdr = ["date","weight_kg","body_fat_pct","muscle_mass_kg","water_pct","source","notes"]
-          a_hdr = ["date","steps","exercise_minutes","avg_hr_bpm","resting_hr_bpm","calories_out","workout_type","workout_duration_min","source"]
-          ensure_csv(weight_csv, w_hdr)
-          ensure_csv(act_csv, a_hdr)
+          # ---- 5) CSV rewrite (window)
+          w_hdr=["date","weight_kg","body_fat_pct","muscle_mass_kg","water_pct","source","notes"]
+          a_hdr=["date","steps","exercise_minutes","avg_hr_bpm","resting_hr_bpm","calories_out","workout_type","workout_duration_min","source"]
+          ensure_csv(weight_csv,w_hdr); ensure_csv(act_csv,a_hdr)
 
-          def read_csv(path):
+          def read_csv(p):
               try:
-                  with open(path, "r", newline="", encoding="utf-8") as f:
+                  with open(p,"r",newline="",encoding="utf-8") as f:
                       return list(csv.DictReader(f))
               except FileNotFoundError:
                   return []
-          existing_w = {row["date"]: row for row in read_csv(weight_csv)}
-          existing_a = {row["date"]: row for row in read_csv(act_csv)}
+          existing_w={r["date"]:r for r in read_csv(weight_csv)}
+          existing_a={r["date"]:r for r in read_csv(act_csv)}
 
-          window_dates = [ymd(start + timedelta(days=i)) for i in range(days)]
+          window_dates=[ymd(start+timedelta(days=i)) for i in range(days)]
           new_w, new_a = {}, {}
 
           for d in window_dates:
-              w = weights_by_day.get(d)
-              a = acts_by_day.get(d)
-              new_w[d] = {
-                  "date": d,
+              w=weights_by_day.get(d); a=acts_by_day.get(d)
+              new_w[d]={
+                  "date":d,
                   "weight_kg": (w or {}).get("weight_kg") or "",
                   "body_fat_pct": (w or {}).get("body_fat_pct") or "",
                   "muscle_mass_kg": (w or {}).get("muscle_mass_kg") or "",
                   "water_pct": (w or {}).get("water_pct") or "",
-                  "source": "withings", "notes": ""
+                  "source":"withings","notes":""
               }
-              new_a[d] = {
-                  "date": d,
+              new_a[d]={
+                  "date":d,
                   "steps": (a or {}).get("steps") or "",
                   "exercise_minutes": (a or {}).get("exercise_minutes") or "",
                   "avg_hr_bpm": (a or {}).get("avg_hr_bpm") or "",
@@ -257,26 +226,24 @@ jobs:
               }
 
           for d,row in existing_w.items():
-              if d not in new_w: new_w[d] = row
+              if d not in new_w: new_w[d]=row
           for d,row in existing_a.items():
-              if d not in new_a: new_a[d] = row
+              if d not in new_a: new_a[d]=row
 
           def write_csv(path, header, rows_map):
-              rows = [rows_map[d] for d in sorted(rows_map.keys())]
+              rows=[rows_map[d] for d in sorted(rows_map.keys())]
               with open(path,"w",newline="",encoding="utf-8") as f:
                   w=csv.DictWriter(f, fieldnames=header); w.writeheader()
                   for r in rows: w.writerow({k:r.get(k,"") for k in header})
+          write_csv(weight_csv,w_hdr,new_w)
+          write_csv(act_csv,a_hdr,new_a)
 
-          write_csv(weight_csv, w_hdr, new_w)
-          write_csv(act_csv, a_hdr, new_a)
-
-          # --- JSON history + daily
+          # ---- 6) JSON history + daily
           Path("docs/days").mkdir(parents=True, exist_ok=True)
-          history = []
+          history=[]
           for d in sorted(window_dates, reverse=True):
-              w = new_w.get(d, {})
-              a = new_a.get(d, {})
-              day = {
+              w=new_w.get(d,{}); a=new_a.get(d,{})
+              day={
                   "date": d,
                   "weight_kg": w.get("weight_kg") or None,
                   "body_fat_pct": w.get("body_fat_pct") or None,
@@ -287,19 +254,15 @@ jobs:
                   "avg_hr_bpm": a.get("avg_hr_bpm") or None,
                   "resting_hr_bpm": a.get("resting_hr_bpm") or None,
                   "calories_out": a.get("calories_out") or None,
-                  "source": "withings",
+                  "source":"withings",
                   "is_partial_weight": not bool(w.get("weight_kg")),
                   "is_partial_activity": not bool(a.get("steps"))
               }
-              Path(f"docs/days/{d}.json").write_text(json.dumps(day, ensure_ascii=False, indent=2), encoding="utf-8")
+              (Path("docs/days")/f"{d}.json").write_text(json.dumps(day, indent=2), encoding="utf-8")
               history.append(day)
-
-          latest = next((d for d in history if any([d["weight_kg"], d["steps"], d["calories_out"], d["avg_hr_bpm"]])),
-                        history[0] if history else {"date": ymd(today_utc)})
-
-          Path("docs/history.json").write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
-          Path("docs/daily.json").write_text(json.dumps(latest, ensure_ascii=False, indent=2), encoding="utf-8")
-
+          latest = next((d for d in history if any([d["weight_kg"], d["steps"], d["calories_out"], d["avg_hr_bpm"]])), history[0] if history else {"date": ymd(today)})
+          Path("docs/history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+          Path("docs/daily.json").write_text(json.dumps(latest, indent=2), encoding="utf-8")
           print(json.dumps({"daily": latest["date"], "days_emitted": len(history)}))
           PY
 
@@ -309,7 +272,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add knowledge/*.csv docs
-            git commit -m "chore: add getsummary fallback, pagination, and RAW captures"
+            git commit -m "chore: POST getactivity, allowed data_fields, summary fallback, RAW captures"
             git push
           else
             echo "No changes to commit."
