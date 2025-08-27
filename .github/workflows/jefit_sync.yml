@@ -37,15 +37,14 @@ jobs:
         run: |
           node - <<'JS'
           const fs = require('fs');
+          const path = require('path');
           const { chromium } = require('playwright');
 
-          function ymd(d) {
-            const z = n => `${n}`.padStart(2,'0');
-            return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
-          }
-          const envDate = process.env.INPUT_DATE?.trim();
+          function z(n){return `${n}`.padStart(2,'0')}
+          function ymd(d){return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
+
+          const envDate = (process.env.INPUT_DATE || '').trim();
           const now = new Date();
-          // default yesterday UK-ish (close enough for daily use)
           const yest = new Date(now.getTime() - 24*3600*1000);
           const dateStr = envDate || ymd(yest);
 
@@ -57,54 +56,40 @@ jobs:
             });
             const page = await ctx.newPage();
 
-            // 1) open login page
-            await page.goto('https://www.jefit.com/login/', { waitUntil: 'domcontentloaded' });
-
-            // 2) Find and fill fields - try common selectors
-            // If selectors differ, we have the raw page saved below to adjust.
-            const html = await page.content();
+            // Ensure target folders exist BEFORE any writes
             fs.mkdirSync('docs/jefit/raw', { recursive: true });
-            fs.writeFileSync('docs/jefit/raw/login-page.html', html);
 
-            // Try common field names; adjust if needed after first run.
-            const candidatesUser = ['input[name="email"]','input[name="username"]','input[type="email"]'];
-            const candidatesPass = ['input[name="password"]','input[type="password"]'];
+            // 1) Login page
+            await page.goto('https://www.jefit.com/login/', { waitUntil: 'domcontentloaded' });
+            fs.writeFileSync('docs/jefit/raw/login-page.html', await page.content());
 
-            let userSel = null, passSel = null;
-            for (const s of candidatesUser) { if (await page.$(s)) { userSel = s; break; } }
-            for (const s of candidatesPass){ if (await page.$(s)) { passSel = s; break; } }
+            // Find fields (adjust if needed after first run)
+            const userSel = (await page.$('input[name="email"]')) ? 'input[name="email"]'
+                           : (await page.$('input[name="username"]')) ? 'input[name="username"]'
+                           : 'input[type="email"]';
+            const passSel = (await page.$('input[type="password"]')) ? 'input[type="password"]' : null;
 
-            if (!userSel || !passSel) {
-              console.log('Could not locate login inputs. Check docs/jefit/raw/login-page.html');
-            } else {
+            if (userSel && passSel) {
               await page.fill(userSel, process.env.JEFIT_USERNAME || '');
               await page.fill(passSel, process.env.JEFIT_PASSWORD || '');
-              // Try a submit button
               const submitBtn = await page.$('button[type="submit"], input[type="submit"], button:has-text("Log in"), button:has-text("Sign in")');
               if (submitBtn) {
-                await Promise.all([
-                  page.waitForLoadState('networkidle'),
-                  submitBtn.click()
-                ]);
+                await Promise.all([page.waitForLoadState('networkidle'), submitBtn.click()]);
               } else {
-                // fallback: press Enter in password field
-                await Promise.all([
-                  page.waitForLoadState('networkidle'),
-                  page.press(passSel, 'Enter')
-                ]);
+                await Promise.all([page.waitForLoadState('networkidle'), page.press(passSel, 'Enter')]);
               }
             }
 
-            // 3) Navigate to target history page
+            // 2) Navigate to target history page
             const histUrl = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
             await page.goto(histUrl, { waitUntil: 'networkidle' });
+            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, await page.content());
 
-            const histHtml = await page.content();
-            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, histHtml);
-
-            // Save cookies (optional, for debugging)
+            // 3) Save cookies (ensure directory exists first)
+            const cookiesPath = 'docs/jefit/raw/cookies.json';
+            fs.mkdirSync(path.dirname(cookiesPath), { recursive: true });
             const cookies = await ctx.cookies();
-            fs.writeFileSync('docs/jefit/raw/cookies.json', JSON.stringify(cookies,null,2));
+            fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
 
             await browser.close();
           })().catch(e => { console.error(e); process.exit(1); });
@@ -130,27 +115,22 @@ jobs:
           from pathlib import Path
           from bs4 import BeautifulSoup
 
-          def ymd(d):
-            return d.strftime('%Y-%m-%d')
+          def ymd(d): return d.strftime('%Y-%m-%d')
 
           env_date = (os.environ.get('INPUT_DATE') or '').strip()
           if env_date:
             date_str = env_date
           else:
-            yest = datetime.utcnow() - timedelta(days=1)
-            date_str = ymd(yest)
+            date_str = ymd(datetime.utcnow() - timedelta(days=1))
 
           raw_path = Path(f"docs/jefit/raw/history-{date_str}.html")
-          raw_path.parent.mkdir(parents=True, exist_ok=True)
           if not raw_path.exists():
             print("Missing raw HTML:", raw_path); raise SystemExit(1)
 
           html = raw_path.read_text(encoding='utf-8', errors='ignore')
           soup = BeautifulSoup(html, 'lxml')
 
-          def clean(t): 
-            return re.sub(r"\s+"," ", (t or "").strip())
-
+          def clean(t): return re.sub(r"\s+"," ", (t or "").strip())
           def to_float(x):
             if x is None: return None
             s = re.sub(r"[^\d\.\-]", "", str(x))
@@ -162,9 +142,9 @@ jobs:
           for table in soup.find_all("table"):
             ths = [clean(th.get_text()) for th in table.find_all("th")]
             if not ths:
-              first_row = table.find("tr")
-              if first_row:
-                ths = [clean(td.get_text()) for td in first_row.find_all(["th","td"])]
+              first = table.find("tr")
+              if first:
+                ths = [clean(td.get_text()) for td in first.find_all(["th","td"])]
             header = " ".join(ths).lower()
             if any(k in header for k in ["set","reps"]) and any(k in header for k in ["weight","kg","lb"]):
               tables.append(table)
@@ -182,8 +162,7 @@ jobs:
           for table in tables:
             name = find_exercise_name(table)
             rows = table.find_all("tr")
-            if not rows: 
-              continue
+            if not rows: continue
 
             def is_header(tr):
               cells = [clean(td.get_text()) for td in tr.find_all(["th","td"])]
@@ -191,20 +170,17 @@ jobs:
               return ("set" in t and "rep" in t) or ("weight" in t)
 
             start = 1 if rows and is_header(rows[0]) else 0
-            sets = []
+            sets=[]
             for tr in rows[start:]:
               tds = [clean(td.get_text()) for td in tr.find_all("td")]
               if not tds: continue
               reps=None; weight=None; notes=None
-              if len(tds) >= 2:
-                reps = to_float(tds[1])
-              if len(tds) >= 3:
-                weight = to_float(tds[2])
+              if len(tds) >= 2: reps = to_float(tds[1])
+              if len(tds) >= 3: weight = to_float(tds[2])
               if len(tds) >= 4:
                 n = tds[-1]
                 if not re.match(r"^\d+(\.\d+)?\s*(kg|lb)?$", n):
                   notes = n or None
-
               s={}
               if reps is not None: s["reps"]=int(reps)
               if weight is not None: s["weight"]=weight
@@ -212,14 +188,13 @@ jobs:
               if s: sets.append(s)
 
             if sets:
-              total_volume = None
+              total_volume=None
               if any("weight" in s for s in sets) and any("reps" in s for s in sets):
-                tv = 0.0
+                tv=0.0
                 for s in sets:
                   if "weight" in s and "reps" in s and s["weight"] is not None and s["reps"] is not None:
                     tv += float(s["weight"]) * int(s["reps"])
-                total_volume = round(tv, 2)
-
+                total_volume=round(tv,2)
               workouts.append({"exercise": name, "sets": sets, "total_volume": total_volume})
 
           day_obj = {"date": date_str, "workouts": workouts, "source": "jefit_playwright"}
@@ -227,7 +202,7 @@ jobs:
           Path(f"docs/jefit/days/{date_str}.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
           Path("docs/jefit/daily.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
 
-          # history
+          # history upsert
           hist_p = Path("docs/jefit/history.json")
           hist=[]
           if hist_p.exists():
@@ -241,11 +216,14 @@ jobs:
           print(json.dumps({"date": date_str, "exercises": len(workouts)}))
           PY
 
+      - name: Configure Git user
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Commit JEFIT files
         run: |
           if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
-            git config user.name  "github-actions[bot]"
-            git config useremail "github-actions[bot]@users.noreply.github.com"
             git add docs/jefit
             git commit -m "chore: jefit day sync (playwright)"
             git push
