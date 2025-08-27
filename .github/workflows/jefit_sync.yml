@@ -30,7 +30,7 @@ jobs:
           npm i playwright@1
           npx playwright install --with-deps chromium
 
-      - name: Login and fetch history (robust, no idle wait)
+      - name: Login and fetch history (robust selectors, no idle wait)
         env:
           JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
           JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
@@ -43,7 +43,6 @@ jobs:
 
           function z(n){return `${n}`.padStart(2,'0')}
           function ymd(d){return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
-
           const envDate = (process.env.INPUT_DATE || '').trim();
           const now = new Date();
           const yest = new Date(now.getTime() - 24*3600*1000);
@@ -81,33 +80,37 @@ jobs:
             const consent = await page.$('#onetrust-accept-btn-handler');
             if (consent) { try { await consent.click({ timeout: 2000 }); } catch(_){} }
 
-            // 2) Wait for email/username + password fields – broaden selectors
-            const emailSel =
-              'input[type="email"], input[name="email"], input[name="username"], input[placeholder*="Username" i], input[placeholder*="email" i]';
-            const passSel =
-              'input[type="password"], input[name="password"], input[placeholder*="Password" i]';
-
+            // 2) Wait for inputs actually in your screenshot
+            const emailSel = 'input[name="username"], input[name="email"], input[type="email"]';
+            const passSel  = 'input[name="password"], input[type="password"]';
             await page.waitForSelector(emailSel, { timeout: 30000 });
             await page.waitForSelector(passSel,  { timeout: 30000 });
 
-            // Fill creds
+            // Fill and click the visible "Log In" button inside the form
             await page.fill(emailSel, process.env.JEFIT_USERNAME || '');
             await page.fill(passSel,  process.env.JEFIT_PASSWORD || '');
-
-            // Click the blue "Log In" (be liberal)
-            const submit =
-              await page.$('button:has-text("Log In"), button[type="submit"], input[type="submit"]');
-            if (submit) {
-              // Do NOT wait for networkidle – some apps never reach idle
-              await submit.click({ timeout: 10000 }).catch(()=>{});
+            const loginBtn = await page.$('form button:has-text("Log In"), button:has-text("Log In"), input[type="submit"]');
+            if (loginBtn) {
+              await loginBtn.click({ timeout: 10000 }).catch(()=>{});
             } else {
               await page.press(passSel, 'Enter').catch(()=>{});
             }
 
-            // 3) Immediately navigate to the history page for the target date
+            // 2.1) Don't wait for networkidle (SPAs rarely settle).
+            // Instead wait briefly for either a redirect into /my-jefit/ or a sign we are still on login.
+            try {
+              await Promise.race([
+                page.waitForURL(url => /\/my-jefit\//.test(url.toString()), { timeout: 15000 }),
+                page.waitForSelector('a[href*="lostpw"], a[href*="login"]', { timeout: 15000 })
+              ]);
+            } catch (_) {
+              // continue, we will navigate directly to the history page anyway
+            }
+
+            // 3) Navigate straight to the history page for the target date
             const HIST_URL = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
             await page.goto(HIST_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            // give JS a second to render; then dump the content regardless
+            // Give the client a moment to render; then dump the content regardless
             await page.waitForTimeout(1500);
 
             const histHtml = await page.content();
@@ -244,7 +247,7 @@ jobs:
         run: |
           if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
             git add docs/jefit
-            git commit -m "chore: jefit day sync (playwright bare domain)"
+            git commit -m "chore: jefit day sync (selectors tuned)"
             git push
           else
             echo "No changes to commit."
