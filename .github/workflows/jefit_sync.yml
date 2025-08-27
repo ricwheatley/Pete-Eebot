@@ -1,3 +1,18 @@
+name: JEFIT Daily Sync (Playwright login -> scrape -> JSON)
+
+on:
+  schedule:
+    - cron: "50 5 * * *"   # daily 05:50 UTC
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to fetch (YYYY-MM-DD). Leave blank to fetch yesterday (Europe/London)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
 jobs:
   jefit:
     runs-on: ubuntu-latest
@@ -14,7 +29,7 @@ jobs:
           npm i playwright@1
           npx playwright install --with-deps chromium
 
-      - name: Fetch JEFIT page via headless login (robust, traced)
+      - name: Fetch JEFIT page via headless login
         env:
           JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
           JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
@@ -25,12 +40,6 @@ jobs:
           const path = require('path');
           const { chromium } = require('playwright');
 
-          const LOGIN_URL = 'https://www.jefit.com/login/';
-          const HISTORY_TMPL = d => `https://www.jefit.com/my-jefit/progress/history?date=${d}`;
-          const NAV_TIMEOUT = 45000;          // 45s per nav
-          const TOTAL_TIMEOUT = 180000;       // 3 min guard
-          const WAIT_SELECTOR_TIMEOUT = 20000;// 20s
-
           function z(n){return `${n}`.padStart(2,'0')}
           function ymd(d){return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
           const envDate = (process.env.INPUT_DATE || '').trim();
@@ -38,127 +47,64 @@ jobs:
           const yest = new Date(now.getTime() - 24*3600*1000);
           const dateStr = envDate || ymd(yest);
 
-          async function ensureDir(p){ fs.mkdirSync(p, { recursive:true }); }
-
           (async () => {
-            const start = Date.now();
-            await ensureDir('docs/jefit/raw');
+            // Ensure target folders exist BEFORE any writes
+            fs.mkdirSync('docs/jefit/raw', { recursive: true });
 
-            // Launch with mild stealth-ish flags
             const browser = await chromium.launch({
               headless: true,
-              args: [
-                '--disable-blink-features=AutomationControlled',
-                '--no-sandbox',
-                '--disable-dev-shm-usage'
-              ]
+              args: ['--no-sandbox','--disable-dev-shm-usage','--disable-blink-features=AutomationControlled']
             });
-
             const ctx = await browser.newContext({
               userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari',
               locale: 'en-GB',
               viewport: { width: 1366, height: 768 }
             });
-
-            // Mask webdriver where possible
             await ctx.addInitScript(() => {
               Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             });
-
             const page = await ctx.newPage();
-            // Log console + request/response for debugging
-            page.on('console', msg => console.log('PAGE console:', msg.type(), msg.text()));
-            page.on('requestfailed', req => console.log('REQ FAIL:', req.url(), req.failure()?.errorText));
-            page.on('response', res => {
-              const url = res.url();
-              if (url.includes('/login') || url.includes('/progress/history')) {
-                console.log('RESP', res.status(), url);
-              }
-            });
 
-            // Enable tracing
-            await ctx.tracing.start({ screenshots: true, snapshots: true });
-
-            // Guard to avoid infinite hang
-            const guard = setTimeout(async () => {
-              console.log('Timeout guard hit, saving page...');
-              try { await page.screenshot({ path: 'docs/jefit/raw/timeout.png', fullPage: true }); } catch(_){}
-              await ctx.tracing.stop({ path: 'docs/jefit/raw/trace.zip' });
-              process.exit(1);
-            }, TOTAL_TIMEOUT);
-
-            // --- Go to login
-            await page.goto(LOGIN_URL, { timeout: NAV_TIMEOUT, waitUntil: 'domcontentloaded' });
-            await page.screenshot({ path: 'docs/jefit/raw/login-loaded.png' });
+            // 1) Login page
+            await page.goto('https://www.jefit.com/login/', { waitUntil: 'domcontentloaded', timeout: 45000 });
             fs.writeFileSync('docs/jefit/raw/login-page.html', await page.content());
 
-            // Cookie/consent banners often block input - dismiss common patterns
-            const consentSelectors = [
-              'button:has-text("Accept all")',
-              'button:has-text("Accept")',
-              '#onetrust-accept-btn-handler'
-            ];
-            for (const sel of consentSelectors) {
-              const b = await page.$(sel);
-              if (b) { try { await b.click({ timeout: 2000 }); } catch(_){} }
+            // Dismiss common consent buttons if present
+            for (const sel of ['#onetrust-accept-btn-handler','button:has-text("Accept all")','button:has-text("Accept")']) {
+              const b = await page.$(sel); if (b) { try { await b.click({ timeout: 2000 }); } catch(_){} }
             }
 
-            // Locate inputs
-            const userSelectors = ['input[name="email"]','input[name="username"]','input[type="email"]','input#email'];
-            const passSelectors = ['input[type="password"]','input[name="password"]','#password'];
-            let userSel, passSel;
-
-            for (const s of userSelectors) { if (await page.$(s)) { userSel = s; break; } }
-            for (const s of passSelectors){ if (await page.$(s)) { passSel = s; break; } }
+            // Locate inputs (adjust if first run shows different names)
+            const userSel = (await page.$('input[name="email"]')) ? 'input[name="email"]'
+                           : (await page.$('input[name="username"]')) ? 'input[name="username"]'
+                           : 'input[type="email"]';
+            const passSel = (await page.$('input[type="password"]')) ? 'input[type="password"]' : null;
 
             if (!userSel || !passSel) {
               console.log('Could not locate login inputs. See docs/jefit/raw/login-page.html');
-              await ctx.tracing.stop({ path: 'docs/jefit/raw/trace.zip' });
-              clearTimeout(guard);
-              process.exit(1);
+              await browser.close(); process.exit(1);
             }
 
-            await page.fill(userSel, process.env.JEFIT_USERNAME || '', { timeout: WAIT_SELECTOR_TIMEOUT });
-            await page.fill(passSel, process.env.JEFIT_PASSWORD || '', { timeout: WAIT_SELECTOR_TIMEOUT });
-
-            // Try to click a submit
+            await page.fill(userSel, process.env.JEFIT_USERNAME || '');
+            await page.fill(passSel, process.env.JEFIT_PASSWORD || '');
             const submit = await page.$('button[type="submit"], input[type="submit"], button:has-text("Log in"), button:has-text("Sign in")');
             if (submit) {
-              await Promise.all([
-                page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }),
-                submit.click()
-              ]);
+              await Promise.all([page.waitForLoadState('networkidle', { timeout: 45000 }), submit.click()]);
             } else {
-              await Promise.all([
-                page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }),
-                page.press(passSel, 'Enter')
-              ]);
+              await Promise.all([page.waitForLoadState('networkidle', { timeout: 45000 }), page.press(passSel, 'Enter')]);
             }
 
-            // Give it a moment in case there’s an interstitial/redirect
-            await page.waitForTimeout(1500);
+            // 2) Navigate to target history page
+            const histUrl = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
+            await page.goto(histUrl, { waitUntil: 'networkidle', timeout: 45000 });
+            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, await page.content());
+            // Save cookies (mkdir just in case)
+            const cookiesPath = 'docs/jefit/raw/cookies.json';
+            fs.mkdirSync(path.dirname(cookiesPath), { recursive: true });
+            fs.writeFileSync(cookiesPath, JSON.stringify(await ctx.cookies(), null, 2));
 
-            // --- Go to history page
-            const histUrl = HISTORY_TMPL(dateStr);
-            await page.goto(histUrl, { timeout: NAV_TIMEOUT, waitUntil: 'domcontentloaded' });
-            await page.waitForLoadState('networkidle', { timeout: NAV_TIMEOUT }).catch(()=>{});
-            const histHtml = await page.content();
-            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, histHtml);
-            await page.screenshot({ path: `docs/jefit/raw/history-${dateStr}.png`, fullPage: true });
-
-            // Save cookies (mkdir already done at top)
-            const cookies = await ctx.cookies();
-            fs.writeFileSync('docs/jefit/raw/cookies.json', JSON.stringify(cookies, null, 2));
-
-            // Close cleanly
-            await ctx.tracing.stop({ path: 'docs/jefit/raw/trace.zip' });
-            clearTimeout(guard);
             await browser.close();
-            console.log('Playwright step OK in', (Date.now()-start)/1000, 's');
-          })().catch(async (e) => {
-            console.error('Playwright error:', e);
-            process.exit(1);
-          });
+          })().catch(e => { console.error(e); process.exit(1); });
           JS
 
       - uses: actions/setup-python@v5
@@ -200,19 +146,19 @@ jobs:
 
           workouts=[]; tables=[]
           for table in soup.find_all("table"):
-            ths = [clean(th.get_text()) for th in table.find_all("th")]
+            ths=[clean(th.get_text()) for th in table.find_all("th")]
             if not ths:
-              first = table.find("tr")
+              first=table.find("tr")
               if first:
-                ths = [clean(td.get_text()) for td in first.find_all(["th","td"])]
-            header = " ".join(ths).lower()
+                ths=[clean(td.get_text()) for td in first.find_all(["th","td"])]
+            header=" ".join(ths).lower()
             if any(k in header for k in ["set","reps"]) and any(k in header for k in ["weight","kg","lb"]):
               tables.append(table)
 
           def find_exercise_name(node):
             cur=node
             for _ in range(6):
-              cur = cur.find_previous(["h1","h2","h3","h4","strong","b","div","span"])
+              cur=cur.find_previous(["h1","h2","h3","h4","strong","b","div","span"])
               if not cur: break
               txt=clean(cur.get_text())
               if txt and len(txt)<=80 and not re.search(r"(set|reps|weight|workout|date|history|edit|delete)", txt, re.I):
@@ -220,53 +166,55 @@ jobs:
             return "Exercise"
 
           for table in tables:
-            name = find_exercise_name(table)
-            rows = table.find_all("tr")
+            name=find_exercise_name(table)
+            rows=table.find_all("tr")
             if not rows: continue
             def is_header(tr):
               cells=[clean(td.get_text()) for td in tr.find_all(["th","td"])]
               t=" ".join(cells).lower()
-              return ("set" in t and "rep" in t) || ("weight" in t)
-            start = 1 if rows and is_header(rows[0]) else 0
+              return ("set" in t and "rep" in t) or ("weight" in t)
+            start=1 if rows and is_header(rows[0]) else 0
 
             sets=[]
             for tr in rows[start:]:
               tds=[clean(td.get_text()) for td in tr.find_all("td")]
               if not tds: continue
               reps=None; weight=None; notes=None
-              if len(tds)>=2: reps = to_float(tds[1])
-              if len(tds)>=3: weight = to_float(tds[2])
+              if len(tds)>=2: reps=to_float(tds[1])
+              if len(tds)>=3: weight=to_float(tds[2])
               if len(tds)>=4:
-                n = tds[-1]
+                n=tds[-1]
                 if not re.match(r"^\d+(\.\d+)?\s*(kg|lb)?$", n):
-                  notes = n or None
+                  notes=n or None
               s={}
               if reps is not None: s["reps"]=int(reps)
               if weight is not None: s["weight"]=weight
               if notes: s["notes"]=notes
               if s: sets.append(s)
+
             if sets:
               tv=0.0; any_tv=False
               for s in sets:
                 if s.get("weight") is not None and s.get("reps") is not None:
                   tv += float(s["weight"]) * int(s["reps"]); any_tv=True
-              workouts.push({ "exercise": name, "sets": sets, "total_volume": round(tv,2) if any_tv else null })
+              workouts.append({"exercise": name, "sets": sets, "total_volume": round(tv,2) if any_tv else None})
 
-          const day = { "date": date_str, "workouts": workouts, "source": "jefit_playwright" }
+          day_obj={"date": date_str, "workouts": workouts, "source": "jefit_playwright"}
           Path("docs/jefit/days").mkdir(parents=True, exist_ok=True)
-          Path(f"docs/jefit/days/{date_str}.json").write_text(json.dumps(day, indent=2), encoding="utf-8")
-          Path("docs/jefit/daily.json").write_text(json.dumps(day, indent=2), encoding="utf-8")
+          Path(f"docs/jefit/days/{date_str}.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
+          Path("docs/jefit/daily.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
 
-          hist_p = Path("docs/jefit/history.json")
+          # upsert history
+          hist_p=Path("docs/jefit/history.json")
           hist=[]
           if hist_p.exists():
             try: hist=json.loads(hist_p.read_text())
             except: hist=[]
-          hist=[h for h in hist if h.get("date") != date_str]
-          hist.append(day)
-          hist = sorted(hist, key=lambda x: x["date"], reverse=True)[:180]
+          hist=[h for h in hist if h.get("date")!=date_str]
+          hist.append(day_obj)
+          hist=sorted(hist,key=lambda x: x["date"], reverse=True)[:180]
           hist_p.write_text(json.dumps(hist, indent=2), encoding="utf-8")
-          print(json.dumps({ "date": date_str, "exercises": len(workouts) }))
+          print(json.dumps({"date": date_str, "exercises": len(workouts)}))
           PY
 
       - name: Configure Git user
@@ -278,7 +226,7 @@ jobs:
         run: |
           if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
             git add docs/jefit
-            git commit -m "chore: jefit day sync (playwright traced)"
+            git commit -m "chore: jefit day sync (playwright)"
             git push
           else
             echo "No changes to commit."
