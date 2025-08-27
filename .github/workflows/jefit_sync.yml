@@ -2,11 +2,11 @@ name: JEFIT Daily Sync (Playwright login -> scrape -> JSON)
 
 on:
   schedule:
-    - cron: "00 3 * * *"   # daily 05:50 UTC
+    - cron: "50 5 * * *"   # daily 05:50 UTC
   workflow_dispatch:
     inputs:
       date:
-        description: "Date to fetch (YYYY-MM-DD). Leave blank to fetch yesterday (Europe/London)."
+        description: "Date to fetch (YYYY-MM-DD). Leave blank = yesterday (Europe/London)."
         required: false
         default: ""
 
@@ -30,7 +30,7 @@ jobs:
           npm i playwright@1
           npx playwright install --with-deps chromium
 
-      - name: Login and fetch history (robust selectors + artefacts)
+      - name: Login and fetch history (robust, no idle wait)
         env:
           JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
           JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
@@ -71,67 +71,50 @@ jobs:
 
             const page = await ctx.newPage();
 
-            // 1) Go to login
-            await page.goto('https://www.jefit.com/login/', { waitUntil: 'domcontentloaded', timeout: 45000 });
+            // 1) Go to login on the bare domain (matches your screenshot)
+            const LOGIN_URL = 'https://jefit.com/login/';
+            await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
             fs.writeFileSync('docs/jefit/raw/login-page.html', await page.content());
             await page.screenshot({ path: 'docs/jefit/raw/login-loaded.png', fullPage: true });
 
-            // Cookie banner (common OneTrust id)
+            // Dismiss cookie banner if present (OneTrust)
             const consent = await page.$('#onetrust-accept-btn-handler');
             if (consent) { try { await consent.click({ timeout: 2000 }); } catch(_){} }
 
-            // Some flows hide email form behind a “Sign in with Email” button/link
-            const emailOpeners = [
-              'button:has-text("Sign in with Email")',
-              'button:has-text("Log in with Email")',
-              'button:has-text("Continue with Email")',
-              'a:has-text("Sign in with Email")',
-              'a:has-text("Log in with Email")',
-              'a:has-text("Continue with Email")'
-            ];
-            for (const sel of emailOpeners) {
-              const btn = await page.$(sel);
-              if (btn) {
-                try {
-                  await Promise.all([
-                    page.waitForLoadState('domcontentloaded', { timeout: 30000 }),
-                    btn.click({ timeout: 3000 })
-                  ]);
-                  break;
-                } catch(_) {}
-              }
-            }
+            // 2) Wait for email/username + password fields – broaden selectors
+            const emailSel =
+              'input[type="email"], input[name="email"], input[name="username"], input[placeholder*="Username" i], input[placeholder*="email" i]';
+            const passSel =
+              'input[type="password"], input[name="password"], input[placeholder*="Password" i]';
 
-            // 2) Wait for actual inputs rendered by Next.js
-            const emailSel = 'input[type="email"], input[name="email"], input[name="username"], #email';
-            const passSel  = 'input[type="password"], input[name="password"], #password';
             await page.waitForSelector(emailSel, { timeout: 30000 });
             await page.waitForSelector(passSel,  { timeout: 30000 });
 
-            // Fill and submit
+            // Fill creds
             await page.fill(emailSel, process.env.JEFIT_USERNAME || '');
             await page.fill(passSel,  process.env.JEFIT_PASSWORD || '');
-            const submit = await page.$('button[type="submit"], input[type="submit"], button:has-text("Log in"), button:has-text("Sign in")');
+
+            // Click the blue "Log In" (be liberal)
+            const submit =
+              await page.$('button:has-text("Log In"), button[type="submit"], input[type="submit"]');
             if (submit) {
-              await Promise.all([
-                page.waitForLoadState('networkidle', { timeout: 45000 }),
-                submit.click()
-              ]);
+              // Do NOT wait for networkidle – some apps never reach idle
+              await submit.click({ timeout: 10000 }).catch(()=>{});
             } else {
-              await Promise.all([
-                page.waitForLoadState('networkidle', { timeout: 45000 }),
-                page.press(passSel, 'Enter')
-              ]);
+              await page.press(passSel, 'Enter').catch(()=>{});
             }
 
-            // 3) Navigate to history page for the target date
-            const histUrl = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
-            await page.goto(histUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(()=>{});
-            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, await page.content());
+            // 3) Immediately navigate to the history page for the target date
+            const HIST_URL = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
+            await page.goto(HIST_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
+            // give JS a second to render; then dump the content regardless
+            await page.waitForTimeout(1500);
+
+            const histHtml = await page.content();
+            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, histHtml);
             await page.screenshot({ path: `docs/jefit/raw/history-${dateStr}.png`, fullPage: true });
 
-            // Save cookies for debugging
+            // Save cookies for diagnostics
             const cookiesPath = 'docs/jefit/raw/cookies.json';
             fs.mkdirSync(path.dirname(cookiesPath), { recursive: true });
             fs.writeFileSync(cookiesPath, JSON.stringify(await ctx.cookies(), null, 2));
@@ -239,6 +222,7 @@ jobs:
           Path(f"docs/jefit/days/{date_str}.json").write_text(json.dumps(day_obj, indent=2), encoding='utf-8')
           Path("docs/jefit/daily.json").write_text(json.dumps(day_obj, indent=2), encoding='utf-8')
 
+          # upsert history
           hist_p = Path("docs/jefit/history.json")
           hist=[]
           if hist_p.exists():
@@ -260,7 +244,7 @@ jobs:
         run: |
           if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
             git add docs/jefit
-            git commit -m "chore: jefit day sync (playwright)"
+            git commit -m "chore: jefit day sync (playwright bare domain)"
             git push
           else
             echo "No changes to commit."
