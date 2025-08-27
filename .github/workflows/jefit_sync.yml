@@ -1,253 +1,167 @@
-name: JEFIT Daily Sync (Playwright login -> scrape -> JSON)
+name: JEFIT Sync (history scraper)
 
 on:
-  schedule:
-    - cron: "50 5 * * *"   # daily 05:50 UTC
   workflow_dispatch:
     inputs:
       date:
-        description: "Date to fetch (YYYY-MM-DD). Leave blank = yesterday (Europe/London)."
+        description: "Date to fetch (YYYY-MM-DD). Leave blank for today."
         required: false
         default: ""
+  schedule:
+    # 18:40 UK ~ 17:40 UTC in winter; adjust to your preference
+    - cron: "40 17 * * *"
 
 permissions:
   contents: write
 
 jobs:
-  jefit:
+  scrape:
     runs-on: ubuntu-latest
+    env:
+      # required repo secrets
+      JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
+      JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # --- Node + Playwright
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install Playwright
-        run: |
-          npm init -y
-          npm i playwright@1
-          npx playwright install --with-deps chromium
-
-      - name: Login and fetch history (robust selectors, no idle wait)
-        env:
-          JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
-          JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
-          INPUT_DATE: ${{ github.event.inputs.date }}
-        run: |
-          node - <<'JS'
-          const fs = require('fs');
-          const path = require('path');
-          const { chromium } = require('playwright');
-
-          function z(n){return `${n}`.padStart(2,'0')}
-          function ymd(d){return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
-          const envDate = (process.env.INPUT_DATE || '').trim();
-          const now = new Date();
-          const yest = new Date(now.getTime() - 24*3600*1000);
-          const dateStr = envDate || ymd(yest);
-
-          (async () => {
-            fs.mkdirSync('docs/jefit/raw', { recursive: true });
-
-            const browser = await chromium.launch({
-              headless: true,
-              args: [
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled'
-              ]
-            });
-            const ctx = await browser.newContext({
-              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari',
-              locale: 'en-GB',
-              viewport: { width: 1366, height: 768 }
-            });
-            await ctx.addInitScript(() => {
-              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            });
-
-            const page = await ctx.newPage();
-
-            // 1) Go to login on the bare domain (matches your screenshot)
-            const LOGIN_URL = 'https://jefit.com/login/';
-            await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            fs.writeFileSync('docs/jefit/raw/login-page.html', await page.content());
-            await page.screenshot({ path: 'docs/jefit/raw/login-loaded.png', fullPage: true });
-
-            // Dismiss cookie banner if present (OneTrust)
-            const consent = await page.$('#onetrust-accept-btn-handler');
-            if (consent) { try { await consent.click({ timeout: 2000 }); } catch(_){} }
-
-            // 2) Wait for inputs actually in your screenshot
-            const emailSel = 'input[name="username"], input[name="email"], input[type="email"]';
-            const passSel  = 'input[name="password"], input[type="password"]';
-            await page.waitForSelector(emailSel, { timeout: 30000 });
-            await page.waitForSelector(passSel,  { timeout: 30000 });
-
-            // Fill and click the visible "Log In" button inside the form
-            await page.fill(emailSel, process.env.JEFIT_USERNAME || '');
-            await page.fill(passSel,  process.env.JEFIT_PASSWORD || '');
-            const loginBtn = await page.$('form button:has-text("Log In"), button:has-text("Log In"), input[type="submit"]');
-            if (loginBtn) {
-              await loginBtn.click({ timeout: 10000 }).catch(()=>{});
-            } else {
-              await page.press(passSel, 'Enter').catch(()=>{});
-            }
-
-            // 2.1) Don't wait for networkidle (SPAs rarely settle).
-            // Instead wait briefly for either a redirect into /my-jefit/ or a sign we are still on login.
-            try {
-              await Promise.race([
-                page.waitForURL(url => /\/my-jefit\//.test(url.toString()), { timeout: 15000 }),
-                page.waitForSelector('a[href*="lostpw"], a[href*="login"]', { timeout: 15000 })
-              ]);
-            } catch (_) {
-              // continue, we will navigate directly to the history page anyway
-            }
-
-            // 3) Navigate straight to the history page for the target date
-            const HIST_URL = `https://www.jefit.com/my-jefit/progress/history?date=${dateStr}`;
-            await page.goto(HIST_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-            // Give the client a moment to render; then dump the content regardless
-            await page.waitForTimeout(1500);
-
-            const histHtml = await page.content();
-            fs.writeFileSync(`docs/jefit/raw/history-${dateStr}.html`, histHtml);
-            await page.screenshot({ path: `docs/jefit/raw/history-${dateStr}.png`, fullPage: true });
-
-            // Save cookies for diagnostics
-            const cookiesPath = 'docs/jefit/raw/cookies.json';
-            fs.mkdirSync(path.dirname(cookiesPath), { recursive: true });
-            fs.writeFileSync(cookiesPath, JSON.stringify(await ctx.cookies(), null, 2));
-
-            await browser.close();
-          })().catch(e => { console.error(e); process.exit(1); });
-          JS
-
-      # --- Python parser
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install beautifulsoup4 lxml
-
-      - name: Parse saved HTML -> JSON
-        env:
-          INPUT_DATE: ${{ github.event.inputs.date }}
-        run: |
-          python - << 'PY'
-          import os, re, json
-          from datetime import datetime, timedelta
-          from pathlib import Path
-          from bs4 import BeautifulSoup
-
-          def ymd(d): return d.strftime('%Y-%m-%d')
-          env_date = (os.environ.get('INPUT_DATE') or '').strip()
-          date_str = env_date or ymd(datetime.utcnow() - timedelta(days=1))
-
-          raw = Path(f"docs/jefit/raw/history-{date_str}.html")
-          if not raw.exists():
-            print("No history HTML saved (login likely blocked)."); raise SystemExit(1)
-
-          html = raw.read_text(encoding='utf-8', errors='ignore')
-          soup = BeautifulSoup(html, 'lxml')
-
-          def clean(t): return re.sub(r"\s+"," ", (t or "").strip())
-          def to_float(x):
-            if x is None: return None
-            s = re.sub(r"[^\d\.\-]", "", str(x))
-            try: return float(s) if s else None
-            except: return None
-
-          workouts, tables = [], []
-          for table in soup.find_all("table"):
-            ths = [clean(th.get_text()) for th in table.find_all("th")]
-            if not ths:
-              first = table.find("tr")
-              if first:
-                ths = [clean(td.get_text()) for td in first.find_all(["th","td"])]
-            header = " ".join(ths).lower()
-            if any(k in header for k in ["set","reps"]) and any(k in header for k in ["weight","kg","lb"]):
-              tables.append(table)
-
-          def find_exercise_name(node):
-            cur=node
-            for _ in range(6):
-              cur = cur.find_previous(["h1","h2","h3","h4","strong","b","div","span"])
-              if not cur: break
-              txt = clean(cur.get_text())
-              if txt and len(txt) <= 80 and not re.search(r"(set|reps|weight|workout|date|history|edit|delete)", txt, re.I):
-                return txt
-            return "Exercise"
-
-          for table in tables:
-            name = find_exercise_name(table)
-            rows = table.find_all("tr")
-            if not rows: continue
-
-            def is_header(tr):
-              cells = [clean(td.get_text()) for td in tr.find_all(["th","td"])]
-              t = " ".join(cells).lower()
-              return ("set" in t and "rep" in t) or ("weight" in t)
-
-            start = 1 if rows and is_header(rows[0]) else 0
-            sets=[]
-            for tr in rows[start:]:
-              tds = [clean(td.get_text()) for td in tr.find_all("td")]
-              if not tds: continue
-              reps=None; weight=None; notes=None
-              if len(tds)>=2: reps = to_float(tds[1])
-              if len(tds)>=3: weight = to_float(tds[2])
-              if len(tds)>=4:
-                n = tds[-1]
-                if not re.match(r"^\d+(\.\d+)?\s*(kg|lb)?$", n):
-                  notes = n or None
-              s={}
-              if reps is not None: s["reps"]=int(reps)
-              if weight is not None: s["weight"]=weight
-              if notes: s["notes"]=notes
-              if s: sets.append(s)
-
-            if sets:
-              tv=0.0; any_tv=False
-              for s in sets:
-                if s.get("weight") is not None and s.get("reps") is not None:
-                  tv += float(s["weight"]) * int(s["reps"]); any_tv=True
-              workouts.append({"exercise": name, "sets": sets, "total_volume": round(tv,2) if any_tv else None})
-
-          day_obj = {"date": date_str, "workouts": workouts, "source": "jefit_playwright"}
-          Path("docs/jefit/days").mkdir(parents=True, exist_ok=True)
-          Path(f"docs/jefit/days/{date_str}.json").write_text(json.dumps(day_obj, indent=2), encoding='utf-8')
-          Path("docs/jefit/daily.json").write_text(json.dumps(day_obj, indent=2), encoding='utf-8')
-
-          # upsert history
-          hist_p = Path("docs/jefit/history.json")
-          hist=[]
-          if hist_p.exists():
-            try: hist=json.loads(hist_p.read_text())
-            except: hist=[]
-          hist=[h for h in hist if h.get("date") != date_str]
-          hist.append(day_obj)
-          hist = sorted(hist, key=lambda x: x["date"], reverse=True)[:180]
-          hist_p.write_text(json.dumps(hist, indent=2), encoding='utf-8')
-          print(json.dumps({"date": date_str, "exercises": len(workouts)}))
-          PY
-
-      - name: Configure Git user
+      - name: Set Git user
         run: |
           git config --global user.name  "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Commit JEFIT files
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright (Chromium only)
         run: |
-          if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
-            git add docs/jefit
-            git commit -m "chore: jefit day sync (selectors tuned)"
+          npm -y init >/dev/null 2>&1 || true
+          npm i playwright@1
+          npx playwright install --with-deps chromium
+
+      - name: Scrape JEFIT history (stay on jefit.com)
+        env:
+          REQ_DATE: ${{ github.event.inputs.date }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { chromium, devices } = require('playwright');
+
+          (async () => {
+            const username = process.env.JEFIT_USERNAME || "";
+            const password = process.env.JEFIT_PASSWORD || "";
+            if (!username || !password) {
+              console.error("❌ Missing JEFIT_USERNAME or JEFIT_PASSWORD secrets");
+              process.exit(1);
+            }
+
+            // Resolve date
+            function pad(n){return String(n).padStart(2,'0')}
+            const inDate = (process.env.REQ_DATE || "").trim();
+            const today = new Date();
+            const yyyy = today.getFullYear(), mm = pad(today.getMonth()+1), dd = pad(today.getDate());
+            const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(inDate) ? inDate : `${yyyy}-${mm}-${dd}`;
+
+            // Target URLs - single host (no www)
+            const BASE = 'https://jefit.com';
+            const LOGIN_URL = `${BASE}/login/`;
+            const HIST_URL  = `${BASE}/my-jefit/progress/history?date=${dateStr}`;
+
+            // Output paths
+            const rawDir = path.join('docs','jefit','raw');
+            fs.mkdirSync(rawDir, { recursive: true });
+            const outFile = path.join(rawDir, `history-${dateStr}.html`);
+            const cookieDump = path.join(rawDir, 'cookies.json');
+
+            const browser = await chromium.launch({ headless: true });
+            const context = await browser.newContext({
+              userAgent: devices['Desktop Chrome'].userAgent,
+              viewport: { width: 1366, height: 900 }
+            });
+            const page = await context.newPage();
+
+            // Helper: wait network idle-ish
+            async function settle() {
+              try { await page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+            }
+
+            console.log('➡️  Going to login…', LOGIN_URL);
+            await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
+            await settle();
+
+            // Fill credentials (selectors kept tolerant to HTML changes)
+            const userSel = 'input[name="username"], input[id*="username"], input[placeholder*="Username" i], input[placeholder*="email" i]';
+            const passSel = 'input[name="password"], input[id*="password"], input[type="password"]';
+            const btnSel  = 'button:has-text("Log In"), button:has-text("Sign In"), input[type="submit"]';
+
+            // Ensure fields are present
+            await page.waitForSelector(userSel, { timeout: 15000 });
+            await page.fill(userSel, username, { timeout: 10000 });
+            await page.fill(passSel, password, { timeout: 10000 });
+
+            // Click login
+            const clickTarget = await page.$(btnSel);
+            if (clickTarget) {
+              await clickTarget.click({ timeout: 10000 });
+            } else {
+              // fallback: press Enter in password
+              await page.press(passSel, 'Enter').catch(()=>{});
+            }
+            await settle();
+
+            // If still on login, try one more gentle nudge
+            const stillOnLogin = await page.$('h1:has-text("Log In")');
+            if (stillOnLogin) {
+              await page.press(passSel, 'Enter').catch(()=>{});
+              await settle();
+            }
+
+            // Small cookie diagnostic — helps confirm same-host auth
+            const jar = await context.cookies();
+            const diag = {
+              count: jar.length,
+              sample: jar.slice(0, 10).map(c => ({ domain: c.domain, name: c.name, httpOnly: c.httpOnly, secure: c.secure }))
+            };
+            fs.writeFileSync(cookieDump, JSON.stringify(diag, null, 2));
+            console.log('🍪 cookie sample:', diag);
+
+            // Navigate to history (same host)
+            console.log('➡️  Visiting history:', HIST_URL);
+            await page.goto(HIST_URL, { waitUntil: 'domcontentloaded' });
+            await settle();
+
+            // If we still got bounced to login, bail with a helpful message
+            const loginMarker = await page.$('h1:has-text("Log In")');
+            if (loginMarker) {
+              console.error('❌ Looks like we are still on the login page. Likely auth cookie mismatch.');
+              console.error('    Check that both login and history are on the SAME host (we use jefit.com).');
+              console.error('    See cookies.json for a quick diagnostic.');
+              await browser.close();
+              process.exit(2);
+            }
+
+            // Save page HTML
+            const html = await page.content();
+            fs.writeFileSync(outFile, html);
+            console.log(`✅ Saved: ${outFile}`);
+
+            await browser.close();
+            process.exit(0);
+          })().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Commit scraped page
+        run: |
+          if [[ -n "$(git status --porcelain docs/jefit/raw || true)" ]]; then
+            git add docs/jefit/raw
+            git commit -m "chore(jefit): snapshot history page"
             git push
           else
             echo "No changes to commit."
