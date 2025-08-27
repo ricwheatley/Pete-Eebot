@@ -1,0 +1,278 @@
+name: JEFIT Daily Sync (login -> scrape -> JSON)
+
+on:
+  schedule:
+    - cron: "50 5 * * *"    # daily 05:50 UTC
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date to fetch (YYYY-MM-DD). Leave blank to fetch yesterday (Europe/London)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  jefit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 lxml
+
+      - name: Login, fetch, parse
+        env:
+          JEFIT_USERNAME: ${{ secrets.JEFIT_USERNAME }}
+          JEFIT_PASSWORD: ${{ secrets.JEFIT_PASSWORD }}
+          INPUT_DATE: ${{ github.event.inputs.date }}
+          LOGIN_URL: ${{ vars.JEFIT_LOGIN_URL }}
+          HISTORY_URL_TMPL: ${{ vars.JEFIT_HISTORY_URL_TEMPLATE }}
+        run: |
+          set -euo pipefail
+          python - << 'PY'
+          import os, re, sys, json, time
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          import requests
+          from bs4 import BeautifulSoup
+
+          # --- config
+          login_url = os.environ.get("LOGIN_URL") or "https://www.jefit.com/login/"
+          hist_tmpl = os.environ.get("HISTORY_URL_TMPL") or "https://www.jefit.com/my-jefit/progress/history?date={date}"
+          username  = os.environ.get("JEFIT_USERNAME","").strip()
+          password  = os.environ.get("JEFIT_PASSWORD","").strip()
+          in_date   = (os.environ.get("INPUT_DATE") or "").strip()
+
+          if not username or not password:
+              print("Missing JEFIT_USERNAME or JEFIT_PASSWORD secrets."); sys.exit(1)
+
+          # Determine date (use yesterday UK by default)
+          if in_date:
+              date_str = in_date
+          else:
+              # assume runner on UTC; we want yesterday Europe/London
+              date_str = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+          # mkdirs
+          raw_dir   = Path("docs/jefit/raw"); raw_dir.mkdir(parents=True, exist_ok=True)
+          day_dir   = Path("docs/jefit/days"); day_dir.mkdir(parents=True, exist_ok=True)
+
+          s = requests.Session()
+          s.headers.update({
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "en-GB,en;q=0.9",
+              "Referer": login_url,
+          })
+
+          # --- 1) GET login page (to capture cookies + any CSRF tokens)
+          r = s.get(login_url, timeout=45)
+          r.raise_for_status()
+          login_html = r.text
+          (raw_dir / "login-page.html").write_text(login_html, encoding="utf-8")
+
+          soup = BeautifulSoup(login_html, "lxml")
+          # Find login form: look for form whose action contains "login"
+          form = None
+          for f in soup.find_all("form"):
+              action = (f.get("action") or "").lower()
+              if "login" in action:
+                  form = f; break
+          if form is None:
+              # if no obvious login form, take first form
+              forms = soup.find_all("form")
+              if forms: form = forms[0]
+
+          # Assemble payload: include hidden inputs, plus username/password fields by best guess
+          payload = {}
+          if form:
+              for inp in form.find_all("input"):
+                  name = inp.get("name")
+                  if not name: continue
+                  val = inp.get("value","")
+                  payload[name] = val
+
+              # Try to locate username/email field
+              uname_field = None
+              for k in payload.keys():
+                  if re.search(r"(user|email|login)", k, re.I):
+                      uname_field = k; break
+              if not uname_field:
+                  uname_field = "email"
+
+              # Try to locate password field
+              pwd_field = None
+              for inp in form.find_all("input"):
+                  if inp.get("type","").lower() == "password":
+                      pwd_field = inp.get("name"); break
+              if not pwd_field:
+                  pwd_field = "password"
+
+              payload[uname_field] = username
+              payload[pwd_field]   = password
+
+              # Determine POST URL
+              action = form.get("action") or login_url
+              if not action.startswith("http"):
+                  # make absolute
+                  from urllib.parse import urljoin
+                  action = urljoin(login_url, action)
+              post_url = action
+          else:
+              # fallback: guess a common endpoint
+              post_url = login_url
+
+          # --- 2) POST credentials
+          time.sleep(0.8)  # be polite
+          r2 = s.post(post_url, data=payload, timeout=45, allow_redirects=True)
+          (raw_dir / "login-post.html").write_text(r2.text, encoding="utf-8")
+
+          # Heuristic check: if the response or subsequent GET of history still contains a login form, we're not logged in
+          def looks_logged_in(html: str) -> bool:
+              if re.search(r"logout|sign out", html, re.I): return True
+              # if there is no password field anywhere, probably logged in
+              if not re.search(r'type=["\']password["\']', html, re.I): return True
+              return False
+
+          if not looks_logged_in(r2.text):
+              # Some sites redirect after POST without rendering account page; check by hitting history
+              pass
+
+          # --- 3) GET history page for date
+          hist_url = hist_tmpl.format(date=date_str)
+          time.sleep(0.8)
+          rh = s.get(hist_url, timeout=45)
+          (raw_dir / f"history-{date_str}.html").write_text(rh.text, encoding="utf-8")
+
+          if not rh.ok:
+              print(f"History fetch failed HTTP {rh.status_code}")
+              sys.exit(1)
+
+          # If still looks like login page, bail
+          if not looks_logged_in(rh.text):
+              print("Login likely failed - history page still shows a login form.")
+              sys.exit(1)
+
+          # --- 4) Parse exercises/sets
+          soup = BeautifulSoup(rh.text, "lxml")
+
+          def clean(t): 
+              return re.sub(r"\s+"," ", (t or "").strip())
+
+          def to_float(x):
+              if x is None: return None
+              s = re.sub(r"[^\d\.\-]", "", str(x))
+              try: return float(s) if s else None
+              except: return None
+
+          workouts = []
+          tables = []
+          for table in soup.find_all("table"):
+              ths = [clean(th.get_text()) for th in table.find_all("th")]
+              if not ths:
+                  first_row = table.find("tr")
+                  if first_row:
+                      ths = [clean(td.get_text()) for td in first_row.find_all(["th","td"])]
+              header = " ".join(ths).lower()
+              if any(k in header for k in ["set","reps"]) and any(k in header for k in ["weight","kg","lb"]):
+                  tables.append(table)
+
+          def find_exercise_name(node):
+              cur = node
+              for _ in range(6):
+                  cur = cur.find_previous(["h1","h2","h3","h4","strong","b","div","span"])
+                  if not cur: break
+                  txt = clean(cur.get_text())
+                  if txt and len(txt) <= 80 and not re.search(r"(set|reps|weight|workout|date|history|edit|delete)", txt, re.I):
+                      return txt
+              return "Exercise"
+
+          for table in tables:
+              name = find_exercise_name(table)
+              rows = table.find_all("tr")
+              if not rows: 
+                  continue
+
+              def is_header(tr):
+                  cells = [clean(td.get_text()) for td in tr.find_all(["th","td"])]
+                  t = " ".join(cells).lower()
+                  return ("set" in t and "rep" in t) or ("weight" in t)
+
+              start = 1 if rows and is_header(rows[0]) else 0
+              sets=[]
+              for tr in rows[start:]:
+                  tds = [clean(td.get_text()) for td in tr.find_all("td")]
+                  if not tds: continue
+                  reps=None; weight=None; notes=None
+
+                  # try simple positions first
+                  if len(tds) >= 2:
+                      reps = to_float(tds[1])
+                  if len(tds) >= 3:
+                      weight = to_float(tds[2])
+                  if len(tds) >= 4:
+                      n = tds[-1]
+                      if not re.match(r"^\d+(\.\d+)?\s*(kg|lb)?$", n):
+                          notes = n or None
+
+                  s={}
+                  if reps is not None: s["reps"]=int(reps)
+                  if weight is not None: s["weight"]=weight
+                  if notes: s["notes"]=notes
+                  if s: sets.append(s)
+
+              if sets:
+                  total_volume = None
+                  if any("weight" in s for s in sets) and any("reps" in s for s in sets):
+                      tv=0.0
+                      for s in sets:
+                          if "weight" in s and "reps" in s and s["weight"] is not None and s["reps"] is not None:
+                              tv += float(s["weight"]) * int(s["reps"])
+                      total_volume = round(tv,2)
+
+                  workouts.append({
+                      "exercise": name,
+                      "sets": sets,
+                      "total_volume": total_volume
+                  })
+
+          # write JSONs
+          day_obj = {"date": date_str, "workouts": workouts, "source": "jefit_html_login"}
+          (day_dir / f"{date_str}.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
+          Path("docs/jefit/daily.json").write_text(json.dumps(day_obj, indent=2), encoding="utf-8")
+
+          # history
+          hist_p = Path("docs/jefit/history.json")
+          hist=[]
+          if hist_p.exists():
+              try: hist=json.loads(hist_p.read_text())
+              except: hist=[]
+          hist=[h for h in hist if h.get("date") != date_str]
+          hist.append(day_obj)
+          hist = sorted(hist, key=lambda x: x["date"], reverse=True)[:180]
+          hist_p.write_text(json.dumps(hist, indent=2), encoding="utf-8")
+
+          print(json.dumps({"date": date_str, "exercises": len(workouts)}))
+          PY
+
+      - name: Commit JEFIT files
+        run: |
+          if [[ -n "$(git status --porcelain docs/jefit 2>/dev/null || true)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add docs/jefit
+            git commit -m "chore: jefit day sync (login)"
+            git push
+          else
+            echo "No changes to commit."
+          fi
