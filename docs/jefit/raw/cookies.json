@@ -1,0 +1,112 @@
+[
+  {
+    "name": "AMP_MKTG_b9d2bc0388",
+    "value": "JTdCJTdE",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1787849934,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_rdt_uuid",
+    "value": "1756313934716.5111b8ab-b8b8-4879-adb9-f881cfb942ba",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1764089934,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Strict"
+  },
+  {
+    "name": "AMP_b9d2bc0388",
+    "value": "JTdCJTIyZGV2aWNlSWQlMjIlM0ElMjJiNzI2YzUzMi1kZjg0LTQxM2UtODI5YS01MGEzNTExZTcwMGIlMjIlMkMlMjJzZXNzaW9uSWQlMjIlM0ExNzU2MzEzOTM0NjA2JTJDJTIyb3B0T3V0JTIyJTNBZmFsc2UlMkMlMjJsYXN0RXZlbnRUaW1lJTIyJTNBMTc1NjMxMzkzNDgxNCUyQyUyMmxhc3RFdmVudElkJTIyJTNBMyUyQyUyMnBhZ2VDb3VudGVyJTIyJTNBMiU3RA==",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1787849934,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_ga",
+    "value": "GA1.1.975083954.1756313935",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1790873934.939559,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "lastvisit",
+    "value": "1756313934",
+    "domain": "www.jefit.com",
+    "path": "/",
+    "expires": 1787849934.980616,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "lastactivity",
+    "value": "1756313934",
+    "domain": "www.jefit.com",
+    "path": "/",
+    "expires": 1787849934.980645,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "sessionhash",
+    "value": "97c920bb5640f82023fb2fdc05c300c4",
+    "domain": "www.jefit.com",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_ga_288Z33GYQ7",
+    "value": "GS2.1.s1756313934$o1$g0$t1756313934$j60$l0$h0",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1790873934.985122,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_fbp",
+    "value": "fb.1.1756313935079.540011309531265402",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1764089935,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "_hjSessionUser_5088890",
+    "value": "eyJpZCI6ImQzNTU5ZTM5LTE0NTYtNWYxZC04Mjg3LThiMmQ5MDhlMGE2MiIsImNyZWF0ZWQiOjE3NTYzMTM5MzUxNDYsImV4aXN0aW5nIjpmYWxzZX0=",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1787849935,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_hjSession_5088890",
+    "value": "eyJpZCI6IjhjNTAxMDdjLTY0MjUtNDI2ZS04YzEyLTNkZDQ5MTJkY2ZjNSIsImMiOjE3NTYzMTM5MzUxNDcsInMiOjAsInIiOjAsInNiIjowLCJzciI6MCwic2UiOjAsImZzIjoxLCJzcCI6MX0=",
+    "domain": ".jefit.com",
+    "path": "/",
+    "expires": 1756315735,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  }
+]
