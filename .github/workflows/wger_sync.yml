@@ -1,0 +1,121 @@
+name: Wger Workout Sync
+
+on:
+  schedule:
+    - cron: "45 3 * * *" # Runs daily, shortly after Withings/Apple
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Fetch and process wger workout data
+        env:
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          WORKOUT_LOG_CSV: knowledge/workout_log.csv
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          import csv
+          from pathlib import Path
+          from datetime import datetime, timedelta
+          import requests
+
+          API_KEY = os.getenv("WGER_API_KEY")
+          CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv"))
+
+          if not API_KEY:
+              print("❌ WGER_API_KEY secret not found.")
+              exit(1)
+
+          def fetch_workouts(url, headers):
+              response = requests.get(url, headers=headers)
+              response.raise_for_status()
+              return response.json()
+
+          def main():
+              print("🚀 Starting wger sync...")
+              headers = {"Authorization": f"Token {API_KEY}"}
+              
+              # --- 1. Fetch Workout Logs (Training Sessions) ---
+              logs_url = "https://wger.de/api/v2/day/"
+              all_logs = []
+              while logs_url:
+                  data = fetch_workouts(logs_url, headers)
+                  all_logs.extend(data.get('results', []))
+                  logs_url = data.get('next')
+
+              if not all_logs:
+                  print("No workout logs found on wger.")
+                  return
+
+              # --- 2. Process Logs into CSV format ---
+              CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+              header = ['date', 'exercise_name', 'category', 'sets', 'reps', 'weight_kg', 'duration_seconds']
+              
+              # Read existing data to avoid duplicates
+              existing_logs = set()
+              if CSV_PATH.exists():
+                  with open(CSV_PATH, 'r', newline='', encoding='utf-8') as f:
+                      reader = csv.reader(f)
+                      next(reader, None) # skip header
+                      for row in reader:
+                          if row:
+                            existing_logs.add(tuple(row))
+
+              # Add new logs
+              new_rows_added = 0
+              with open(CSV_PATH, 'a', newline='', encoding='utf-8') as f:
+                  writer = csv.writer(f)
+                  if not existing_logs:
+                    writer.writerow(header)
+
+                  for log in sorted(all_logs, key=lambda x: x['training_day']):
+                      log_date = log['training_day']
+                      for item in log.get('sets', []):
+                          row = (
+                              log_date,
+                              item.get('exercise_name', 'N/A'),
+                              item.get('exercise_category_name', 'N/A'),
+                              item.get('sets', ''),
+                              item.get('reps', ''),
+                              item.get('weight', ''),
+                              item.get('duration', '')
+                          )
+                          if tuple(map(str, row)) not in existing_logs:
+                              writer.writerow(row)
+                              existing_logs.add(tuple(map(str, row)))
+                              new_rows_added += 1
+
+              print(f"✅ Sync complete. Added {new_rows_added} new workout sets to {CSV_PATH}")
+
+          if __name__ == "__main__":
+              main()
+          PY
+
+      - name: Commit updates
+        run: |
+          if [[ -n "$(git status --porcelain knowledge/workout_log.csv 2>/dev/null)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add knowledge/workout_log.csv
+            git commit -m "chore(wger): sync workout data"
+            git push
+          else
+            echo "No changes to commit from wger sync."
+          fi
