@@ -15,5 +15,29 @@
     "stand_minutes": null,
     "distance_m": null,
     "sleep_minutes": {}
+  },
+  {
+    "source": "apple_shortcut",
+    "date": "2025-08-27",
+    "timezone": "Europe/London",
+    "steps": 2948,
+    "hr_min": 47,
+    "hr_max": 120,
+    "hr_avg": 60,
+    "hr_resting": 50,
+    "exercise_minutes": 6,
+    "calories_active": 343,
+    "calories_resting": 1999,
+    "calories_total": 2342,
+    "stand_minutes": 55,
+    "distance_m": 2166,
+    "sleep_minutes": {
+      "asleep": 362,
+      "awake": 7,
+      "core": 218,
+      "deep": 54,
+      "in_bed": 369,
+      "rem": 90
+    }
   }
 ]
