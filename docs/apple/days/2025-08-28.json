@@ -1,0 +1,17 @@
+{
+  "source": "apple_shortcut",
+  "date": "2025-08-28",
+  "timezone": "Europe/London",
+  "steps": null,
+  "hr_min": null,
+  "hr_max": null,
+  "hr_avg": null,
+  "hr_resting": null,
+  "exercise_minutes": null,
+  "calories_active": null,
+  "calories_resting": null,
+  "calories_total": null,
+  "stand_minutes": null,
+  "distance_m": null,
+  "sleep_minutes": {}
+}
