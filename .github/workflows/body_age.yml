@@ -2,7 +2,7 @@ name: Body Age Calculation
 
 on:
   schedule:
-    - cron: "30 4 * * *"   # shortly after withings_sync
+    - cron: "50 3 * * *"   # shortly after withings_sync
   workflow_dispatch:
 
 permissions:
