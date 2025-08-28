@@ -1,0 +1,100 @@
+name: Apple Activity Sync
+
+on:
+  repository_dispatch:
+    types: [apple-metrics]
+
+permissions:
+  contents: write
+
+jobs:
+  write-apple-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Parse payload and write files
+        id: write
+        shell: bash
+        env:
+          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, json, pathlib
+
+          payload = json.loads(os.environ.get("CLIENT_PAYLOAD","") or "{}")
+          if not payload:
+              print("No payload received"); raise SystemExit(0)
+
+          # ensure required keys
+          date_str = str(payload.get("date"))
+          if not date_str:
+              from datetime import date
+              date_str = str(date.today())
+
+          # clean numbers (remove commas, convert to int/float if possible)
+          def clean_num(v, as_int=True):
+              if v is None: return None
+              if isinstance(v,(int,float)): return int(v) if as_int else float(v)
+              s=str(v).replace(",","")
+              try:
+                  return int(float(s)) if as_int else float(s)
+              except: return None
+
+          out = {
+            "source": payload.get("source","apple_shortcut"),
+            "date": date_str,
+            "timezone": payload.get("timezone","Europe/London"),
+            "steps": clean_num(payload.get("steps")),
+            "hr_min": clean_num(payload.get("hr_min")),
+            "hr_max": clean_num(payload.get("hr_max")),
+            "hr_avg": clean_num(payload.get("hr_avg")),
+            "hr_resting": clean_num(payload.get("hr_resting")),
+            "exercise_minutes": clean_num(payload.get("exercise_minutes")),
+            "calories_active": clean_num(payload.get("calories_active")),
+            "calories_resting": clean_num(payload.get("calories_resting")),
+            "calories_total": clean_num(payload.get("calories_total")),
+            "stand_minutes": clean_num(payload.get("stand_minutes")),
+            "distance_m": clean_num(payload.get("distance_m")),
+            "sleep_minutes": clean_num(payload.get("sleep_minutes"))
+          }
+
+          days_dir = pathlib.Path("docs/apple/days"); days_dir.mkdir(parents=True, exist_ok=True)
+          daily_path = pathlib.Path("docs/apple/daily.json")
+          day_path   = days_dir / f"{date_str}.json"
+
+          day_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+          daily_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+
+          # rebuild history
+          hist_p = pathlib.Path("docs/apple/history.json")
+          history=[]
+          if hist_p.exists():
+              try: history=json.loads(hist_p.read_text())
+              except: history=[]
+          history=[h for h in history if h.get("date")!=date_str]
+          history.append(out)
+          history=sorted(history,key=lambda x:x["date"],reverse=True)[:90]
+          hist_p.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+          print(json.dumps(out))
+          PY
+
+      - name: Commit Apple JSON
+        run: |
+          if [[ -n "$(git status --porcelain docs/apple 2>/dev/null || true)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add docs/apple
+            git commit -m "chore: apple shortcut metrics update"
+            git push
+          else
+            echo "No changes to commit."
+          fi
