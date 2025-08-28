@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   schedule:
-    # 4:40 UK ~ 3:40 UTC in winter; adjust to your preference
+    # 5:40 UK ~ 4:40 UTC in winter; adjust to your preference
     - cron: "40 3 * * *"
 
 permissions:
