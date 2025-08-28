@@ -28,25 +28,42 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import os, json, pathlib
+          from datetime import date
 
-          payload = json.loads(os.environ.get("CLIENT_PAYLOAD","") or "{}")
+          payload_raw = os.environ.get("CLIENT_PAYLOAD","")
+          try:
+              payload = json.loads(payload_raw) if payload_raw else {}
+          except json.JSONDecodeError:
+              print("CLIENT_PAYLOAD was not valid JSON")
+              payload = {}
+
           if not payload:
               print("No payload received"); raise SystemExit(0)
 
           # ensure required keys
-          date_str = str(payload.get("date"))
-          if not date_str:
-              from datetime import date
-              date_str = str(date.today())
+          date_str = str(payload.get("date") or date.today())
 
-          # clean numbers (remove commas, convert to int/float if possible)
+          # helpers
           def clean_num(v, as_int=True):
               if v is None: return None
               if isinstance(v,(int,float)): return int(v) if as_int else float(v)
-              s=str(v).replace(",","")
+              s = str(v).replace(",","").strip()
               try:
                   return int(float(s)) if as_int else float(s)
-              except: return None
+              except Exception:
+                  return None
+
+          def clean_sleep(obj):
+              # pass through if already dict-like
+              if isinstance(obj, dict): return obj
+              # if obj was a stringified dict, try to parse
+              if isinstance(obj, str):
+                  try:
+                      maybe = json.loads(obj)
+                      if isinstance(maybe, dict): return maybe
+                  except Exception:
+                      pass
+              return {}
 
           out = {
             "source": payload.get("source","apple_shortcut"),
@@ -63,9 +80,11 @@ jobs:
             "calories_total": clean_num(payload.get("calories_total")),
             "stand_minutes": clean_num(payload.get("stand_minutes")),
             "distance_m": clean_num(payload.get("distance_m")),
-            "sleep_minutes": clean_num(payload.get("sleep_minutes"))
+            # keep nested object intact
+            "sleep_minutes": clean_sleep(payload.get("sleep_minutes")),
           }
 
+          # write artefacts
           days_dir = pathlib.Path("docs/apple/days"); days_dir.mkdir(parents=True, exist_ok=True)
           daily_path = pathlib.Path("docs/apple/daily.json")
           day_path   = days_dir / f"{date_str}.json"
@@ -77,11 +96,13 @@ jobs:
           hist_p = pathlib.Path("docs/apple/history.json")
           history=[]
           if hist_p.exists():
-              try: history=json.loads(hist_p.read_text())
-              except: history=[]
+              try:
+                  history=json.loads(hist_p.read_text(encoding="utf-8"))
+              except Exception:
+                  history=[]
           history=[h for h in history if h.get("date")!=date_str]
           history.append(out)
-          history=sorted(history,key=lambda x:x["date"],reverse=True)[:90]
+          history=sorted(history,key=lambda x:x.get("date",""),reverse=True)[:90]
           hist_p.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
           print(json.dumps(out))
