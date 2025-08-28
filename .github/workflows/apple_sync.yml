@@ -19,29 +19,43 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Parse payload and write files
+      - name: Parse payload.data and write files
         id: write
         shell: bash
         env:
-          CLIENT_PAYLOAD: ${{ toJson(github.event.client_payload) }}
+          # Pass only the nested object to keep under the 10-prop limit
+          CLIENT_PAYLOAD_DATA: ${{ toJson(github.event.client_payload.data) }}
+          # Optional backward-compat, in case sender hasn’t nested yet
+          CLIENT_PAYLOAD_RAW:  ${{ toJson(github.event.client_payload) }}
         run: |
           set -euo pipefail
           python - <<'PY'
           import os, json, pathlib
           from datetime import date
 
-          payload_raw = os.environ.get("CLIENT_PAYLOAD","")
-          try:
-              payload = json.loads(payload_raw) if payload_raw else {}
-          except json.JSONDecodeError:
-              print("CLIENT_PAYLOAD was not valid JSON")
-              payload = {}
+          def load_json_env(name):
+              raw = os.environ.get(name, "")
+              if not raw:
+                  return {}
+              try:
+                  return json.loads(raw)
+              except json.JSONDecodeError:
+                  return {}
 
-          if not payload:
+          data = load_json_env("CLIENT_PAYLOAD_DATA")
+          if not data:
+              # Fallback to old, unnested shape if needed
+              raw = load_json_env("CLIENT_PAYLOAD_RAW")
+              if isinstance(raw, dict) and "data" in raw and isinstance(raw["data"], dict):
+                  data = raw["data"]
+              else:
+                  data = raw
+
+          if not isinstance(data, dict) or not data:
               print("No payload received"); raise SystemExit(0)
 
           # ensure required keys
-          date_str = str(payload.get("date") or date.today())
+          date_str = str(data.get("date") or date.today())
 
           # helpers
           def clean_num(v, as_int=True):
@@ -54,9 +68,7 @@ jobs:
                   return None
 
           def clean_sleep(obj):
-              # pass through if already dict-like
               if isinstance(obj, dict): return obj
-              # if obj was a stringified dict, try to parse
               if isinstance(obj, str):
                   try:
                       maybe = json.loads(obj)
@@ -66,22 +78,21 @@ jobs:
               return {}
 
           out = {
-            "source": payload.get("source","apple_shortcut"),
+            "source": data.get("source","apple_shortcut"),
             "date": date_str,
-            "timezone": payload.get("timezone","Europe/London"),
-            "steps": clean_num(payload.get("steps")),
-            "hr_min": clean_num(payload.get("hr_min")),
-            "hr_max": clean_num(payload.get("hr_max")),
-            "hr_avg": clean_num(payload.get("hr_avg")),
-            "hr_resting": clean_num(payload.get("hr_resting")),
-            "exercise_minutes": clean_num(payload.get("exercise_minutes")),
-            "calories_active": clean_num(payload.get("calories_active")),
-            "calories_resting": clean_num(payload.get("calories_resting")),
-            "calories_total": clean_num(payload.get("calories_total")),
-            "stand_minutes": clean_num(payload.get("stand_minutes")),
-            "distance_m": clean_num(payload.get("distance_m")),
-            # keep nested object intact
-            "sleep_minutes": clean_sleep(payload.get("sleep_minutes")),
+            "timezone": data.get("timezone","Europe/London"),
+            "steps": clean_num(data.get("steps")),
+            "hr_min": clean_num(data.get("hr_min")),
+            "hr_max": clean_num(data.get("hr_max")),
+            "hr_avg": clean_num(data.get("hr_avg")),
+            "hr_resting": clean_num(data.get("hr_resting")),
+            "exercise_minutes": clean_num(data.get("exercise_minutes")),
+            "calories_active": clean_num(data.get("calories_active")),
+            "calories_resting": clean_num(data.get("calories_resting")),
+            "calories_total": clean_num(data.get("calories_total")),
+            "stand_minutes": clean_num(data.get("stand_minutes")),
+            "distance_m": clean_num(data.get("distance_m")),
+            "sleep_minutes": clean_sleep(data.get("sleep_minutes")),
           }
 
           # write artefacts
@@ -92,7 +103,7 @@ jobs:
           day_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
           daily_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
-          # rebuild history
+          # rebuild history (90-day cap)
           hist_p = pathlib.Path("docs/apple/history.json")
           history=[]
           if hist_p.exists():
@@ -114,7 +125,7 @@ jobs:
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add docs/apple
-            git commit -m "chore: apple shortcut metrics update"
+            git commit -m "chore: apple shortcut metrics update (nested payload.data)"
             git push
           else
             echo "No changes to commit."
