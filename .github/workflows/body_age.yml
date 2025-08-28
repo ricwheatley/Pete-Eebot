@@ -1,0 +1,131 @@
+name: Body Age Calculation
+
+on:
+  schedule:
+    - cron: "30 4 * * *"   # shortly after withings_sync
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  body-age:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compute Body Age
+        run: |
+          python - <<'PY'
+          import json, pathlib, datetime
+
+          # load Withings + Apple history
+          def load_hist(p):
+              f=pathlib.Path(p)
+              return json.loads(f.read_text()) if f.exists() else []
+          wh=load_hist("docs/history.json")
+          ah=load_hist("docs/apple/history.json")
+          if not wh or not ah:
+              print("Missing input data"); raise SystemExit(0)
+
+          def to_map(rows): return {r.get("date"):r for r in rows}
+          wm, am = to_map(wh), to_map(ah)
+          dates=sorted(set(wm.keys())|set(am.keys()))[-7:]
+          if not dates: raise SystemExit(0)
+
+          def avg(dkey, src):
+              vals=[]
+              for d in dates:
+                  v=src.get(d,{}).get(dkey)
+                  try:
+                      if v not in (None,""): vals.append(float(v))
+                  except: pass
+              return sum(vals)/len(vals) if vals else None
+
+          weight=avg("weight_kg",wm); bodyfat=avg("body_fat_pct",wm)
+          steps=avg("steps",am); exmin=avg("exercise_minutes",am)
+          c_act=avg("calories_active",am); c_tot=avg("calories_total",am) or ((c_act or 0)+(avg("calories_resting",am) or 0))
+          rhr=avg("hr_resting",am); hravg=avg("hr_avg",am); sleepm=avg("sleep_minutes",am)
+
+          # --- compute subscores (simple transparent rules)
+          # CRF proxy
+          age=44; vo2=None
+          if rhr: vo2=38 -0.15*(age-40) -0.15*((rhr or 60)-60) +0.01*(exmin or 0)
+          if vo2 is None: vo2=35
+          crf=max(0,min(100,( (vo2-20)/(60-20) )*100))
+
+          # Body comp
+          if bodyfat is None: body_comp=50
+          elif bodyfat<=15: body_comp=100
+          elif bodyfat>=30: body_comp=0
+          else: body_comp=(30-bodyfat)/(30-15)*100
+
+          # Activity
+          steps_score=0 if steps is None else max(0,min(100,(steps/12000)*100))
+          ex_score=0 if exmin is None else max(0,min(100,(exmin/30)*100))
+          act=0.6*steps_score+0.4*ex_score
+
+          # Recovery/sleep
+          if sleepm is None: sleep_score=50
+          else:
+              diff=abs(sleepm-450)
+              sleep_score=max(0,min(100,100-(diff/150)*60))
+          if rhr is None: rhr_score=50
+          elif rhr<=55: rhr_score=90
+          elif rhr<=60: rhr_score=80
+          elif rhr<=70: rhr_score=60
+          elif rhr<=80: rhr_score=40
+          else: rhr_score=20
+          recovery=0.66*sleep_score+0.34*rhr_score
+
+          composite=0.40*crf+0.25*body_comp+0.20*act+0.15*recovery
+
+          chrono=44
+          body_age=chrono-0.2*(composite-50)
+          cap_min=chrono-10; cap_applied=False
+          if body_age<cap_min: body_age=cap_min; cap_applied=True
+          age_delta=body_age-chrono
+
+          out={
+            "date": dates[-1],
+            "inputs_window_days":7,
+            "subscores":{"crf":round(crf,1),"body_comp":round(body_comp,1),"activity":round(act,1),"recovery":round(recovery,1)},
+            "composite":round(composite,1),
+            "body_age_years":round(body_age,1),
+            "age_delta_years":round(age_delta,1),
+            "assumptions":{"used_vo2max_direct":False,"cap_minus_10_applied":cap_applied}
+          }
+
+          out_dir=pathlib.Path("docs/analytics"); out_dir.mkdir(parents=True,exist_ok=True)
+          (out_dir/"body_age.json").write_text(json.dumps(out,indent=2),encoding="utf-8")
+
+          hist_p=out_dir/"history.json"
+          hist=[]
+          if hist_p.exists():
+              try: hist=json.loads(hist_p.read_text())
+              except: hist=[]
+          hist=[h for h in hist if h.get("date")!=out["date"]]
+          hist.append(out)
+          hist=sorted(hist,key=lambda x:x["date"])[-180:]
+          hist_p.write_text(json.dumps(hist,indent=2),encoding="utf-8")
+
+          print(json.dumps(out))
+          PY
+
+      - name: Commit Body Age
+        run: |
+          if [[ -n "$(git status --porcelain docs/analytics 2>/dev/null || true)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add docs/analytics
+            git commit -m "chore: body age update"
+            git push
+          else
+            echo "No changes to commit."
+          fi
