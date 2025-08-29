@@ -4,7 +4,7 @@
     "inputs_window_days": 7,
     "subscores": {
       "crf": 47.4,
-      "body_comp": 9.7,
+      "body_comp": 9.6,
       "activity": 22.7,
       "recovery": 73.4
     },
