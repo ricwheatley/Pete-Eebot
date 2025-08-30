@@ -3,21 +3,37 @@ name: Upload workouts to Wger
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "upload (create sessions) or repair (patch null numerics)"
+        required: true
+        default: "upload"
       schedule_json:
-        description: "Path to the schedule JSON (e.g., integrations/wger/wger_workouts_sep2025.json)"
+        description: "Path to the schedule JSON"
         required: true
         default: "integrations/wger/wger_workouts_sep2025.json"
       dry_run:
-        description: "If true, just print what would be uploaded"
+        description: "If true, just print what would be uploaded (upload mode only)"
         required: false
         default: "false"
+  push:
+    paths:
+      - "integrations/wger/*.json"
 
 jobs:
-  upload:
+  run:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Show tree (debug)
+        run: |
+          echo "Repo root:" && ls -la
+          echo "integrations/wger:" && ls -la integrations/wger || true
+
+      - name: Verify uploader exists
+        run: |
+          test -f integrations/wger/wger_uploads.py || (echo "ERROR: integrations/wger/wger_uploads.py not found" && exit 1)
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,22 +45,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Upload schedule to Wger
+      - name: Run (manual dispatch)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
-          # Optional override (e.g., for self-host): set Actions Variable WGER_BASE_URL to "https://yourhost/api/v2"
-          WGER_BASE_URL: ${{ vars.WGER_BASE_URL }}
+          WGER_BASE_URL: ${{ vars.WGER_BASE_URL || 'https://wger.de/api/v2' }}
         run: |
           set -e
-          DRY_ARG=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            DRY_ARG="--dry-run"
+          if [ "${{ github.event.inputs.mode }}" = "repair" ]; then
+            echo "Running REPAIR on ${{ github.event.inputs.schedule_json }} ..."
+            python integrations/wger/wger_uploads.py "${{ github.event.inputs.schedule_json }}" --repair
+          else
+            DRY_ARG=""
+            [ "${{ github.event.inputs.dry_run }}" = "true" ] && DRY_ARG="--dry-run"
+            echo "Running UPLOAD on ${{ github.event.inputs.schedule_json }} (dry-run=$([ -n "$DRY_ARG" ] && echo YES || echo NO)) ..."
+            python integrations/wger/wger_uploads.py "${{ github.event.inputs.schedule_json }}" $DRY_ARG
           fi
 
-          echo "[wger] Base URL: ${WGER_BASE_URL:-https://wger.de/api/v2}"
-          echo "[wger] Dry run: $([ -n "$DRY_ARG" ] && echo YES || echo NO)"
-          echo "[wger] Reading schedule: ${{ github.event.inputs.schedule_json }}"
-
-          python integrations/wger/wger_uploads.py \
-            "${{ github.event.inputs.schedule_json }}" \
-            $DRY_ARG
+      - name: Run (on push to JSONs)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          WGER_BASE_URL: ${{ vars.WGER_BASE_URL || 'https://wger.de/api/v2' }}
+        run: |
+          set -e
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -E '^integrations/wger/.*\.json$' || true)
+          if [ -z "$CHANGED" ]; then
+            CHANGED=$(git show --name-only --pretty="" ${{ github.sha }} | grep -E '^integrations/wger/.*\.json$' || true)
+          fi
+          if [ -z "$CHANGED" ]; then
+            echo "No JSON changes under integrations/wger/. Nothing to upload."
+            exit 0
+          fi
+          for f in $CHANGED; do
+            echo "Uploading $f ..."
+            python integrations/wger/wger_uploads.py "$f"
+          done
