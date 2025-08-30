@@ -1,0 +1,605 @@
+{
+  "plan_name": "Ric \u2014 Phase 1 Block \u2014 Sep 1\u201328, 2025",
+  "start_date": "2025-09-01",
+  "end_date": "2025-09-28",
+  "timezone": "Europe/London",
+  "notes": "Upload only 'weights' and 'class' entries to wger. Blaze is a 45-min HIIT placeholder.",
+  "entries": [
+    {
+      "date": "2025-09-01",
+      "kind": "weights",
+      "title": "Weights \u2014 Lower Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 1,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Lower body strength",
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 3,
+            "reps": "5",
+            "RPE": "7"
+          },
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7"
+          },
+          {
+            "name": "Split Squat",
+            "sets": 3,
+            "reps": "10/leg",
+            "RPE": "7"
+          },
+          {
+            "name": "Calf Raise",
+            "sets": 3,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "45s",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Weeks 1\u20133 build via +1 rep OR +2.5\u20135% load; Week 4 deload (volume -40\u201350%, RPE ~6)."
+      }
+    },
+    {
+      "date": "2025-09-02",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-03",
+      "kind": "weights",
+      "title": "Weights \u2014 Upper Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 1,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Upper body strength",
+        "exercises": [
+          {
+            "name": "DB or Barbell Bench Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Chest-Supported Row",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Overhead Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "10",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Cable Curl",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Deadbug",
+            "sets": 3,
+            "reps": "10/side",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Week 3 add a -10% load back-off set to Squat (Mon) and Press (Wed). Week 4 deload."
+      }
+    },
+    {
+      "date": "2025-09-04",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-05",
+      "kind": "mobility",
+      "title": "Mobility + Steps 10k",
+      "time": null,
+      "duration_min": 30,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-06",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "10:00",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-07",
+      "kind": "recovery",
+      "title": "Active Recovery \u2014 easy walk/cycle 45\u201360 min",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-08",
+      "kind": "weights",
+      "title": "Weights \u2014 Lower Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 2,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Lower body strength",
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 3,
+            "reps": "5",
+            "RPE": "7"
+          },
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7"
+          },
+          {
+            "name": "Split Squat",
+            "sets": 3,
+            "reps": "10/leg",
+            "RPE": "7"
+          },
+          {
+            "name": "Calf Raise",
+            "sets": 3,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "45s",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Weeks 1\u20133 build via +1 rep OR +2.5\u20135% load; Week 4 deload (volume -40\u201350%, RPE ~6)."
+      }
+    },
+    {
+      "date": "2025-09-09",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-10",
+      "kind": "weights",
+      "title": "Weights \u2014 Upper Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 2,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Upper body strength",
+        "exercises": [
+          {
+            "name": "DB or Barbell Bench Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Chest-Supported Row",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Overhead Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "10",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Cable Curl",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Deadbug",
+            "sets": 3,
+            "reps": "10/side",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Week 3 add a -10% load back-off set to Squat (Mon) and Press (Wed). Week 4 deload."
+      }
+    },
+    {
+      "date": "2025-09-11",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-12",
+      "kind": "mobility",
+      "title": "Mobility + Steps 10k",
+      "time": null,
+      "duration_min": 30,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-13",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "10:00",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-14",
+      "kind": "recovery",
+      "title": "Active Recovery \u2014 easy walk/cycle 45\u201360 min",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-15",
+      "kind": "weights",
+      "title": "Weights \u2014 Lower Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 3,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Lower body strength",
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 3,
+            "reps": "5",
+            "RPE": "7"
+          },
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7"
+          },
+          {
+            "name": "Split Squat",
+            "sets": 3,
+            "reps": "10/leg",
+            "RPE": "7"
+          },
+          {
+            "name": "Calf Raise",
+            "sets": 3,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "45s",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Weeks 1\u20133 build via +1 rep OR +2.5\u20135% load; Week 4 deload (volume -40\u201350%, RPE ~6)."
+      }
+    },
+    {
+      "date": "2025-09-16",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-17",
+      "kind": "weights",
+      "title": "Weights \u2014 Upper Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 3,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Upper body strength",
+        "exercises": [
+          {
+            "name": "DB or Barbell Bench Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Chest-Supported Row",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Overhead Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "10",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Cable Curl",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Deadbug",
+            "sets": 3,
+            "reps": "10/side",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Week 3 add a -10% load back-off set to Squat (Mon) and Press (Wed). Week 4 deload."
+      }
+    },
+    {
+      "date": "2025-09-18",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-19",
+      "kind": "mobility",
+      "title": "Mobility + Steps 10k",
+      "time": null,
+      "duration_min": 30,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-20",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "10:00",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-21",
+      "kind": "recovery",
+      "title": "Active Recovery \u2014 easy walk/cycle 45\u201360 min",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-22",
+      "kind": "weights",
+      "title": "Weights \u2014 Lower Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 4,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Lower body strength",
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 3,
+            "reps": "5",
+            "RPE": "7"
+          },
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7"
+          },
+          {
+            "name": "Split Squat",
+            "sets": 3,
+            "reps": "10/leg",
+            "RPE": "7"
+          },
+          {
+            "name": "Calf Raise",
+            "sets": 3,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "45s",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Weeks 1\u20133 build via +1 rep OR +2.5\u20135% load; Week 4 deload (volume -40\u201350%, RPE ~6)."
+      }
+    },
+    {
+      "date": "2025-09-23",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-24",
+      "kind": "weights",
+      "title": "Weights \u2014 Upper Body",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "7\u20138",
+      "details": {
+        "phase_week": 4,
+        "block": "Phase 1 - Weight Loss",
+        "focus": "Upper body strength",
+        "exercises": [
+          {
+            "name": "DB or Barbell Bench Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Chest-Supported Row",
+            "sets": 3,
+            "reps": "8",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Overhead Press",
+            "sets": 3,
+            "reps": "6\u20138",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "10",
+            "RPE": "7\u20138"
+          },
+          {
+            "name": "Cable Curl",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 2,
+            "reps": "12",
+            "RPE": "7"
+          },
+          {
+            "name": "Deadbug",
+            "sets": 3,
+            "reps": "10/side",
+            "RPE": "\u2014"
+          }
+        ],
+        "notes": "Week 3 add a -10% load back-off set to Squat (Mon) and Press (Wed). Week 4 deload."
+      }
+    },
+    {
+      "date": "2025-09-25",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "18:30",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-26",
+      "kind": "mobility",
+      "title": "Mobility + Steps 10k",
+      "time": null,
+      "duration_min": 30,
+      "rpe_target": "easy",
+      "details": {}
+    },
+    {
+      "date": "2025-09-27",
+      "kind": "class",
+      "title": "Blaze HIIT",
+      "time": "10:00",
+      "duration_min": 45,
+      "rpe_target": "7",
+      "details": {}
+    },
+    {
+      "date": "2025-09-28",
+      "kind": "recovery",
+      "title": "Active Recovery \u2014 easy walk/cycle 45\u201360 min",
+      "time": null,
+      "duration_min": 60,
+      "rpe_target": "easy",
+      "details": {}
+    }
+  ]
+}
