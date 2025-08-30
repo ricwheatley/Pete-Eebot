@@ -6,14 +6,14 @@ on:
       schedule_path:
         description: "Path to the workouts JSON"
         required: true
-        default: "wger_workouts_sep2025.json"
+        default: "integrations/wger/wger_workouts_sep2025.json"
       dry_run:
         description: "Print actions without creating workouts"
         required: false
         default: "false"
   push:
     paths:
-      - "wger_workouts_*.json"
+      - "integrations/wger/*.json"
 
 jobs:
   upload:
@@ -32,9 +32,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Upload to wger
+      - name: Upload to wger (manual dispatch)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
           WGER_BASE_URL: ${{ vars.WGER_BASE_URL }}
         run: |
-          python wger_upload.py "${{ github.event.inputs.schedule_path || 'wger_workouts_sep2025.json' }}" $([ "${{ github.event.inputs.dry_run }}" = "true" ] && echo "--dry-run")
+          python integrations/wger/wger_upload.py "${{ github.event.inputs.schedule_path }}" $([ "${{ github.event.inputs.dry_run }}" = "true" ] && echo "--dry-run")
+
+      - name: Upload to wger (on push to JSONs)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          WGER_BASE_URL: ${{ vars.WGER_BASE_URL }}
+        run: |
+          CHANGED=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '^integrations/wger/.*\.json$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No JSON changes under integrations/wger/. Nothing to upload."
+            exit 0
+          fi
+          for f in $CHANGED; do
+            echo "Uploading $f ..."
+            python integrations/wger/wger_upload.py "$f"
+          done
