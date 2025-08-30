@@ -1,0 +1,40 @@
+name: Upload workouts to wger
+
+on:
+  workflow_dispatch:
+    inputs:
+      schedule_path:
+        description: "Path to the workouts JSON"
+        required: true
+        default: "wger_workouts_sep2025.json"
+      dry_run:
+        description: "Print actions without creating workouts"
+        required: false
+        default: "false"
+  push:
+    paths:
+      - "wger_workouts_*.json"
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Upload to wger
+        env:
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          WGER_BASE_URL: ${{ vars.WGER_BASE_URL }}
+        run: |
+          python wger_upload.py "${{ github.event.inputs.schedule_path || 'wger_workouts_sep2025.json' }}" $([ "${{ github.event.inputs.dry_run }}" = "true" ] && echo "--dry-run")
