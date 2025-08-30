@@ -1,6 +1,6 @@
 """
 wger_uploads.py
-Uploads workouts from a schedule JSON to wger.
+Uploads workouts from a schedule JSON to wger as dated workout sessions.
 
 Usage:
   python integrations/wger/wger_uploads.py <schedule.json> [--dry-run]
@@ -15,13 +15,13 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import requests
 
 
 def _env_base_url() -> str:
-    # Handle unset AND empty string as "use default"
+    # Treat unset OR empty as default
     base = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
     if not base.startswith("http"):
         print(f"ERROR: WGER_BASE_URL invalid: '{base}'")
@@ -39,13 +39,12 @@ if not API_KEY:
 HEADERS = {
     "Authorization": f"Token {API_KEY}",
     "Content-Type": "application/json",
+    "Accept": "application/json",
 }
 
 
 def post_json(endpoint: str, payload: Dict[str, Any], max_retries: int = 3, backoff: float = 2.0) -> Dict[str, Any]:
-    """
-    POST JSON with simple retries on transient errors.
-    """
+    """POST JSON with basic retries on transient errors."""
     url = f"{BASE_URL}/{endpoint.lstrip('/')}"
     for attempt in range(1, max_retries + 1):
         try:
@@ -61,33 +60,36 @@ def post_json(endpoint: str, payload: Dict[str, Any], max_retries: int = 3, back
             try:
                 return r.json() if r.text else {}
             except ValueError:
-                # Not JSON — return basic shape
                 return {"status": r.status_code, "text": r.text}
 
-        # Retry on common transient status codes
         if r.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
             time.sleep(backoff * attempt)
             continue
 
-        # Hard failure
+        # Make hard failures obvious in the logs
         print(f"Request failed ({r.status_code}) for {url}: {r.text}")
         r.raise_for_status()
 
-    # Should never reach here
     return {}
 
 
-def create_placeholder_workout(date_str: str, title: str, comment: str) -> Dict[str, Any]:
+def create_workoutsession(date_str: str, title: str, comment: str, duration_min: int | None) -> Dict[str, Any]:
     """
-    Minimal placeholder using the /workout/ endpoint with a descriptive comment.
+    Create a dated workout session.
 
-    NOTE: If you later want to model days/exercises explicitly, you can
-    extend this to POST to /day/, /set/, etc., referencing the created workout ID.
+    Known fields for /workoutsession/ include at least:
+      - date (YYYY-MM-DD)
+      - notes (string)
+      - duration (integer minutes)   # optional but useful
     """
-    payload = {
-        "comment": f"{title} — {date_str} — {comment}"
+    payload: Dict[str, Any] = {
+        "date": date_str,
+        "notes": comment,
     }
-    return post_json("/workout/", payload)
+    if duration_min:
+        payload["duration"] = int(duration_min)
+
+    return post_json("/workoutsession/", payload)
 
 
 def load_schedule(path: str) -> Dict[str, Any]:
@@ -121,13 +123,13 @@ def main() -> None:
         print("No entries found in schedule JSON.")
         sys.exit(0)
 
-    created: List[Dict[str, Any]] = []
+    # Only upload 'weights' and 'class' (Blaze placeholders) as requested
     to_upload = [e for e in entries if e.get("kind") in ("weights", "class")]
-
     print(f"[wger] Entries in schedule: {len(entries)} | Eligible for upload (weights/class): {len(to_upload)}")
 
+    created: List[Dict[str, Any]] = []
+
     for e in to_upload:
-        # Build a clear, compact comment for each item
         date_str: str = e.get("date", "")
         title: str = e.get("title", "Workout")
         time_str = f" @ {e.get('time')}" if e.get("time") else ""
@@ -143,7 +145,6 @@ def main() -> None:
         if details.get("notes"):
             bits.append(details["notes"])
         if details.get("exercises"):
-            # Keep this concise; it’s a placeholder. Full programming can be added later via /day/ + /set/
             ex_lines = []
             for x in details["exercises"]:
                 name = x.get("name", "Exercise")
@@ -159,18 +160,16 @@ def main() -> None:
 
         pretty = summarize_entry(e)
         if dry_run:
-            print(f"[DRY RUN] Would create workout: {pretty}")
+            print(f"[DRY RUN] Would create workoutsession: {pretty}")
             continue
 
         try:
-            res = create_placeholder_workout(date_str, title, comment)
+            res = create_workoutsession(date_str, title, comment, duration)
             created.append({"date": date_str, "title": title, "id": res.get("id")})
             print(f"[OK] Created: {pretty} -> id={res.get('id')}")
         except Exception as ex:
             print(f"[ERROR] Failed to create: {pretty} — {ex}")
-            # Continue with next entry rather than abort the whole run
 
-    # Final JSON summary to make logs machine-friendly if you ever want to parse them
     print(json.dumps({"created": created}, indent=2))
 
 
