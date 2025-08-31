@@ -4,17 +4,16 @@
 """
 Apply a plan JSON to build a Routine on wger.de.
 
-Highlights
-- Accepts your legacy schema: {"routine": {"start","end",...}, "days":[...]}
-  and dated variants; per‑day "date" is NOT required.
-- Routine name is derived from the date range (<= 25 chars), e.g. "01–28 Sep 2025".
-- Falls back to https://wger.de/api/v2 if WGER_BASE_URL is unset/empty.
-- Creates days → slots → exercises using /routine/, /day/, /slot/, /slot-entry/
-  (retries w/o order and falls back to /slotconfig/ if needed).
-- Writes configs via /sets-config/, /repetitions-config/, /max-repetitions-config/,
-  /weight-config/, /rir-config/, /rest-config/.
-- **FIX:** Builds the exercise index from /exerciseinfo/ (reads English translation),
-  avoiding KeyError 'name' seen with /exercise/ on the public server.
+Key fixes for public server:
+- Add required `iteration` to /sets-config/, /repetitions-config/, /rir-config/,
+  /rest-config/, /weight-config/ posts (default iteration=1).
+- Truncate workout day names to 20 characters (server enforces 20).
+- Keep routine name as the date range (<=25 chars), e.g. "01–28 Sep 2025".
+- Default BASE to https://wger.de/api/v2 if env is blank.
+- Use /slot-entry/ (preferred), retry without order, then fallback to /slotconfig/.
+- Build exercise index from /exerciseinfo/ (English translations) to avoid KeyError 'name'.
+
+Docs reference: “Using the routine API” (Days, Sets and exercises, Weight/sets/reps/RiR). 
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ import difflib
 import json
 import os
 import re
-import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -55,7 +53,7 @@ def _req(method: str, url: str, json_payload: Optional[Dict[str, Any]] = None,
         r = requests.request(method, url, headers=HEADERS, json=json_payload, timeout=60)
         if r.status_code in ok:
             return r
-        log(f"[ERROR] {method} {url} -> {r.status_code}: {_truncate(r.text)}")
+        log(f"Error:  {method} {url} -> {r.status_code}: {_truncate(r.text)}")
         last = r
         if 500 <= r.status_code < 600 and i < tries - 1:
             time.sleep(backoff)
@@ -72,9 +70,10 @@ def GET(path_or_url: str) -> Dict[str, Any]:
 def POST(path: str, payload: Dict[str, Any], ok=(201,)) -> Dict[str, Any]:
     return _req("POST", f"{BASE}{path}", json_payload=payload, ok=ok).json()
 
-# ---------- Name & reps helpers ----------
+# ---------- Helpers ----------
 
 MAX_ROUTINE_NAME = 25
+MAX_DAY_NAME = 20  # public server constraint
 
 def routine_name_from_dates(start: str, end: str) -> str:
     s = dt.date.fromisoformat(start)
@@ -104,8 +103,6 @@ def parse_reps(v: Any) -> Optional[Tuple[int, Optional[int]]]:
             return (mn, mx)
     return None
 
-# ---------- Exercise index (from /exerciseinfo/) ----------
-
 def normalize(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
@@ -115,10 +112,9 @@ ALIASES = {
     "hangingkneeraise": ["hanginglegraise","verticalkneeraise","captainschairkneeraise"],
 }
 
+# ---------- Exercise index from /exerciseinfo/ (English) ----------
+
 def build_exercise_index(language_id: int = 2) -> Tuple[Dict[str, List[int]], Dict[int, str]]:
-    """
-    Build name→ids and id→name using /exerciseinfo/ (translations include language-specific names).
-    """
     log("[index] Loading exercises from /exerciseinfo/ …")
     name_index: Dict[str, List[int]] = {}
     id_to_name: Dict[int, str] = {}
@@ -128,23 +124,17 @@ def build_exercise_index(language_id: int = 2) -> Tuple[Dict[str, List[int]], Di
         page = GET(url)
         for row in page.get("results", []):
             ex_id = int(row["id"])
-            # pick English name from translations
             en_name = None
             for tr in row.get("translations", []):
                 if tr.get("language") == language_id and tr.get("name"):
                     en_name = tr["name"]; break
-            if not en_name:
-                # fallback: sometimes the base has a name
-                en_name = row.get("name") or None
+            en_name = en_name or row.get("name")
             if not en_name:
                 continue
             key = normalize(en_name)
             id_to_name[ex_id] = en_name
             name_index.setdefault(key, []).append(ex_id)
-
         url = page.get("next") or ""
-        # next may be absolute; keep as-is for GET()
-
     log(f"[index] Loaded {len(id_to_name)} exercises")
     return name_index, id_to_name
 
@@ -155,23 +145,20 @@ def resolve_exercise_id(name_index: Dict[str, List[int]], name: str) -> Optional
     for alt in ALIASES.get(key, []):
         if alt in name_index:
             return name_index[alt][0]
-    # fuzzy match
-    keys = list(name_index.keys())
-    match = difflib.get_close_matches(key, keys, n=1, cutoff=0.74)
+    match = difflib.get_close_matches(key, list(name_index.keys()), n=1, cutoff=0.74)
     return name_index[match[0]][0] if match else None
 
-# ---------- Plan loader (supports your legacy schema) ----------
+# ---------- Plan loader ----------
 
 def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
     """
     Returns (start, end, days)
     Days: [{"name": str, "is_rest": bool, "slots":[{"order": int, "exercises":[{...}]}]}]
-    Does NOT require per-day "date".
     """
     with open(path, "r", encoding="utf-8") as f:
         doc = json.load(f)
 
-    # Legacy weekly-cycle: {"routine": {...}, "days":[...]}
+    # {"routine": {...}, "days":[...]}
     if isinstance(doc, dict) and "routine" in doc and "days" in doc:
         r = doc["routine"] or {}
         start = r.get("start") or r.get("start_date")
@@ -179,30 +166,25 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
         if not start or not end:
             raise ValueError("Plan.routine.start and Plan.routine.end are required.")
         days_src = doc.get("days") or []
-
         days_out: List[Dict[str, Any]] = []
         for idx, d in enumerate(days_src, start=1):
-            name = (d.get("name") or f"Day {idx}")[:50]
+            name = (d.get("name") or f"Day {idx}")[:MAX_DAY_NAME]
             is_rest = bool(d.get("is_rest", False))
-
-            # If the legacy entry has a flat "exercises" list, wrap into one slot
             if d.get("slots"):
                 slots = d["slots"]
             elif d.get("exercises"):
                 slots = [{"order": 1, "exercises": d["exercises"]}]
             else:
                 slots = []
-
             days_out.append({"name": name, "is_rest": is_rest, "slots": slots})
         return start, end, days_out
 
-    # Object with days + top-level dates
+    # {"start","end","days":[...]} or infer from per-day "date"
     if isinstance(doc, dict) and "days" in doc:
         days_src = doc["days"]
         start = doc.get("start") or doc.get("start_date")
         end   = doc.get("end")   or doc.get("end_date")
         if not start or not end:
-            # Try to infer from per-day date fields
             try:
                 ds = [d["date"] for d in days_src if "date" in d]
                 start, end = min(ds), max(ds)
@@ -210,13 +192,13 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
                 raise ValueError("Plan missing start/end and days lack 'date' fields.")
         days_out: List[Dict[str, Any]] = []
         for idx, d in enumerate(days_src, start=1):
-            name = (d.get("name") or f"Day {idx}")[:50]
+            name = (d.get("name") or f"Day {idx}")[:MAX_DAY_NAME]
             is_rest = bool(d.get("is_rest", False))
             slots = d.get("slots") or [{"order": 1, "exercises": d.get("exercises", [])}]
             days_out.append({"name": name, "is_rest": is_rest, "slots": slots})
         return start, end, days_out
 
-    # List-of-days
+    # list of days (must have per-day date or provide outer start/end)
     if isinstance(doc, list):
         days_src = doc
         try:
@@ -226,7 +208,7 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
             raise ValueError("List plan requires per-day 'date' OR provide an object with start/end.")
         days_out: List[Dict[str, Any]] = []
         for idx, d in enumerate(days_src, start=1):
-            name = (d.get("name") or f"Day {idx}")[:50]
+            name = (d.get("name") or f"Day {idx}")[:MAX_DAY_NAME]
             is_rest = bool(d.get("is_rest", False))
             slots = d.get("slots") or [{"order": 1, "exercises": d.get("exercises", [])}]
             days_out.append({"name": name, "is_rest": is_rest, "slots": slots})
@@ -234,7 +216,7 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
 
     raise ValueError("Unrecognized plan format.")
 
-# ---------- Endpoint discovery ----------
+# ---------- Endpoint discovery (for /slot-entry/ vs /slotconfig/) ----------
 
 def discover_endpoints() -> Dict[str, str]:
     root = GET("/")
@@ -249,7 +231,7 @@ def discover_endpoints() -> Dict[str, str]:
 # ---------- Builders ----------
 
 def create_routine(start: str, end: str, description: str = "", fit_in_week: bool = False) -> int:
-    name = routine_name_from_dates(start, end)  # per your request
+    name = routine_name_from_dates(start, end)
     payload = {"name": name[:MAX_ROUTINE_NAME], "start": start, "end": end, "fit_in_week": bool(fit_in_week)}
     if description: payload["description"] = description[:1000]
     res = POST("/routine/", payload)
@@ -258,11 +240,11 @@ def create_routine(start: str, end: str, description: str = "", fit_in_week: boo
     return rid
 
 def create_day(routine_id: int, order: int, name: str, is_rest: bool, description: str = "") -> int:
-    payload = {"routine": routine_id, "order": int(order), "name": name[:50], "is_rest": bool(is_rest)}
+    payload = {"routine": routine_id, "order": int(order), "name": name[:MAX_DAY_NAME], "is_rest": bool(is_rest)}
     if description: payload["description"] = description[:250]
     res = POST("/day/", payload)
     did = int(res["id"])
-    log(f"  [day] {order} {name} → id={did} rest={is_rest}")
+    log(f"  [day] {order} {name[:MAX_DAY_NAME]} → id={did} rest={is_rest}")
     return did
 
 def create_slot(day_id: int, order: int) -> int:
@@ -277,36 +259,35 @@ def create_slot_entry(endpoints: Dict[str, str], slot_id: int, exercise_id: int,
     Returns (link_kind, link_id) where link_kind in {"slot-entry","slotconfig"}.
     """
     if "slot-entry" in endpoints:
-        # Attempt with order
         try:
             res = POST("/slot-entry/", {"slot": slot_id, "exercise": exercise_id, "order": int(order)}, ok=(201,))
             sid = int(res["id"]); log(f"      [entry] slot_entry_id={sid} ex={exercise_id}")
             return ("slot-entry", sid)
         except Exception:
-            # Retry without order
             try:
                 res = POST("/slot-entry/", {"slot": slot_id, "exercise": exercise_id}, ok=(201,))
                 sid = int(res["id"]); log(f"      [entry] slot_entry_id={sid} ex={exercise_id} (no order)")
                 return ("slot-entry", sid)
             except Exception as e:
-                log(f"      [WARN] /slot-entry/ failed twice; trying /slotconfig/ fallback ({e})")
-
+                log(f"      [WARN] /slot-entry/ failed twice; trying /slotconfig/ ({e})")
     if "slotconfig" in endpoints:
         res = POST("/slotconfig/", {"slot": slot_id, "exercise": exercise_id}, ok=(201,))
         scid = int(res["id"]); log(f"      [entry] slot_config_id={scid} ex={exercise_id}")
         return ("slotconfig", scid)
+    raise RuntimeError("Server lacks both /slot-entry/ and /slotconfig/.")
 
-    raise RuntimeError("Server lacks both /slot-entry/ and /slotconfig/ endpoints.")
+# ---------- Config writers (with required `iteration`) ----------
 
-def post_config_row(path: str, link_kind: str, link_id: int, value: Any) -> None:
+def post_config_row(path: str, link_kind: str, link_id: int, value: Any, iteration: int = 1) -> None:
     """
-    Servers differ on FK field names; try common variants.
+    Public server requires `iteration`. Try common FK names; keep original on errors.
     """
     fk_order = ["slot_entry","slot_config","slot"]
     pref = ["slot_entry","slot"] if link_kind == "slot-entry" else ["slot_config","slot"]
     tried = []
+    last = None
     for fk in pref + [k for k in fk_order if k not in pref]:
-        payload = {"value": value, fk: link_id}
+        payload = {"value": value, "iteration": int(iteration), fk: link_id}
         try:
             POST(path, payload, ok=(201,))
             return
@@ -316,20 +297,21 @@ def post_config_row(path: str, link_kind: str, link_id: int, value: Any) -> None
 
 def set_configs(link_kind: str, link_id: int,
                 sets: Optional[int], reps: Optional[Tuple[int, Optional[int]]],
-                weight: Optional[float], rir: Optional[int], rest_sec: Optional[int]) -> None:
+                weight: Optional[float], rir: Optional[int], rest_sec: Optional[int],
+                iteration: int = 1) -> None:
     if sets is not None:
-        post_config_row("/sets-config/", link_kind, link_id, int(sets))
+        post_config_row("/sets-config/", link_kind, link_id, int(sets), iteration)
     if reps is not None:
         lo, hi = reps
-        post_config_row("/repetitions-config/", link_kind, link_id, int(lo))
+        post_config_row("/repetitions-config/", link_kind, link_id, int(lo), iteration)
         if hi is not None and int(hi) != int(lo):
-            post_config_row("/max-repetitions-config/", link_kind, link_id, int(hi))
+            post_config_row("/max-repetitions-config/", link_kind, link_id, int(hi), iteration)
     if weight is not None:
-        post_config_row("/weight-config/", link_kind, link_id, float(weight))
+        post_config_row("/weight-config/", link_kind, link_id, float(weight), iteration)
     if rir is not None:
-        post_config_row("/rir-config/", link_kind, link_id, int(rir))
+        post_config_row("/rir-config/", link_kind, link_id, int(rir), iteration)
     if rest_sec is not None:
-        post_config_row("/rest-config/", link_kind, link_id, int(rest_sec))
+        post_config_row("/rest-config/", link_kind, link_id, int(rest_sec), iteration)
 
 # ---------- Build from plan ----------
 
@@ -341,7 +323,6 @@ def build_from_plan(plan_path: str) -> None:
     start, end, days = load_plan(plan_path)
     endpoints = discover_endpoints()
 
-    # Exercise index (English) from /exerciseinfo/
     name_index, _ = build_exercise_index(language_id=2)
 
     rid = create_routine(start=start, end=end, description="", fit_in_week=False)
@@ -383,7 +364,8 @@ def build_from_plan(plan_path: str) -> None:
                     try: rest_sec = int(rest_sec)
                     except: rest_sec = None
 
-                set_configs(link_kind, link_id, sets=sets, reps=reps, weight=weight, rir=rir, rest_sec=rest_sec)
+                # iteration=1 baseline; further progressions can be added later
+                set_configs(link_kind, link_id, sets=sets, reps=reps, weight=weight, rir=rir, rest_sec=rest_sec, iteration=1)
 
     log("[OK] Routine build completed.")
 
