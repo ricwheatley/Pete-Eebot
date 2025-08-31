@@ -4,19 +4,17 @@
 """
 Apply a plan JSON to build a Routine on wger.de.
 
-Key points:
-- Reads legacy schema with top-level {"routine": {...}, "days": [...]}
-  OR dated list/object schemas; does NOT require per-day "date".
-- Routine name is always derived from the date range (<= 25 chars).
+Highlights
+- Accepts your legacy schema: {"routine": {"start","end",...}, "days":[...]}
+  and dated variants; per‑day "date" is NOT required.
+- Routine name is derived from the date range (<= 25 chars), e.g. "01–28 Sep 2025".
 - Falls back to https://wger.de/api/v2 if WGER_BASE_URL is unset/empty.
-- Creates days -> slots -> exercises using /routine/, /day/, /slot/, /slot-entry/
-  (falls back to /slotconfig/ if /slot-entry/ fails on the live server).
+- Creates days → slots → exercises using /routine/, /day/, /slot/, /slot-entry/
+  (retries w/o order and falls back to /slotconfig/ if needed).
 - Writes configs via /sets-config/, /repetitions-config/, /max-repetitions-config/,
   /weight-config/, /rir-config/, /rest-config/.
-
-Refs:
-- Routine model & config endpoints: wger docs “Using the routine API”.  [oai_citation:4‡Wger](https://wger.readthedocs.io/en/latest/api/routines.html)
-- Public server API root shows /slot-entry/ and config endpoints.  [oai_citation:5‡Wger](https://wger.de/api/v2/)
+- **FIX:** Builds the exercise index from /exerciseinfo/ (reads English translation),
+  avoiding KeyError 'name' seen with /exercise/ on the public server.
 """
 
 from __future__ import annotations
@@ -106,7 +104,7 @@ def parse_reps(v: Any) -> Optional[Tuple[int, Optional[int]]]:
             return (mn, mx)
     return None
 
-# ---------- Exercise index (from /exercise/) ----------
+# ---------- Exercise index (from /exerciseinfo/) ----------
 
 def normalize(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
@@ -118,24 +116,36 @@ ALIASES = {
 }
 
 def build_exercise_index(language_id: int = 2) -> Tuple[Dict[str, List[int]], Dict[int, str]]:
-    log("[index] Loading exercises from /exercise/ …")
-    first = GET(f"/exercise/?limit=200&language={language_id}&status=2")
-    res = first.get("results", [])
-    next_url = first.get("next")
-    while next_url:
-        page = _req("GET", next_url, ok=(200,)).json()
-        res += page.get("results", [])
-        next_url = page.get("next")
-
+    """
+    Build name→ids and id→name using /exerciseinfo/ (translations include language-specific names).
+    """
+    log("[index] Loading exercises from /exerciseinfo/ …")
     name_index: Dict[str, List[int]] = {}
     id_to_name: Dict[int, str] = {}
-    for ex in res:
-        ex_id = int(ex["id"])
-        name = ex["name"]
-        key = normalize(name)
-        id_to_name[ex_id] = name
-        name_index.setdefault(key, []).append(ex_id)
-    log(f"[index] Loaded {len(res)} exercises")
+
+    url = f"/exerciseinfo/?limit=100"
+    while url:
+        page = GET(url)
+        for row in page.get("results", []):
+            ex_id = int(row["id"])
+            # pick English name from translations
+            en_name = None
+            for tr in row.get("translations", []):
+                if tr.get("language") == language_id and tr.get("name"):
+                    en_name = tr["name"]; break
+            if not en_name:
+                # fallback: sometimes the base has a name
+                en_name = row.get("name") or None
+            if not en_name:
+                continue
+            key = normalize(en_name)
+            id_to_name[ex_id] = en_name
+            name_index.setdefault(key, []).append(ex_id)
+
+        url = page.get("next") or ""
+        # next may be absolute; keep as-is for GET()
+
+    log(f"[index] Loaded {len(id_to_name)} exercises")
     return name_index, id_to_name
 
 def resolve_exercise_id(name_index: Dict[str, List[int]], name: str) -> Optional[int]:
@@ -175,17 +185,13 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
             name = (d.get("name") or f"Day {idx}")[:50]
             is_rest = bool(d.get("is_rest", False))
 
-            # If the legacy entry has a flat "exercises" list, turn it into one slot
-            slots: List[Dict[str, Any]] = []
+            # If the legacy entry has a flat "exercises" list, wrap into one slot
             if d.get("slots"):
-                # already normalized
                 slots = d["slots"]
+            elif d.get("exercises"):
+                slots = [{"order": 1, "exercises": d["exercises"]}]
             else:
-                items = d.get("exercises") or []
-                if items:
-                    slots = [{"order": 1, "exercises": items}]
-                else:
-                    slots = []
+                slots = []
 
             days_out.append({"name": name, "is_rest": is_rest, "slots": slots})
         return start, end, days_out
@@ -232,12 +238,11 @@ def load_plan(path: str) -> Tuple[str, str, List[Dict[str, Any]]]:
 
 def discover_endpoints() -> Dict[str, str]:
     root = GET("/")
-    # keep only the ones we care about
     keys = [
         "routine","day","slot","slot-entry","slotconfig",
         "sets-config","max-sets-config","repetitions-config","max-repetitions-config",
         "weight-config","max-weight-config","rir-config","max-rir-config",
-        "rest-config","max-rest-config","exercise"
+        "rest-config","max-rest-config","exerciseinfo"
     ]
     return {k: root[k] for k in keys if k in root}
 
@@ -284,9 +289,8 @@ def create_slot_entry(endpoints: Dict[str, str], slot_id: int, exercise_id: int,
                 sid = int(res["id"]); log(f"      [entry] slot_entry_id={sid} ex={exercise_id} (no order)")
                 return ("slot-entry", sid)
             except Exception as e:
-                log(f"      [WARN] /slot-entry/ failed twice; will try /slotconfig/ fallback ({e})")
+                log(f"      [WARN] /slot-entry/ failed twice; trying /slotconfig/ fallback ({e})")
 
-    # Fallback: /slotconfig/
     if "slotconfig" in endpoints:
         res = POST("/slotconfig/", {"slot": slot_id, "exercise": exercise_id}, ok=(201,))
         scid = int(res["id"]); log(f"      [entry] slot_config_id={scid} ex={exercise_id}")
@@ -298,7 +302,6 @@ def post_config_row(path: str, link_kind: str, link_id: int, value: Any) -> None
     """
     Servers differ on FK field names; try common variants.
     """
-    # Prefer FK implied by link_kind
     fk_order = ["slot_entry","slot_config","slot"]
     pref = ["slot_entry","slot"] if link_kind == "slot-entry" else ["slot_config","slot"]
     tried = []
@@ -338,7 +341,7 @@ def build_from_plan(plan_path: str) -> None:
     start, end, days = load_plan(plan_path)
     endpoints = discover_endpoints()
 
-    # Exercise index (English)
+    # Exercise index (English) from /exerciseinfo/
     name_index, _ = build_exercise_index(language_id=2)
 
     rid = create_routine(start=start, end=end, description="", fit_in_week=False)
