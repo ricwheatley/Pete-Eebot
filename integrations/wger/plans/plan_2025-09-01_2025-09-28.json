@@ -1,0 +1,74 @@
+{
+  "routine": {
+    "name": "PeteE Block 2025-09-01\u20132025-09-28",
+    "start": "2025-09-01",
+    "end": "2025-09-28",
+    "fit_in_week": true,
+    "description": "4-week Lower/Upper + Blaze plan (example bundle)"
+  },
+  "days": [
+    {
+      "order": 1,
+      "name": "Lower",
+      "type": "custom",
+      "is_rest": false,
+      "need_logs_to_advance": true,
+      "description": "Weights \u2014 Lower body",
+      "exercises": []
+    },
+    {
+      "order": 2,
+      "name": "Blaze",
+      "type": "hiit",
+      "is_rest": false,
+      "need_logs_to_advance": true,
+      "description": "Blaze HIIT @ 07:00 (45 min).",
+      "exercises": []
+    },
+    {
+      "order": 3,
+      "name": "Upper",
+      "type": "custom",
+      "is_rest": false,
+      "need_logs_to_advance": true,
+      "description": "Weights \u2014 Upper body",
+      "exercises": []
+    },
+    {
+      "order": 4,
+      "name": "Blaze",
+      "type": "hiit",
+      "is_rest": false,
+      "need_logs_to_advance": true,
+      "description": "Blaze HIIT @ 06:15 (45 min).",
+      "exercises": []
+    },
+    {
+      "order": 5,
+      "name": "Mobility & Steps",
+      "type": "custom",
+      "is_rest": true,
+      "need_logs_to_advance": false,
+      "description": "Active recovery, mobility and 10k steps.",
+      "exercises": []
+    },
+    {
+      "order": 6,
+      "name": "Blaze",
+      "type": "hiit",
+      "is_rest": false,
+      "need_logs_to_advance": true,
+      "description": "Blaze HIIT @ 08:00 (45 min).",
+      "exercises": []
+    },
+    {
+      "order": 7,
+      "name": "Rest / Optional Blaze",
+      "type": "hiit",
+      "is_rest": true,
+      "need_logs_to_advance": false,
+      "description": "Optional Blaze @ 09:05; otherwise rest + mobility.",
+      "exercises": []
+    }
+  ]
+}
