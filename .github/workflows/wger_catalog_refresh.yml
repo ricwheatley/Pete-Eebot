@@ -1,0 +1,42 @@
+name: Refresh Wger Exercise Catalog
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * MON"   # every Monday 03:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Refresh catalog
+        run: |
+          python integrations/wger/catalog_refresh.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add integrations/wger/catalog/
+          if git diff --cached --quiet; then
+            echo "No catalog changes."
+          else
+            git commit -m "chore(wger): refresh exercise catalog"
+            git push
+          fi
