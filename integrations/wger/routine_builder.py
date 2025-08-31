@@ -5,9 +5,9 @@
 Wger Routine builder (public wger.de compatible)
 
 - Accepts BOTH plan schemas:
-  (A) Legacy weekly-cycle schema (what you have now)
+  (A) Legacy weekly-cycle schema
       {
-        "routine": {"name": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", ...},
+        "routine": {"name": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "fit_in_week": true},
         "days": [
           {
             "order": 1,
@@ -24,21 +24,19 @@ Wger Routine builder (public wger.de compatible)
                 "rir": 2,
                 "rest_s": 180,
                 "weight_kg": null|60.0,
-                "superset_id": null|"A",
-                "progression": {...optional...}
-              },
-              ...
+                "superset_id": null|"A"
+              }
             ]
-          },
-          ...
+          }
         ]
       }
 
-  (B) Dated day/slot schema (alternative newer format)
+  (B) Dated day/slot schema
       {
         "routine_name": "PeteE Block ...",
         "start_date": "YYYY-MM-DD",
         "end_date":   "YYYY-MM-DD",
+        "fit_in_week": true,
         "days": [
           {
             "date": "YYYY-MM-DD",
@@ -57,7 +55,8 @@ Wger Routine builder (public wger.de compatible)
                     "reps": 5|"6-8",
                     "rir": 2,
                     "rest_seconds": 180,
-                    "weight": null|60.0
+                    "weight": null|60.0,
+                    "exercise_id": null|123
                   }
                 ]
               }
@@ -66,16 +65,12 @@ Wger Routine builder (public wger.de compatible)
         ]
       }
 
-- Works with the public API endpoints: /routine/, /day/, /slot/, /slot-entry/,
-  and the per-property config endpoints: /sets-config/, /repetitions-config/,
-  /max-repetitions-config/, /rest-config/, /rir-config/, /weight-config/.
+- Works with public API endpoints shown on wger.de API root:
+  /routine/, /day/, /slot/, /slot-entry/,
+  /sets-config/, /repetitions-config/, /max-repetitions-config/,
+  /rest-config/, /rir-config/, /weight-config/
 
-- Adds numeric configs immediately after each slot-entry so the mobile app sees
-  numbers (avoids Null→num casting errors).
-
-Environment:
-  WGER_API_KEY  (required)
-  WGER_BASE_URL (optional; defaults to https://wger.de/api/v2 even if blank/empty)
+Docs: Routine needs start & end; slot-entry + config endpoints are available on the public server.
 """
 
 from __future__ import annotations
@@ -95,7 +90,7 @@ def err(msg: str):   print(f"[ERROR] {msg}", flush=True)
 
 # ---------------- HTTP helpers ----------------
 def get_env() -> Tuple[str, Dict[str,str]]:
-    # FIX: fall back to default when env var is present but empty
+    # Fall back to default when env var is present but empty
     base = (os.environ.get("WGER_BASE_URL") or DEFAULT_BASE).rstrip("/")
     key  = os.environ.get("WGER_API_KEY", "").strip()
     if not key:
@@ -139,6 +134,9 @@ def GET(base: str, headers: Dict[str,str], path: str, params: Optional[Dict[str,
 def POST(base: str, headers: Dict[str,str], path: str, payload: Dict[str,Any], ok=(201,), dry_run=False) -> Dict[str,Any]:
     return req("POST", f"{base}{path}", headers, payload=payload, ok=ok, dry_run=dry_run).json()
 
+def PATCH(base: str, headers: Dict[str,str], path: str, payload: Dict[str,Any], ok=(200,)) -> Dict[str,Any]:
+    return req("PATCH", f"{base}{path}", headers, payload=payload, ok=ok).json()
+
 def DELETE(base: str, headers: Dict[str,str], path: str, ok=(200,202,204)) -> None:
     try:
         req("DELETE", f"{base}{path}", headers, ok=ok)
@@ -157,7 +155,7 @@ def norm(s: str) -> str:
     return s
 
 ALIASES = {
-    # Variants users commonly write vs Wger catalog names
+    # Common variants vs catalog names
     "knee raises": [
         "hanging knee raise","hanging knee raises","knee raise (hanging)","hanging leg raise (knees bent)"
     ],
@@ -199,7 +197,6 @@ def fetch_exercise_index(base: str, headers: Dict[str,str], language_id: int = 2
 
 def alias_candidates(target_n: str) -> List[str]:
     cands = [target_n]
-    # If target matches any alias list, include the canonical head
     for canon, alist in ALIASES.items():
         canon_n = norm(canon)
         if target_n == canon_n or target_n in [norm(a) for a in alist]:
@@ -212,14 +209,10 @@ def score_match(target: str, row: Dict[str,Any], hint_equipment: Optional[str], 
     common = len(t_tokens & r_tokens)
     base = common / max(1, len(t_tokens))
     bonus = 0.0
-    if hint_equipment:
-        he = norm(hint_equipment)
-        if he in row["equipment"]:
-            bonus += 0.15
-    if hint_category:
-        hc = norm(hint_category)
-        if hc == row["category"]:
-            bonus += 0.10
+    if hint_equipment and norm(hint_equipment) in row["equipment"]:
+        bonus += 0.15
+    if hint_category and norm(hint_category) == row["category"]:
+        bonus += 0.10
     return base + bonus
 
 def resolve_exercise_id(name: str, index: List[Dict[str,Any]], hint_equipment: Optional[str], hint_category: Optional[str]) -> Optional[int]:
@@ -233,24 +226,6 @@ def resolve_exercise_id(name: str, index: List[Dict[str,Any]], hint_equipment: O
                 best = (s, row["id"], row["name"])
     return best[1] if best[0] >= 0.5 else None
 
-# ---------------- Units (optional; we try without if lookup fails) ----------------
-def try_lookup_unit_id(base: str, headers: Dict[str,str], endpoint: str, target: str) -> Optional[int]:
-    try:
-        params = {"limit": 100, "offset": 0}
-        while True:
-            page = GET(base, headers, f"/{endpoint}/", params=params)
-            for row in page.get("results", []):
-                nm = (row.get("name") or row.get("abbreviation") or "").lower()
-                if nm == target.lower():
-                    return int(row["id"])
-            next_url = page.get("next")
-            if not next_url: break
-            m = re.search(r"offset=(\d+)", next_url)
-            params["offset"] = int(m.group(1)) if m else params["offset"] + 100
-    except Exception as e:
-        warn(f"Unit lookup failed for {endpoint}='{target}': {e}")
-    return None
-
 # ---------------- Routine helpers ----------------
 def find_routine_by_name(base: str, headers: Dict[str,str], name: str) -> Optional[int]:
     res = GET(base, headers, "/routine/", params={"search": name, "limit": 50})
@@ -260,14 +235,29 @@ def find_routine_by_name(base: str, headers: Dict[str,str], name: str) -> Option
             return int(it["id"])
     return None
 
-def create_or_update_routine(base: str, headers: Dict[str,str], name: str, dry_run: bool) -> int:
-    # Enforce a conservative name length (some deployments are strict)
-    name = name[:25]
+def create_or_update_routine(base: str, headers: Dict[str,str], name: str,
+                             start: str, end: str,
+                             fit_in_week: Optional[bool],
+                             description: Optional[str],
+                             dry_run: bool) -> int:
+    """
+    Public server requires start & end on /routine/.
+    Docs: routine has name, description, start date, end date, optional fit_in_week.
+    """
+    name = (name or "PeteE Routine").strip()[:50]
+    payload = {"name": name, "start": start, "end": end}
+    if description: payload["description"] = description[:1000]
+    if fit_in_week is not None: payload["fit_in_week"] = bool(fit_in_week)
+
     rid = find_routine_by_name(base, headers, name)
     if rid:
-        info(f"[OK] Using existing routine id={rid} name={name}")
-        # Replace any existing days (fresh build each apply)
-        # List and delete existing days
+        info(f"[OK] Using existing routine id={rid} name={name} (will replace days)")
+        # update routine window to match plan
+        try:
+            PATCH(base, headers, f"/routine/{rid}/", payload)
+        except Exception as e:
+            warn(f"PATCH /routine/{rid}/ failed (will proceed): {e}")
+        # remove existing days for a clean build
         try:
             lst = GET(base, headers, "/day/", params={"routine": rid, "limit": 200})
             for d in lst.get("results", []):
@@ -275,18 +265,17 @@ def create_or_update_routine(base: str, headers: Dict[str,str], name: str, dry_r
         except Exception as e:
             warn(f"Could not list/delete existing days: {e}")
         return rid
-    # Create fresh
-    payload = {"name": name, "is_public": False}
+
     res = POST(base, headers, "/routine/", payload, dry_run=dry_run)
     rid = int(res["id"])
     info(f"[OK] Created routine id={rid} name={name}")
     return rid
 
 def create_day(base, headers, routine_id: int, order: int, name: str, is_rest: bool, dry_run: bool) -> int:
-    payload = {"routine": routine_id, "order": int(order), "name": name[:20], "is_rest": bool(is_rest)}
+    payload = {"routine": routine_id, "order": int(order), "name": (name or f'Day {order}')[:50], "is_rest": bool(is_rest)}
     res = POST(base, headers, "/day/", payload, dry_run=dry_run)
     did = int(res["id"])
-    info(f"  [day] {order} {name[:20]} → id={did} is_rest={is_rest}")
+    info(f"  [day] {order} {name[:50]} → id={did} is_rest={is_rest}")
     return did
 
 def create_slot(base, headers, day_id: int, order: int, dry_run: bool) -> int:
@@ -303,7 +292,7 @@ def create_slot_entry(base, headers, slot_id: int, exercise_id: int, dry_run: bo
 
 def post_config_row(base, headers, endpoint: str, slot_id: int, slot_entry_id: int, payload_core: Dict[str,Any], dry_run: bool):
     """
-    Try both FK field names to be compatible across deployments:
+    Be compatible across deployments: try both FK field names
       1) slot_config: <slot-entry id>
       2) slot: <slot id>
     """
@@ -314,7 +303,6 @@ def post_config_row(base, headers, endpoint: str, slot_id: int, slot_entry_id: i
             return
         except Exception:
             continue
-    # If both failed, raise once more with 'slot' for visibility
     POST(base, headers, f"/{endpoint}/", {**{"slot": slot_id}, **payload_core}, dry_run=dry_run)
 
 # ---------------- Plan loading (supports both schemas) ----------------
@@ -324,6 +312,10 @@ def load_plan(path: str) -> Dict[str,Any]:
 
     out: Dict[str,Any] = {
         "name": "",
+        "start": None,
+        "end": None,
+        "fit_in_week": None,
+        "description": None,
         "days": []  # each: {order, name, is_rest, class_placeholder, slots:[{order, items:[...]}]}
     }
 
@@ -331,6 +323,11 @@ def load_plan(path: str) -> Dict[str,Any]:
         # Legacy weekly-cycle schema
         r = raw.get("routine") or {}
         out["name"] = (r.get("name") or "PeteE Block").strip()
+        out["start"] = r.get("start")
+        out["end"] = r.get("end")
+        out["fit_in_week"] = r.get("fit_in_week")
+        out["description"] = r.get("description")
+
         days = raw.get("days") or []
         for d in days:
             order = int(d.get("order") or 1)
@@ -379,12 +376,16 @@ def load_plan(path: str) -> Dict[str,Any]:
     elif isinstance(raw, dict) and "routine_name" in raw:
         # Dated day/slot schema
         out["name"] = (raw.get("routine_name") or "PeteE Routine").strip()
+        out["start"] = raw.get("start_date")
+        out["end"] = raw.get("end_date")
+        out["fit_in_week"] = raw.get("fit_in_week")
+        out["description"] = raw.get("description")
+
         for idx, d in enumerate(raw.get("days") or [], start=1):
             name  = (d.get("name") or f"Day {idx}").strip()
             is_rest = bool(d.get("is_rest", False))
             is_class = bool(d.get("class_placeholder", False))
             slots = d.get("slots") or []
-            # Normalize slot order
             norm_slots = []
             for s in slots:
                 norm_slots.append({
@@ -423,26 +424,32 @@ def build_from_plan(plan_path: str, routine_name_override: Optional[str], dry_ru
     info(f"[wger] Reading plan: {plan_path}")
 
     plan = load_plan(plan_path)
-    routine_name = (routine_name_override or plan["name"] or "PeteE Routine").strip()
+    name = (routine_name_override or plan["name"] or "PeteE Routine").strip()
+    start = plan.get("start")
+    end   = plan.get("end")
+    fit_in_week = plan.get("fit_in_week")
+    description = plan.get("description")
+
+    if not start or not end:
+        err("Plan is missing 'start'/'end' dates (required by /routine/). "
+            "Add routine.start/end in legacy schema or start_date/end_date in dated schema.")
+        sys.exit(1)
 
     # Exercise index
     ex_index = fetch_exercise_index(base, headers, language_id=2)
 
-    # Units (optional) – try to fetch; if not available, we omit unit fields
-    rep_unit_id = try_lookup_unit_id(base, headers, "repetition-unit", "reps")
-    wt_unit_id  = try_lookup_unit_id(base, headers, "weightunit", "kg")
+    # Upsert routine by name; wipe days before rebuilding
+    rid = create_or_update_routine(base, headers, name, start, end, fit_in_week, description, dry_run)
 
-    # Idempotent: upsert by routine name and wipe existing days
-    rid = create_or_update_routine(base, headers, routine_name, dry_run)
-
-    # Build days (order by 'order')
+    # Build days
     for day in sorted(plan["days"], key=lambda x: int(x.get("order", 999))):
-        name = day.get("name") or "Day"
-        is_rest = bool(day.get("is_rest", False))
-        is_class = bool(day.get("class_placeholder", False))
-        did = create_day(base, headers, rid, int(day.get("order", 1)), name, is_rest, dry_run)
+        did = create_day(base, headers, rid,
+                         int(day.get("order", 1)),
+                         day.get("name") or "Day",
+                         bool(day.get("is_rest", False)),
+                         dry_run)
 
-        if is_rest or is_class or not day.get("slots"):
+        if day.get("is_rest") or day.get("class_placeholder") or not day.get("slots"):
             continue
 
         for slot in sorted(day["slots"], key=lambda s: int(s.get("order", 1))):
@@ -460,7 +467,7 @@ def build_from_plan(plan_path: str, routine_name_override: Optional[str], dry_ru
 
                 # Defaults to avoid nulls
                 sets = item.get("sets");  sets = int(sets) if sets is not None else 3
-                reps = item.get("reps");  # int or "6-8"
+                reps = item.get("reps")   # int or "6-8"
                 rest = item.get("rest_seconds"); rest = int(rest) if rest is not None else 90
                 rir  = item.get("rir");  rir  = int(rir)  if rir  is not None else 2
                 weight = item.get("weight")
@@ -474,28 +481,17 @@ def build_from_plan(plan_path: str, routine_name_override: Optional[str], dry_ru
                 # reps: support range
                 if isinstance(reps, str) and "-" in reps:
                     lo, hi = reps.split("-", 1)
-                    core_lo = {"value": float(lo)}
-                    core_hi = {"value": float(hi)}
-                    if rep_unit_id is not None:
-                        core_lo["unit"] = rep_unit_id
-                        core_hi["unit"] = rep_unit_id
-                    post_config_row(base, headers, "repetitions-config",     sid, seid, core_lo, dry_run)
-                    post_config_row(base, headers, "max-repetitions-config", sid, seid, core_hi, dry_run)
+                    post_config_row(base, headers, "repetitions-config",     sid, seid, {"value": float(lo)}, dry_run)
+                    post_config_row(base, headers, "max-repetitions-config", sid, seid, {"value": float(hi)}, dry_run)
                 else:
                     val = int(reps) if reps is not None else 10
-                    core = {"value": float(val)}
-                    if rep_unit_id is not None:
-                        core["unit"] = rep_unit_id
-                    post_config_row(base, headers, "repetitions-config", sid, seid, core, dry_run)
+                    post_config_row(base, headers, "repetitions-config", sid, seid, {"value": float(val)}, dry_run)
 
                 post_config_row(base, headers, "rest-config", sid, seid, {"value": float(rest)}, dry_run)
                 post_config_row(base, headers, "rir-config",  sid, seid, {"value": float(rir)},  dry_run)
 
                 if weight is not None:
-                    core_w = {"value": float(weight)}
-                    if wt_unit_id is not None:
-                        core_w["unit"] = wt_unit_id
-                    post_config_row(base, headers, "weight-config", sid, seid, core_w, dry_run)
+                    post_config_row(base, headers, "weight-config", sid, seid, {"value": float(weight)}, dry_run)
 
     info("[DONE] Plan applied.")
 
