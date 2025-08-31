@@ -1,57 +1,53 @@
-name: Apply WGER Routine Plan
+name: Apply Wger Plan (on push)
 
 on:
-  workflow_dispatch:
-    inputs:
-      plan_path:
-        description: "Path to plan JSON (e.g., integrations/wger/plans/plan_2025-09-01_2025-09-28.json)"
-        required: true
   push:
     paths:
       - "integrations/wger/plans/*.json"
       - "integrations/wger/routine_builder.py"
-
-permissions:
-  contents: read
-
-concurrency:
-  group: wger-apply
-  cancel-in-progress: false
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: "Optional path to a specific plan JSON"
+        required: false
+        default: ""
 
 jobs:
   apply:
     runs-on: ubuntu-latest
+    env:
+      WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+      WGER_BASE_URL: https://wger.de/api/v2
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+        run: pip install --upgrade requests
 
-      - name: Show plan target
+      - name: Determine plan file
+        id: plan
+        shell: bash
         run: |
           set -e
-          if [ -n "${{ github.event.inputs.plan_path }}" ]; then
-            PLAN="${{ github.event.inputs.plan_path }}"
+          if [ -n "${{ github.event.inputs.plan }}" ]; then
+            PLAN="${{ github.event.inputs.plan }}"
           else
-            # recent change: pick the last modified plan
-            PLAN="$(ls -1t integrations/wger/plans/*.json | head -n 1 || true)"
+            PLAN=$(ls -1 integrations/wger/plans/plan_*.json | sort | tail -n 1)
           fi
-          echo "PLAN=${PLAN}" >> $GITHUB_ENV
-          echo "Applying ${PLAN}"
-          test -f "$PLAN"
-
-      - name: Apply plan to WGER
-        env:
-          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
-          WGER_BASE_URL: ${{ secrets.WGER_BASE_URL }}
+          echo "PLAN=$PLAN" >> $GITHUB_ENV
+          echo "Using PLAN=$PLAN"
+      
+      - name: Apply plan to wger
+        shell: bash
         run: |
           set -e
-          python integrations/wger/routine_builder.py "$PLAN"
+          echo "[wger] Base URL: ${WGER_BASE_URL}"
+          echo "[wger] Dry run: NO"
+          echo "[wger] Reading plan: ${PLAN}"
+          python integrations/wger/routine_builder.py "${PLAN}"
