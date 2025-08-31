@@ -3,7 +3,7 @@ name: Refresh Wger Exercise Catalog
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 3 * * MON"   # every Monday 03:00 UTC
+    - cron: "0 3 * * MON"   # Every Monday 03:00 UTC
 
 permissions:
   contents: write
