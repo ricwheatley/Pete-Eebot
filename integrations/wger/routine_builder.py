@@ -5,9 +5,9 @@
 Wger Routine builder (public wger.de compatible)
 
 - Accepts BOTH plan schemas:
-  (A) Legacy weekly-cycle schema
+  (A) Legacy weekly-cycle schema:
       {
-        "routine": {"name": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "fit_in_week": true},
+        "routine": {"name": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "fit_in_week": true, "description": "..."},
         "days": [
           {
             "order": 1,
@@ -31,12 +31,13 @@ Wger Routine builder (public wger.de compatible)
         ]
       }
 
-  (B) Dated day/slot schema
+  (B) Dated day/slot schema:
       {
         "routine_name": "PeteE Block ...",
         "start_date": "YYYY-MM-DD",
         "end_date":   "YYYY-MM-DD",
         "fit_in_week": true,
+        "description": "...",
         "days": [
           {
             "date": "YYYY-MM-DD",
@@ -65,12 +66,15 @@ Wger Routine builder (public wger.de compatible)
         ]
       }
 
-- Works with public API endpoints shown on wger.de API root:
+Public server endpoints used:
   /routine/, /day/, /slot/, /slot-entry/,
   /sets-config/, /repetitions-config/, /max-repetitions-config/,
   /rest-config/, /rir-config/, /weight-config/
 
-Docs: Routine needs start & end; slot-entry + config endpoints are available on the public server.
+Notes:
+- Public /routine/ requires 'start' and 'end' dates.
+- Name must be <= 25 characters; this script auto-shortens while keeping dates if possible.
+- We do NOT look up units; numeric values are accepted by the public server.
 """
 
 from __future__ import annotations
@@ -82,6 +86,7 @@ DEFAULT_BASE = "https://wger.de/api/v2"
 HTTP_TIMEOUT = 30
 MAX_RETRIES = 3
 RETRY_SLEEP = 1.0
+MAX_ROUTINE_NAME = 25
 
 # ---------------- Logging ----------------
 def info(msg: str):  print(msg, flush=True)
@@ -90,7 +95,6 @@ def err(msg: str):   print(f"[ERROR] {msg}", flush=True)
 
 # ---------------- HTTP helpers ----------------
 def get_env() -> Tuple[str, Dict[str,str]]:
-    # Fall back to default when env var is present but empty
     base = (os.environ.get("WGER_BASE_URL") or DEFAULT_BASE).rstrip("/")
     key  = os.environ.get("WGER_API_KEY", "").strip()
     if not key:
@@ -155,7 +159,6 @@ def norm(s: str) -> str:
     return s
 
 ALIASES = {
-    # Common variants vs catalog names
     "knee raises": [
         "hanging knee raise","hanging knee raises","knee raise (hanging)","hanging leg raise (knees bent)"
     ],
@@ -168,7 +171,6 @@ ALIASES = {
 }
 
 def fetch_exercise_index(base: str, headers: Dict[str,str], language_id: int = 2) -> List[Dict[str,Any]]:
-    """Build an English exercise index from /exerciseinfo/."""
     out: List[Dict[str,Any]] = []
     params = {"limit": 100, "offset": 0}
     while True:
@@ -227,6 +229,24 @@ def resolve_exercise_id(name: str, index: List[Dict[str,Any]], hint_equipment: O
     return best[1] if best[0] >= 0.5 else None
 
 # ---------------- Routine helpers ----------------
+def compact_name(name: str, start: Optional[str], end: Optional[str]) -> str:
+    """Ensure name <= 25 chars. Preserve dates if possible."""
+    base = (name or "").strip()
+    if len(base) <= MAX_ROUTINE_NAME and base:
+        return base
+    # Try a compact pattern with dates (MM-DD–MM-DD)
+    if start and end and len(start) >= 10 and len(end) >= 10:
+        s = start[5:10]  # MM-DD
+        e = end[5:10]    # MM-DD
+        for head in ("PeteE", "Block", "Plan", "PTE"):
+            cand = f"{head} {s}–{e}"
+            if len(cand) <= MAX_ROUTINE_NAME:
+                return cand
+    # Fallback: hard truncate
+    if not base:
+        base = "PeteE Routine"
+    return base[:MAX_ROUTINE_NAME]
+
 def find_routine_by_name(base: str, headers: Dict[str,str], name: str) -> Optional[int]:
     res = GET(base, headers, "/routine/", params={"search": name, "limit": 50})
     items = res.get("results", []) if isinstance(res, dict) else []
@@ -240,24 +260,20 @@ def create_or_update_routine(base: str, headers: Dict[str,str], name: str,
                              fit_in_week: Optional[bool],
                              description: Optional[str],
                              dry_run: bool) -> int:
-    """
-    Public server requires start & end on /routine/.
-    Docs: routine has name, description, start date, end date, optional fit_in_week.
-    """
-    name = (name or "PeteE Routine").strip()[:50]
-    payload = {"name": name, "start": start, "end": end}
+    """Public server requires start & end; name max length 25."""
+    safe_name = compact_name(name, start, end)
+    payload = {"name": safe_name, "start": start, "end": end}
     if description: payload["description"] = description[:1000]
     if fit_in_week is not None: payload["fit_in_week"] = bool(fit_in_week)
 
-    rid = find_routine_by_name(base, headers, name)
+    rid = find_routine_by_name(base, headers, safe_name)
     if rid:
-        info(f"[OK] Using existing routine id={rid} name={name} (will replace days)")
-        # update routine window to match plan
+        info(f"[OK] Using existing routine id={rid} name={safe_name} (replace days)")
         try:
             PATCH(base, headers, f"/routine/{rid}/", payload)
         except Exception as e:
-            warn(f"PATCH /routine/{rid}/ failed (will proceed): {e}")
-        # remove existing days for a clean build
+            warn(f"PATCH /routine/{rid}/ failed (proceeding): {e}")
+        # wipe existing days
         try:
             lst = GET(base, headers, "/day/", params={"routine": rid, "limit": 200})
             for d in lst.get("results", []):
@@ -268,7 +284,7 @@ def create_or_update_routine(base: str, headers: Dict[str,str], name: str,
 
     res = POST(base, headers, "/routine/", payload, dry_run=dry_run)
     rid = int(res["id"])
-    info(f"[OK] Created routine id={rid} name={name}")
+    info(f"[OK] Created routine id={rid} name={safe_name}")
     return rid
 
 def create_day(base, headers, routine_id: int, order: int, name: str, is_rest: bool, dry_run: bool) -> int:
@@ -291,11 +307,7 @@ def create_slot_entry(base, headers, slot_id: int, exercise_id: int, dry_run: bo
     return int(res["id"])
 
 def post_config_row(base, headers, endpoint: str, slot_id: int, slot_entry_id: int, payload_core: Dict[str,Any], dry_run: bool):
-    """
-    Be compatible across deployments: try both FK field names
-      1) slot_config: <slot-entry id>
-      2) slot: <slot id>
-    """
+    """Try both foreign key field names for compatibility across deployments."""
     for variant in ({"slot_config": slot_entry_id}, {"slot": slot_id}):
         payload = {**variant, **payload_core}
         try:
@@ -334,7 +346,7 @@ def load_plan(path: str) -> Dict[str,Any]:
             name  = (d.get("name") or f"Day {order}").strip()
             is_rest = bool(d.get("is_rest", False))
             is_class = (d.get("type") == "hiit") and not (d.get("exercises") or [])
-            # Group exercises into slots by superset_id
+            # group exercises into slots by superset_id
             exs = d.get("exercises") or []
             buckets: Dict[str, List[Dict[str,Any]]] = {}
             idx = 0
@@ -424,21 +436,21 @@ def build_from_plan(plan_path: str, routine_name_override: Optional[str], dry_ru
     info(f"[wger] Reading plan: {plan_path}")
 
     plan = load_plan(plan_path)
-    name = (routine_name_override or plan["name"] or "PeteE Routine").strip()
     start = plan.get("start")
     end   = plan.get("end")
-    fit_in_week = plan.get("fit_in_week")
-    description = plan.get("description")
-
     if not start or not end:
-        err("Plan is missing 'start'/'end' dates (required by /routine/). "
+        err("Plan is missing 'start'/'end' (required by /routine/). "
             "Add routine.start/end in legacy schema or start_date/end_date in dated schema.")
         sys.exit(1)
+
+    name = (routine_name_override or plan["name"] or "PeteE Routine").strip()
+    fit_in_week = plan.get("fit_in_week")
+    description = plan.get("description")
 
     # Exercise index
     ex_index = fetch_exercise_index(base, headers, language_id=2)
 
-    # Upsert routine by name; wipe days before rebuilding
+    # Upsert routine by (safe) name; wipe days before rebuilding
     rid = create_or_update_routine(base, headers, name, start, end, fit_in_week, description, dry_run)
 
     # Build days
