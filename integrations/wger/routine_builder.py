@@ -2,91 +2,101 @@
 # -*- coding: utf-8 -*-
 
 """
-Routine builder for WGER (public wger.de API).
+Wger Routine builder (public wger.de compatible)
 
-What this script does
----------------------
-- Reads a 4-week plan JSON and creates a Routine with Days, Slots, Slot-Entries (exercises),
-  then attaches numeric configs for sets, reps (+unit), weight (+unit), rest and RIR.
-- Resolves exercise names by fetching the live /api/v2/exerciseinfo/ index (English),
-  doing robust normalization + fuzzy matching with equipment/category hints.
-- Works against the public server (wger.de) which uses `/slot-entry/` (not `/slotconfig/`).
+- Accepts BOTH plan schemas:
+  (A) Legacy weekly-cycle schema (what you have now)
+      {
+        "routine": {"name": "...", "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", ...},
+        "days": [
+          {
+            "order": 1,
+            "name": "Lower",
+            "type": "custom"|"hiit",
+            "is_rest": false,
+            "description": "...",
+            "exercises": [
+              {
+                "name": "Barbell Squat",
+                "exercise_id": null|123,
+                "sets": 4,
+                "reps": "5"|"6-8",
+                "rir": 2,
+                "rest_s": 180,
+                "weight_kg": null|60.0,
+                "superset_id": null|"A",
+                "progression": {...optional...}
+              },
+              ...
+            ]
+          },
+          ...
+        ]
+      }
 
-Inputs
-------
-- PLAN JSON path (see format notes below)
-- Environment:
-  WGER_API_KEY  : Personal token (required)
-  WGER_BASE_URL : Optional (default https://wger.de/api/v2)
+  (B) Dated day/slot schema (alternative newer format)
+      {
+        "routine_name": "PeteE Block ...",
+        "start_date": "YYYY-MM-DD",
+        "end_date":   "YYYY-MM-DD",
+        "days": [
+          {
+            "date": "YYYY-MM-DD",
+            "name": "Lower",
+            "is_rest": false,
+            "class_placeholder": false,
+            "slots": [
+              {
+                "order": 1,
+                "items": [
+                  {
+                    "name": "Barbell Squat",
+                    "equipment": "Barbell",
+                    "category": "Legs",
+                    "sets": 4,
+                    "reps": 5|"6-8",
+                    "rir": 2,
+                    "rest_seconds": 180,
+                    "weight": null|60.0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
 
-Plan JSON shape (example)
--------------------------
-{
-  "routine_name": "PeteE. Block 2025-09-01–2025-09-28",
-  "start_date": "2025-09-01",
-  "end_date":   "2025-09-28",
-  "days": [
-    {
-      "date": "2025-09-01",
-      "name": "Lower",
-      "is_rest": false,
-      "slots": [
-        {
-          "order": 1,
-          "items": [
-            {
-              "name": "Back Squat",
-              "equipment": "Barbell",           # optional but helps matching
-              "category": "Legs",               # optional but helps matching
-              "sets": 5,
-              "reps": 5,
-              "weight": 60.0,                   # kg unless you change default unit
-              "rest_seconds": 120,
-              "rir": 2
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "date": "2025-09-02",
-      "name": "Blaze HIIT @ 07:00",
-      "is_rest": false,
-      "class_placeholder": true               # if true -> creates a titled day without slots
-    }
-  ]
-}
+- Works with the public API endpoints: /routine/, /day/, /slot/, /slot-entry/,
+  and the per-property config endpoints: /sets-config/, /repetitions-config/,
+  /max-repetitions-config/, /rest-config/, /rir-config/, /weight-config/.
 
-Notes
------
-- Any day with "class_placeholder": true will be created without slots; it still appears in the routine
-  so your calendar shows the class (title comes from "name").
-- If weight/reps/sets are omitted, defaults will be posted so the app won’t see nulls.
-- Units: defaults to kg + reps; can be changed via REPS_UNIT_NAME / WEIGHT_UNIT_NAME constants below.
+- Adds numeric configs immediately after each slot-entry so the mobile app sees
+  numbers (avoids Null→num casting errors).
+
+Environment:
+  WGER_API_KEY  (required)
+  WGER_BASE_URL (optional; defaults to https://wger.de/api/v2 even if blank/empty)
 """
 
 from __future__ import annotations
 import argparse, os, sys, json, time, re
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 import requests
 
-# ---------- Config ----------
 DEFAULT_BASE = "https://wger.de/api/v2"
-REPS_UNIT_NAME = "reps"   # will be looked up via /repetition-unit/
-WEIGHT_UNIT_NAME = "kg"   # will be looked up via /weightunit/
 HTTP_TIMEOUT = 30
 MAX_RETRIES = 3
 RETRY_SLEEP = 1.0
 
-# ---------- Logging ----------
+# ---------------- Logging ----------------
 def info(msg: str):  print(msg, flush=True)
 def warn(msg: str):  print(f"[WARN] {msg}", flush=True)
 def err(msg: str):   print(f"[ERROR] {msg}", flush=True)
 
-# ---------- HTTP helpers ----------
+# ---------------- HTTP helpers ----------------
 def get_env() -> Tuple[str, Dict[str,str]]:
-    base = os.environ.get("WGER_BASE_URL", DEFAULT_BASE).rstrip("/")
+    # FIX: fall back to default when env var is present but empty
+    base = (os.environ.get("WGER_BASE_URL") or DEFAULT_BASE).rstrip("/")
     key  = os.environ.get("WGER_API_KEY", "").strip()
     if not key:
         err("WGER_API_KEY not set")
@@ -98,26 +108,27 @@ def get_env() -> Tuple[str, Dict[str,str]]:
     }
     return base, headers
 
-def req(method: str, url: str, headers: Dict[str,str], payload: Optional[Dict[str,Any]]=None, params: Optional[Dict[str,Any]]=None, ok=(200,201), dry_run=False) -> requests.Response:
+def req(method: str, url: str, headers: Dict[str,str], payload: Optional[Dict[str,Any]]=None,
+        params: Optional[Dict[str,Any]]=None, ok=(200,201), dry_run=False) -> requests.Response:
     for attempt in range(1, MAX_RETRIES+1):
         try:
             if dry_run and method.upper() in ("POST","PUT","PATCH","DELETE"):
-                info(f"DRY RUN {method} {url} {('params='+str(params)) if params else ''} {('payload='+json.dumps(payload)) if payload else ''}")
+                info(f"DRY RUN {method} {url} "
+                     f"{'params='+str(params) if params else ''} "
+                     f"{'payload='+json.dumps(payload) if payload else ''}")
                 class Dummy:
                     status_code=200
                     def json(self): return {"dry_run": True}
                     def raise_for_status(self): return
                 return Dummy()  # type: ignore
-            r = requests.request(method.upper(), url, headers=headers, json=payload, params=params, timeout=HTTP_TIMEOUT)
+            r = requests.request(method.upper(), url, headers=headers, json=payload,
+                                 params=params, timeout=HTTP_TIMEOUT)
             if r.status_code not in ok:
-                try:
-                    body = r.text
-                except Exception:
-                    body = "<no body>"
-                err(f"{method} {url} -> {r.status_code}: {body[:600]}")
+                body = r.text if hasattr(r, "text") else "<no body>"
+                err(f"{method} {url} -> {r.status_code}: {body[:800]}")
                 r.raise_for_status()
             return r
-        except Exception as e:
+        except Exception:
             if attempt == MAX_RETRIES:
                 raise
             time.sleep(RETRY_SLEEP)
@@ -128,122 +139,67 @@ def GET(base: str, headers: Dict[str,str], path: str, params: Optional[Dict[str,
 def POST(base: str, headers: Dict[str,str], path: str, payload: Dict[str,Any], ok=(201,), dry_run=False) -> Dict[str,Any]:
     return req("POST", f"{base}{path}", headers, payload=payload, ok=ok, dry_run=dry_run).json()
 
-# ---------- Models ----------
-@dataclass
-class PlanItem:
-    name: str
-    equipment: Optional[str] = None
-    category: Optional[str] = None
-    sets: Optional[int] = None
-    reps: Optional[int] = None
-    weight: Optional[float] = None
-    rest_seconds: Optional[int] = None
-    rir: Optional[int] = None
+def DELETE(base: str, headers: Dict[str,str], path: str, ok=(200,202,204)) -> None:
+    try:
+        req("DELETE", f"{base}{path}", headers, ok=ok)
+    except Exception as e:
+        warn(f"DELETE {path} -> {e}")
 
-@dataclass
-class PlanSlot:
-    order: int
-    items: List[PlanItem]
-
-@dataclass
-class PlanDay:
-    date: str
-    name: str
-    is_rest: bool = False
-    slots: List[PlanSlot] = None
-    class_placeholder: bool = False
-
-@dataclass
-class Plan:
-    routine_name: str
-    start_date: str
-    end_date: str
-    days: List[PlanDay]
-
-# ---------- Parsing ----------
-def load_plan(path: str) -> Plan:
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    if not isinstance(raw, dict) or "days" not in raw:
-        raise ValueError("Plan JSON must be an object with a 'days' array.")
-    days: List[PlanDay] = []
-    for d in raw.get("days", []):
-        slots = []
-        for s in d.get("slots", []) or []:
-            items = [PlanItem(**i) for i in (s.get("items") or [])]
-            slots.append(PlanSlot(order=int(s.get("order", 1)), items=items))
-        days.append(PlanDay(
-            date=d["date"],
-            name=d.get("name",""),
-            is_rest=bool(d.get("is_rest", False)),
-            slots=slots,
-            class_placeholder=bool(d.get("class_placeholder", False))
-        ))
-    return Plan(
-        routine_name=raw.get("routine_name","PeteE. Routine"),
-        start_date=raw["start_date"],
-        end_date=raw["end_date"],
-        days=days
-    )
-
-# ---------- Exercise index + name resolution ----------
+# ---------------- Exercise resolution ----------------
 _punct_re = re.compile(r"[^a-z0-9\s]")
 
 def norm(s: str) -> str:
+    if not s: return ""
     s = s.lower()
-    s = s.replace("&", " and ")
+    s = s.replace("&"," and ")
     s = _punct_re.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 ALIASES = {
-    # common barbell names
-    "barbell bent over row": ["bent over row","barbell row","bentover row","bent-over row"],
-    "barbell overhead press": ["military press","shoulder press","ohp","standing barbell press"],
-    # core
-    "knee raises": ["hanging knee raise","hanging knee raises","knee raise (hanging)","hanging leg raise (knees bent)"],
+    # Variants users commonly write vs Wger catalog names
+    "knee raises": [
+        "hanging knee raise","hanging knee raises","knee raise (hanging)","hanging leg raise (knees bent)"
+    ],
+    "bent over row": [
+        "barbell bent-over row","barbell bent over row","bent-over row","barbell row","bentover row"
+    ],
+    "overhead press": [
+        "barbell overhead press","military press","shoulder press","ohp","standing barbell press"
+    ],
 }
 
 def fetch_exercise_index(base: str, headers: Dict[str,str], language_id: int = 2) -> List[Dict[str,Any]]:
-    """Return a list of exercises with English name + equipment + category."""
-    results: List[Dict[str,Any]] = []
-    path = "/exerciseinfo/"
+    """Build an English exercise index from /exerciseinfo/."""
+    out: List[Dict[str,Any]] = []
     params = {"limit": 100, "offset": 0}
     while True:
-        data = GET(base, headers, path, params=params)
-        for row in data.get("results", []):
-            # english translation if present, else first name we see
+        page = GET(base, headers, "/exerciseinfo/", params=params)
+        for row in page.get("results", []):
             en_name = None
             for tr in row.get("translations", []):
                 if tr.get("language") == language_id and tr.get("name"):
-                    en_name = tr["name"]
-                    break
-            if not en_name:
-                continue
-            eq = [e.get("name","") for e in row.get("equipment", [])]
+                    en_name = tr["name"]; break
+            if not en_name: continue
+            eq = [e.get("name","") for e in (row.get("equipment") or [])]
             cat = (row.get("category") or {}).get("name","")
-            results.append({
+            out.append({
                 "id": row["id"],
                 "name": en_name,
                 "name_n": norm(en_name),
                 "equipment": [norm(x) for x in eq],
-                "category": norm(cat)
+                "category": norm(cat),
             })
-        next_url = data.get("next")
-        if not next_url:
-            break
-        # Extract next offset safely
+        next_url = page.get("next")
+        if not next_url: break
         m = re.search(r"offset=(\d+)", next_url)
-        if m:
-            params["offset"] = int(m.group(1))
-        else:
-            break
-    info(f"[index] Loaded {len(results)} exercises from /exerciseinfo/")
-    return results
+        params["offset"] = int(m.group(1)) if m else params["offset"] + 100
+    info(f"[index] Loaded {len(out)} exercises")
+    return out
 
 def alias_candidates(target_n: str) -> List[str]:
-    """Return normalized alias candidates for a target name."""
     cands = [target_n]
+    # If target matches any alias list, include the canonical head
     for canon, alist in ALIASES.items():
         canon_n = norm(canon)
         if target_n == canon_n or target_n in [norm(a) for a in alist]:
@@ -251,7 +207,6 @@ def alias_candidates(target_n: str) -> List[str]:
     return cands
 
 def score_match(target: str, row: Dict[str,Any], hint_equipment: Optional[str], hint_category: Optional[str]) -> float:
-    """Simple token set similarity + small bonuses for equipment/category matches."""
     t_tokens = set(target.split())
     r_tokens = set(row["name_n"].split())
     common = len(t_tokens & r_tokens)
@@ -259,50 +214,68 @@ def score_match(target: str, row: Dict[str,Any], hint_equipment: Optional[str], 
     bonus = 0.0
     if hint_equipment:
         he = norm(hint_equipment)
-        bonus += 0.15 if he in row["equipment"] else 0.0
+        if he in row["equipment"]:
+            bonus += 0.15
     if hint_category:
         hc = norm(hint_category)
-        bonus += 0.10 if hc == row["category"] else 0.0
+        if hc == row["category"]:
+            bonus += 0.10
     return base + bonus
 
 def resolve_exercise_id(name: str, index: List[Dict[str,Any]], hint_equipment: Optional[str], hint_category: Optional[str]) -> Optional[int]:
     t = norm(name)
-    candidates = alias_candidates(t)
+    cands = alias_candidates(t)
     best: Tuple[float, Optional[int], str] = (0.0, None, "")
-    for cand in candidates:
+    for cand in cands:
         for row in index:
             s = score_match(cand, row, hint_equipment, hint_category)
             if s > best[0]:
                 best = (s, row["id"], row["name"])
-    if best[0] < 0.5:
-        return None
-    return best[1]
+    return best[1] if best[0] >= 0.5 else None
 
-# ---------- Unit helpers ----------
-def lookup_unit_id(base: str, headers: Dict[str,str], endpoint: str, target_name: str, fallback: int) -> int:
+# ---------------- Units (optional; we try without if lookup fails) ----------------
+def try_lookup_unit_id(base: str, headers: Dict[str,str], endpoint: str, target: str) -> Optional[int]:
     try:
-        data = GET(base, headers, f"/{endpoint}/")
-        for row in data.get("results", []):
-            nm = (row.get("name") or row.get("abbreviation") or "").lower()
-            if nm == target_name.lower():
-                return int(row["id"])
-        # if paginated, try simple scan of all pages
-        next_url = data.get("next")
-        while next_url:
-            m = re.search(r"offset=(\d+)", next_url)
-            params = {"limit": 100, "offset": int(m.group(1))} if m else {}
-            data = GET(base, headers, f"/{endpoint}/", params=params)
-            for row in data.get("results", []):
+        params = {"limit": 100, "offset": 0}
+        while True:
+            page = GET(base, headers, f"/{endpoint}/", params=params)
+            for row in page.get("results", []):
                 nm = (row.get("name") or row.get("abbreviation") or "").lower()
-                if nm == target_name.lower():
+                if nm == target.lower():
                     return int(row["id"])
-            next_url = data.get("next")
+            next_url = page.get("next")
+            if not next_url: break
+            m = re.search(r"offset=(\d+)", next_url)
+            params["offset"] = int(m.group(1)) if m else params["offset"] + 100
     except Exception as e:
-        warn(f"Could not look up unit id for {endpoint}='{target_name}': {e}")
-    return fallback
+        warn(f"Unit lookup failed for {endpoint}='{target}': {e}")
+    return None
 
-# ---------- Builders ----------
-def create_routine(base, headers, name: str, dry_run: bool) -> int:
+# ---------------- Routine helpers ----------------
+def find_routine_by_name(base: str, headers: Dict[str,str], name: str) -> Optional[int]:
+    res = GET(base, headers, "/routine/", params={"search": name, "limit": 50})
+    items = res.get("results", []) if isinstance(res, dict) else []
+    for it in items:
+        if (it.get("name") or "") == name:
+            return int(it["id"])
+    return None
+
+def create_or_update_routine(base: str, headers: Dict[str,str], name: str, dry_run: bool) -> int:
+    # Enforce a conservative name length (some deployments are strict)
+    name = name[:25]
+    rid = find_routine_by_name(base, headers, name)
+    if rid:
+        info(f"[OK] Using existing routine id={rid} name={name}")
+        # Replace any existing days (fresh build each apply)
+        # List and delete existing days
+        try:
+            lst = GET(base, headers, "/day/", params={"routine": rid, "limit": 200})
+            for d in lst.get("results", []):
+                DELETE(base, headers, f"/day/{d['id']}/")
+        except Exception as e:
+            warn(f"Could not list/delete existing days: {e}")
+        return rid
+    # Create fresh
     payload = {"name": name, "is_public": False}
     res = POST(base, headers, "/routine/", payload, dry_run=dry_run)
     rid = int(res["id"])
@@ -310,111 +283,230 @@ def create_routine(base, headers, name: str, dry_run: bool) -> int:
     return rid
 
 def create_day(base, headers, routine_id: int, order: int, name: str, is_rest: bool, dry_run: bool) -> int:
-    payload = {"routine": routine_id, "order": order, "is_rest": bool(is_rest), "name": name}
+    payload = {"routine": routine_id, "order": int(order), "name": name[:20], "is_rest": bool(is_rest)}
     res = POST(base, headers, "/day/", payload, dry_run=dry_run)
     did = int(res["id"])
-    info(f"  [day] {order} {name} → id={did} is_rest={is_rest}")
+    info(f"  [day] {order} {name[:20]} → id={did} is_rest={is_rest}")
     return did
 
 def create_slot(base, headers, day_id: int, order: int, dry_run: bool) -> int:
-    payload = {"day": day_id, "order": order}
+    payload = {"day": day_id, "order": int(order)}
     res = POST(base, headers, "/slot/", payload, dry_run=dry_run)
     sid = int(res["id"])
     info(f"    [slot] order={order} id={sid}")
     return sid
 
-def create_slot_entry(base, headers, slot_id: int, exercise_id: int, rep_round: Optional[float], weight_round: Optional[float], dry_run: bool) -> int:
-    payload = {
-        "slot": slot_id,
-        "exercise": exercise_id
-    }
-    # These rounding fields are accepted on the slot-entry object on public server
-    if rep_round is not None:   payload["repetition_rounding"] = rep_round
-    if weight_round is not None: payload["weight_rounding"]    = weight_round
+def create_slot_entry(base, headers, slot_id: int, exercise_id: int, dry_run: bool) -> int:
+    payload = {"slot": slot_id, "exercise": exercise_id}
     res = POST(base, headers, "/slot-entry/", payload, dry_run=dry_run)
-    seid = int(res["id"])
-    return seid
+    return int(res["id"])
 
 def post_config_row(base, headers, endpoint: str, slot_id: int, slot_entry_id: int, payload_core: Dict[str,Any], dry_run: bool):
     """
-    Some deployments expect the foreign key named 'slot_config' (2.4 docs),
-    while the public wger.de often accepts 'slot' on the config rows OR 'slot_config' with the slot-entry id.
-    We'll try both, first with slot_config -> slot_entry_id, then with slot -> slot_id.
+    Try both FK field names to be compatible across deployments:
+      1) slot_config: <slot-entry id>
+      2) slot: <slot id>
     """
     for variant in ({"slot_config": slot_entry_id}, {"slot": slot_id}):
         payload = {**variant, **payload_core}
         try:
             POST(base, headers, f"/{endpoint}/", payload, dry_run=dry_run)
             return
-        except Exception as e:
+        except Exception:
             continue
-    # If both failed, raise once more with the last variant for visibility
+    # If both failed, raise once more with 'slot' for visibility
     POST(base, headers, f"/{endpoint}/", {**{"slot": slot_id}, **payload_core}, dry_run=dry_run)
 
-def build_from_plan(plan_path: str, routine_name_override: Optional[str], replace: Optional[str], dry_run: bool):
+# ---------------- Plan loading (supports both schemas) ----------------
+def load_plan(path: str) -> Dict[str,Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+
+    out: Dict[str,Any] = {
+        "name": "",
+        "days": []  # each: {order, name, is_rest, class_placeholder, slots:[{order, items:[...]}]}
+    }
+
+    if isinstance(raw, dict) and "routine" in raw:
+        # Legacy weekly-cycle schema
+        r = raw.get("routine") or {}
+        out["name"] = (r.get("name") or "PeteE Block").strip()
+        days = raw.get("days") or []
+        for d in days:
+            order = int(d.get("order") or 1)
+            name  = (d.get("name") or f"Day {order}").strip()
+            is_rest = bool(d.get("is_rest", False))
+            is_class = (d.get("type") == "hiit") and not (d.get("exercises") or [])
+            # Group exercises into slots by superset_id
+            exs = d.get("exercises") or []
+            buckets: Dict[str, List[Dict[str,Any]]] = {}
+            idx = 0
+            for ex in exs:
+                key = ex.get("superset_id")
+                if key is None:
+                    idx += 1
+                    key = f"__single_{idx}"
+                buckets.setdefault(str(key), []).append(ex)
+
+            slots = []
+            s_order = 1
+            for _, items in buckets.items():
+                slot_items = []
+                for ex in items:
+                    slot_items.append({
+                        "name": ex.get("name"),
+                        "equipment": None,
+                        "category": None,
+                        "sets": ex.get("sets"),
+                        "reps": ex.get("reps"),
+                        "rir": ex.get("rir"),
+                        "rest_seconds": ex.get("rest_s"),
+                        "weight": ex.get("weight_kg"),
+                        "exercise_id": ex.get("exercise_id"),
+                    })
+                slots.append({"order": s_order, "items": slot_items})
+                s_order += 1
+
+            out["days"].append({
+                "order": order,
+                "name": name,
+                "is_rest": is_rest,
+                "class_placeholder": bool(is_class),
+                "slots": slots
+            })
+        return out
+
+    elif isinstance(raw, dict) and "routine_name" in raw:
+        # Dated day/slot schema
+        out["name"] = (raw.get("routine_name") or "PeteE Routine").strip()
+        for idx, d in enumerate(raw.get("days") or [], start=1):
+            name  = (d.get("name") or f"Day {idx}").strip()
+            is_rest = bool(d.get("is_rest", False))
+            is_class = bool(d.get("class_placeholder", False))
+            slots = d.get("slots") or []
+            # Normalize slot order
+            norm_slots = []
+            for s in slots:
+                norm_slots.append({
+                    "order": int(s.get("order") or len(norm_slots)+1),
+                    "items": [
+                        {
+                            "name": it.get("name"),
+                            "equipment": it.get("equipment"),
+                            "category": it.get("category"),
+                            "sets": it.get("sets"),
+                            "reps": it.get("reps"),
+                            "rir": it.get("rir"),
+                            "rest_seconds": it.get("rest_seconds"),
+                            "weight": it.get("weight"),
+                            "exercise_id": it.get("exercise_id"),
+                        } for it in (s.get("items") or [])
+                    ]
+                })
+            out["days"].append({
+                "order": idx,
+                "name": name,
+                "is_rest": is_rest,
+                "class_placeholder": is_class,
+                "slots": norm_slots
+            })
+        return out
+
+    else:
+        raise ValueError("Unrecognized plan schema: expected keys 'routine' or 'routine_name'")
+
+# ---------------- Main apply ----------------
+def build_from_plan(plan_path: str, routine_name_override: Optional[str], dry_run: bool):
     base, headers = get_env()
     info(f"[wger] Base URL: {base}")
     info(f"[wger] Dry run: {'YES' if dry_run else 'NO'}")
     info(f"[wger] Reading plan: {plan_path}")
 
     plan = load_plan(plan_path)
-    routine_name = routine_name_override or plan.routine_name
+    routine_name = (routine_name_override or plan["name"] or "PeteE Routine").strip()
 
-    # Units
-    reps_unit_id   = lookup_unit_id(base, headers, "repetition-unit", REPS_UNIT_NAME, fallback=1)
-    weight_unit_id = lookup_unit_id(base, headers, "weightunit", WEIGHT_UNIT_NAME, fallback=1)
-
-    # Exercise index (English)
+    # Exercise index
     ex_index = fetch_exercise_index(base, headers, language_id=2)
 
-    # Routine
-    rid = create_routine(base, headers, routine_name, dry_run)
+    # Units (optional) – try to fetch; if not available, we omit unit fields
+    rep_unit_id = try_lookup_unit_id(base, headers, "repetition-unit", "reps")
+    wt_unit_id  = try_lookup_unit_id(base, headers, "weightunit", "kg")
 
-    # Days
-    for i, d in enumerate(plan.days, start=1):
-        did = create_day(base, headers, rid, i, d.name, d.is_rest, dry_run)
+    # Idempotent: upsert by routine name and wipe existing days
+    rid = create_or_update_routine(base, headers, routine_name, dry_run)
 
-        if d.class_placeholder or d.is_rest or not d.slots:
-            # no slots to create, continue
+    # Build days (order by 'order')
+    for day in sorted(plan["days"], key=lambda x: int(x.get("order", 999))):
+        name = day.get("name") or "Day"
+        is_rest = bool(day.get("is_rest", False))
+        is_class = bool(day.get("class_placeholder", False))
+        did = create_day(base, headers, rid, int(day.get("order", 1)), name, is_rest, dry_run)
+
+        if is_rest or is_class or not day.get("slots"):
             continue
 
-        for s in sorted(d.slots, key=lambda x: x.order):
-            sid = create_slot(base, headers, did, s.order, dry_run)
-
-            for item in s.items:
-                ex_id = resolve_exercise_id(item.name, ex_index, item.equipment, item.category)
+        for slot in sorted(day["slots"], key=lambda s: int(s.get("order", 1))):
+            sid = create_slot(base, headers, did, int(slot.get("order", 1)), dry_run)
+            for item in (slot.get("items") or []):
+                ex_id = item.get("exercise_id")
                 if not ex_id:
-                    warn(f"Could not resolve exercise_id for '{item.name}'. Skipping this item.")
+                    ex_id = resolve_exercise_id(item.get("name",""), ex_index,
+                                                item.get("equipment"), item.get("category"))
+                if not ex_id:
+                    warn(f"Could not resolve exercise_id for '{item.get('name')}'. Skipping.")
                     continue
 
-                seid = create_slot_entry(base, headers, sid, ex_id, rep_round=1.0, weight_round=0.5, dry_run=dry_run)
+                seid = create_slot_entry(base, headers, sid, int(ex_id), dry_run)
 
-                # Default/required numeric configs so the mobile app doesn't choke on nulls
-                sets  = int(item.sets  if item.sets  is not None else 3)
-                reps  = int(item.reps  if item.reps  is not None else 10)
-                rest  = int(item.rest_seconds if item.rest_seconds is not None else 90)
-                rir   = int(item.rir   if item.rir   is not None else 2)
+                # Defaults to avoid nulls
+                sets = item.get("sets");  sets = int(sets) if sets is not None else 3
+                reps = item.get("reps");  # int or "6-8"
+                rest = item.get("rest_seconds"); rest = int(rest) if rest is not None else 90
+                rir  = item.get("rir");  rir  = int(rir)  if rir  is not None else 2
+                weight = item.get("weight")
+                if weight is not None:
+                    try: weight = float(weight)
+                    except Exception: weight = None
 
-                # Config rows:
-                post_config_row(base, headers, "sets-config", sid, seid, {"value": sets}, dry_run)
-                post_config_row(base, headers, "repetitions-config", sid, seid, {"value": reps, "unit": reps_unit_id}, dry_run)
-                if item.weight is not None:
-                    post_config_row(base, headers, "weight-config", sid, seid, {"value": float(item.weight), "unit": weight_unit_id}, dry_run)
-                # Always provide rest and RIR
-                post_config_row(base, headers, "rest-config", sid, seid, {"value": rest}, dry_run)
-                post_config_row(base, headers, "rir-config", sid, seid, {"value": rir}, dry_run)
+                # Config rows
+                post_config_row(base, headers, "sets-config", sid, seid, {"value": float(sets)}, dry_run)
+
+                # reps: support range
+                if isinstance(reps, str) and "-" in reps:
+                    lo, hi = reps.split("-", 1)
+                    core_lo = {"value": float(lo)}
+                    core_hi = {"value": float(hi)}
+                    if rep_unit_id is not None:
+                        core_lo["unit"] = rep_unit_id
+                        core_hi["unit"] = rep_unit_id
+                    post_config_row(base, headers, "repetitions-config",     sid, seid, core_lo, dry_run)
+                    post_config_row(base, headers, "max-repetitions-config", sid, seid, core_hi, dry_run)
+                else:
+                    val = int(reps) if reps is not None else 10
+                    core = {"value": float(val)}
+                    if rep_unit_id is not None:
+                        core["unit"] = rep_unit_id
+                    post_config_row(base, headers, "repetitions-config", sid, seid, core, dry_run)
+
+                post_config_row(base, headers, "rest-config", sid, seid, {"value": float(rest)}, dry_run)
+                post_config_row(base, headers, "rir-config",  sid, seid, {"value": float(rir)},  dry_run)
+
+                if weight is not None:
+                    core_w = {"value": float(weight)}
+                    if wt_unit_id is not None:
+                        core_w["unit"] = wt_unit_id
+                    post_config_row(base, headers, "weight-config", sid, seid, core_w, dry_run)
 
     info("[DONE] Plan applied.")
 
-# ---------- CLI ----------
+# ---------------- CLI ----------------
 def main():
-    ap = argparse.ArgumentParser(description="Apply a 4‑week plan to WGER as a routine")
+    ap = argparse.ArgumentParser(description="Apply a plan JSON as a Wger routine (public server compatible)")
     ap.add_argument("plan", help="Path to plan JSON")
-    ap.add_argument("--dry-run", action="store_true", help="Do not POST, just log actions")
-    ap.add_argument("--replace-days", default=None, help="(reserved) replace rules")
     ap.add_argument("--routine-name", default=None, help="Override routine name")
+    ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-    build_from_plan(args.plan, routine_name_override=args.routine_name, replace=args.replace_days, dry_run=args.dry_run)
+    build_from_plan(args.plan, routine_name_override=args.routine_name, dry_run=args.dry_run)
 
 if __name__ == "__main__":
     main()
