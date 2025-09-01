@@ -1,0 +1,23 @@
+name: Wger Inspect Routine
+on:
+  workflow_dispatch:
+    inputs:
+      routine_id:
+        description: "Routine ID to inspect (e.g., 48495)"
+        required: true
+        default: "48495"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+      WGER_BASE_URL: https://wger.de/api/v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: python -m pip install --upgrade pip requests
+      - name: Inspect routine
+        run: python integrations/wger/routine_inspect.py "${{ github.event.inputs.routine_id }}"
