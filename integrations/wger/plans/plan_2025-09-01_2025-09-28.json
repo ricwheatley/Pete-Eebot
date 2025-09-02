@@ -1,357 +1,970 @@
-{
-  "routine": {
-    "name": "2025-09-01 to 2025-09-28",
-    "start": "2025-09-01",
-    "end": "2025-09-28",
-    "fit_in_week": true,
-    "description": "Phase 1: Lower/Upper + Blaze (3x) with progressive overload; week 4 deload (sets -1)."
+[
+  {
+    "date": "2025-09-01",
+    "name": "Bench",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Bench Press",
+            "sets": 4,
+            "reps": "10",
+            "rir": 3,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "One-arm DB Row",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "DB Incline Press",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Face Pull",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
   },
-  "days": [
-    {
-      "order": 1,
-      "name": "Lower",
-      "type": "custom",
-      "is_rest": false,
-      "need_logs_to_advance": true,
-      "description": "Weights — Lower body (RIR-based; set loads on day 1).",
-      "exercises": [
-        {
-          "exercise_id": null,
-          "name": "Barbell Squat",
-          "sets": 4,
-          "reps": "5",
-          "rir": 2,
-          "rest_s": 180,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 3
+  {
+    "date": "2025-09-02",
+    "name": "Deadlift",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Conventional Deadlift",
+            "sets": 4,
+            "reps": "6",
+            "rir": 3,
+            "rest_s": 180,
+            "weight_kg": null
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Romanian Deadlift",
-          "sets": 3,
-          "reps": "8",
-          "rir": 2,
-          "rest_s": 150,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 120
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Leg Press",
-          "sets": 3,
-          "reps": "10",
-          "rir": 1,
-          "rest_s": 120,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Bulgarian Split Squat",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 90
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Standing Calf Raise",
-          "sets": 3,
-          "reps": "12",
-          "rir": 1,
-          "rest_s": 90,
-          "superset_id": "A",
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Hanging Knee Raise",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 60
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Hanging Knee Raise",
-          "sets": 3,
-          "reps": "12",
-          "rir": 1,
-          "rest_s": 60,
-          "superset_id": "A",
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-03",
+    "name": "Blaze",
+    "is_rest": false,
+    "slots": []
+  },
+  {
+    "date": "2025-09-04",
+    "name": "OHP",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Overhead Press",
+            "sets": 4,
+            "reps": "8",
+            "rir": 3,
+            "rest_s": 150,
+            "weight_kg": null
           }
-        }
-      ]
-    },
-    {
-      "order": 2,
-      "name": "Blaze",
-      "type": "hiit",
-      "is_rest": false,
-      "need_logs_to_advance": true,
-      "description": "Blaze HIIT @ 07:00 (45 min)."
-    },
-    {
-      "order": 3,
-      "name": "Upper",
-      "type": "custom",
-      "is_rest": false,
-      "need_logs_to_advance": true,
-      "description": "Weights — Upper body (RIR-based; set loads on day 1).",
-      "exercises": [
-        {
-          "exercise_id": null,
-          "name": "Barbell Bench Press",
-          "sets": 4,
-          "reps": "5",
-          "rir": 2,
-          "rest_s": 180,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 3
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 90
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Barbell Bent-Over Row",
-          "sets": 3,
-          "reps": "8",
-          "rir": 2,
-          "rest_s": 150,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "DB Lateral Raise",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 60
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Barbell Overhead Press",
-          "sets": 3,
-          "reps": "6",
-          "rir": 2,
-          "rest_s": 150,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 60
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Lat Pulldown",
-          "sets": 3,
-          "reps": "10",
-          "rir": 1,
-          "rest_s": 90,
-          "superset_id": "B",
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-05",
+    "name": "Squat",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 4,
+            "reps": "8",
+            "rir": 3,
+            "rest_s": 180,
+            "weight_kg": null
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Seated Cable Row",
-          "sets": 3,
-          "reps": "10",
-          "rir": 1,
-          "rest_s": 90,
-          "superset_id": "B",
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Leg Press",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 120
           }
-        },
-        {
-          "exercise_id": null,
-          "name": "Face Pull",
-          "sets": 3,
-          "reps": "12",
-          "rir": 1,
-          "rest_s": 60,
-          "superset_id": null,
-          "weight_kg": null,
-          "progression": {
-            "weight": {
-              "each_iteration_percent": 2.5,
-              "iterations": [
-                2,
-                3
-              ],
-              "requirements": {
-                "rules": [
-                  "weight",
-                  "repetitions"
-                ]
-              }
-            },
-            "deload_sets": 2
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Standing Calf Raise",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 60
           }
-        }
-      ]
-    },
-    {
-      "order": 4,
-      "name": "Blaze",
-      "type": "hiit",
-      "is_rest": false,
-      "need_logs_to_advance": true,
-      "description": "Blaze HIIT @ 06:15 (45 min)."
-    },
-    {
-      "order": 5,
-      "name": "Mobility & Steps",
-      "type": "custom",
-      "is_rest": true,
-      "need_logs_to_advance": false,
-      "description": "Active recovery & mobility (20–30 min) + 10k steps."
-    },
-    {
-      "order": 6,
-      "name": "Blaze",
-      "type": "hiit",
-      "is_rest": false,
-      "need_logs_to_advance": true,
-      "description": "Blaze HIIT @ 08:00 (45 min)."
-    },
-    {
-      "order": 7,
-      "name": "Rest / Optional Blaze",
-      "type": "hiit",
-      "is_rest": true,
-      "need_logs_to_advance": false,
-      "description": "Optional Blaze @ 09:05 otherwise rest + mobility."
-    }
-  ]
-}
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "12-15",
+            "rir": 2,
+            "rest_s": 45
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-06",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-07",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-08",
+    "name": "Bench",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Bench Press",
+            "sets": 4,
+            "reps": "8",
+            "rir": 2,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "One-arm DB Row",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "DB Incline Press",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Face Pull",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-09",
+    "name": "Deadlift",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Conventional Deadlift",
+            "sets": 4,
+            "reps": "5",
+            "rir": 2,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Romanian Deadlift",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Bulgarian Split Squat",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Hanging Knee Raise",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-10",
+    "name": "Blaze",
+    "is_rest": false,
+    "slots": []
+  },
+  {
+    "date": "2025-09-11",
+    "name": "OHP",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Overhead Press",
+            "sets": 4,
+            "reps": "6-7",
+            "rir": 2,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Lat Pulldown",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "DB Lateral Raise",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Triceps Rope Pushdown",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-12",
+    "name": "Squat",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 4,
+            "reps": "6-7",
+            "rir": 2,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Leg Press",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Standing Calf Raise",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Plank",
+            "sets": 3,
+            "reps": "8-12",
+            "rir": 2,
+            "rest_s": 45
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-13",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-14",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-15",
+    "name": "Bench",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Bench Press",
+            "sets": 5,
+            "reps": "5",
+            "rir": 1,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "One-arm DB Row",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Assisted Dips",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Face Pull",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-16",
+    "name": "Deadlift",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Conventional Deadlift",
+            "sets": 5,
+            "reps": "3",
+            "rir": 1,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Barbell Hip Thrust",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Bulgarian Split Squat",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Hanging Knee Raise",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-17",
+    "name": "Blaze",
+    "is_rest": false,
+    "slots": []
+  },
+  {
+    "date": "2025-09-18",
+    "name": "OHP",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Overhead Press",
+            "sets": 5,
+            "reps": "5",
+            "rir": 1,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Chin-up (assisted)",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Arnold Press",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "EZ-Bar Skullcrusher",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-19",
+    "name": "Squat",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 5,
+            "reps": "5",
+            "rir": 1,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Hack Squat (machine)",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Seated Calf Raise",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Pallof Press",
+            "sets": 3,
+            "reps": "6-10",
+            "rir": 2,
+            "rest_s": 45
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-20",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-21",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-22",
+    "name": "Bench",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Bench Press",
+            "sets": 3,
+            "reps": "5",
+            "rir": 3,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "One-arm DB Row",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Assisted Dips",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Face Pull",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-23",
+    "name": "Deadlift",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Conventional Deadlift",
+            "sets": 3,
+            "reps": "5",
+            "rir": 3,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Barbell Hip Thrust",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Bulgarian Split Squat",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Hanging Knee Raise",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-24",
+    "name": "Blaze",
+    "is_rest": false,
+    "slots": []
+  },
+  {
+    "date": "2025-09-25",
+    "name": "OHP",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Barbell Overhead Press",
+            "sets": 3,
+            "reps": "5",
+            "rir": 3,
+            "rest_s": 150,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Chin-up (assisted)",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 90
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Arnold Press",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "EZ-Bar Skullcrusher",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-26",
+    "name": "Squat",
+    "is_rest": false,
+    "slots": [
+      {
+        "order": 1,
+        "exercises": [
+          {
+            "name": "Back Squat",
+            "sets": 3,
+            "reps": "5",
+            "rir": 3,
+            "rest_s": 180,
+            "weight_kg": null
+          }
+        ]
+      },
+      {
+        "order": 2,
+        "exercises": [
+          {
+            "name": "Hack Squat (machine)",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 120
+          }
+        ]
+      },
+      {
+        "order": 3,
+        "exercises": [
+          {
+            "name": "Seated Calf Raise",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 60
+          }
+        ]
+      },
+      {
+        "order": 4,
+        "exercises": [
+          {
+            "name": "Pallof Press",
+            "sets": 2,
+            "reps": "10",
+            "rir": 2,
+            "rest_s": 45
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "date": "2025-09-27",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  },
+  {
+    "date": "2025-09-28",
+    "name": "Rest",
+    "is_rest": true,
+    "slots": []
+  }
+]
