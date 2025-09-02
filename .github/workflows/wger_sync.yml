@@ -1,142 +1,151 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-from pathlib import Path
-import os
-import csv
-import requests
+name: Wger Workout Sync
 
-API_KEY = os.getenv("WGER_API_KEY")
-CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv"))
+on:
+  schedule:
+    - cron: "45 3 * * *" # Runs daily
+  workflow_dispatch:
 
-if not API_KEY:
-    print("❌ WGER_API_KEY secret not found.")
-    exit(1)
+permissions:
+  contents: write
 
-BASE = "https://wger.de/api/v2"
-HDRS = {"Authorization": f"Token {API_KEY}", "Accept": "application/json"}
+jobs:
+  sync-wger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-def fetch_paginated_data(url: str, headers: dict):
-    """Fetch all pages from an endpoint. Handles dict or list responses."""
-    results = []
-    next_url = url
-    while next_url:
-        try:
-            r = requests.get(next_url, headers=headers, timeout=30)
-            r.raise_for_status()
-            data = r.json()
-            if isinstance(data, dict) and "results" in data:
-                results.extend(data["results"])
-                next_url = data.get("next")
-            elif isinstance(data, list):
-                results.extend(data)
-                next_url = None
-            else:
-                # Unexpected shape; treat as single page
-                if isinstance(data, dict):
-                    results.append(data)
-                next_url = None
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching {next_url}: {e}")
-            return None
-    return results
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-def english_exercise_name(ex: dict) -> str:
-    """Prefer English translation; fall back to base 'name' or ID."""
-    trs = ex.get("translations") or []
-    for t in trs:
-        # English is language==2 on wger.de
-        if t.get("language") == 2 and t.get("name"):
-            return t["name"]
-    # Fallbacks
-    if ex.get("name"):
-        return ex["name"]
-    return f"Exercise {ex.get('id', '?')}"
+      - name: Install dependencies
+        run: pip install requests python-dotenv
 
-def main():
-    print("🚀 Starting wger sync...")
-    headers = HDRS
+      - name: Fetch and process wger workout data
+        env:
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          WORKOUT_LOG_CSV: knowledge/workout_log.csv
+        run: |
+          python - <<'PY'
+          import os
+          import json
+          import csv
+          from pathlib import Path
+          import requests
 
-    # --- 1. Fetch exercise database for enrichment (exerciseinfo has translations) ---
-    print("Fetching exercise database for enrichment...")
-    exercise_info_url = f"{BASE}/exerciseinfo/?language=2&limit=100"
-    all_exercises = fetch_paginated_data(exercise_info_url, headers)
-    if all_exercises is None:
-        print("❌ Failed to fetch exercise database. Aborting.")
-        exit(1)
+          API_KEY = os.getenv("WGER_API_KEY")
+          CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv"))
 
-    # Build ID -> {name, category} lookup
-    exercise_lookup = {}
-    for ex in all_exercises:
-        ex_id = ex.get("id")
-        if ex_id is None:
-            continue
-        name = english_exercise_name(ex)
-        cat = (ex.get("category") or {}).get("name", "N/A")
-        exercise_lookup[ex_id] = {"name": name, "category": cat}
+          if not API_KEY:
+              print("❌ WGER_API_KEY secret not found.")
+              exit(1)
 
-    print(f"Created lookup for {len(exercise_lookup)} exercises.")
+          def fetch_paginated_data(url, headers):
+              """Fetches all pages for a given API endpoint."""
+              all_results = []
+              while url:
+                  try:
+                      response = requests.get(url, headers=headers)
+                      response.raise_for_status()
+                      data = response.json()
+                      all_results.extend(data.get('results', []))
+                      url = data.get('next')
+                  except requests.exceptions.RequestException as e:
+                      print(f"Error fetching {url}: {e}")
+                      return None
+              return all_results
 
-    # --- 2. Fetch executed workout logs (public endpoint is /workoutlog/) ---
-    print("Fetching executed workout logs...")
-    logs_url = f"{BASE}/workoutlog/?limit=200"
-    all_logs = fetch_paginated_data(logs_url, headers)
-    if all_logs is None:
-        print("❌ Failed to fetch workout logs. Aborting.")
-        exit(1)
-    if not all_logs:
-        print("No workout logs found on wger.")
-        return
+          def main():
+              print("🚀 Starting wger sync...")
+              headers = {"Authorization": f"Token {API_KEY}"}
 
-    # --- 3. Process logs into CSV rows ---
-    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    header = ["date", "exercise_name", "category", "reps", "weight_kg"]
+              # --- 1. Fetch all exercises to create a lookup table ---
+              print("Fetching exercise database for enrichment...")
+              exercise_info_url = "https://wger.de/api/v2/exerciseinfo/?language=2"
+              all_exercises = fetch_paginated_data(exercise_info_url, headers)
+              
+              if all_exercises is None:
+                  print("❌ Failed to fetch exercise database. Aborting.")
+                  exit(1)
 
-    processed_rows = []
-    for log in all_logs:
-        # Common fields on wger workoutlog responses:
-        # 'date', 'exercise' (id), 'repetitions' or 'reps', 'weight'
-        ex_id = log.get("exercise")
-        details = exercise_lookup.get(ex_id, {})
-        name = details.get("name", f"Unknown ID: {ex_id}")
-        cat = details.get("category", "N/A")
+              exercise_lookup = {
+                  exercise['id']: {
+                      'name': exercise['name'],
+                      'category': exercise.get('category', {}).get('name', 'N/A')
+                  } for exercise in all_exercises
+              }
+              print(f"Created lookup for {len(exercise_lookup)} exercises.")
 
-        reps = log.get("repetitions", log.get("reps"))
-        wt = log.get("weight")
-        processed_rows.append({
-            "date": log.get("date") or log.get("created") or "",
-            "exercise_name": name,
-            "category": cat,
-            "reps": reps if reps is not None else "",
-            "weight_kg": wt if wt is not None else "",
-        })
+              # --- 2. Fetch Executed Workout Logs ---
+              print("Fetching executed workout logs...")
+              logs_url = "https://wger.de/api/v2/log/"
+              all_logs = fetch_paginated_data(logs_url, headers)
 
-    # --- 4. Append deduped rows to CSV ---
-    existing = set()
-    if CSV_PATH.exists():
-        with open(CSV_PATH, "r", newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                existing.add(tuple(row.get(k, "") for k in header))
+              if all_logs is None:
+                  print("❌ Failed to fetch workout logs. Aborting.")
+                  exit(1)
+              
+              if not all_logs:
+                  print("No workout logs found on wger.")
+                  return
 
-    new_rows = []
-    for r in sorted(processed_rows, key=lambda x: x["date"] or ""):
-        key = tuple(str(r.get(k, "")) for k in header)
-        if key not in existing:
-            new_rows.append(r)
-            existing.add(key)
+              # --- 3. Process Logs into CSV format ---
+              CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+              header = ['date', 'exercise_name', 'category', 'reps', 'weight_kg']
+              
+              processed_logs = []
+              for log in all_logs:
+                  exercise_details = exercise_lookup.get(log['exercise'], {})
+                  processed_logs.append({
+                      'date': log['date'],
+                      'exercise_name': exercise_details.get('name', f"Unknown ID: {log['exercise']}"),
+                      'category': exercise_details.get('category', 'N/A'),
+                      'reps': log['reps'],
+                      'weight_kg': log['weight']
+                  })
 
-    if new_rows:
-        print(f"Adding {len(new_rows)} new workout sets to {CSV_PATH}")
-        is_new_file = not CSV_PATH.exists()
-        with open(CSV_PATH, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=header)
-            if is_new_file:
-                writer.writeheader()
-            writer.writerows(new_rows)
-    else:
-        print("No new workout sets to add.")
+              # --- 4. Write to CSV, avoiding duplicates ---
+              existing_logs = set()
+              if CSV_PATH.exists():
+                  with open(CSV_PATH, 'r', newline='', encoding='utf-8') as f:
+                      reader = csv.DictReader(f)
+                      for row in reader:
+                          existing_logs.add(tuple(row.values()))
+              
+              new_rows = []
+              for log in sorted(processed_logs, key=lambda x: x['date']):
+                  log_tuple = tuple(str(v) for v in log.values())
+                  if log_tuple not in existing_logs:
+                      new_rows.append(log)
+                      existing_logs.add(log_tuple)
 
-    print("✅ Sync complete.")
+              if new_rows:
+                  print(f"Adding {len(new_rows)} new workout sets to {CSV_PATH}")
+                  # Open in append mode, write header only if file is new
+                  is_new_file = not CSV_PATH.exists()
+                  with open(CSV_PATH, 'a', newline='', encoding='utf-8') as f:
+                      writer = csv.DictWriter(f, fieldnames=header)
+                      if is_new_file or f.tell() == 0:
+                          writer.writeheader()
+                      writer.writerows(new_rows)
+              else:
+                  print("No new workout sets to add.")
 
-if __name__ == "__main__":
-    main()
+              print("✅ Sync complete.")
+
+          if __name__ == "__main__":
+              main()
+          PY
+      - name: Commit updates
+        run: |
+          if [[ -n "$(git status --porcelain knowledge/workout_log.csv 2>/dev/null)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add knowledge/workout_log.csv
+            git commit -m "chore(wger): sync workout data"
+            git push
+          else
+            echo "No changes to commit from wger sync."
+          fi
