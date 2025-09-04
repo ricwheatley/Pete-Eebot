@@ -4,8 +4,8 @@
     "status": 0,
     "body": {
       "userid": 1247995,
-      "access_token": "343c...0406",
-      "refresh_token": "6e86...f40d",
+      "access_token": "7961...566d",
+      "refresh_token": "ebcd...3c42",
       "scope": "user.metrics,user.activity",
       "expires_in": 10800,
       "token_type": "Bearer"
