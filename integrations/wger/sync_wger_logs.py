@@ -7,37 +7,30 @@ import json
 import os
 import csv
 import requests
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 
+# -----------------------------
+# Config
+# -----------------------------
 API_KEY = os.getenv("WGER_API_KEY")
-CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv"))
-DAYS_DIR = Path("docs/wger/days")
-HISTORY_PATH = Path("docs/wger/history.json")
-DAILY_PATH = Path("docs/wger/daily.json")
-TRAINING_STATS_PATH = Path("knowledge/training_stats.csv")
-
-if not API_KEY:
-    print("❌ WGER_API_KEY secret not found.")
-    exit(1)
+CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv")).resolve()
+DAYS_DIR = Path("docs/wger/days").resolve()
+HISTORY_PATH = Path("docs/wger/history.json").resolve()
+DAILY_PATH = Path("docs/wger/daily.json").resolve()
+TRAINING_STATS_PATH = Path("knowledge/training_stats.csv").resolve()
 
 BASE = "https://wger.de/api/v2"
-HDRS = {"Authorization": f"Token {API_KEY}", "Accept": "application/json"}
-
+HDRS = {"Authorization": f"Token {API_KEY}" if API_KEY else "", "Accept": "application/json"}
 
 # -----------------------------
 # Helpers
 # -----------------------------
 def to_int(value: Any) -> Optional[int]:
-    """Coerce value to int where possible. Return None for missing/invalid."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        # Avoid treating True/False as 1/0
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
     if isinstance(value, float):
-        # Reps should be integral, but some APIs send 10.0 etc.
         try:
             return int(round(value))
         except Exception:
@@ -47,19 +40,14 @@ def to_int(value: Any) -> Optional[int]:
         if s == "":
             return None
         try:
-            # Allow "10", "10.0"
             f = float(s.replace(",", ""))
             return int(round(f))
         except Exception:
             return None
     return None
 
-
 def to_float(value: Any) -> Optional[float]:
-    """Coerce value to float where possible. Return None for missing/invalid."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
         return float(value)
@@ -73,19 +61,16 @@ def to_float(value: Any) -> Optional[float]:
             return None
     return None
 
+def safe_sum_int(values: List[Optional[int]]) -> int:
+    return sum(v for v in values if isinstance(v, int))
 
-def safe_sum_int(iterable: List[Optional[int]]) -> int:
-    return sum(v for v in iterable if isinstance(v, int))
+def safe_sum_float(values: List[Optional[float]]) -> float:
+    return float(sum(v for v in values if isinstance(v, (int, float))))
 
-
-def safe_sum_float(iterable: List[Optional[float]]) -> float:
-    return sum(v for v in iterable if isinstance(v, (int, float)))
-
-
-def fetch_paginated_data(url: str, headers: dict):
-    """Fetch all pages from an endpoint. Handles dict or list responses."""
-    results = []
+def fetch_paginated_data(url: str, headers: dict) -> Optional[List[dict]]:
+    results: List[dict] = []
     next_url = url
+    page = 1
     while next_url:
         try:
             r = requests.get(next_url, headers=headers, timeout=30)
@@ -98,135 +83,143 @@ def fetch_paginated_data(url: str, headers: dict):
                 results.extend(data)
                 next_url = None
             else:
-                # Unexpected shape, treat as single page
                 if isinstance(data, dict):
                     results.append(data)
                 next_url = None
+            page += 1
         except requests.exceptions.RequestException as e:
             print(f"Error fetching {next_url}: {e}")
             return None
     return results
 
-
 def english_exercise_name(ex: dict) -> str:
-    """Prefer English translation, fall back to base 'name' or ID."""
     trs = ex.get("translations") or []
     for t in trs:
-        # English is language==2 on wger.de
         if t.get("language") == 2 and t.get("name"):
             return t["name"]
     if ex.get("name"):
         return ex["name"]
     return f"Exercise {ex.get('id', '?')}"
 
+def ensure_dirs():
+    for p in [CSV_PATH.parent, DAYS_DIR, HISTORY_PATH.parent, TRAINING_STATS_PATH.parent]:
+        p.mkdir(parents=True, exist_ok=True)
+
+def write_json(p: Path, payload: Any):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"✔ Wrote {p} ({p.stat().st_size} bytes)")
 
 # -----------------------------
 # Main
 # -----------------------------
 def main():
-    print("🚀 Starting wger sync...")
-    headers = HDRS
+    if not API_KEY:
+        print("❌ WGER_API_KEY secret not found.")
+        exit(1)
 
-    # --- 1. Fetch exercise database for enrichment (exerciseinfo has translations) ---
+    ensure_dirs()
+
+    print("🚀 Starting wger sync...")
+    print(f"Output directories, CSV_PATH={CSV_PATH}, DAYS_DIR={DAYS_DIR}, HISTORY_PATH={HISTORY_PATH}, DAILY_PATH={DAILY_PATH}")
+
+    # 1) Exercise DB
     print("Fetching exercise database for enrichment...")
     exercise_info_url = f"{BASE}/exerciseinfo/?language=2&limit=100"
-    all_exercises = fetch_paginated_data(exercise_info_url, headers)
+    all_exercises = fetch_paginated_data(exercise_info_url, HDRS)
     if all_exercises is None:
         print("❌ Failed to fetch exercise database. Aborting.")
         exit(1)
-
-    # Build ID -> {name, category} lookup
     exercise_lookup: Dict[int, Dict[str, str]] = {}
     for ex in all_exercises:
         ex_id = ex.get("id")
         if ex_id is None:
             continue
-        name = english_exercise_name(ex)
-        cat = (ex.get("category") or {}).get("name", "N/A")
-        exercise_lookup[ex_id] = {"name": name, "category": cat}
-
+        exercise_lookup[ex_id] = {
+            "name": english_exercise_name(ex),
+            "category": (ex.get("category") or {}).get("name", "N/A")
+        }
     print(f"Created lookup for {len(exercise_lookup)} exercises.")
 
-    # --- 2. Fetch executed workout logs (public endpoint is /workoutlog/) ---
+    # 2) Workout logs
     print("Fetching executed workout logs...")
     logs_url = f"{BASE}/workoutlog/?limit=200&ordering=-date"
-    all_logs = fetch_paginated_data(logs_url, headers)
+    all_logs = fetch_paginated_data(logs_url, HDRS)
     if all_logs is None:
         print("❌ Failed to fetch workout logs. Aborting.")
         exit(1)
-    if not all_logs:
-        print("No workout logs found on wger.")
-        return
+    print(f"Fetched {len(all_logs)} total logs from API.")
 
-    # --- 3. Filter last 7 days ---
-    today = datetime.utcnow().date()
+    # 3) Filter last 7 days
+    # Note: use naive local date to avoid off-by-one vs UTC for all-day-like dates
+    today = datetime.now().date()
     start_date = today - timedelta(days=6)
-    recent_logs = []
-    for log in all_logs:
-        date_str = (log.get("date") or log.get("created") or "")[:10]
-        if not date_str:
-            continue
+
+    def parse_date(d: str) -> Optional[datetime.date]:
+        if not d:
+            return None
         try:
-            log_date = datetime.fromisoformat(date_str).date()
+            return datetime.fromisoformat(d[:10]).date()
         except ValueError:
-            continue
-        if start_date <= log_date <= today:
-            # Coerce reps/weight here so subsequent code can trust types
-            reps_raw = log.get("repetitions", log.get("reps"))
-            weight_raw = log.get("weight")
-            log["_date"] = date_str
-            log["_reps"] = to_int(reps_raw)          # int or None
-            log["_weight"] = to_float(weight_raw)    # float or None
+            return None
+
+    recent_logs: List[dict] = []
+    for log in all_logs:
+        date_str = (log.get("date") or log.get("created") or "")
+        d = parse_date(date_str)
+        if d and start_date <= d <= today:
+            log["_date"] = d.isoformat()
+            log["_reps"] = to_int(log.get("repetitions", log.get("reps")))
+            log["_weight"] = to_float(log.get("weight"))
             recent_logs.append(log)
 
-    if not recent_logs:
-        print("No workout logs in the last 7 days.")
-        return
+    print(f"Found {len(recent_logs)} logs within {start_date.isoformat()} to {today.isoformat()}.")
 
-    # Group by day for JSON outputs and stats
+    # 3b) Group by day
     by_day: Dict[str, List[dict]] = defaultdict(list)
     for log in recent_logs:
         by_day[log["_date"]].append(log)
+    print(f"Days with data: {sorted(by_day.keys())}")
 
-    # Ensure output directories
-    DAYS_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    # Save per-day logs and update history
+    # 4) Persist JSON, even if empty
+    # Always write history.json and daily.json so there is a stable output for downstream consumers.
     history: Dict[str, List[dict]] = {}
     if HISTORY_PATH.exists():
         try:
             history = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             history = {}
+
+    # Write per-day files for days we actually have logs for
     for day, logs in by_day.items():
         day_path = DAYS_DIR / f"{day}.json"
-        day_path.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")
+        write_json(day_path, logs)
         history[day] = logs
 
-    HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Update and write history.json, daily.json regardless of whether by_day is empty
+    write_json(HISTORY_PATH, history)
 
-    latest_day = max(by_day.keys())
-    DAILY_PATH.write_text(json.dumps(by_day[latest_day], ensure_ascii=False, indent=2), encoding="utf-8")
+    if by_day:
+        latest_day = max(by_day.keys())
+        write_json(DAILY_PATH, by_day[latest_day])
+        print(f"Latest day is {latest_day}")
+    else:
+        # If no logs in the last 7 days, still produce an empty daily.json to make consumers happy
+        write_json(DAILY_PATH, [])
+        print("No logs in the last 7 days, wrote empty daily.json")
 
-    # --- 4. Process logs into CSV rows ---
-    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # 5) CSV aggregation for new rows based on recent logs only
     header = ["date", "exercise_name", "category", "reps", "weight_kg"]
-
     processed_rows: List[Dict[str, Any]] = []
     for log in recent_logs:
         ex_id = log.get("exercise")
         details = exercise_lookup.get(ex_id, {})
-        name = details.get("name", f"Unknown ID: {ex_id}")
-        cat = details.get("category", "N/A")
-        reps = log.get("_reps")      # already int or None
-        wt = log.get("_weight")      # already float or None
         processed_rows.append({
             "date": log["_date"],
-            "exercise_name": name,
-            "category": cat,
-            "reps": reps if reps is not None else "",
-            "weight_kg": wt if wt is not None else "",
+            "exercise_name": details.get("name", f"Unknown ID: {ex_id}"),
+            "category": details.get("category", "N/A"),
+            "reps": log.get("_reps") if log.get("_reps") is not None else "",
+            "weight_kg": log.get("_weight") if log.get("_weight") is not None else "",
         })
 
     existing = set()
@@ -236,9 +229,8 @@ def main():
             for row in reader:
                 existing.add(tuple(row.get(k, "") for k in header))
 
-    new_rows = []
+    new_rows: List[Dict[str, Any]] = []
     for r in sorted(processed_rows, key=lambda x: x["date"] or ""):
-        # Use str() for the dedupe key so that 10 and "10" compare consistently
         key = tuple(str(r.get(k, "")) for k in header)
         if key not in existing:
             new_rows.append(r)
@@ -252,48 +244,34 @@ def main():
             if is_new_file:
                 writer.writeheader()
             writer.writerows(new_rows)
+        print(f"✔ Updated {CSV_PATH}")
     else:
         print("No new workout sets to add.")
 
-    # --- 5. Compute training stats per exercise/day ---
+    # 6) Training stats, computed from recent by_day only
     stats_header = [
-        "date",
-        "exercise_name",
-        "total_reps",
-        "total_volume",
-        "max_lift_weight",
-        "estimated_1RM",
+        "date", "exercise_name", "total_reps", "total_volume",
+        "max_lift_weight", "estimated_1RM",
     ]
-    stats_data: Dict[tuple, Dict[str, Any]] = {}
+    stats_data: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
     for day, logs in by_day.items():
         per_ex: Dict[str, List[Dict[str, Optional[float]]]] = defaultdict(list)
         for log in logs:
             ex_id = log.get("exercise")
             details = exercise_lookup.get(ex_id, {})
             name = details.get("name", f"Unknown ID: {ex_id}")
-            reps = to_int(log.get("_reps"))      # ensure int
-            wt = to_float(log.get("_weight"))    # ensure float
-            per_ex[name].append({"reps": reps, "weight": wt})
+            per_ex[name].append({"reps": to_int(log.get("_reps")), "weight": to_float(log.get("_weight"))})
 
         for name, sets in per_ex.items():
-            # Prepare numeric-only lists for aggregates
             reps_list = [s["reps"] for s in sets if isinstance(s["reps"], int)]
             weights_list = [s["weight"] for s in sets if isinstance(s["weight"], (int, float))]
-
             total_reps = safe_sum_int(reps_list)
-            total_volume = safe_sum_float(
-                [(float(s["reps"]) * float(s["weight"])) for s in sets
-                 if isinstance(s["reps"], int) and isinstance(s["weight"], (int, float))]
-            )
+            total_volume = safe_sum_float([float(s["reps"]) * float(s["weight"]) for s in sets
+                                           if isinstance(s["reps"], int) and isinstance(s["weight"], (int, float))])
             max_weight = max(weights_list) if weights_list else 0.0
-
-            # For 1RM, use the heaviest set with valid reps
-            heaviest = None
-            if sets:
-                valid_sets = [s for s in sets if isinstance(s["weight"], (int, float))]
-                if valid_sets:
-                    heaviest = max(valid_sets, key=lambda s: s["weight"])
-            hw = float(heaviest["weight"]) if heaviest and heaviest.get("weight") is not None else 0.0
+            heaviest = max((s for s in sets if isinstance(s.get("weight"), (int, float))), key=lambda s: s["weight"], default=None)
+            hw = float(heaviest["weight"]) if heaviest else 0.0
             hr = int(heaviest["reps"]) if heaviest and isinstance(heaviest.get("reps"), int) else 0
             est_1rm = hw * (1 + hr / 30) if hw > 0 and hr > 0 else 0.0
 
@@ -306,33 +284,25 @@ def main():
                 "estimated_1RM": round(float(est_1rm), 2),
             }
 
-    existing_stats: Dict[tuple, Dict[str, str]] = {}
+    existing_stats: Dict[Tuple[str, str], Dict[str, str]] = {}
     if TRAINING_STATS_PATH.exists():
         with open(TRAINING_STATS_PATH, "r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for row in reader:
                 existing_stats[(row["date"], row["exercise_name"])] = row
 
-    # Overwrite or insert with freshly computed stats
     for key, val in stats_data.items():
-        existing_stats[key] = {
-            "date": str(val["date"]),
-            "exercise_name": str(val["exercise_name"]),
-            "total_reps": str(val["total_reps"]),
-            "total_volume": str(val["total_volume"]),
-            "max_lift_weight": str(val["max_lift_weight"]),
-            "estimated_1RM": str(val["estimated_1RM"]),
-        }
+        existing_stats[key] = {k: str(v) for k, v in val.items()}
 
-    TRAINING_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(TRAINING_STATS_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=stats_header)
         writer.writeheader()
         for row in sorted(existing_stats.values(), key=lambda r: (r["date"], r["exercise_name"])):
             writer.writerow(row)
+    print(f"✔ Wrote stats to {TRAINING_STATS_PATH}")
 
     print("✅ Sync complete.")
 
-
+# Entry
 if __name__ == "__main__":
     main()
