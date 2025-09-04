@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from pathlib import Path
+from collections import defaultdict
+from datetime import datetime, timedelta
+import json
 import os
 import csv
 import requests
 
 API_KEY = os.getenv("WGER_API_KEY")
 CSV_PATH = Path(os.getenv("WORKOUT_LOG_CSV", "knowledge/workout_log.csv"))
+DAYS_DIR = Path("docs/wger/days")
+HISTORY_PATH = Path("docs/wger/history.json")
+DAILY_PATH = Path("docs/wger/daily.json")
+TRAINING_STATS_PATH = Path("knowledge/training_stats.csv")
 
 if not API_KEY:
     print("❌ WGER_API_KEY secret not found.")
@@ -78,7 +85,7 @@ def main():
 
     # --- 2. Fetch executed workout logs (public endpoint is /workoutlog/) ---
     print("Fetching executed workout logs...")
-    logs_url = f"{BASE}/workoutlog/?limit=200"
+    logs_url = f"{BASE}/workoutlog/?limit=200&ordering=-date"
     all_logs = fetch_paginated_data(logs_url, headers)
     if all_logs is None:
         print("❌ Failed to fetch workout logs. Aborting.")
@@ -87,30 +94,72 @@ def main():
         print("No workout logs found on wger.")
         return
 
-    # --- 3. Process logs into CSV rows ---
+    # --- 3. Filter last 7 days ---
+    today = datetime.utcnow().date()
+    start_date = today - timedelta(days=6)
+    recent_logs = []
+    for log in all_logs:
+        date_str = (log.get("date") or log.get("created") or "")[:10]
+        if not date_str:
+            continue
+        try:
+            log_date = datetime.fromisoformat(date_str).date()
+        except ValueError:
+            continue
+        if start_date <= log_date <= today:
+            log["_date"] = date_str
+            recent_logs.append(log)
+
+    if not recent_logs:
+        print("No workout logs in the last 7 days.")
+        return
+
+    # Group by day for JSON outputs and stats
+    by_day: dict[str, list] = defaultdict(list)
+    for log in recent_logs:
+        by_day[log["_date"]].append(log)
+
+    # Ensure output directories
+    DAYS_DIR.mkdir(parents=True, exist_ok=True)
+    HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    # Save per-day logs and update history
+    history = {}
+    if HISTORY_PATH.exists():
+        try:
+            history = json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            history = {}
+    for day, logs in by_day.items():
+        day_path = DAYS_DIR / f"{day}.json"
+        day_path.write_text(json.dumps(logs, ensure_ascii=False, indent=2), encoding="utf-8")
+        history[day] = logs
+
+    HISTORY_PATH.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    latest_day = max(by_day.keys())
+    DAILY_PATH.write_text(json.dumps(by_day[latest_day], ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # --- 4. Process logs into CSV rows ---
     CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
     header = ["date", "exercise_name", "category", "reps", "weight_kg"]
 
     processed_rows = []
-    for log in all_logs:
-        # Common fields on wger workoutlog responses:
-        # 'date', 'exercise' (id), 'repetitions' or 'reps', 'weight'
+    for log in recent_logs:
         ex_id = log.get("exercise")
         details = exercise_lookup.get(ex_id, {})
         name = details.get("name", f"Unknown ID: {ex_id}")
         cat = details.get("category", "N/A")
-
         reps = log.get("repetitions", log.get("reps"))
         wt = log.get("weight")
         processed_rows.append({
-            "date": log.get("date") or log.get("created") or "",
+            "date": log["_date"],
             "exercise_name": name,
             "category": cat,
             "reps": reps if reps is not None else "",
             "weight_kg": wt if wt is not None else "",
         })
 
-    # --- 4. Append deduped rows to CSV ---
     existing = set()
     if CSV_PATH.exists():
         with open(CSV_PATH, "r", newline="", encoding="utf-8") as f:
@@ -135,6 +184,58 @@ def main():
             writer.writerows(new_rows)
     else:
         print("No new workout sets to add.")
+
+    # --- 5. Compute training stats per exercise/day ---
+    stats_header = [
+        "date",
+        "exercise_name",
+        "total_reps",
+        "total_volume",
+        "max_lift_weight",
+        "estimated_1RM",
+    ]
+    stats_data = {}
+    for day, logs in by_day.items():
+        per_ex = defaultdict(list)
+        for log in logs:
+            ex_id = log.get("exercise")
+            details = exercise_lookup.get(ex_id, {})
+            name = details.get("name", f"Unknown ID: {ex_id}")
+            reps = log.get("repetitions", log.get("reps"))
+            wt = log.get("weight")
+            per_ex[name].append({"reps": reps, "weight": wt})
+        for name, sets in per_ex.items():
+            total_reps = sum(s["reps"] or 0 for s in sets if s["reps"] is not None)
+            total_volume = sum((s["reps"] or 0) * (s["weight"] or 0) for s in sets if s["reps"] is not None and s["weight"] is not None)
+            max_weight = max((s["weight"] or 0) for s in sets)
+            heaviest = max(sets, key=lambda s: s["weight"] or 0)
+            hw = heaviest.get("weight") or 0
+            hr = heaviest.get("reps") or 0
+            est_1rm = hw * (1 + hr / 30) if hw and hr else 0
+            stats_data[(day, name)] = {
+                "date": day,
+                "exercise_name": name,
+                "total_reps": total_reps,
+                "total_volume": total_volume,
+                "max_lift_weight": max_weight,
+                "estimated_1RM": round(est_1rm, 2),
+            }
+
+    existing_stats = {}
+    if TRAINING_STATS_PATH.exists():
+        with open(TRAINING_STATS_PATH, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                existing_stats[(row["date"], row["exercise_name"])] = row
+    for key, val in stats_data.items():
+        existing_stats[key] = {k: str(v) for k, v in val.items()}
+
+    TRAINING_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(TRAINING_STATS_PATH, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=stats_header)
+        writer.writeheader()
+        for row in sorted(existing_stats.values(), key=lambda r: (r["date"], r["exercise_name"])):
+            writer.writerow(row)
 
     print("✅ Sync complete.")
 
