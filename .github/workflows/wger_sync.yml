@@ -1,4 +1,6 @@
-name: Wger Workout Sync
+# DEPRECATED: superseded by wger_cycle.yml
+
+Name: Wger Workout Sync
 
 on:
   schedule:
@@ -8,36 +10,4 @@ on:
 permissions:
   contents: write
 
-jobs:
-  sync-wger:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: pip install requests python-dotenv
-
-      - name: Fetch and process wger workout data
-        env:
-          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
-          WORKOUT_LOG_CSV: knowledge/workout_log.csv
-        run: |
-          python integrations/wger/sync_wger_logs.py
-
-      - name: Commit updates
-        run: |
-          if [[ -n "$(git status --porcelain knowledge/workout_log.csv 2>/dev/null)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add knowledge/workout_log.csv
-            git commit -m "chore(wger): sync workout data"
-            git push
-          else
-            echo "No changes to commit from wger sync."
-          fi
+jobs: ...
