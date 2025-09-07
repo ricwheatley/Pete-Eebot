@@ -1,0 +1,71 @@
+{
+  "main_lifts": {
+    "squat": {"id": 615, "name": "Barbell Squat"},
+    "bench": {"id": 73, "name": "Barbell Bench Press"},
+    "deadlift": {"id": 184, "name": "Barbell Deadlift"},
+    "ohp": {"id": 566, "name": "Overhead Press"}
+  },
+  "assistance": {
+    "squat": [
+       {"id": 981, "name": "Step-ups"},
+      {"id": 977, "name": "Box Squat"},
+      {"id": 46, "name": "Barbell Lunges Standing"},
+      {"id": 984, "name": "Lunges"},
+      {"id": 986, "name": "Side split squats left"},
+      {"id": 987, "name": "Side split squats right"},
+      {"id": 988, "name": "Bulgarian split squats left"},
+      {"id": 989, "name": "Bulgarian split squats right"},
+      {"id": 909, "name": "Reverse Nordic Curl"},
+      {"id": 910, "name": "Nordic Curl"},
+      {"id": 901, "name": "Barbell Hip Thrust"},
+      {"id": 265, "name": "Glute Bridge"},
+      {"id": 371, "name": "Leg Press"},
+      {"id": 632, "name": "Sumo Squats"}
+    ],
+    "bench": [
+      {"id": 83, "name": "Bent Over Rowing"},
+      {"id": 81, "name": "Bent Over Dumbbell Rows"},
+      {"id": 923, "name": "Lying Dumbbell Row + Shrug"},
+      {"id": 154, "name": "Chin-ups"},
+      {"id": 475, "name": "Pull-ups"},
+      {"id": 194, "name": "Dips"},
+      {"id": 197, "name": "Dips Between Two Benches"},
+      {"id": 538, "name": "Incline Bench Press - Barbell"},
+      {"id": 537, "name": "Incline Bench Press - Dumbbell"},
+      {"id": 445, "name": "Pause Bench"},
+      {"id": 498, "name": "Reverse Grip Bench Press"},
+      {"id": 386, "name": "Diamond Push ups"},
+      {"id": 538, "name": "Incline Bench Press"}
+    ],
+    "deadlift": [
+      {"id": 507, "name": "Romanian Deadlift"},
+      {"id": 189, "name": "Deficit Deadlift"},
+      {"id": 484, "name": "Rack Deadlift"},
+      {"id": 627, "name": "Stiff-legged Deadlifts"},
+      {"id": 630, "name": "Sumo Deadlift"},
+      {"id": 294, "name": "Hip Thrust"},
+      {"id": 365, "name": "Leg Curls (laying)" },
+      {"id": 366, "name": "Leg Curls (sitting)" },
+      {"id": 364, "name": "Leg Curl"},
+      {"id": 301, "name": "Hyperextensions"},
+      {"id": 636, "name": "Superman"},
+      {"id": 960, "name": "Kettlebell Swing"},
+      {"id": 448, "name": "Pendlay Rows"}
+    ],
+    "ohp": [
+      {"id": 20, "name": "Arnold Shoulder Press"},
+      {"id": 79, "name": "Bent High Pulls"},
+      {"id": 348, "name": "Lateral Raises"},
+      {"id": 256, "name": "Front Raises"},
+      {"id": 822, "name": "Cable Rear Delt Fly"},
+      {"id": 829, "name": "Rear Delt Raise"},
+      {"id": 282, "name": "Handstand Pushup" },
+      {"id": 694, "name": "Upright Row w/ Dumbbells"},
+      {"id": 693, "name": "Upright Row, SZ-bar"},
+      {"id": 571, "name": "Shrugs, Barbells"},
+      {"id": 572, "name": "Shrugs, Dumbbells"},
+      {"id": 915, "name": "Bus Drivers"},
+      {"id": 478, "name": "Push Press"}
+    ]
+  }
+}
