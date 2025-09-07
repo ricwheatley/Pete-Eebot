@@ -2,43 +2,17 @@ name: Wger Cycle
 
 on:
   schedule:
-   # Every 4th Sunday at 06:00 UTC
-    - cron: "0 6 */28 * 0"
+    - cron: "0 15 */28 * 0" # Every 4th Sunday at 15:00 UTC (3Pm)
   workflow_dispatch:
-jobs:
-  build-plan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
 
-      - name: Set up Python
+defaults:
+  run-plannect-block: |
+    python integrations/wger/plan_next_block.py
 
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+  upload-plan: |
+    python integrations/wger/wger_uploads.py
 
-      - name: Install dependencies
-        run: |
-          python -m pip install upgrade pip
-          pip install -r requirements.txt
-
-      - name: Pull Wger Logs
-        run: |
-          python integrations/wger/pull_wger_logs.py
-
-      - name: Review last cycle and generate new plan
-        run: |
-          python integrations/wger/plan_next_block.py
-
-      - name: Upload plan to Wger
-        run: |
-          python integrations/wger/wger_uploads.py
-
-      - name: Commit generated plan JSON
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add integrations/wger/plans/*
-          git commit -m "Auto-update: New 4-week Wger plan"
-          git push
+  send-telegram: |
+    curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage  \
+    -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+    -d text="📡 New 4-week Warkout plan generated and uploaded successfully! "
