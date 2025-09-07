@@ -1,6 +1,8 @@
-name: Plan Next 4-week Block (Propose)
+# DEPRECATED: superseded by wger_cycle.yml
 
-on:
+Name: Plan Next 4-week Block (Propose)
+
+no:
   workflow_dispatch:
     inputs:
       start_date:
@@ -10,6 +12,7 @@ on:
         description: "How many weeks to plan (default 4)"
         required: false
         default: "4"
+
   schedule:
     # Every Friday 18:00 UTC (evening UK/EU) – script only proposes when a 4-week boundary is approaching.
     - cron: "0 18 * * 5"
@@ -18,43 +21,4 @@ permissions:
   contents: write
   pull-requests: write
 
-jobs:
-  plan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests python-dateutil pyyaml
-
-      - name: Generate proposed plan JSON
-        id: plan
-        env:
-          START_DATE: ${{ github.event.inputs.start_date }}
-          WEEKS: ${{ github.event.inputs.weeks }}
-        run: |
-          python integrations/wger/plan_next_block.py             --weeks "${WEEKS:-4}"             ${START_DATE:+--start-date "${START_DATE}"}             --out-dir integrations/wger/plans
-          echo "plan_path=$(cat /tmp/PLAN_PATH.txt)" >> "$GITHUB_OUTPUT"
-
-      - name: Create pull request with the proposed plan
-        uses: peter-evans/create-pull-request@v6
-        with:
-          title: "Proposed training plan: ${{ steps.plan.outputs.plan_path }}"
-          body: |
-            This PR contains the proposed **${{ steps.plan.outputs.plan_path }}** for the next block.
-            - Review the JSON under `integrations/wger/plans/`.
-            - When happy, **merge** this PR or run the *Apply plan to Wger* workflow (manual) pointing to the same JSON.
-          commit-message: "feat(wger): propose plan ${{ steps.plan.outputs.plan_path }}"
-          add-paths: |
-            integrations/wger/plans/
-            integrations/wger/state/last_proposal.json
-          branch: "plan-proposal/${{ github.run_id }}"
-          base: ${{ github.ref_name }}
+#jobs: ...
