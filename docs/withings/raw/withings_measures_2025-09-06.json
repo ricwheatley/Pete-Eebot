@@ -1,0 +1,39 @@
+{
+  "status_code": 200,
+  "body": {
+    "status": 0,
+    "body": {
+      "updatetime": 1757128863,
+      "timezone": "Europe/London",
+      "measuregrps": [
+        {
+          "grpid": 6861171325,
+          "attrib": 0,
+          "date": 1757128827,
+          "created": 1757128863,
+          "modified": 1757128863,
+          "category": 1,
+          "deviceid": "3446730935ae72c3bf23d624d9c7b4c32758f10f",
+          "hash_deviceid": "3446730935ae72c3bf23d624d9c7b4c32758f10f",
+          "measures": [
+            {
+              "value": 89900,
+              "type": 1,
+              "unit": -3,
+              "algo": 0,
+              "fm": 131
+            },
+            {
+              "value": 31773,
+              "type": 6,
+              "unit": -3
+            }
+          ],
+          "modelid": null,
+          "model": null,
+          "comment": null
+        }
+      ]
+    }
+  }
+}
