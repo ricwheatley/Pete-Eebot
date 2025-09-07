@@ -1,1 +1,1 @@
-# Deprecated Telegram workflow, replaced by telegram steps inside custom dger workflows.wger_sync.yml
+# Deprecated workflow - replaced by wger_sync.yml which now contains Telegram steps.
