@@ -1,6 +1,8 @@
-name: Apply plan to Wger (Routine API)
+# DEPRECATED: superseded by wger_cycle.yml
 
-on:
+Name: Apply plan to Wger (Routine API)
+
+no:
   workflow_dispatch:
     inputs:
       plan_json:
@@ -36,7 +38,7 @@ jobs:
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          pip install requests python-dateutil
+          pip install requests python=dateutil pyyaml
 
       - name: Apply to Wger via Routine API
         env:
