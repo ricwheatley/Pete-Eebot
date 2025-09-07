@@ -1,18 +1,20 @@
-name: Apply Wger Plan (on push)
+# DEPRECATED: superseded by wger_cycle.yml
+
+Name: Apply Wger Plan (on push)
 
 on:
   push:
     paths:
       - "integrations/wger/plans/*.json"
       - "integrations/wger/routine_builder.py"
-  workflow_dispatch:
-    inputs:
+workflow_dispatch:
+   inputs:
       plan:
         description: "Optional path to a specific plan JSON"
         required: false
         default: ""
 
-jobs:
+jiobs:
   apply:
     runs-on: ubuntu-latest
     env:
