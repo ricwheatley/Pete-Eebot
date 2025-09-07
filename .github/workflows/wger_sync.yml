@@ -1,0 +1,58 @@
+name: Wger Sync
+
+on:
+  schedule:
+    - cron: "0 5 * * *"   # Every day at 05:00 UTC
+  workflow_dispatch:
+
+jobs:
+  daily-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pull Wger Logs
+        run: python integrations/wger/pull_wger_logs.py
+
+      - name: Pull Withings Data
+        run: python integrations/withings/withings_sync.py
+
+      # Apple data comes from your Shortcut workflow,
+      # so here we just assume docs/apple/history.json exists.
+
+      - name: Build Daily Summary
+        run: python integrations/summary/build_daily_summary.py
+
+      - name: Run Body Age Calculation
+        run: python integrations/body_age/calc_body_age.py
+
+      - name: Generate Pete’s Narrative
+        id: pete
+        run: |
+          msg=$(python integrations/summary/daily_report.py)
+          echo "msg=$msg" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram Message
+        run: |
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="${{ steps.pete.outputs.msg }}"
+
+      - name: Commit Updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add summaries/daily/* knowledge/* integrations/wger/logs/* docs/analytics/*
+          git commit -m "Daily sync + summary for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git push
