@@ -2,15 +2,18 @@ name: Telegram Test
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 6 * * '
 
-#image: cached device
+
 jobs:
   send-message:
     runs-on: ubuntu-latest
-    steps:
+    steps: 
       - name: Send test message
-        run: curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \\
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \\
+        run: |
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
             -d text="Test message from GitHub Actions"
+
+      - name: Get updates (chat ID discovery)
+        run: |
+          curl -s https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/getUpdates
