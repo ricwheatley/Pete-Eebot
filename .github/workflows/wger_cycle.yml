@@ -6,13 +6,46 @@ on:
   workflow_dispatch:
 
 defaults:
-  run-plannect-block: |
-    python integrations/wger/plan_next_block.py
+  build-plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-  upload-plan: |
-    python integrations/wger/wger_uploads.py
+      - name: Set up Python
 
-  send-telegram: |
-    curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage  \
-    -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-    -d text="📡 New 4-week Warkout plan generated and uploaded successfully! "
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pull Wger Logs
+        run: |
+          python integrations/wger/pull_wger_logs.py
+
+      - name: Review last cycle and generate new plan
+        run: |
+          python integrations/wger/plan_next_block.py
+
+      - name: Upload plan to Wger
+        run: |
+          python integrations/wger/wger_uploads.py
+
+      - name: Commit generated plan JSON
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add integrations/wger/plans/*
+          git commit -m "Auto-update: New 4-week Wger plan" || echo "No changes to commit"
+          git push
+
+      - name: Send Telegram Notification
+        run: |
+          msg_date=$(date -u +%Y-%m-%d)
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
+          -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+          -d text="📡 Hey! Your new 4-week training plan is ready as of $msg_date. Let's get to work!"
