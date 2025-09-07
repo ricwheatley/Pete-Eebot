@@ -1,15 +1,15 @@
 {
-  "date": "2025-09-05",
+  "date": "2025-09-06",
   "inputs_window_days": 7,
   "subscores": {
-    "crf": 47.6,
+    "crf": 47.9,
     "body_comp": 0,
-    "activity": 74.0,
-    "recovery": 68.9
+    "activity": 70.1,
+    "recovery": 66.2
   },
-  "composite": 44.2,
-  "body_age_years": 45.2,
-  "age_delta_years": 1.2,
+  "composite": 43.1,
+  "body_age_years": 45.4,
+  "age_delta_years": 1.4,
   "assumptions": {
     "used_vo2max_direct": false,
     "cap_minus_10_applied": false
