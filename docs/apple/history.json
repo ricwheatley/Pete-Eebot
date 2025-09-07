@@ -1,6 +1,30 @@
 [
   {
     "source": "apple_shortcut",
+    "date": "2025-09-06",
+    "timezone": "Europe/London",
+    "steps": 10017,
+    "hr_min": 45,
+    "hr_max": 131,
+    "hr_avg": 78,
+    "hr_resting": 47,
+    "exercise_minutes": 45,
+    "calories_active": 706,
+    "calories_resting": 2094,
+    "calories_total": 2800,
+    "stand_minutes": 153,
+    "distance_m": 7435,
+    "sleep_minutes": {
+      "asleep": 322,
+      "awake": 66,
+      "core": 234,
+      "deep": 26,
+      "in_bed": 388,
+      "rem": 62
+    }
+  },
+  {
+    "source": "apple_shortcut",
     "date": "2025-09-05",
     "timezone": "Europe/London",
     "steps": 6144,
