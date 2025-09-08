@@ -10941,5 +10941,95 @@
     "muscles_secondary": [],
     "license": "CC-BY-SA 4",
     "description_html": "Beneficios del Cardio en Bicicleta Estática\nEl cardio en bicicleta estática es una excelente forma de ejercicio que ofrece múltiples beneficios para la salud y el bienestar. Aquí te detallo algunos de los más destacados:\n\nMejora de la Salud Cardiovascular\nFortalece el corazón: El ejercicio regular ayuda a mejorar la eficiencia del corazón y a reducir el riesgo de enfermedades cardiovasculares.\nAumenta la circulación: Mejora el flujo sanguíneo, lo que puede ayudar a reducir la presión arterial.\nQuema de Calorías y Pérdida de Peso\nEficiente para quemar calorías: Dependiendo de la intensidad, puedes quemar entre 400 y 600 calorías por hora.\nAyuda en la pérdida de peso: Combinado con una dieta equilibrada, el cardio en bicicleta estática puede ser efectivo para perder peso.\nFortalecimiento Muscular\nTonifica las piernas: Trabaja principalmente los músculos de las piernas, incluyendo cuádriceps, isquiotibiales y pantorrillas.\nMejora la resistencia muscular: Con el tiempo, puedes aumentar la resistencia y la fuerza en las piernas.\nBeneficios para la Salud Mental\nReduce el estrés: El ejercicio libera endorfinas, que pueden mejorar tu estado de ánimo y reducir el estrés.\nAumenta la energía: La actividad física regular puede aumentar tus niveles de energía y mejorar la calidad del sueño."
+  },
+  {
+    "id": 1619,
+    "uuid": "16e3e7fc-0461-4c87-846c-fa6f0cbf890e",
+    "name": "",
+    "category": "Back",
+    "equipment": [
+      "Pull-up bar"
+    ],
+    "muscles_primary": [
+      "Brachialis"
+    ],
+    "muscles_secondary": [
+      "Obliquus externus abdominis"
+    ],
+    "license": "CC-BY-SA 4",
+    "description_html": ""
+  },
+  {
+    "id": 1620,
+    "uuid": "6995c30a-037f-4de3-ac4a-45384a1f38f9",
+    "name": "Seated Dumbbell Calf Raise",
+    "category": "Calves",
+    "equipment": [
+      "Dumbbell"
+    ],
+    "muscles_primary": [
+      "Calves"
+    ],
+    "muscles_secondary": [],
+    "license": "CC-BY-SA 4",
+    "description_html": "The seated dumbbell calf raise is a targeted exercise for strengthening the lower leg muscles. It follows the same movement pattern as the machine version: you place the weight on your knees, and by extending and flexing your ankles, you move the weight."
+  },
+  {
+    "id": 1621,
+    "uuid": "c1a9297d-6786-45dc-9047-5539fb61db9c",
+    "name": "Unilateral Cable row",
+    "category": "Back",
+    "equipment": [
+      "Bench"
+    ],
+    "muscles_primary": [
+      "Lats",
+      "Serratus anterior"
+    ],
+    "muscles_secondary": [],
+    "license": "CC-BY-SA 4",
+    "description_html": "Put a vertical seated bench in front of the cable row machine.position it so that you can focus on one side, and then do slow pulls focusing on the lateral muscles and ensuring tention in those muscles when in a stretched position."
+  },
+  {
+    "id": 1622,
+    "uuid": "7d2c884d-7cc1-483e-ac56-fa0d4110e880",
+    "name": "",
+    "category": "Legs",
+    "equipment": [],
+    "muscles_primary": [
+      "Glutes"
+    ],
+    "muscles_secondary": [],
+    "license": "CC-BY-SA 4",
+    "description_html": ""
+  },
+  {
+    "id": 1623,
+    "uuid": "3997a863-f3af-485e-bc58-5d034f3d14e0",
+    "name": "",
+    "category": "Chest",
+    "equipment": [
+      "Incline bench"
+    ],
+    "muscles_primary": [
+      "Chest"
+    ],
+    "muscles_secondary": [],
+    "license": "CC-BY-SA 4",
+    "description_html": ""
+  },
+  {
+    "id": 1624,
+    "uuid": "14f971d7-7e75-4545-9d76-decfbea103f0",
+    "name": "",
+    "category": "Chest",
+    "equipment": [
+      "Bench",
+      "Dumbbell"
+    ],
+    "muscles_primary": [],
+    "muscles_secondary": [],
+    "license": "CC-BY-SA 4",
+    "description_html": ""
   }
 ]
