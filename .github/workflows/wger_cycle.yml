@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  cycle-feedback:
+  cycle-review:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -28,12 +28,10 @@ jobs:
           msg=$(python - <<'PY'
           from integrations.pete_feedback.narrative_builder import build_cycle_narrative
           import json, pathlib
-
           metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
           metrics = {}
           if metrics_path.exists():
               metrics = json.loads(metrics_path.read_text())
-
           print(build_cycle_narrative(metrics))
           PY
           )
@@ -51,7 +49,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           phrase=$(python - <<'PY'
           from integrations.pete_feedback.catchphrases import random_phrase
-          print(random_phrase())
+          print(random_phrase(kind="metaphor", mode="chaotic"))
           PY
           )
           git add summaries/cycle/* knowledge/* integrations/wger/logs/* docs/analytics/*
