@@ -49,6 +49,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          phrase=$(python - <<'PY'
+          from integrations.pete_feedback.catchphrases import random_phrase
+          print(random_phrase())
+          PY
+          )
           git add summaries/weekly/* knowledge/* integrations/wger/logs/* docs/analytics/*
-          git commit -m "Weekly check-in + Pete narrative for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git commit -m "Pete’s flex files 📅 | $phrase (Weekly sync $(date -u +%Y-%m-%d))" || echo "No changes to commit"
           git push
