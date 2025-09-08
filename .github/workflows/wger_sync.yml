@@ -19,19 +19,24 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install upgrade pip
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run Body Age Calculation
-        run: python integrations/body_age/calc_body_age.py
-
-      - name: Build Daily Summary
-        run: python integrations/summary/build_daily_summary.py
 
       - name: Generate Pete’s Daily Narrative
         id: pete
         run: |
-          msg=$(python -c "from integrations.pete_feedback.feedback_engine import generate_daily_feedback; print(generate_daily_feedback('$(date -u +%Y-%m-%d --date='yesterday')'))")
+          msg=$(python - <<'PY'
+          from integrations.pete_feedback.narrative_builder import build_daily_narrative
+          import json, pathlib
+
+          metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
+          metrics = {}
+          if metrics_path.exists():
+              metrics = json.loads(metrics_path.read_text())
+
+          print(build_daily_narrative(metrics))
+          PY
+          )
           echo "msg=$msg" >> $GITHUB_OUTPUT
 
       - name: Send Telegram Message
@@ -42,8 +47,8 @@ jobs:
 
       - name: Commit Updates
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add summaries/daily/* knowledge/* integrations/wger/logs/* docs/analytics/*
-          git commit -m "Daily sync + summary for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git commit -m "Daily sync + Pete narrative for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
           git push
