@@ -1,37 +1,7 @@
 import random
 from .catchphrases import random_phrase
+from .utils import stitch_sentences
 from .rules import weight, steps, workouts, recovery, body_age
-
-CONNECTORS = [
-    "mate,", "listen,", "honestly,", "you know what?",
-    "I swear,", "look,", "trust me,", "real talk,"
-]
-
-CLOSERS = [
-    "Keep grinding or the gains train leaves without you 🚂💪",
-    "Hakuna matata and heavy squatta 🦁🏋️",
-    "No excuses, just sets and juices 🥤💪",
-    "The dumbbell of destiny calls your name 🔔",
-    "Stay swole, stay soulful ✨",
-]
-
-def _stitch_sentences(insights, sprinkles):
-    """Turn insights + sprinkles into a chatty paragraph."""
-    text = []
-    if insights:
-        text.append(f"Mate, {insights[0]} — not bad at all.")
-
-    # weave in the rest
-    for part in insights[1:]:
-        connector = random.choice(CONNECTORS)
-        text.append(f"{connector} {part}")
-
-    for s in sprinkles:
-        connector = random.choice(CONNECTORS)
-        text.append(f"{connector} {s.lower()}")
-
-    text.append(random.choice(CLOSERS))
-    return " ".join(text)
 
 
 def build_daily_narrative(metrics: dict) -> str:
