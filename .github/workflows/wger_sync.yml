@@ -1,8 +1,8 @@
-name: Wger Sync
+name: Wger Daily Sync
 
 on:
   schedule:
-    - cron: "0 5 * * *"   # Every day at 05:00 UTC
+    - cron: "0 5 * * *"   # 5am UTC every day
   workflow_dispatch:
 
 jobs:
@@ -27,17 +27,12 @@ jobs:
         run: |
           msg=$(python - <<'PY'
           from integrations.pete_feedback.narrative_builder import build_daily_narrative
-          from integrations.pete_feedback.catchphrases import random_phrase
-          import json, pathlib, random
-
+          import json, pathlib
           metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
           metrics = {}
           if metrics_path.exists():
               metrics = json.loads(metrics_path.read_text())
-
-          base = build_daily_narrative(metrics)
-          extras = "\n".join(random_phrase() for _ in range(random.randint(1, 2)))
-          print(f"{base}\n\n{extras}")
+          print(build_daily_narrative(metrics))
           PY
           )
           echo "msg=$msg" >> $GITHUB_OUTPUT
@@ -54,7 +49,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           phrase=$(python - <<'PY'
           from integrations.pete_feedback.catchphrases import random_phrase
-          print(random_phrase())
+          print(random_phrase(mode="serious"))
           PY
           )
           git add summaries/daily/* knowledge/* integrations/wger/logs/* docs/analytics/*
