@@ -704,11 +704,31 @@ COACHISMS = [
 # Combine them all into one mega-pile
 ALL_PHRASES = MOTIVATIONAL + SILLY + PORTMANTEAUS + METAPHORS + COACHISMS
 
-def random_phrase(kind="any") -> str:
+# Legendary easter eggs – Pete’s ultra-rare sayings
+LEGENDARY = [
+    "🏆 You’ve unlocked Beast Mode DLC.",
+    "🍕 Cheat day approved by Pete — order pizza immediately.",
+    "🦄 You squatted so deep you found Narnia.",
+    "☠️ Cardio killed me, you’re on your own.",
+    "📈 Your quads have gone public — NASDAQ ticker: SQUAT.",
+    "🎸 Deadlifts heavier than Metallica’s back catalogue.",
+    "🦍 Gains so strong Darwin wants a word.",
+    "🚑 DOMS level: hospital wing at Hogwarts.",
+]
+
+def random_phrase(kind="any", mode="balanced") -> str:
     """
-    Pick a random phrase from Pete's embarrassment of riches.
+    Pick a random phrase from Pete's arsenal.
     kind can be: motivational, silly, portmanteau, metaphor, coachism, or any
+    mode can be: serious | chaotic | balanced
     """
+    import random
+
+    # 1% chance to drop a legendary easter egg
+    if random.random() < 0.01:
+        return random.choice(LEGENDARY)
+
+    # Category bias
     if kind == "motivational":
         return random.choice(MOTIVATIONAL)
     elif kind == "silly":
@@ -720,4 +740,10 @@ def random_phrase(kind="any") -> str:
     elif kind == "coachism":
         return random.choice(COACHISMS)
     else:
-        return random.choice(ALL_PHRASES)
+        # Mode tweaks
+        if mode == "serious":
+            return random.choice(MOTIVATIONAL + COACHISMS)
+        elif mode == "chaotic":
+            return random.choice(SILLY + PORTMANTEAUS + METAPHORS)
+        else:  # balanced
+            return random.choice(ALL_PHRASES)
