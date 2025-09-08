@@ -2,7 +2,7 @@ name: Pete Rants
 
 on:
   schedule:
-    - cron: "*/15 5-21 * * *"
+    - cron: "*/15 5-21 * * *"   # every 15 minutes, 5am–9pm UTC
   workflow_dispatch:
 
 jobs:
@@ -14,16 +14,16 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
+
       - name: Decide if Pete rants
         id: roll
         run: |
-          python - <<'PY'
           import random, os
-          if random.random() < 0.05:
-              print("fire=true")
-          else:
-              print("fire=false")
-          PY
+          fire = random.random() < 0.05
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"fire={'true' if fire else 'false'}\n")
+        shell: python
+
       - if: steps.roll.outputs.fire == 'true'
         run: python integrations/pete_feedback/messenger.py --type rant
         env:
