@@ -1,0 +1,35 @@
+name: Cycle Feedback
+
+on:
+  schedule:
+    - cron: "0 15 * * 0"   # Sundays 3pm UTC
+  workflow_dispatch:
+
+jobs:
+  cycle-feedback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate Pete’s Cycle Narrative
+        id: pete
+        run: |
+          msg=$(python -c "from integrations.pete_feedback.feedback_engine import generate_cycle_feedback; print(generate_cycle_feedback('$(date -u +%Y-W%V)'))")
+          echo "msg=$msg" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram
+        run: |
+          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
+            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
+            -d text="${{ steps.pete.outputs.msg }}"
