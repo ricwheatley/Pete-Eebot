@@ -19,28 +19,19 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install upgrade pip
           pip install -r requirements.txt
-
-      - name: Pull Wger Logs
-        run: python integrations/wger/pull_wger_logs.py
-
-      - name: Pull Withings Data
-        run: python integrations/withings/withings_sync.py
-
-      # Apple data comes from your Shortcut workflow,
-      # so here we just assume docs/apple/history.json exists.
-
-      - name: Build Daily Summary
-        run: python integrations/summary/build_daily_summary.py
 
       - name: Run Body Age Calculation
         run: python integrations/body_age/calc_body_age.py
 
-      - name: Generate Pete’s Narrative
+      - name: Build Daily Summary
+        run: python integrations/summary/build_daily_summary.py
+
+      - name: Generate Pete’s Daily Narrative
         id: pete
         run: |
-          msg=$(python integrations/summary/daily_report.py)
+          msg=$(python -c "from integrations.pete_feedback.feedback_engine import generate_daily_feedback; print(generate_daily_feedback('$(date -u +%Y-%m-%d --date='yesterday')'))")
           echo "msg=$msg" >> $GITHUB_OUTPUT
 
       - name: Send Telegram Message
