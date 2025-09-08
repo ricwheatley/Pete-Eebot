@@ -2,62 +2,78 @@ import random
 from .catchphrases import random_phrase
 from .rules import weight, steps, workouts, recovery, body_age
 
+CONNECTORS = [
+    "mate,", "listen,", "honestly,", "you know what?",
+    "I swear,", "look,", "trust me,", "real talk,"
+]
+
+CLOSERS = [
+    "Keep grinding or the gains train leaves without you 🚂💪",
+    "Hakuna matata and heavy squatta 🦁🏋️",
+    "No excuses, just sets and juices 🥤💪",
+    "The dumbbell of destiny calls your name 🔔",
+    "Stay swole, stay soulful ✨",
+]
+
+def _stitch_sentences(insights, sprinkles):
+    """Turn insights + sprinkles into a chatty paragraph."""
+    text = []
+    if insights:
+        text.append(f"Mate, {insights[0]} — not bad at all.")
+
+    # weave in the rest
+    for part in insights[1:]:
+        connector = random.choice(CONNECTORS)
+        text.append(f"{connector} {part}")
+
+    for s in sprinkles:
+        connector = random.choice(CONNECTORS)
+        text.append(f"{connector} {s.lower()}")
+
+    text.append(random.choice(CLOSERS))
+    return " ".join(text)
+
+
 def build_daily_narrative(metrics: dict) -> str:
-    parts = []
+    heading = f"🌞 Daily Sweat Sermon | {random_phrase(mode='chaotic')}"
+    insights = [
+        weight.interpret(metrics),
+        steps.interpret(metrics),
+        workouts.interpret(metrics),
+        recovery.interpret(metrics),
+        body_age.interpret(metrics),
+    ]
+    insights = [i for i in insights if i]
 
-    # --- Serious insight (60%)
-    parts.append(weight.interpret(metrics))
-    parts.append(steps.interpret(metrics))
-    parts.append(workouts.interpret(metrics))
-    parts.append(recovery.interpret(metrics))
-    parts.append(body_age.interpret(metrics))
+    sprinkles = [random_phrase() for _ in range(random.randint(1, 3))]
+    return f"{heading}\n\n{_stitch_sentences(insights, sprinkles)}"
 
-    # --- Pete’s extras (40%)
-    extras = []
-    for _ in range(random.randint(2, 5)):
-        extras.append(random_phrase(random.choice(
-            ["motivational", "silly", "portmanteau", "metaphor", "coachism"]
-        )))
-    parts.extend(extras)
-
-    return "\n".join([p for p in parts if p])
 
 def build_weekly_narrative(metrics: dict) -> str:
-    parts = []
-    parts.append("📅 Weekly Check-in:")
+    heading = f"📅 Flex Friday Check-in | {random_phrase(kind='coachism')}"
+    insights = [
+        weight.interpret(metrics),
+        workouts.interpret(metrics),
+        steps.interpret(metrics),
+        recovery.interpret(metrics),
+        body_age.interpret(metrics),
+        f"This week’s theme: {random_phrase('portmanteau')}"
+    ]
+    insights = [i for i in insights if i]
 
-    # Serious part
-    parts.append(weight.interpret(metrics))
-    parts.append(workouts.interpret(metrics))  # aggregated weekly stats
-    parts.append(steps.interpret(metrics))
-    parts.append(recovery.interpret(metrics))
-    parts.append(body_age.interpret(metrics))
+    sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(2, 4))]
+    return f"{heading}\n\n{_stitch_sentences(insights, sprinkles)}"
 
-    # Pete’s thematic nonsense
-    theme = random_phrase("portmanteau")
-    parts.append(f"This week’s theme: **{theme}** 🎉")
-
-    for _ in range(random.randint(3, 6)):
-        parts.append(random_phrase())
-
-    return "\n".join([p for p in parts if p])
 
 def build_cycle_narrative(metrics: dict) -> str:
-    parts = []
-    parts.append("🚀 4-Week Cycle Review:")
+    heading = f"🚀 Gainz Odyssey | {random_phrase(kind='metaphor')}"
+    insights = [
+        weight.interpret(metrics),
+        workouts.interpret(metrics),
+        body_age.interpret(metrics),
+        recovery.interpret(metrics),
+    ]
+    insights = [i for i in insights if i]
 
-    # Core insights
-    parts.append(weight.interpret(metrics))
-    parts.append(workouts.interpret(metrics))
-    parts.append(body_age.interpret(metrics))
-    parts.append(recovery.interpret(metrics))
-
-    # Pete goes full theatre mode here
-    ridiculous = random_phrase("metaphor")
-    parts.append(ridiculous)
-
-    # Add a handful of extra phrases (Pete gets chatty here)
-    for _ in range(random.randint(5, 8)):
-        parts.append(random_phrase())
-
-    return "\n".join([p for p in parts if p])
+    sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(4, 6))]
+    return f"{heading}\n\n{_stitch_sentences(insights, sprinkles)}"
