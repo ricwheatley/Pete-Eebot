@@ -1,4 +1,3 @@
-# integrations/pete_feedback/messenger.py
 import argparse, os, json, pathlib, subprocess, random
 from datetime import datetime
 from integrations.pete_feedback import narrative_builder as nb
@@ -34,6 +33,21 @@ def log_message(msg: str):
         f.write(f"[{datetime.utcnow().isoformat()}] {msg}\n")
 
 
+def commit_changes(report_type: str, phrase: str):
+    subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+    subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+
+    # Add known directories
+    subprocess.run(["git", "add", "summaries", "knowledge", "integrations/wger/logs", "docs/analytics"], check=False)
+
+    msg = f"Pete log update ({report_type}) | {phrase} ({datetime.utcnow().strftime('%Y-%m-%d')})"
+    try:
+        subprocess.run(["git", "commit", "-m", msg], check=True)
+        subprocess.run(["git", "push"], check=True)
+    except subprocess.CalledProcessError:
+        print("No changes to commit.")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", choices=["daily", "weekly", "cycle", "rant"], required=True)
@@ -41,18 +55,25 @@ def main():
 
     metrics = load_metrics()
 
+    # Build message
     if args.type == "daily":
         msg = nb.build_daily_narrative(metrics)
+        phrase = random_phrase(mode="serious")
     elif args.type == "weekly":
         msg = nb.build_weekly_narrative(metrics)
+        phrase = random_phrase(kind="coachism")
     elif args.type == "cycle":
         msg = nb.build_cycle_narrative(metrics)
+        phrase = random_phrase(kind="metaphor", mode="chaotic")
     elif args.type == "rant":
         sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(3, 6))]
         msg = "🔥 Random Pete Rant 🔥\n\n" + stitch_sentences([], sprinkles, short_mode=random.random() < 0.2)
+        phrase = random_phrase(mode="chaotic")
 
+    # Send + log + commit
     send_telegram(msg)
     log_message(msg)
+    commit_changes(args.type, phrase)
 
 
 if __name__ == "__main__":
