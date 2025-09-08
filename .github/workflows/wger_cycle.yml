@@ -1,15 +1,15 @@
-name: Cycle Feedback
+name: Wger Cycle Review
 
 on:
   schedule:
-    - cron: "0 15 * * 0"   # Sundays 3pm UTC
+    - cron: "0 15 * * 0"   # Sundays at 15:00 UTC
   workflow_dispatch:
 
 jobs:
   cycle-feedback:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -25,11 +25,30 @@ jobs:
       - name: Generate Pete’s Cycle Narrative
         id: pete
         run: |
-          msg=$(python -c "from integrations.pete_feedback.feedback_engine import generate_cycle_feedback; print(generate_cycle_feedback('$(date -u +%Y-W%V)'))")
+          msg=$(python - <<'PY'
+          from integrations.pete_feedback.narrative_builder import build_cycle_narrative
+          import json, pathlib
+
+          metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
+          metrics = {}
+          if metrics_path.exists():
+              metrics = json.loads(metrics_path.read_text())
+
+          print(build_cycle_narrative(metrics))
+          PY
+          )
           echo "msg=$msg" >> $GITHUB_OUTPUT
 
-      - name: Send Telegram
+      - name: Send Telegram Message
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
             -d text="${{ steps.pete.outputs.msg }}"
+
+      - name: Commit Updates
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add summaries/cycle/* knowledge/* integrations/wger/logs/* docs/analytics/*
+          git commit -m "Cycle review + Pete narrative for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git push
