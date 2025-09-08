@@ -5,7 +5,7 @@ from .rules import weight, steps, workouts, recovery, body_age
 
 
 def build_daily_narrative(metrics: dict) -> str:
-    heading = f"🌞 Daily Sweat Sermon | {random_phrase(mode='chaotic')}"
+    heading = f"🌞💪 Daily Sweat Sermon | {random_phrase(mode='chaotic')}"
     insights = [
         weight.interpret(metrics),
         steps.interpret(metrics),
@@ -20,23 +20,26 @@ def build_daily_narrative(metrics: dict) -> str:
 
 
 def build_weekly_narrative(metrics: dict) -> str:
-    heading = f"📅 Flex Friday Check-in | {random_phrase(kind='coachism')}"
+    heading = f"📅🎯 Flex Friday Check-in | {random_phrase(kind='coachism')}"
     insights = [
         weight.interpret(metrics),
         workouts.interpret(metrics),
         steps.interpret(metrics),
         recovery.interpret(metrics),
         body_age.interpret(metrics),
-        f"This week’s theme: {random_phrase('portmanteau')}"
     ]
     insights = [i for i in insights if i]
+
+    # Theme gets its own emphasis
+    theme = f"This week’s theme: **{random_phrase('portmanteau')}** 🎉"
+    insights.append(theme)
 
     sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(2, 4))]
     return f"{heading}\n\n{stitch_sentences(insights, sprinkles)}"
 
 
 def build_cycle_narrative(metrics: dict) -> str:
-    heading = f"🚀 Gainz Odyssey | {random_phrase(kind='metaphor')}"
+    heading = f"🚀🔥 Gainz Odyssey | {random_phrase(kind='metaphor')}"
     insights = [
         weight.interpret(metrics),
         workouts.interpret(metrics),
