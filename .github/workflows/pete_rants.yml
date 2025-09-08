@@ -2,64 +2,30 @@ name: Pete Rants
 
 on:
   schedule:
-    - cron: "*/15 5-21 * * *"   # every 15 minutes between 5am–9pm UTC
+    - cron: "*/15 5-21 * * *"
   workflow_dispatch:
 
 jobs:
-  pete-rant:
+  rant:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Decide if Pete rants now
+      - run: pip install -r requirements.txt
+      - name: Decide if Pete rants
         id: roll
         run: |
           python - <<'PY'
           import random, os
-          # ~64 intervals/day → ~3 rants/day on avg (5% chance)
-          fire = random.random() < 0.05
-          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
-              fh.write(f"fire={'true' if fire else 'false'}\n")
+          if random.random() < 0.05:
+              print("fire=true")
+          else:
+              print("fire=false")
           PY
-
-      - name: Generate Pete’s Rant
-        if: steps.roll.outputs.fire == 'true'
-        id: rant
-        run: |
-          msg=$(python - <<'PY'
-          from integrations.pete_feedback.catchphrases import random_phrase
-          from integrations.pete_feedback.utils import stitch_sentences
-          import json, pathlib, random
-
-          metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
-          metrics = {}
-          if metrics_path.exists():
-              metrics = json.loads(metrics_path.read_text())
-
-          insights = []
-          if random.random() < 0.3 and metrics:
-              if random.random() < 0.5 and metrics.get("weight_kg"):
-                  insights.append(f"yesterday’s weight was {metrics['weight_kg']:.1f}kg")
-              elif metrics.get("steps"):
-                  insights.append(f"you clocked {metrics['steps']:,} steps yesterday")
-
-          sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(3, 6))]
-
-          rant = "🔥 Random Pete Rant 🔥\n\n" + stitch_sentences(insights, sprinkles, short_mode=random.random() < 0.2)
-          print(rant)
-          PY
-          )
-          echo "msg=$msg" >> $GITHUB_OUTPUT
-
-      - name: Send Telegram Rant
-        if: steps.roll.outputs.fire == 'true'
-        run: |
-          curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
-            -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
-            -d text="${{ steps.rant.outputs.msg }}"
+      - if: steps.roll.outputs.fire == 'true'
+        run: python integrations/pete_feedback/messenger.py --type rant
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
