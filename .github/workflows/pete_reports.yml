@@ -1,0 +1,51 @@
+name: Pete Reports
+
+on:
+  schedule:
+    - cron: "0 5 * * *"     # Daily 5am UTC
+    - cron: "0 10 * * 5"    # Weekly (Friday 10am UTC)
+    - cron: "0 15 * * 0"    # Cycle (Sunday 15:00 UTC)
+  workflow_dispatch:
+
+jobs:
+  daily:
+    if: github.event.schedule == '0 5 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python integrations/pete_feedback/messenger.py --type daily
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+  weekly:
+    if: github.event.schedule == '0 10 * * 5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python integrations/pete_feedback/messenger.py --type weekly
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+  cycle:
+    if: github.event.schedule == '0 15 * * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python integrations/pete_feedback/messenger.py --type cycle
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
