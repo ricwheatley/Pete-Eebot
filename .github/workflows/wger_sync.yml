@@ -27,14 +27,17 @@ jobs:
         run: |
           msg=$(python - <<'PY'
           from integrations.pete_feedback.narrative_builder import build_daily_narrative
-          import json, pathlib
+          from integrations.pete_feedback.catchphrases import random_phrase
+          import json, pathlib, random
 
           metrics_path = pathlib.Path("docs/analytics/unified_metrics.json")
           metrics = {}
           if metrics_path.exists():
               metrics = json.loads(metrics_path.read_text())
 
-          print(build_daily_narrative(metrics))
+          base = build_daily_narrative(metrics)
+          extras = "\n".join(random_phrase() for _ in range(random.randint(1, 2)))
+          print(f"{base}\n\n{extras}")
           PY
           )
           echo "msg=$msg" >> $GITHUB_OUTPUT
