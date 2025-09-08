@@ -19,7 +19,7 @@ jobs:
         id: roll
         run: |
           import random, os
-          fire = random.random() < 1.05
+          fire = random.random() < 0.05
           with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
               fh.write(f"fire={'true' if fire else 'false'}\n")
         shell: python
