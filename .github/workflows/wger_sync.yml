@@ -49,6 +49,11 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          phrase=$(python - <<'PY'
+          from integrations.pete_feedback.catchphrases import random_phrase
+          print(random_phrase())
+          PY
+          )
           git add summaries/daily/* knowledge/* integrations/wger/logs/* docs/analytics/*
-          git commit -m "Daily sync + Pete narrative for $(date -u +%Y-%m-%d)" || echo "No changes to commit"
+          git commit -m "Pete’s pump log 💪 | $phrase (Daily sync $(date -u +%Y-%m-%d))" || echo "No changes to commit"
           git push
