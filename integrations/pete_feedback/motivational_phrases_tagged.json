@@ -617,6 +617,13 @@
     {"text": "Sweat equity is Pete’s economy.", "tags": ["#Consistency", "#Motivation", "#Coachism"]}
     ],
     "LEGENDARY": [
-      {"text": "Consistency is queen, volume is king!", "tags": ["#Consistency", "#Volume", "#Motivation"]},
-    ]
+    {"text": "🏆 You’ve unlocked Beast Mode DLC.", "tags": ["#Motivation", "#PR", "#Legendary"]},
+    {"text": "🍕 Cheat day approved by Pete — order pizza immediately.", "tags": ["#Nutrition", "#Recovery", "#Humour", "#Legendary"]},
+    {"text": "🦄 You squatted so deep you found Narnia.", "tags": ["#Squat", "#Legs", "#Humour", "#Legendary"]},
+    {"text": "☠️ Cardio killed me, you’re on your own.", "tags": ["#Cardio", "#Run", "#Humour", "#Legendary"]},
+    {"text": "📈 Your quads have gone public — NASDAQ ticker: SQUAT.", "tags": ["#Legs", "#Squat", "#Humour", "#Legendary"]},
+    {"text": "🎸 Deadlifts heavier than Metallica’s back catalogue.", "tags": ["#Deadlift", "#Strength", "#Humour", "#Legendary"]},
+    {"text": "🦍 Gains so strong Darwin wants a word.", "tags": ["#Strength", "#Motivation", "#Legendary"]},
+    {"text": "🚑 DOMS level: hospital wing at Hogwarts.", "tags": ["#Recovery", "#Humour", "#Legendary"]}
+]
 }
