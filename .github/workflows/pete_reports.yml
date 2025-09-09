@@ -5,7 +5,7 @@ on:
     - cron: "0 5 * * *"     # Daily 05:00 UTC, equals 05:00 UK in winter
     - cron: "0 10 * * 5"    # Weekly Friday 10:00 UTC, equals 10:00 UK in winter
     - cron: "0 15 * * 0"    # Sunday 15:00 UTC, equals 15:00 UK in winter
-    - cron: "0 4 * * *"     # Daily 04:00 UTC, equals 05:00 UK in summer
+    - cron: "0 5 * * *"     # Daily 04:00 UTC, equals 05:00 UK in summer
     - cron: "0 9 * * 5"     # Weekly Friday 09:00 UTC, equals 10:00 UK in summer
     - cron: "0 14 * * 0"    # Sunday 14:00 UTC, equals 15:00 UK in summer
   workflow_dispatch:
