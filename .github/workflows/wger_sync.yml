@@ -1,20 +1,32 @@
-name: Pete Daily Sync
+name: Sync WGER Logs
 
 on:
   schedule:
-    - cron: "0 5 * * *"   # 5am UTC
+    - cron: "0 2 * * *"   # 03:00 UK in summer
+    - cron: "0 3 * * *"   # 03:00 UK in winter
   workflow_dispatch:
 
 jobs:
-  daily:
+  wger-sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: python integrations/pete_feedback/messenger.py --type daily
+
+      - run: pip install requests
+
+      - name: Sync WGER Logs (past 7 days)
+        run: python integrations/wger/sync_wger_logs.py
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/wger/days
+          git commit -m "WGER logs sync (past 7 days)" || echo "No changes"
+          git push
