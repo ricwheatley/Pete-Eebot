@@ -4,14 +4,14 @@ from integrations.pete_feedback import narrative_builder as nb
 from integrations.pete_feedback.catchphrases import random_phrase
 from integrations.pete_feedback.utils import stitch_sentences
 
-METRICS_PATH = pathlib.Path("docs/analytics/unified_metrics.json")
+KNOWLEDGE_PATH = pathlib.Path("knowledge/history.json")
 LOG_PATH = pathlib.Path("summaries/logs/pete_history.log")
 
 
 def load_metrics():
-    if METRICS_PATH.exists():
-        return json.loads(METRICS_PATH.read_text())
-    return {}
+    if KNOWLEDGE_PATH.exists():
+        return json.loads(KNOWLEDGE_PATH.read_text())
+    return {"days": {}}
 
 
 def send_telegram(msg: str):
