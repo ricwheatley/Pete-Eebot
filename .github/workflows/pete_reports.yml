@@ -17,9 +17,11 @@ on:
         type: choice
         options: [d, w, c]
 
+permissions:
+  contents: write   # 👈 this must be at root level
+
 jobs:
   daily:
-    # Fire on either daily cron or when manually requested with kind=d
     if: github.event.schedule == '0 5 * * *' || github.event.schedule == '0 4 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.kind == 'd')
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +37,6 @@ jobs:
           PYTHONPATH: .
 
   weekly:
-    # Fire on either Friday cron or when manually requested with kind=w
     if: github.event.schedule == '0 10 * * 5' || github.event.schedule == '0 9 * * 5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.kind == 'w')
     runs-on: ubuntu-latest
     steps:
@@ -51,7 +52,6 @@ jobs:
           PYTHONPATH: .
 
   cycle:
-    # Fire on either Sunday cron or when manually requested with kind=c
     if: github.event.schedule == '0 15 * * 0' || github.event.schedule == '0 14 * * 0' || (github.event_name == 'workflow_dispatch' && github.event.inputs.kind == 'c')
     runs-on: ubuntu-latest
     steps:
