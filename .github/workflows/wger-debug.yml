@@ -1,9 +1,7 @@
-name: Debug WGER Logs
+name: Debug WGER Logs (Fixed Date)
 
 on:
   workflow_dispatch:   # run manually from GitHub UI
-  schedule:
-    - cron: "0 3 * * 2"   # every Tuesday at 03:00 UTC (after Monday finishes)
 
 jobs:
   fetch-wger-logs:
@@ -17,21 +15,15 @@ jobs:
 
       - run: pip install requests
 
-      - name: Fetch WGER Logs for Monday
+      - name: Fetch WGER Logs for 2025-09-08
         run: python integrations/wger/debug_fetch_logs.py
         env:
           WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
-
-      - name: Save logs into docs/wger/days
-        run: |
-          mkdir -p docs/wger/days
-          monday=$(date -u -d "last monday" +"%Y-%m-%d")
-          python integrations/wger/debug_fetch_logs.py > docs/wger/days/$monday.json
 
       - name: Commit results
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/wger/days
-          git commit -m "Add WGER logs for Monday" || echo "No changes"
+          git add docs/wger/days/2025-09-08.json
+          git commit -m "Add WGER logs for 2025-09-08" || echo "No changes"
           git push
