@@ -2,12 +2,12 @@ name: Pete Reports
 
 on:
   schedule:
-    - cron: "0 5 * * *"     # Daily 05:00 UTC, 05:00 UK in winter, 06:00 UK in summer
-    - cron: "0 10 * * 5"    # Friday 10:00 UTC, 10:00 UK in winter, 11:00 UK in summer
-    - cron: "0 15 * * 0"    # Sunday 15:00 UTC, 15:00 UK in winter, 16:00 UK in summer
     - cron: "0 4 * * *"     # Daily 04:00 UTC, 05:00 UK in summer
+    - cron: "0 5 * * *"     # Daily 05:00 UTC, 05:00 UK in winter
     - cron: "0 9 * * 5"     # Friday 09:00 UTC, 10:00 UK in summer
+    - cron: "0 10 * * 5"    # Friday 10:00 UTC, 10:00 UK in winter, 11:00 UK in summer
     - cron: "0 14 * * 0"    # Sunday 14:00 UTC, 15:00 UK in summer
+    - cron: "0 15 * * 0"    # Sunday 15:00 UTC, 15:00 UK in winter, 16:00 UK in summer
   workflow_dispatch:
     inputs:
       kind:
@@ -18,7 +18,7 @@ on:
         options: [d, w, c]
 
 permissions:
-  contents: write   # 👈 this must be at root level
+  contents: write
 
 jobs:
   daily:
@@ -30,7 +30,12 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python integrations/pete_feedback/messenger.py --type daily
+
+      - name: Build Knowledge (consolidate Apple, Withings, WGER)
+        run: python summaries/build_knowledge.py
+
+      - name: Run Pete Messenger
+        run: python integrations/pete_feedback/messenger.py --type daily
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -45,7 +50,12 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python integrations/pete_feedback/messenger.py --type weekly
+
+      - name: Build Knowledge
+        run: python summaries/build_knowledge.py
+
+      - name: Run Pete Messenger
+        run: python integrations/pete_feedback/messenger.py --type weekly
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -60,7 +70,12 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python integrations/pete_feedback/messenger.py --type cycle
+
+      - name: Build Knowledge
+        run: python summaries/build_knowledge.py
+
+      - name: Run Pete Messenger
+        run: python integrations/pete_feedback/messenger.py --type cycle
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
