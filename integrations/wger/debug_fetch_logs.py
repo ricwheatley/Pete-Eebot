@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import os
+import json
 import requests
-from datetime import datetime, timedelta
+import pathlib
 
 API_KEY = os.getenv("WGER_API_KEY")
 if not API_KEY:
@@ -12,6 +13,9 @@ HDRS = {
     "Authorization": f"Token {API_KEY}",
     "Accept": "application/json"
 }
+
+DOCS_DIR = pathlib.Path("docs/wger/days")
+
 
 def fetch_paginated(url: str):
     """Fetch all pages from a WGER endpoint."""
@@ -29,21 +33,25 @@ def fetch_paginated(url: str):
             next_url = None
     return results
 
+
 def fetch_logs_for_date(date_str: str):
     """Fetch workout logs for a given date (YYYY-MM-DD)."""
     url = f"{BASE}/workoutlog/?date={date_str}"
     logs = fetch_paginated(url)
     return logs
 
+
 if __name__ == "__main__":
-    # Example: last Monday
-    today = datetime.utcnow().date()
-    last_monday = today - timedelta(days=today.weekday() + 7)  # ensures previous Monday
-    date_str = last_monday.strftime("%Y-%m-%d")
+    # Hard-coded date: 2025-09-08
+    date_str = "2025-09-08"
 
     print(f"Fetching WGER logs for {date_str}...")
     logs = fetch_logs_for_date(date_str)
 
-    print(f"Found {len(logs)} logs:")
-    for log in logs:
-        print(log)
+    DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = DOCS_DIR / f"{date_str}.json"
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(logs, f, indent=2)
+
+    print(f"Saved {len(logs)} logs to {out_path}")
