@@ -1,207 +1,235 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate a proposed 4-week plan (routine + days + exercises) as JSON.
-
-- Uses an anchor start date to align 4-week blocks (default 2025-09-01, Monday).
-- Schedules Weights on Mon/Wed, Blaze (HIIT) on Tue/Thu/Sat, Mobility/Rest Fri, Rest Sun.
-- Pulls exercise IDs from the cached catalog (integrations/wger/catalog/exercises_en.json).
-- Emits plan JSON to integrations/wger/plans/plan_<start>_<end>.json
-- Writes a small state file at integrations/wger/state/last_proposal.json
-
-You can override start date or number of weeks.
+Generate a 4-week training block plan (weights + Blaze + rest).
+- Mon/Tue/Thu/Fri = Weights (1 main + 2 assistance) + Blaze + Core finisher
+- Wed = Blaze only
+- Sat/Sun = Rest
+- Progression based on knowledge/history.json (last 28 days)
+- 4-week cycle: Light → Medium → Heavy → Deload
+- Assistance lifts progress with their associated main lift
+- Blaze = fixed 45-min HIIT class at David Lloyd with set times
+- Core finisher = 3 × 1-min rounds, rotated by day + cycle
 """
+
 import argparse
 import datetime as dt
 import json
 import os
-import sys
-from typing import Dict, Any, List, Optional
 
-CATALOG_JSON = "integrations/wger/catalog/exercises_en.json"
+KNOWLEDGE_PATH = "knowledge/history.json"
 OUT_DIR = "integrations/wger/plans"
 STATE_DIR = "integrations/wger/state"
 
-ANCHOR_START = dt.date(2025, 9, 1)  # Monday, as per project brief
-
-# Blaze class times (Mon..Sun) for description only
-BLAZE_TIMES = {
-    0: "06:15",  # Mon
-    1: "07:00",  # Tue
-    2: "07:00",  # Wed
-    3: "06:15",  # Thu
-    4: "06:15",  # Fri
-    5: "08:00",  # Sat
-    6: "09:05",  # Sun
+# ---------------- Cycle Intensity Map ---------------- #
+WEEK_INTENSITY = {
+    1: {"name": "light", "factor": 0.9, "rest_main": 90, "rest_assist": 60, "reps": (8, 10)},
+    2: {"name": "medium", "factor": 1.0, "rest_main": 120, "rest_assist": 90, "reps": (6, 8)},
+    3: {"name": "heavy", "factor": 1.1, "rest_main": 180, "rest_assist": 150, "reps": (3, 6)},
+    4: {"name": "deload", "factor": 0.7, "rest_main": 60, "rest_assist": 45, "reps": (6, 8)},
 }
 
-# ---------- Helpers ----------
+# ---------------- Blaze Schedule ---------------- #
+BLAZE_CLASSES = {
+    "Mon": {"time": "06:15"},
+    "Tue": {"time": "07:00"},
+    "Wed": {"time": "07:00"},
+    "Thu": {"time": "06:15"},
+    "Fri": {"time": "07:15"},
+}
 
-def next_block_start(today: dt.date, anchor: dt.date) -> dt.date:
-    """Return the next Monday that aligns with the 4-week cadence from anchor."""
-    # Find next Monday
-    days_ahead = (0 - today.weekday()) % 7  # Monday=0
-    candidate = today + dt.timedelta(days=days_ahead)
-    # Align to 4-week (28-day) cadence from anchor
-    delta_days = (candidate - anchor).days
-    mod = delta_days % 28
-    if mod != 0:
-        candidate += dt.timedelta(days=(28 - mod))
-    return candidate
+# ---------------- Core Rotation ---------------- #
+CORE_ROTATION = {
+    1: {"Mon": "Plank", "Tue": "Hollow Hold", "Thu": "Side Plank", "Fri": "Bird Dog"},
+    2: {"Mon": "Ab Wheel", "Tue": "Hanging Leg Raise", "Thu": "Russian Twist", "Fri": "Deadbug"},
+    3: {"Mon": "Cable Woodchop", "Tue": "V-Sit Hold", "Thu": "Toe-to-Bar", "Fri": "Pallof Press"},
+    4: {"Mon": "Hollow Rocks", "Tue": "Side Crunch", "Thu": "Plank Shoulder Taps", "Fri": "Dragon Flag"},
+}
 
-def get_block_end(start: dt.date, weeks: int) -> dt.date:
-    return start + dt.timedelta(days=7*weeks - 1)
+# ---------------- Main Lifts ---------------- #
+MAIN_LIFTS = {
+    "Mon": {"id": 615, "name": "Squat", "unilateral": False, "category": "Lower", "default_sets": 4, "default_reps": (5, 8)},
+    "Tue": {"id": 73, "name": "Bench Press", "unilateral": False, "category": "Upper", "default_sets": 4, "default_reps": (5, 8)},
+    "Thu": {"id": 184, "name": "Deadlift", "unilateral": False, "category": "Lower", "default_sets": 3, "default_reps": (3, 6)},
+    "Fri": {"id": 687, "name": "Overhead Press", "unilateral": False, "category": "Upper", "default_sets": 4, "default_reps": (5, 8)},
+}
 
-def read_catalog(path: str) -> List[Dict[str, Any]]:
-    if not os.path.exists(path):
-        print(f"[WARN] Catalog not found at {path}. Run catalog_refresh.py first.", file=sys.stderr)
-        return []
-    with open(path, "r", encoding="utf-8") as f:
+# ---------------- Assistance Pools ---------------- #
+ASSISTANCE = {
+    "Mon": [
+        {"id": 257, "name": "Front Squat", "unilateral": False, "default_sets": 3, "default_reps": (6, 10)},
+        {"id": 984, "name": "Lunge", "unilateral": True, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 981, "name": "Step-ups", "unilateral": True, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 371, "name": "Leg Press", "unilateral": False, "default_sets": 3, "default_reps": (10, 15)},
+        {"id": 369, "name": "Leg Extension", "unilateral": False, "default_sets": 3, "default_reps": (10, 15)},
+        {"id": 622, "name": "Standing Calf Raise", "unilateral": False, "default_sets": 3, "default_reps": (12, 20)},
+    ],
+    "Tue": [
+        {"id": 538, "name": "Incline Bench Press", "unilateral": False, "default_sets": 3, "default_reps": (6, 10)},
+        {"id": 194, "name": "Dips", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 238, "name": "Dumbbell Fly", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 76, "name": "Close Grip Bench Press", "unilateral": False, "default_sets": 3, "default_reps": (6, 10)},
+        {"id": 660, "name": "Triceps Extension Cable", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 92, "name": "Biceps Curl Dumbbell", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+    ],
+    "Thu": [
+        {"id": 507, "name": "Romanian Deadlift", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 1392, "name": "Good Morning", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 901, "name": "Barbell Hip Thrust", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 627, "name": "Stiff-Leg Deadlift", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 364, "name": "Leg Curl", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 590, "name": "Seated Calf Raise", "unilateral": False, "default_sets": 3, "default_reps": (12, 20)},
+    ],
+    "Fri": [
+        {"id": 918, "name": "Dumbbell Lateral Raise", "unilateral": False, "default_sets": 3, "default_reps": (10, 15)},
+        {"id": 222, "name": "Facepull", "unilateral": False, "default_sets": 3, "default_reps": (12, 15)},
+        {"id": 1276, "name": "Incline Dumbbell Press", "unilateral": False, "default_sets": 3, "default_reps": (6, 10)},
+        {"id": 571, "name": "Barbell Shrugs", "unilateral": False, "default_sets": 3, "default_reps": (10, 15)},
+        {"id": 1185, "name": "Triceps Pushdown", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+        {"id": 91, "name": "Barbell Curl", "unilateral": False, "default_sets": 3, "default_reps": (8, 12)},
+    ],
+}
+
+# ---------------- Helpers ---------------- #
+def load_knowledge():
+    if not os.path.exists(KNOWLEDGE_PATH):
+        return {}
+    with open(KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def find_exercise_id(catalog: List[Dict[str, Any]], want: str) -> Optional[int]:
-    want_l = want.lower().strip()
-    # Exact case-insensitive first
-    for row in catalog:
-        if (row.get("name") or "").lower().strip() == want_l:
-            return row.get("id")
-    # Contains search fallback
-    best = None
-    for row in catalog:
-        n = (row.get("name") or "").lower()
-        if all(tok in n for tok in want_l.split()):
-            best = row.get("id")
-            break
-    return best
 
-def resolve_ids(catalog: List[Dict[str, Any]], names: List[str]) -> Dict[str, Optional[int]]:
-    return {name: find_exercise_id(catalog, name) for name in names}
+def compute_progression(history):
+    """Return progression factors per main lift based on history."""
+    factors = {lift["name"]: 1.0 for lift in MAIN_LIFTS.values()}
+    for lift in factors.keys():
+        vols = []
+        for d, entry in history.get("days", {}).items():
+            for ex in entry.get("strength", []):
+                if ex.get("exercise_id") == [v["id"] for v in MAIN_LIFTS.values() if v["name"] == lift][0]:
+                    vols.append(ex.get("volume_kg", 0))
+        if vols:
+            if sum(vols[-7:]) > sum(vols[:7]):
+                factors[lift] = 1.05
+            else:
+                factors[lift] = 0.95
+    return factors
 
-# ---------- Defaults (Phase 1 Lower/Upper + Blaze) ----------
 
-LOWER = [
-    ("Barbell Squat",                   4, "5",   2, 180, None),
-    ("Romanian Deadlift",              3, "8",   2, 150, None),
-    ("Leg Press",                      3, "10",  1, 120, None),
-    # Superset A (use same superset_id)
-    ("Standing Calf Raise",            3, "12",  1, 90,  "A"),
-    ("Hanging Knee Raise",             3, "12",  1, 60,  "A"),
-]
+def merge_reps(default_reps, cycle_reps):
+    low = max(default_reps[0], cycle_reps[0])
+    high = min(default_reps[1], cycle_reps[1])
+    if low > high:
+        return default_reps
+    return (low, high)
 
-UPPER = [
-    ("Barbell Bench Press",            4, "5",   2, 180, None),
-    ("Barbell Bent-Over Row",          3, "8",   2, 150, None),
-    ("Barbell Overhead Press",         3, "6",   2, 150, None),
-    # Superset B
-    ("Lat Pulldown",                   3, "10",  1, 90,  "B"),
-    ("Seated Cable Row",               3, "10",  1, 90,  "B"),
-    ("Face Pull",                      3, "12",  1, 60,  None),
-]
 
-def make_day(day_order: int, name: str, d_type: str, is_rest: bool, description: str, exercises: List[Dict[str, Any]]) -> Dict[str, Any]:
-    return {
-        "order": day_order,
-        "name": name,
-        "type": d_type,
-        "is_rest": is_rest,
-        "need_logs_to_advance": True if not is_rest else False,
-        "description": description,
-        "exercises": exercises,
-    }
+def build_exercise(ex, main_lift, block_factor, week_cfg):
+    reps = merge_reps(ex.get("default_reps", (6, 8)), week_cfg["reps"])
+    sets = ex.get("default_sets", 3)
+    if week_cfg["name"] == "deload":
+        sets = max(2, sets - 1)
 
-def exercise_entry(ex_id: Optional[int], name: str, sets: int, reps: str, rir: int, rest_s: int, superset_id: Optional[str]) -> Dict[str, Any]:
-    e: Dict[str, Any] = {
-        "exercise_id": ex_id,
-        "name": name,
+    base = {
+        "id": ex["id"],
+        "name": ex["name"],
         "sets": sets,
-        "reps": reps,  # can be "8" or "6-8"
-        "rir": rir,
-        "rest_s": rest_s,
-        "superset_id": superset_id,
-        # Optional progression – applied by routine_builder if present
-        "progression": {
-            "weight": {"each_iteration_percent": 2.5, "iterations": [2,3,4], "requirements": {"rules": ["weight", "repetitions"]}},
-        }
+        "reps": reps,
+        "intensity": week_cfg["name"],
+        "load_factor": round(block_factor * week_cfg["factor"], 2),
+        "rest_seconds": week_cfg["rest_main"] if main_lift else week_cfg["rest_assist"],
     }
-    return e
+    if not ex.get("unilateral", False):
+        return [base]
+    else:
+        left = base.copy(); left["name"] = f"{ex['name']} (Left)"; left["superset"] = True
+        right = base.copy(); right["name"] = f"{ex['name']} (Right)"; right["superset"] = True
+        return [left, right]
 
-def main() -> None:
+
+def build_weight_day(main, assistance, factors, week):
+    week_cfg = WEEK_INTENSITY[week]
+    block_factor = factors.get(main["name"], 1.0)
+    lifts = []
+
+    lifts.extend(build_exercise(main, True, block_factor, week_cfg))
+    for ex in assistance[:2]:
+        lifts.extend(build_exercise(ex, False, block_factor, week_cfg))
+    return lifts
+
+
+def build_blaze(day):
+    if day not in BLAZE_CLASSES:
+        return None
+    return {
+        "name": "Blaze",
+        "type": "HIIT",
+        "duration_min": 45,
+        "time": BLAZE_CLASSES[day]["time"],
+        "is_class": True,
+        "location": "David Lloyd Gym"
+    }
+
+
+def build_core(day, week):
+    cycle = (week - 1) % 4 + 1
+    ex_name = CORE_ROTATION.get(cycle, {}).get(day)
+    if not ex_name:
+        return None
+    return {
+        "type": "core",
+        "exercise": ex_name,
+        "duration": "3 min (3 × 1 min rounds)"
+    }
+
+
+def build_block(start_date):
+    history = load_knowledge()
+    progression = compute_progression(history)
+
+    days = []
+    for week in range(1, 5):
+        for offset in range(7):
+            date = start_date + dt.timedelta(days=(week - 1) * 7 + offset)
+            day_name = date.strftime("%a")
+
+            entry = {"date": date.isoformat(), "week": week, "day": day_name, "sessions": []}
+
+            if day_name in MAIN_LIFTS:
+                main_lift = MAIN_LIFTS[day_name]
+                pool = ASSISTANCE[day_name]
+                entry["sessions"].append({"type": "weights", "exercises": build_weight_day(main_lift, pool, progression, week)})
+                blaze = build_blaze(day_name)
+                if blaze:
+                    entry["sessions"].append(blaze)
+                core = build_core(day_name, week)
+                if core:
+                    entry["sessions"].append(core)
+            elif day_name in BLAZE_CLASSES:
+                entry["sessions"].append(build_blaze(day_name))
+            else:
+                entry["sessions"].append({"type": "rest"})
+
+            days.append(entry)
+
+    return {"start": start_date.isoformat(), "days": days}
+
+
+def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--start-date", type=str, help="YYYY-MM-DD; if omitted compute next 4-week boundary")
-    ap.add_argument("--weeks", type=int, default=4)
+    ap.add_argument("--start-date", type=str, help="YYYY-MM-DD (Monday)")
     ap.add_argument("--out-dir", type=str, default=OUT_DIR)
     args = ap.parse_args()
 
-    today = dt.date.today()
-    if args.start_date:
-        start = dt.date.fromisoformat(args.start_date)
-    else:
-        start = next_block_start(today, ANCHOR_START)
-    end = get_block_end(start, args.weeks)
+    start = dt.date.fromisoformat(args.start_date) if args.start_date else dt.date.today()
+    block = build_block(start)
 
     os.makedirs(args.out_dir, exist_ok=True)
-    os.makedirs(STATE_DIR, exist_ok=True)
-
-    catalog = read_catalog(CATALOG_JSON)
-
-    lower_names = [x[0] for x in LOWER]
-    upper_names = [x[0] for x in UPPER]
-    resolved = resolve_ids(catalog, list(set(lower_names + upper_names)))
-    # Build exercise lists with IDs
-    lower_exercises = [
-        exercise_entry(resolved.get(n), n, s, r, rir, rest, sup)
-        for (n, s, r, rir, rest, sup) in LOWER
-    ]
-    upper_exercises = [
-        exercise_entry(resolved.get(n), n, s, r, rir, rest, sup)
-        for (n, s, r, rir, rest, sup) in UPPER
-    ]
-
-    # Days Mon..Sun
-    days: List[Dict[str, Any]] = []
-    # 1 Mon Lower
-    days.append(make_day(1, "Lower", "custom", False, "Weights — Lower body", lower_exercises))
-    # 2 Tue Blaze
-    days.append(make_day(2, "Blaze", "hiit", False, f"Blaze HIIT @ {BLAZE_TIMES[1]} (45 min).", []))
-    # 3 Wed Upper
-    days.append(make_day(3, "Upper", "custom", False, "Weights — Upper body", upper_exercises))
-    # 4 Thu Blaze
-    days.append(make_day(4, "Blaze", "hiit", False, f"Blaze HIIT @ {BLAZE_TIMES[3]} (45 min).", []))
-    # 5 Fri Mobility / Rest
-    days.append(make_day(5, "Mobility & Steps", "custom", True, "Active recovery, mobility and 10k steps.", []))
-    # 6 Sat Blaze
-    days.append(make_day(6, "Blaze", "hiit", False, f"Blaze HIIT @ {BLAZE_TIMES[5]} (45 min).", []))
-    # 7 Sun Rest (optionally Blaze @ 09:05 if attending)
-    days.append(make_day(7, "Rest / Optional Blaze", "hiit", True, f"Optional Blaze @ {BLAZE_TIMES[6]}; otherwise rest + mobility.", []))
-
-    plan = {
-        "routine": {
-            "name": f"PeteE Block {start.isoformat()}–{end.isoformat()}",
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "fit_in_week": True,
-            "description": "4-week Lower/Upper + Blaze plan generated automatically",
-        },
-        "days": days,
-    }
-
-    out_path = os.path.join(args.out_dir, f"plan_{start.isoformat()}_{end.isoformat()}.json")
+    out_path = os.path.join(args.out_dir, f"plan_{start.isoformat()}.json")
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(plan, f, ensure_ascii=False, indent=2)
+        json.dump(block, f, indent=2)
 
-    # Store proposal state
-    with open(os.path.join(STATE_DIR, "last_proposal.json"), "w", encoding="utf-8") as sf:
-        json.dump({
-            "plan_path": out_path,
-            "generated_at": dt.datetime.utcnow().isoformat() + "Z"
-        }, sf, ensure_ascii=False, indent=2)
+    print(f"[plan_next_block] Wrote {out_path}")
 
-    # Communicate path back to workflow
-    os.makedirs("/tmp", exist_ok=True)
-    with open("/tmp/PLAN_PATH.txt", "w", encoding="utf-8") as fp:
-        fp.write(os.path.relpath(out_path))
-
-    print(f"[plan] Wrote {out_path}")
 
 if __name__ == "__main__":
     main()
