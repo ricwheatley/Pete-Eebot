@@ -34,7 +34,7 @@ jobs:
       - name: Build Knowledge (consolidate Apple, Withings, WGER)
         run: python summaries/build_knowledge.py
 
-      - name: Run Pete Messenger
+      - name: Run Pete Messenger (Daily)
         run: python integrations/pete_feedback/messenger.py --type daily
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -51,10 +51,10 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
 
-      - name: Build Knowledge
+      - name: Build Knowledge (consolidate Apple, Withings, WGER)
         run: python summaries/build_knowledge.py
 
-      - name: Run Pete Messenger
+      - name: Run Pete Messenger (Weekly)
         run: python integrations/pete_feedback/messenger.py --type weekly
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -71,10 +71,10 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
 
-      - name: Build Knowledge
+      - name: Build Knowledge (consolidate Apple, Withings, WGER)
         run: python summaries/build_knowledge.py
 
-      - name: Run Pete Messenger
+      - name: Run Pete Messenger (Cycle)
         run: python integrations/pete_feedback/messenger.py --type cycle
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
