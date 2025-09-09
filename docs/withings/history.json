@@ -1,5 +1,14 @@
 [
   {
+    "date": "2025-09-08",
+    "weight_kg": "90.55",
+    "body_fat_pct": "29.55",
+    "muscle_mass_kg": null,
+    "water_pct": null,
+    "source": "withings",
+    "is_partial_weight": false
+  },
+  {
     "date": "2025-09-07",
     "weight_kg": "90.00",
     "body_fat_pct": "31.77",
