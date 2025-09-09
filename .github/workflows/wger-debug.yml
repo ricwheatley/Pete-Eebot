@@ -3,6 +3,9 @@ name: Debug WGER Logs (Fixed Date)
 on:
   workflow_dispatch:   # run manually from GitHub UI
 
+permissions:
+  contents: write   # 👈 this must be at root level
+  
 jobs:
   fetch-wger-logs:
     runs-on: ubuntu-latest
