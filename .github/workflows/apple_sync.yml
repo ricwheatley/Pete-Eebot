@@ -1,4 +1,4 @@
-name: Apple Activity Sync
+name: Sync Apple
 
 on:
   repository_dispatch:
