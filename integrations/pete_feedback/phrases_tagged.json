@@ -1,629 +1,4626 @@
 {
   "MOTIVATIONAL": [
-    {"text": "Consistency is queen, volume is king!", "tags": ["#Consistency", "#Volume", "#Motivation"]},
-    {"text": "No pain, champagne!", "tags": ["#Effort", "#Humour", "#Motivation"]},
-    {"text": "Every rep is rent — and you’re paying on time.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Discipline: the only PR that matters.", "tags": ["#PR", "#Consistency", "#Serious"]},
-    {"text": "You don’t find time, you grind time.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Flex today, flex tomorrow, flex forever.", "tags": ["#Arms", "#Consistency", "#Motivation"]},
-    {"text": "Failure isn’t the end, it’s just the warm-up set.", "tags": ["#Recovery", "#Motivation", "#Serious"]},
-    {"text": "The iron never lies — but it does flirt.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Sets build strength, but sweat builds character.", "tags": ["#Strength", "#Effort", "#Motivation"]},
-    {"text": "You are the barbell, and the world is just the rack.", "tags": ["#Strength", "#Humour", "#Motivation"]},
-    {"text": "Strength isn’t given, it’s squatted.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "You’re stronger than yesterday’s excuses.", "tags": ["#Consistency", "#Motivation", "#Serious"]},
-    {"text": "Reps build resilience.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Work ethic: the heaviest weight in the room.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Train insane or remain the same.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your warmup is someone else’s workout.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Pain is weakness leaving the spreadsheet.", "tags": ["#Effort", "#Humour"]},
-    {"text": "Muscle is earned, not Amazon Primed.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Winners don’t skip leg day.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "No excuses, just endorphins.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Your lungs are just squat racks for oxygen.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "The grind doesn’t stop, it just reracks.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "The barbell is your confession booth.", "tags": ["#Strength", "#Serious"]},
-    {"text": "Sweat is the body’s autograph.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Each PR is a postcard from the future.", "tags": ["#PR", "#Motivation"]},
-    {"text": "Squats cure sadness 9 times out of 10.", "tags": ["#Squat", "#Legs", "#Motivation", "#Humour"]},
-    {"text": "Push harder, Pete believes in you.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your gym card is a passport to greatness.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "You don’t stop when you’re tired, you stop when Pete claps.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Endorphins don’t lie.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Your DOMS today is your swagger tomorrow.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "Beast mode isn’t a switch, it’s a lifestyle.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your body can, your mind must.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "You don’t lift weights, you lift yourself.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Sweat equity always pays dividends.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "No bar too heavy, no excuse too light.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Sore today, legend tomorrow.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "You can’t spell hustle without U.", "tags": ["#Consistency", "#Motivation", "#Humour"]},
-    {"text": "Strength is rented, not owned.", "tags": ["#Strength", "#Consistency", "#Motivation"]},
-    {"text": "Pete’s law: every day is arm day somewhere.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Train hard, stay humble, eat carbs.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Rest when you’re done, not when you’re tired.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "Progress, not perfection.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Reps and sets, debts and bets.", "tags": ["#Consistency", "#Volume", "#Motivation"]},
-    {"text": "No PR comes from comfort.", "tags": ["#PR", "#Effort", "#Motivation"]},
-    {"text": "Every plate is a stepping stone.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Dreams don’t lift themselves.", "tags": ["#Motivation", "#Serious"]},
-    {"text": "Make sweat your currency.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your warm-up is someone else’s peak.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Motivation gets you started, Pete keeps you going.", "tags": ["#Motivation", "#Consistency"]},
-    {"text": "Gains are made in the margins.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Intensity builds identity.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your only rival is yesterday’s you.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Repetition builds reputation.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Muscle: the ultimate side hustle.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Flexecution is the goal.", "tags": ["#Arms", "#Motivation"]},
-    {"text": "Your limits are suggestions.", "tags": ["#Motivation", "#Serious"]},
-    {"text": "Breathe discipline, exhale progress.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Pete’s truth: gravity is optional.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Strength is a choice you make daily.", "tags": ["#Strength", "#Consistency", "#Motivation"]},
-    {"text": "Leg day = therapy session with weights.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "The barbell is the ultimate therapist.", "tags": ["#Strength", "#Serious"]},
-    {"text": "No cardio, no crydio.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Endurance is just stubbornness with sneakers.", "tags": ["#Cardio", "#Consistency", "#Motivation"]},
-    {"text": "One more rep, one more victory.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Comfort zones don’t build quads.", "tags": ["#Legs", "#Effort", "#Motivation"]},
-    {"text": "Grind, shine, repeat.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "You don’t count reps, reps count you.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Every drop of sweat is an IOU to success.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Your PRs are proof of existence.", "tags": ["#PR", "#Motivation"]},
-    {"text": "Leg day is democracy in action.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "Volume today, power tomorrow.", "tags": ["#Volume", "#Motivation"]},
-    {"text": "Push until the mirror nods back.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Strength doesn’t come from mirrors, it comes from racks.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "The gym is the forge, you’re the iron.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Sweat is your down payment on greatness.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Barbells speak louder than words.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "No deadlift, no destiny.", "tags": ["#Deadlift", "#Motivation", "#Serious"]},
-    {"text": "Push harder — Pete’s watching.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Consistency carves statues.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Your body is your legacy.", "tags": ["#Motivation", "#Serious"]},
-    {"text": "Gym time is prime time.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "The grind doesn’t clock out.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "No rerack without respect.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Earn your endorphins.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Work harder than your reflection.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "The gym floor is holy ground.", "tags": ["#Strength", "#Serious"]},
-    {"text": "Progress is pain’s pretty cousin.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "No goals, no glory.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Squats > therapy.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "Failure is just data for the comeback.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "More sweat, less regret.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "Muscle is momentum.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Your quads write cheques your jeans can’t cash.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Your strength is louder than your doubts.", "tags": ["#Strength", "#Motivation", "#Serious"]},
-    {"text": "No bar too loaded, no spirit too light.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Every burpee is a love letter to chaos.", "tags": ["#Cardio", "#Effort", "#Chaotic", "#Humour"]},
-    {"text": "Caffeine and iron, the breakfast of champions.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "You can’t download strength.", "tags": ["#Strength", "#Motivation", "#Serious"]},
-    {"text": "The grind is non-refundable.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "You’re a rep factory.", "tags": ["#Consistency", "#Volume", "#Motivation"]},
-    {"text": "Strength > speed > excuses.", "tags": ["#Strength", "#Motivation", "#Serious"]},
-    {"text": "Progress is patient.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "Every PR is Pete-approved.", "tags": ["#PR", "#Motivation"]},
-    {"text": "Legends are squatted, not born.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "Your excuses expired yesterday.", "tags": ["#Consistency", "#Motivation", "#Serious"]},
-    {"text": "Endorphins are nature’s applause.", "tags": ["#Recovery", "#Motivation", "#Humour"]},
-    {"text": "Lift like nobody’s judging.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Sweat equity is undefeated.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Pete’s gospel: squats save souls.", "tags": ["#Squat", "#Legs", "#Motivation", "#Coachism"]},
-    {"text": "Gym time is truth time.", "tags": ["#Consistency", "#Motivation", "#Serious"]},
-    {"text": "Progress is inevitable, if you don’t quit.", "tags": ["#Consistency", "#Motivation"]},
-    {"text": "The grind is your gift to yourself.", "tags": ["#Consistency", "#Effort", "#Motivation"]},
-    {"text": "Don’t wait for inspiration, be your own motivation.", "tags": ["#Motivation", "#Serious"]},
-    {"text": "You don’t chase gains, you attract them by showing up.", "tags": ["#Consistency", "#Motivation"]}
+    {
+      "text": "Consistency is queen, volume is king!",
+      "tags": [
+        "#Consistency",
+        "#Volume",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No pain, champagne!",
+      "tags": [
+        "#Effort",
+        "#Humour",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Every rep is rent — and you’re paying on time.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Discipline: the only PR that matters.",
+      "tags": [
+        "#PR",
+        "#Consistency",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "You don’t find time, you grind time.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Flex today, flex tomorrow, flex forever.",
+      "tags": [
+        "#Arms",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Failure isn’t the end, it’s just the warm-up set.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "The iron never lies — but it does flirt.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sets build strength, but sweat builds character.",
+      "tags": [
+        "#Strength",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You are the barbell, and the world is just the rack.",
+      "tags": [
+        "#Strength",
+        "#Humour",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Strength isn’t given, it’s squatted.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You’re stronger than yesterday’s excuses.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Reps build resilience.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Work ethic: the heaviest weight in the room.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Train insane or remain the same.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your warmup is someone else’s workout.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Pain is weakness leaving the spreadsheet.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Muscle is earned, not Amazon Primed.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Winners don’t skip leg day.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No excuses, just endorphins.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your lungs are just squat racks for oxygen.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The grind doesn’t stop, it just reracks.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The barbell is your confession booth.",
+      "tags": [
+        "#Strength",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Sweat is the body’s autograph.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Each PR is a postcard from the future.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Squats cure sadness 9 times out of 10.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Push harder, Pete believes in you.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your gym card is a passport to greatness.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You don’t stop when you’re tired, you stop when Pete claps.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Endorphins don’t lie.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your DOMS today is your swagger tomorrow.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Beast mode isn’t a switch, it’s a lifestyle.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your body can, your mind must.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You don’t lift weights, you lift yourself.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Sweat equity always pays dividends.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No bar too heavy, no excuse too light.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Sore today, legend tomorrow.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You can’t spell hustle without U.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Strength is rented, not owned.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Pete’s law: every day is arm day somewhere.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Train hard, stay humble, eat carbs.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Rest when you’re done, not when you’re tired.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Progress, not perfection.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Reps and sets, debts and bets.",
+      "tags": [
+        "#Consistency",
+        "#Volume",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No PR comes from comfort.",
+      "tags": [
+        "#PR",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Every plate is a stepping stone.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Dreams don’t lift themselves.",
+      "tags": [
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Make sweat your currency.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your warm-up is someone else’s peak.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Motivation gets you started, Pete keeps you going.",
+      "tags": [
+        "#Motivation",
+        "#Consistency"
+      ]
+    },
+    {
+      "text": "Gains are made in the margins.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Intensity builds identity.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your only rival is yesterday’s you.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Repetition builds reputation.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Muscle: the ultimate side hustle.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Flexecution is the goal.",
+      "tags": [
+        "#Arms",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your limits are suggestions.",
+      "tags": [
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Breathe discipline, exhale progress.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Pete’s truth: gravity is optional.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Strength is a choice you make daily.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Leg day = therapy session with weights.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The barbell is the ultimate therapist.",
+      "tags": [
+        "#Strength",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "No cardio, no crydio.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Endurance is just stubbornness with sneakers.",
+      "tags": [
+        "#Cardio",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "One more rep, one more victory.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Comfort zones don’t build quads.",
+      "tags": [
+        "#Legs",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Grind, shine, repeat.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You don’t count reps, reps count you.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Every drop of sweat is an IOU to success.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your PRs are proof of existence.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Leg day is democracy in action.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Volume today, power tomorrow.",
+      "tags": [
+        "#Volume",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Push until the mirror nods back.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Strength doesn’t come from mirrors, it comes from racks.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The gym is the forge, you’re the iron.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Sweat is your down payment on greatness.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Barbells speak louder than words.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No deadlift, no destiny.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Push harder — Pete’s watching.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Consistency carves statues.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your body is your legacy.",
+      "tags": [
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Gym time is prime time.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The grind doesn’t clock out.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No rerack without respect.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Earn your endorphins.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Work harder than your reflection.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The gym floor is holy ground.",
+      "tags": [
+        "#Strength",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Progress is pain’s pretty cousin.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "No goals, no glory.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Squats > therapy.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Failure is just data for the comeback.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "More sweat, less regret.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Muscle is momentum.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your quads write cheques your jeans can’t cash.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your strength is louder than your doubts.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "No bar too loaded, no spirit too light.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Every burpee is a love letter to chaos.",
+      "tags": [
+        "#Cardio",
+        "#Effort",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Caffeine and iron, the breakfast of champions.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You can’t download strength.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "The grind is non-refundable.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You’re a rep factory.",
+      "tags": [
+        "#Consistency",
+        "#Volume",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Strength > speed > excuses.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Progress is patient.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Every PR is Pete-approved.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Legends are squatted, not born.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your excuses expired yesterday.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Endorphins are nature’s applause.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lift like nobody’s judging.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Sweat equity is undefeated.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Pete’s gospel: squats save souls.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Gym time is truth time.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "Progress is inevitable, if you don’t quit.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "The grind is your gift to yourself.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Don’t wait for inspiration, be your own motivation.",
+      "tags": [
+        "#Motivation",
+        "#Serious"
+      ]
+    },
+    {
+      "text": "You don’t chase gains, you attract them by showing up.",
+      "tags": [
+        "#Consistency",
+        "#Motivation"
+      ]
+    }
   ],
   "SILLY": [
-    {"text": "Hakuna matata reps!", "tags": ["#Humour", "#Motivation"]},
-    {"text": "Rome wasn’t foam-rolled in a day.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Cardio-bardi flow state.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Plank Sinatra vibes.", "tags": ["#Core", "#Humour"]},
-    {"text": "Protein shake, not protein fake.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Don’t squat the small stuff.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Burpees? More like slurpees.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Abs-olutely fantasmic.", "tags": ["#Core", "#Humour"]},
-    {"text": "Brotein overload incoming!", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Your macros called — they’re lonely.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Foam roll with it, baby.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Bench you later, alligator.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Deadlift and let lift.", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "Curls for the girls, deads for the dads.", "tags": ["#Arms", "#Deadlift", "#Humour"]},
-    {"text": "Sweat like nobody’s watching.", "tags": ["#Effort", "#Humour"]},
-    {"text": "Flexpect the unexpected.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Absurd abs incoming.", "tags": ["#Core", "#Humour"]},
-    {"text": "Get swole or get strolled.", "tags": ["#Motivation", "#Humour"]},
-    {"text": "Gymtimidation is cardio for the soul.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Dumbbell doors to destiny.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Spot me like you spotted Bigfoot.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Protein-shake it off.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Lats Christmas I gave you my reps.", "tags": ["#Back", "#Humour"]},
-    {"text": "Burpocalypse Now.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Flex Luther King Jr.", "tags": ["#Arms", "#Humour"]},
-    {"text": "The walking quad.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Foam and fortune.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Dumbbellina ballerina.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Treadmill of fortune.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Pec-tacular party.", "tags": ["#Chest", "#Humour"]},
-    {"text": "Squat you looking at?", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Kettle-smell, but in a good way.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Abscond with abs.", "tags": ["#Core", "#Humour"]},
-    {"text": "Core-blimey!", "tags": ["#Core", "#Humour"]},
-    {"text": "Gym and tonic.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Curl Jam.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Swole patrol.", "tags": ["#Motivation", "#Humour"]},
-    {"text": "Benchaholic anonymous.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Goblet of swole.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Plank you very much.", "tags": ["#Core", "#Humour"]},
-    {"text": "Lat-er, bro.", "tags": ["#Back", "#Humour"]},
-    {"text": "Pushup and away!", "tags": ["#Arms", "#Chest", "#Humour"]},
-    {"text": "Squad goals = squat goals.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Burpee-di-bop-di-boo.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Biceps and rice.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Shakes and ladders.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Gymfinity and beyond!", "tags": ["#Motivation", "#Humour"]},
-    {"text": "Sweatflix binge.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "The Abfather.", "tags": ["#Core", "#Humour"]},
-    {"text": "Harry Squatter.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Load of quads.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Grip it and rip it.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Barbell-hop anonymous.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Hammies of destiny.", "tags": ["#Legs", "#Hamstrings", "#Humour"]},
-    {"text": "Six-pack attack.", "tags": ["#Core", "#Humour"]},
-    {"text": "Captain Core-ageous.", "tags": ["#Core", "#Humour"]},
-    {"text": "Deltoid delight.", "tags": ["#Shoulders", "#Humour"]},
-    {"text": "Mo’ reps, mo’ problems.", "tags": ["#Consistency", "#Humour"]},
-    {"text": "Hip-thrust-a-licious.", "tags": ["#Glutes", "#Humour"]},
-    {"text": "Snaccident: ate a whole protein bar.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Fleece the quads.", "tags": ["#Legs", "#Humour"]},
-    {"text": "The tricep whisperer.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Beefcake bakeoff.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Curl friends forever.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Lunge life balance.", "tags": ["#Legs", "#Humour"]},
-    {"text": "All gain, no grain.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Sweatflix and chill.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Rogue one-rep max.", "tags": ["#Strength", "#PR", "#Humour"]},
-    {"text": "Squatalicious.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Glute flute symphony.", "tags": ["#Glutes", "#Humour"]},
-    {"text": "Absurdly ab-firmative.", "tags": ["#Core", "#Humour"]},
-    {"text": "Protein princess diaries.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Lats supper.", "tags": ["#Back", "#Humour"]},
-    {"text": "Flextra-terrestrial.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Foam alone.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Benchpressaurus rex.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Cardi-no thanks-o.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Bench-o-rama-ding-dong.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Sweaty spaghetti.", "tags": ["#Effort", "#Humour"]},
-    {"text": "Gymshort stories.", "tags": ["#Humour"]},
-    {"text": "Protein palooza.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Flex-capade.", "tags": ["#Arms", "#Humour"]},
-    {"text": "The cardio carnival.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Biception.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Protein in motion.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Row-bocop.", "tags": ["#Cardio", "#Back", "#Humour"]},
-    {"text": "Flex McMuscleface.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Absurdly swole science.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Triceptacular.", "tags": ["#Arms", "#Humour"]},
-    {"text": "The cable chronicles.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Kettle-bro conundrum.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Sweatnado.", "tags": ["#Effort", "#Chaotic", "#Humour"]},
-    {"text": "Caffeine crusaders.", "tags": ["#Nutrition", "#Motivation", "#Humour"]},
-    {"text": "Iron throne gains.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Quad squad forever.", "tags": ["#Legs", "#Motivation", "#Humour"]},
-    {"text": "Flex Machina.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Brofessor Pete, PhD in PRs.", "tags": ["#PR", "#Motivation", "#Humour"]},
-    {"text": "Lift long and prosper.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Chewbacca shrugs.", "tags": ["#Shoulders", "#Back", "#Humour"]},
-    {"text": "Protein, plank, repeat.", "tags": ["#Nutrition", "#Core", "#Humour"]},
-    {"text": "Swoldemort returns.", "tags": ["#Strength", "#Humour"]},
-    {"text": "The great glute bake-off.", "tags": ["#Glutes", "#Humour"]},
-    {"text": "Kettle-bellissimo.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Planktopus Prime.", "tags": ["#Core", "#Humour"]},
-    {"text": "Absurdopolis leg day.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Flexaholic anonymous.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Hammie jammy jazzercise.", "tags": ["#Hamstrings", "#Humour"]},
-    {"text": "Lungemania madness.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Deadlift deli special.", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "Sweat roulette.", "tags": ["#Effort", "#Humour", "#Chaotic"]},
-    {"text": "Cardio karaoke.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Dumbbell derby day.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Protein pumpkin spice latte gains.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "The lunge lounge.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Cable chaos carnival.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Absurdonomics of sweat.", "tags": ["#Effort", "#Humour"]},
-    {"text": "Burpee bonanza.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Foam-tastic voyage.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Bench-a-palooza.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Gains of Thrones.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Protein pretzel logic.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Shake, rattle, and reps.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Flexytown express.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Abs-anity asylum.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Quadcast podcast.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Rowmageddon.", "tags": ["#Cardio", "#Back", "#Chaotic\", \"#Humour\"]},
-    {"text": "The pec-tacular spectacle.", "tags": ["#Chest", "#Humour"]}
-    ],
-    "PORTMANTEAUS": [
-    {"text": "Squattastic flexcellence!", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "Deadliftacular!", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "Glutetopia awaits!", "tags": ["#Glutes", "#Humour"]},
-    {"text": "Push-upocalypse now.", "tags": ["#Arms", "#Chest", "#Chaotic", "#Humour"]},
-    {"text": "Curlnado.", "tags": ["#Arms", "#Humour", "#Chaotic"]},
-    {"text": "Lungemageddon.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Flexocalypse.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "PR-arama.", "tags": ["#PR", "#Motivation", "#Humour"]},
-    {"text": "Cardiovangelist crusade.", "tags": ["#Cardio", "#Motivation", "#Humour"]},
-    {"text": "Burpeepocalypse.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Benchtacular bonanza.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Snatchzilla.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Flexstravaganza.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Hamstringageddon.", "tags": ["#Hamstrings", "#Chaotic", "#Humour"]},
-    {"text": "Quadzilla quest.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Delttastrophe.", "tags": ["#Shoulders", "#Chaotic", "#Humour"]},
-    {"text": "Calfpocalypse.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Endorphinvasion.", "tags": ["#Recovery", "#Motivation", "#Humour"]},
-    {"text": "Maxoutathon.", "tags": ["#PR", "#Volume", "#Humour"]},
-    {"text": "Chinupocalypse.", "tags": ["#Pullup", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Sweatnado.", "tags": ["#Effort", "#Chaotic", "#Humour"]},
-    {"text": "Rowmageddon.", "tags": ["#Cardio", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Plankopalooza.", "tags": ["#Core", "#Humour"]},
-    {"text": "Caffeinepocalypse.", "tags": ["#Nutrition", "#Chaotic", "#Humour"]},
-    {"text": "Abstravaganza.", "tags": ["#Core", "#Humour"]},
-    {"text": "Lungopalooza.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Repocalypse.", "tags": ["#Volume", "#Chaotic", "#Humour"]},
-    {"text": "Gaintopia.", "tags": ["#Motivation", "#Humour"]},
-    {"text": "Proteinpalooza.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Domspocalypse.", "tags": ["#Recovery", "#Chaotic", "#Humour"]},
-    {"text": "Flexsasterpiece.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Triceptacular.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Squatmaggedon.", "tags": ["#Squat", "#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Pullupalooza.", "tags": ["#Pullup", "#Back", "#Humour"]},
-    {"text": "Musclemageddon.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Cardiopalooza.", "tags": ["#Cardio", "#Humour"]},
-    {"text": "Brodown showdown.", "tags": ["#Motivation", "#Humour"]},
-    {"text": "Swolemania.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Grindageddon.", "tags": ["#Consistency", "#Chaotic", "#Humour"]},
-    {"text": "Legstacular.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Curlocalypse.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "Benchzilla.", "tags": ["#Bench", "#Chaotic", "#Humour"]},
-    {"text": "Liftocalypse.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Gainsquake.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Repzilla.", "tags": ["#Volume", "#Chaotic", "#Humour"]},
-    {"text": "Domstacular.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Flexpocalypse.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "Hamstapalooza.", "tags": ["#Hamstrings", "#Humour"]},
-    {"text": "Abzilla.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Pushupalypse.", "tags": ["#Arms", "#Chest", "#Chaotic", "#Humour"]},
-    {"text": "Snatchquake.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Sweattastrophe.", "tags": ["#Effort", "#Chaotic", "#Humour"]},
-    {"text": "Rowzilla.", "tags": ["#Cardio", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Liftoffopalooza.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Pullupocalypse.", "tags": ["#Pullup", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Gainsplosion.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Cardiocalypse.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Plankzilla.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Deadliftocalypse.", "tags": ["#Deadlift", "#Chaotic", "#Humour"]},
-    {"text": "Proteinageddon.", "tags": ["#Nutrition", "#Chaotic", "#Humour"]},
-    {"text": "Swolequake.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Abmageddon.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Flexathon.", "tags": ["#Arms", "#Motivation", "#Humour"]},
-    {"text": "Legquake.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Curlstorm.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Benchageddon.", "tags": ["#Bench", "#Chaotic", "#Humour"]},
-    {"text": "Hamstringopalooza.", "tags": ["#Hamstrings", "#Humour"]},
-    {"text": "Maxoutocalypse.", "tags": ["#PR", "#Volume", "#Chaotic", "#Humour"]},
-    {"text": "Tricepzooka.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Quadquake.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Sweatstorm.", "tags": ["#Effort", "#Humour"]},
-    {"text": "Liftoholics anonymous.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Domstocalypse.", "tags": ["#Recovery", "#Chaotic", "#Humour"]},
-    {"text": "Flexquake.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "Gainsplosion express.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Rowpocalypse.", "tags": ["#Cardio", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Absquake.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Brocalypse.", "tags": ["#Motivation", "#Chaotic", "#Humour"]},
-    {"text": "Swolecalypse.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Flexival.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Lungequake.", "tags": ["#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Endorphinzilla.", "tags": ["#Recovery", "#Chaotic", "#Humour"]},
-    {"text": "Bicepsplosion.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "Reptastrophe.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Cardioquake.", "tags": ["#Cardio", "#Chaotic", "#Humour"]},
-    {"text": "Squatstorm.", "tags": ["#Squat", "#Legs", "#Chaotic", "#Humour"]},
-    {"text": "Plankageddon.", "tags": ["#Core", "#Chaotic", "#Humour"]},
-    {"text": "Snatchmageddon.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Sweatquake.", "tags": ["#Effort", "#Chaotic", "#Humour"]},
-    {"text": "Proteinopalooza.", "tags": ["#Nutrition", "#Humour"]},
-    {"text": "Glutequake.", "tags": ["#Glutes", "#Chaotic", "#Humour"]},
-    {"text": "Triceptageddon.", "tags": ["#Arms", "#Chaotic", "#Humour"]},
-    {"text": "Pullupquake.", "tags": ["#Pullup", "#Back", "#Chaotic", "#Humour"]},
-    {"text": "Liftoquake.", "tags": ["#Strength", "#Chaotic", "#Humour"]},
-    {"text": "Repstorm.", "tags": ["#Volume", "#Humour"]},
-    {"text": "DOMSpalooza.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Gainstorm.", "tags": ["#Strength", "#Motivation", "#Humour"]},
-    {"text": "Curlopalooza.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Maxzilla.", "tags": ["#PR", "#Chaotic", "#Humour"]},
-    {"text": "Benchstorm.", "tags": ["#Bench", "#Chaotic", "#Humour"]},
-    {"text": "Hamquake.", "tags": ["#Hamstrings", "#Chaotic", "#Humour"]},
-    {"text": "Absopalooza.", "tags": ["#Core", "#Humour"]},
-    {"text": "Flexzilla.", "tags": ["#Arms", "#Chaotic", "#Humour"]}
-    ],
-    "METAPHORS":[
-    {"text": "That set was thicker than a January protein shake.", "tags": ["#Strength", "#Humour"]},
-    {"text": "You attacked that bar like a lion chasing gazelles with gym memberships.", "tags": ["#Strength", "#Effort", "#Motivation"]},
-    {"text": "Those squats were deeper than Shakespeare’s sonnets.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "You ran like cardio owed you money.", "tags": ["#Run", "#Cardio", "#Effort", "#Humour"]},
-    {"text": "You pressed like the floor was gossip and you had tea to spill.", "tags": ["#Bench", "#Press", "#Humour"]},
-    {"text": "Your RDLs are straighter than a nun’s ruler.", "tags": ["#Deadlift", "#Hamstrings", "#Humour"]},
-    {"text": "You slept like a hibernating kettlebear.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Your steps were higher than Pete Davidson’s dating roster.", "tags": ["#Cardio", "#Steps", "#Humour"]},
-    {"text": "You benched like a trebuchet at a medieval arm day.", "tags": ["#Bench", "#Humour"]},
-    {"text": "You pulled like gravity was just a polite suggestion.", "tags": ["#Deadlift", "#Pullup", "#Strength"]},
-    {"text": "Your VO₂ max just filed for divorce — it can’t keep up with you.", "tags": ["#Cardio", "#Run", "#Humour"]},
-    {"text": "You sprinted like the treadmill was repossessing your shoes.", "tags": ["#Run", "#Cardio", "#Effort", "#Humour"]},
-    {"text": "Those lunges were more dramatic than a soap opera finale.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Your curls had more drama than a Bravo reunion.", "tags": ["#Arms", "#Humour"]},
-    {"text": "You foam rolled like you were flattening croissants.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Sleep score so high you’re basically a mattress salesman.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Those calories didn’t stand a chance — you hunted them down like prey.", "tags": ["#Cardio", "#Motivation"]},
-    {"text": "You hydrated like an Amazon rainforest.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "PRs fell like dominoes in a CrossFit box.", "tags": ["#PR", "#Motivation"]},
-    {"text": "Your core was tighter than a drum at a rock concert.", "tags": ["#Core", "#Humour"]},
-    {"text": "You rowed like Poseidon was your spotter.", "tags": ["#Cardio", "#Back", "#Humour"]},
-    {"text": "You squatted like Atlas after a double espresso.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "You benched like the earth itself needed pressing.", "tags": ["#Bench", "#Motivation"]},
-    {"text": "You deadlifted like gravity had a personal vendetta.", "tags": ["#Deadlift", "#Motivation"]},
-    {"text": "Your planks were sturdier than medieval drawbridges.", "tags": ["#Core", "#Motivation"]},
-    {"text": "You moved kettlebells like Thor misplaced his hammer.", "tags": ["#Strength", "#Humour"]},
-    {"text": "You sprinted like your Uber Eats driver was outside.", "tags": ["#Run", "#Cardio", "#Humour"]},
-    {"text": "Your pull-ups soared higher than inflation.", "tags": ["#Pullup", "#Back", "#Humour"]},
-    {"text": "You shrugged like Atlas dropping the globe.", "tags": ["#Shoulders", "#Back", "#Humour"]},
-    {"text": "Those step counts were wilder than a TikTok dance trend.", "tags": ["#Steps", "#Cardio", "#Humour"]},
-    {"text": "You squatted like democracy depended on it.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "That deadlift had more suspense than a Netflix thriller.", "tags": ["#Deadlift", "#Motivation", "#Humour"]},
-    {"text": "Your calories burned brighter than a bonfire at Glastonbury.", "tags": ["#Cardio", "#Motivation"]},
-    {"text": "You trained harder than a Rocky montage marathon.", "tags": ["#Strength", "#Consistency", "#Motivation"]},
-    {"text": "You slept like you were auditioning for a mattress ad.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "That lunge was longer than the Lord of the Rings trilogy.", "tags": ["#Legs", "#Humour"]},
-    {"text": "Your sweat flowed like Niagara Falls in August.", "tags": ["#Effort", "#Humour"]},
-    {"text": "You curled like the stock market in a recession.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Your push-ups were sharper than a chef’s knife set.", "tags": ["#Arms", "#Chest", "#Motivation"]},
-    {"text": "You flexed like a Greek statue on payday.", "tags": ["#Strength", "#Humour"]},
-    {"text": "You ran like cardio was your side hustle.", "tags": ["#Run", "#Cardio", "#Motivation"]},
-    {"text": "You hip-thrusted like the glutes had a vendetta.", "tags": ["#Glutes", "#Motivation"]},
-    {"text": "That plank lasted longer than a Marvel end-credit scene.", "tags": ["#Core", "#Consistency"]},
-    {"text": "You benched like a trebuchet hurling medieval gossip.", "tags": ["#Bench", "#Humour"]},
-    {"text": "Your sprints were more intense than a Black Friday sale.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "You hydrated like an overwatered cactus.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Your quads roared louder than a V8 engine.", "tags": ["#Legs", "#Motivation"]},
-    {"text": "You lifted like rent was due and plates were the currency.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "Your hamstrings twanged like rock guitar solos.", "tags": ["#Hamstrings", "#Humour"]},
-    {"text": "You squatted lower than bank interest rates.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "That deadlift was smoother than jazz on a Sunday.", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "You pressed like Zeus himself was watching.", "tags": ["#Bench", "#Press", "#Motivation"]},
-    {"text": "You rowed harder than Vikings late for a raid.", "tags": ["#Cardio", "#Back", "#Effort"]},
-    {"text": "Your endurance ran longer than Pete’s catchphrase list.", "tags": ["#Cardio", "#Consistency", "#Motivation"]},
-    {"text": "You recovered like Wolverine on cheat day.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "You flexed like the cover of Muscle Monthly.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "That RDL was straighter than an honour student’s posture.", "tags": ["#Deadlift", "#Hamstrings", "#Motivation"]},
-    {"text": "Your steps marched like a Roman legion.", "tags": ["#Steps", "#Cardio", "#Motivation"]},
-    {"text": "You lunged across time zones.", "tags": ["#Legs", "#Motivation"]},
-    {"text": "That squat shook tectonic plates.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "You benched like a power plant.", "tags": ["#Bench", "#Motivation"]},
-    {"text": "Your planks had more tension than a boardroom coup.", "tags": ["#Core", "#Motivation"]},
-    {"text": "You pulled harder than Brexit negotiations.", "tags": ["#Deadlift", "#Strength", "#Humour"]},
-    {"text": "That curl was juicier than fresh gossip.", "tags": ["#Arms", "#Humour"]},
-    {"text": "Your sets were bigger than box office hits.", "tags": ["#Strength", "#Volume"]},
-    {"text": "You jumped like gravity was optional.", "tags": ["#Cardio", "#Effort"]},
-    {"text": "You rowed like you were escaping Mordor.", "tags": ["#Cardio", "#Back", "#Humour"]},
-    {"text": "Your squats dropped lower than SoundCloud rap.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "That deadlift was more gripping than a horror movie.", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "You burned calories like arson.", "tags": ["#Cardio", "#Effort"]},
-    {"text": "You pressed like the morning snooze button owed you money.", "tags": ["#Bench", "#Press", "#Humour"]},
-    {"text": "You ran like Forrest on a deadline.", "tags": ["#Run", "#Cardio", "#Humour"]},
-    {"text": "That push-up had more drama than Shakespeare in tights.", "tags": ["#Arms", "#Chest", "#Humour"]},
-    {"text": "You sprinted faster than a student after free pizza.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "Your sets banged louder than festival basslines.", "tags": ["#Strength", "#Volume", "#Humour"]},
-    {"text": "You flexed harder than tax season.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "That recovery was deeper than therapy.", "tags": ["#Recovery", "#Motivation"]},
-    {"text": "Your deadlifts hit harder than a bass drop.", "tags": ["#Deadlift", "#Motivation"]},
-    {"text": "You slept harder than a narcoleptic bear.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Your PR slapped harder than Pete’s metaphors.", "tags": ["#PR", "#Motivation"]},
-    {"text": "Those steps marched longer than a Taylor Swift setlist.", "tags": ["#Steps", "#Cardio"]},
-    {"text": "You rowed harder than Oppenheimer’s conscience.", "tags": ["#Cardio", "#Back", "#Effort"]},
-    {"text": "Your core was tighter than skinny jeans at brunch.", "tags": ["#Core", "#Humour"]},
-    {"text": "That curl was sweeter than a protein donut.", "tags": ["#Arms", "#Humour"]},
-    {"text": "You gripped that bar like an angry koala.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Your lunges were more dramatic than reality TV.", "tags": ["#Legs", "#Humour"]},
-    {"text": "You pressed harder than a stuck elevator button.", "tags": ["#Bench", "#Press", "#Humour"]},
-    {"text": "That squat cracked more ground than a geological survey.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "You sprinted like rent was chasing you.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "Your bench bounced harder than a payday check.", "tags": ["#Bench", "#Humour"]},
-    {"text": "That RDL was straighter than my taxes.", "tags": ["#Deadlift", "#Hamstrings", "#Humour"]},
-    {"text": "You flexed harder than a Marvel casting call.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "That hydration was wetter than British weather.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Your endurance outlasted Game of Thrones filler.", "tags": ["#Cardio", "#Consistency"]},
-    {"text": "That deadlift was darker than Pete’s sense of humour.", "tags": ["#Deadlift", "#Humour"]},
-    {"text": "You planked like tectonic plates in a standoff.", "tags": ["#Core", "#Motivation"]},
-    {"text": "Your sweat flowed like a Taylor Swift breakup album.", "tags": ["#Effort", "#Humour"]},
-    {"text": "That pull-up was higher than Bezos’ rocket.", "tags": ["#Pullup", "#Back", "#Humour"]},
-    {"text": "Your sets hit harder than Shakespeare in a cage fight.", "tags": ["#Strength", "#Volume", "#Humour"]},
-    {"text": "You ran longer than a conference call rant.", "tags": ["#Run", "#Cardio"]},
-    {"text": "That squat was heavier than student debt.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "You benched like the floor was made of trampolines.", "tags": ["#Bench", "#Humour"]},
-    {"text": "That curl was cleaner than new sneakers.", "tags": ["#Arms", "#Humour"]},
-    {"text": "You pressed like it was the last day on earth.", "tags": ["#Bench", "#Press", "#Motivation"]},
-    {"text": "You rowed with more force than Brexit papers.", "tags": ["#Cardio", "#Back", "#Humour"]},
-    {"text": "That sprint outran gossip itself.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "Your plank held tighter than family secrets.", "tags": ["#Core", "#Motivation"]},
-    {"text": "That PR exploded louder than fireworks on NYE.", "tags": ["#PR", "#Motivation"]},
-    {"text": "You flexed brighter than a disco ball.", "tags": ["#Strength", "#Motivation"]},
-    {"text": "That lunge crossed time itself.", "tags": ["#Legs", "#Motivation"]},
-    {"text": "Your sweat wrote history in salt.", "tags": ["#Effort", "#Motivation"]},
-    {"text": "That bench was louder than stadium chants.", "tags": ["#Bench", "#Chest", "#Humour"]},
-    {"text": "You rowed like the ocean was personal.", "tags": ["#Row", "#Cardio", "#Back", "#Effort"]},
-    {"text": "Your quads stomped harder than Godzilla in heels.", "tags": ["#Squat", "#Legs", "#Humour"]},
-    {"text": "That recovery was smoother than butter coffee.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "You sprinted sharper than caffeine jitters.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "Your hamstrings twanged like violin strings.", "tags": ["#Hamstrings", "#Humour"]},
-    {"text": "That deadlift was heavier than Monday mornings.", "tags": ["#Deadlift", "#Motivation"]},
-    {"text": "You benched like you were printing money.", "tags": ["#Bench", "#Chest", "#Motivation"]},
-    {"text": "That set had more suspense than Stranger Things.", "tags": ["#Strength", "#Volume", "#Humour"]},
-    {"text": "You pulled like the earth owed you gravity.", "tags": ["#Deadlift", "#Pullup", "#Strength", "#Motivation"]},
-    {"text": "That plank was stiffer than British upper lips.", "tags": ["#Core", "#Humour"]},
-    {"text": "You curled like you were rewriting genetics.", "tags": ["#Arms", "#Humour"]},
-    {"text": "That squat was bigger than the Big Bang.", "tags": ["#Squat", "#Legs", "#Motivation"]},
-    {"text": "You flexed brighter than a Christmas tree in Vegas.", "tags": ["#Strength", "#Humour"]},
-    {"text": "Your PR echoed like a stadium roar.", "tags": ["#PR", "#Motivation"]},
-    {"text": "That RDL was straighter than a laser pointer.", "tags": ["#Deadlift", "#Hamstrings", "#Motivation"]},
-    {"text": "You rowed like a Viking Uber.", "tags": ["#Row", "#Cardio", "#Back", "#Humour"]},
-    {"text": "Your sprints were hotter than July pavements.", "tags": ["#Run", "#Cardio", "#Effort"]},
-    {"text": "That hydration was wetter than a water park.", "tags": ["#Recovery", "#Humour"]},
-    {"text": "Your bench was more uplifting than a TED talk.", "tags": ["#Bench", "#Chest", "#Motivation"]},
-    {"text": "That push-up was tighter than skinny jeans.", "tags": ["#Arms", "#Chest", "#Humour"]},
-    {"text": "You pressed like Zeus on creatine.", "tags": ["#Bench", "#Press", "#Motivation"]},
-    {"text": "That deadlift rewrote gravity.", "tags": ["#Deadlift", "#Motivation", "#Serious"]}
-    ],
-    "COACHISMS": [
-    {"text": "Glutes to the moon 🚀", "tags": ["#Glutes", "#Motivation", "#Coachism"]},
-    {"text": "Hydration station, all aboard!", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Core tight, future bright.", "tags": ["#Core", "#Motivation", "#Coachism"]},
-    {"text": "Recovery is just training in disguise.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Sweat equity: the only crypto that never crashes.", "tags": ["#Consistency", "#Effort", "#Coachism"]},
-    {"text": "Macros are the new horoscopes.", "tags": ["#Nutrition", "#Humour", "#Coachism"]},
-    {"text": "Hamstrings of destiny.", "tags": ["#Hamstrings", "#Coachism"]},
-    {"text": "Hydrate or diedrate.", "tags": ["#Recovery", "#Coachism", "#Humour"]},
-    {"text": "Eat clean, lift dirty.", "tags": ["#Nutrition", "#Strength", "#Coachism"]},
-    {"text": "Gym hair, don’t care.", "tags": ["#Humour", "#Coachism"]},
-    {"text": "Rest days are secret growth days.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Your biceps are RSVP’d to the gun show.", "tags": ["#Arms", "#Humour", "#Coachism"]},
-    {"text": "Leg day: democracy in action.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Bench press: the chest’s autobiography.", "tags": ["#Bench", "#Chest", "#Coachism"]},
-    {"text": "Squats pay the rent, deadlifts pay the mortgage.", "tags": ["#Squat", "#Deadlift", "#Coachism"]},
-    {"text": "Carbs are friends, not enemies.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Warm up like you mean it, cool down like you earned it.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Every foam roll is a love letter to tomorrow’s mobility.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Stretch like you’re auditioning for Cirque du Soleil.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Pete believes in you, even when your hamstrings don’t.", "tags": ["#Hamstrings", "#Motivation", "#Coachism"]},
-    {"text": "Never trust a man who skips leg day.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Your mirror is lying — but the barbell tells the truth.", "tags": ["#Strength", "#Serious", "#Coachism"]},
-    {"text": "Cardio is just patience practice.", "tags": ["#Cardio", "#Coachism"]},
-    {"text": "Protein shakes taste better with victory.", "tags": ["#Nutrition", "#Motivation", "#Coachism"]},
-    {"text": "Always rack your weights, even if life won’t rack itself.", "tags": ["#Strength", "#Consistency", "#Coachism"]},
-    {"text": "A PR a day keeps the doctor away.", "tags": ["#PR", "#Coachism"]},
-    {"text": "Deadlifts cure sadness. Temporarily.", "tags": ["#Deadlift", "#Recovery", "#Coachism"]},
-    {"text": "Pete’s gospel: squats save souls.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Biceps are the hello, triceps are the goodbye.", "tags": ["#Arms", "#Coachism"]},
-    {"text": "Every gym bag is a suitcase of dreams.", "tags": ["#Motivation", "#Coachism"]},
-    {"text": "Shoes off, gains on.", "tags": ["#Motivation", "#Coachism"]},
-    {"text": "The foam roller is cruel but fair.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Protein is the duct tape of the body.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Caffeine is pre-workout for the soul.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Abs are made in the kitchen, revealed in the squat rack.", "tags": ["#Core", "#Squat", "#Nutrition", "#Coachism"]},
-    {"text": "You can’t flex excuses.", "tags": ["#Strength", "#Motivation", "#Coachism"]},
-    {"text": "Barbells > Barbies.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Every rep is an affirmation.", "tags": ["#Consistency", "#Motivation", "#Coachism"]},
-    {"text": "Respect the rest, respect the reps.", "tags": ["#Consistency", "#Recovery", "#Coachism"]},
-    {"text": "Stretch now, thank yourself later.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "The warm-up is the workout’s handshake.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Sweat is just confidence leaking.", "tags": ["#Effort", "#Humour", "#Coachism"]},
-    {"text": "If you can talk, you can do another rep.", "tags": ["#Effort", "#Motivation", "#Coachism"]},
-    {"text": "Lifting is therapy; therapy doesn’t give you traps.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Friends don’t let friends skip deadlifts.", "tags": ["#Deadlift", "#Coachism"]},
-    {"text": "No squat, no respect.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Foam roll or face the consequences.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Hydration before hydration.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "PRs are the universe applauding.", "tags": ["#PR", "#Coachism"]},
-    {"text": "A set unfinished is a story untold.", "tags": ["#Consistency", "#Coachism"]},
-    {"text": "Machines don’t build men, but men build on machines.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "The scale is negotiable, the barbell is not.", "tags": ["#Strength", "#Serious", "#Coachism"]},
-    {"text": "Calories are opinions, reps are facts.", "tags": ["#Consistency", "#Coachism"]},
-    {"text": "Every plank is a promise.", "tags": ["#Core", "#Motivation", "#Coachism"]},
-    {"text": "Stretch like you’ve got all the time in the world.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Recovery is free muscle.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Dumbbells are friends with handles.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Strength is contagious — spot generously.", "tags": ["#Strength", "#Motivation", "#Coachism"]},
-    {"text": "You don’t need luck, you need lunges.", "tags": ["#Legs", "#Motivation", "#Coachism"]},
-    {"text": "The squat rack is the church of iron.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Sweat now, swagger later.", "tags": ["#Effort", "#Motivation", "#Coachism"]},
-    {"text": "Barbells don’t ghost you.", "tags": ["#Strength", "#Consistency", "#Coachism"]},
-    {"text": "If it jiggles, it just wants more squats.", "tags": ["#Squat", "#Legs", "#Humour", "#Coachism"]},
-    {"text": "Rest days are anabolic investments.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Hydration is holy.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Stretching is aging backwards.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Your warm-up should make you sweat.", "tags": ["#Recovery", "#Effort", "#Coachism"]},
-    {"text": "You can’t spell cardio without crying.", "tags": ["#Cardio", "#Humour", "#Coachism"]},
-    {"text": "Abs aren’t for looks, they’re for laughs.", "tags": ["#Core", "#Humour", "#Coachism"]},
-    {"text": "Spot others the way you want to be spotted.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Machines for precision, barbells for poetry.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Pete’s law: sweat is thicker than water.", "tags": ["#Consistency", "#Coachism"]},
-    {"text": "Flexing is free advertising.", "tags": ["#Strength", "#Humour", "#Coachism"]},
-    {"text": "Don’t fear failure; fear missing a rep.", "tags": ["#Consistency", "#Motivation", "#Coachism"]},
-    {"text": "If the shoe fits, it’s probably flat-soled.", "tags": ["#Motivation", "#Coachism"]},
-    {"text": "Macros > astrology.", "tags": ["#Nutrition", "#Humour", "#Coachism"]},
-    {"text": "Leg day loyalty test.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Every lunge is a love letter to balance.", "tags": ["#Legs", "#Motivation", "#Coachism"]},
-    {"text": "Hydrate until your pee is Instagrammable.", "tags": ["#Recovery", "#Humour", "#Coachism"]},
-    {"text": "Stretching is soul floss.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Core is king, glutes are the crown.", "tags": ["#Core", "#Glutes", "#Motivation", "#Coachism"]},
-    {"text": "Protein before nonsense.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Your triceps tell the story of your past.", "tags": ["#Arms", "#Coachism"]},
-    {"text": "Curls are punctuation for your sentences.", "tags": ["#Arms", "#Humour", "#Coachism"]},
-    {"text": "The bench is the diary of your chest.", "tags": ["#Bench", "#Chest", "#Coachism"]},
-    {"text": "Quads are democracy in action.", "tags": ["#Legs", "#Squat", "#Coachism"]},
-    {"text": "Sweat is the gym’s incense.", "tags": ["#Consistency", "#Coachism"]},
-    {"text": "Recovery naps are anabolic magic.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Carbs fuel the engine, protein builds the engine.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Hydration: the cheapest supplement.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Squats are honesty tests.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "If Pete claps, you’re not done.", "tags": ["#Motivation", "#Coachism"]},
-    {"text": "Stretch until your excuses leave.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "DOMS = proof you exist.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "A rep skipped is a debt unpaid.", "tags": ["#Consistency", "#Motivation", "#Coachism"]},
-    {"text": "Foam rollers are medieval torture devices — use them.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Lifting with Pete is like praying with iron.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Hydration station never leaves the tracks.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Every dumbbell has a destiny.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Sweat equity compounds interest.", "tags": ["#Consistency", "#Motivation", "#Coachism"]},
-    {"text": "Protein shakes > milkshakes.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Macros matter more than gossip.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "Squat like your ancestors are watching.", "tags": ["#Squat", "#Legs", "#Motivation", "#Coachism"]},
-    {"text": "Recovery isn’t lazy; it’s proactive lifting.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Every PR is sacred.", "tags": ["#PR", "#Motivation", "#Coachism"]},
-    {"text": "Abs are just the receipts for good behaviour.", "tags": ["#Core", "#Nutrition", "#Coachism"]},
-    {"text": "Weights don’t cheat, but they make you honest.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Stretching = maintenance for your chassis.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Pete’s rule: plates before dates.", "tags": ["#Strength", "#Humour", "#Coachism"]},
-    {"text": "Hydration cures 90% of your problems.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Spotting is love in action.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Rest now, lift later, flex forever.", "tags": ["#Recovery", "#Motivation", "#Coachism"]},
-    {"text": "Never underestimate the triceps.", "tags": ["#Arms", "#Motivation", "#Coachism"]},
-    {"text": "Flexing burns calories (technically).", "tags": ["#Strength", "#Humour", "#Coachism"]},
-    {"text": "You can’t spell strength without sweat.", "tags": ["#Strength", "#Consistency", "#Coachism"]},
-    {"text": "Gym time is me time, and me time is swole time.", "tags": ["#Strength", "#Motivation", "#Coachism"]},
-    {"text": "Recovery today, domination tomorrow.", "tags": ["#Recovery", "#Motivation", "#Coachism"]},
-    {"text": "Glutes > excuses.", "tags": ["#Glutes", "#Motivation", "#Coachism"]},
-    {"text": "No gym, no peace.", "tags": ["#Consistency", "#Motivation", "#Coachism"]},
-    {"text": "PRs > arguments.", "tags": ["#PR", "#Motivation", "#Coachism"]},
-    {"text": "Deadlifts = diplomacy.", "tags": ["#Deadlift", "#Coachism"]},
-    {"text": "Sleep like a champion, wake like a legend.", "tags": ["#Recovery", "#Motivation", "#Coachism"]},
-    {"text": "Stretch like a rubber band of destiny.", "tags": ["#Recovery", "#Coachism"]},
-    {"text": "Leg day separates lifters from tourists.", "tags": ["#Squat", "#Legs", "#Coachism"]},
-    {"text": "Carbs are hugs for your muscles.", "tags": ["#Nutrition", "#Coachism"]},
-    {"text": "If you fail, fail forward with a barbell.", "tags": ["#Strength", "#Motivation", "#Coachism"]},
-    {"text": "Spot strong, spot safe.", "tags": ["#Strength", "#Coachism"]},
-    {"text": "Sweat equity is Pete’s economy.", "tags": ["#Consistency", "#Motivation", "#Coachism"]}
-    ],
-    "LEGENDARY": [
-    {"text": "🏆 You’ve unlocked Beast Mode DLC.", "tags": ["#Motivation", "#PR", "#Legendary"]},
-    {"text": "🍕 Cheat day approved by Pete — order pizza immediately.", "tags": ["#Nutrition", "#Recovery", "#Humour", "#Legendary"]},
-    {"text": "🦄 You squatted so deep you found Narnia.", "tags": ["#Squat", "#Legs", "#Humour", "#Legendary"]},
-    {"text": "☠️ Cardio killed me, you’re on your own.", "tags": ["#Cardio", "#Run", "#Humour", "#Legendary"]},
-    {"text": "📈 Your quads have gone public — NASDAQ ticker: SQUAT.", "tags": ["#Legs", "#Squat", "#Humour", "#Legendary"]},
-    {"text": "🎸 Deadlifts heavier than Metallica’s back catalogue.", "tags": ["#Deadlift", "#Strength", "#Humour", "#Legendary"]},
-    {"text": "🦍 Gains so strong Darwin wants a word.", "tags": ["#Strength", "#Motivation", "#Legendary"]},
-    {"text": "🚑 DOMS level: hospital wing at Hogwarts.", "tags": ["#Recovery", "#Humour", "#Legendary"]}
-]
+    {
+      "text": "Hakuna matata reps!",
+      "tags": [
+        "#Humour",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Rome wasn’t foam-rolled in a day.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardio-bardi flow state.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Plank Sinatra vibes.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein shake, not protein fake.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Don’t squat the small stuff.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Burpees? More like slurpees.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abs-olutely fantasmic.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Brotein overload incoming!",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your macros called — they’re lonely.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Foam roll with it, baby.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Bench you later, alligator.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Deadlift and let lift.",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curls for the girls, deads for the dads.",
+      "tags": [
+        "#Arms",
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweat like nobody’s watching.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexpect the unexpected.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absurd abs incoming.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Get swole or get strolled.",
+      "tags": [
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gymtimidation is cardio for the soul.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Dumbbell doors to destiny.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Spot me like you spotted Bigfoot.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein-shake it off.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lats Christmas I gave you my reps.",
+      "tags": [
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Burpocalypse Now.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flex Luther King Jr.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The walking quad.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Foam and fortune.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Dumbbellina ballerina.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Treadmill of fortune.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pec-tacular party.",
+      "tags": [
+        "#Chest",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Squat you looking at?",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Kettle-smell, but in a good way.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abscond with abs.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Core-blimey!",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gym and tonic.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curl Jam.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Swole patrol.",
+      "tags": [
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchaholic anonymous.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Goblet of swole.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Plank you very much.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lat-er, bro.",
+      "tags": [
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pushup and away!",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Squad goals = squat goals.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Burpee-di-bop-di-boo.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Biceps and rice.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Shakes and ladders.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gymfinity and beyond!",
+      "tags": [
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatflix binge.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The Abfather.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Harry Squatter.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Load of quads.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Grip it and rip it.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Barbell-hop anonymous.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hammies of destiny.",
+      "tags": [
+        "#Legs",
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Six-pack attack.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Captain Core-ageous.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Deltoid delight.",
+      "tags": [
+        "#Shoulders",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Mo’ reps, mo’ problems.",
+      "tags": [
+        "#Consistency",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hip-thrust-a-licious.",
+      "tags": [
+        "#Glutes",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Snaccident: ate a whole protein bar.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Fleece the quads.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The tricep whisperer.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Beefcake bakeoff.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curl friends forever.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lunge life balance.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "All gain, no grain.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatflix and chill.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Rogue one-rep max.",
+      "tags": [
+        "#Strength",
+        "#PR",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Squatalicious.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Glute flute symphony.",
+      "tags": [
+        "#Glutes",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absurdly ab-firmative.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein princess diaries.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lats supper.",
+      "tags": [
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flextra-terrestrial.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Foam alone.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchpressaurus rex.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardi-no thanks-o.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Bench-o-rama-ding-dong.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweaty spaghetti.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gymshort stories.",
+      "tags": [
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein palooza.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flex-capade.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The cardio carnival.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Biception.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein in motion.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Row-bocop.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flex McMuscleface.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absurdly swole science.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Triceptacular.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The cable chronicles.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Kettle-bro conundrum.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatnado.",
+      "tags": [
+        "#Effort",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Caffeine crusaders.",
+      "tags": [
+        "#Nutrition",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Iron throne gains.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Quad squad forever.",
+      "tags": [
+        "#Legs",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flex Machina.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Brofessor Pete, PhD in PRs.",
+      "tags": [
+        "#PR",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lift long and prosper.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Chewbacca shrugs.",
+      "tags": [
+        "#Shoulders",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein, plank, repeat.",
+      "tags": [
+        "#Nutrition",
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Swoldemort returns.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The great glute bake-off.",
+      "tags": [
+        "#Glutes",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Kettle-bellissimo.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Planktopus Prime.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absurdopolis leg day.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexaholic anonymous.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hammie jammy jazzercise.",
+      "tags": [
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lungemania madness.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Deadlift deli special.",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweat roulette.",
+      "tags": [
+        "#Effort",
+        "#Humour",
+        "#Chaotic"
+      ]
+    },
+    {
+      "text": "Cardio karaoke.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Dumbbell derby day.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein pumpkin spice latte gains.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The lunge lounge.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cable chaos carnival.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absurdonomics of sweat.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Burpee bonanza.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Foam-tastic voyage.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Bench-a-palooza.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gains of Thrones.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Protein pretzel logic.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Shake, rattle, and reps.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexytown express.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abs-anity asylum.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Quadcast podcast.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Rowmageddon.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "The pec-tacular spectacle.",
+      "tags": [
+        "#Chest",
+        "#Humour"
+      ]
+    }
+  ],
+  "PORTMANTEAUS": [
+    {
+      "text": "Squattastic flexcellence!",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Deadliftacular!",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Glutetopia awaits!",
+      "tags": [
+        "#Glutes",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Push-upocalypse now.",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curlnado.",
+      "tags": [
+        "#Arms",
+        "#Humour",
+        "#Chaotic"
+      ]
+    },
+    {
+      "text": "Lungemageddon.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexocalypse.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "PR-arama.",
+      "tags": [
+        "#PR",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardiovangelist crusade.",
+      "tags": [
+        "#Cardio",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Burpeepocalypse.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchtacular bonanza.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Snatchzilla.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexstravaganza.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hamstringageddon.",
+      "tags": [
+        "#Hamstrings",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Quadzilla quest.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Delttastrophe.",
+      "tags": [
+        "#Shoulders",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Calfpocalypse.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Endorphinvasion.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Maxoutathon.",
+      "tags": [
+        "#PR",
+        "#Volume",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Chinupocalypse.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatnado.",
+      "tags": [
+        "#Effort",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Rowmageddon.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Plankopalooza.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Caffeinepocalypse.",
+      "tags": [
+        "#Nutrition",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abstravaganza.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lungopalooza.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Repocalypse.",
+      "tags": [
+        "#Volume",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gaintopia.",
+      "tags": [
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Proteinpalooza.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Domspocalypse.",
+      "tags": [
+        "#Recovery",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexsasterpiece.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Triceptacular.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Squatmaggedon.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pullupalooza.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Musclemageddon.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardiopalooza.",
+      "tags": [
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Brodown showdown.",
+      "tags": [
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Swolemania.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Grindageddon.",
+      "tags": [
+        "#Consistency",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Legstacular.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curlocalypse.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchzilla.",
+      "tags": [
+        "#Bench",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Liftocalypse.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gainsquake.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Repzilla.",
+      "tags": [
+        "#Volume",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Domstacular.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexpocalypse.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hamstapalooza.",
+      "tags": [
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abzilla.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pushupalypse.",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Snatchquake.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweattastrophe.",
+      "tags": [
+        "#Effort",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Rowzilla.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Liftoffopalooza.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pullupocalypse.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gainsplosion.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardiocalypse.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Plankzilla.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Deadliftocalypse.",
+      "tags": [
+        "#Deadlift",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Proteinageddon.",
+      "tags": [
+        "#Nutrition",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Swolequake.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Abmageddon.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexathon.",
+      "tags": [
+        "#Arms",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Legquake.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curlstorm.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchageddon.",
+      "tags": [
+        "#Bench",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hamstringopalooza.",
+      "tags": [
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Maxoutocalypse.",
+      "tags": [
+        "#PR",
+        "#Volume",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Tricepzooka.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Quadquake.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatstorm.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Liftoholics anonymous.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Domstocalypse.",
+      "tags": [
+        "#Recovery",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexquake.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gainsplosion express.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Rowpocalypse.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absquake.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Brocalypse.",
+      "tags": [
+        "#Motivation",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Swolecalypse.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexival.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Lungequake.",
+      "tags": [
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Endorphinzilla.",
+      "tags": [
+        "#Recovery",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Bicepsplosion.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Reptastrophe.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Cardioquake.",
+      "tags": [
+        "#Cardio",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Squatstorm.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Plankageddon.",
+      "tags": [
+        "#Core",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Snatchmageddon.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sweatquake.",
+      "tags": [
+        "#Effort",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Proteinopalooza.",
+      "tags": [
+        "#Nutrition",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Glutequake.",
+      "tags": [
+        "#Glutes",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Triceptageddon.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Pullupquake.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Liftoquake.",
+      "tags": [
+        "#Strength",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Repstorm.",
+      "tags": [
+        "#Volume",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "DOMSpalooza.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Gainstorm.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Curlopalooza.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Maxzilla.",
+      "tags": [
+        "#PR",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Benchstorm.",
+      "tags": [
+        "#Bench",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Hamquake.",
+      "tags": [
+        "#Hamstrings",
+        "#Chaotic",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Absopalooza.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Flexzilla.",
+      "tags": [
+        "#Arms",
+        "#Chaotic",
+        "#Humour"
+      ]
+    }
+  ],
+  "METAPHORS": [
+    {
+      "text": "That set was thicker than a January protein shake.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You attacked that bar like a lion chasing gazelles with gym memberships.",
+      "tags": [
+        "#Strength",
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Those squats were deeper than Shakespeare’s sonnets.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You ran like cardio owed you money.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pressed like the floor was gossip and you had tea to spill.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your RDLs are straighter than a nun’s ruler.",
+      "tags": [
+        "#Deadlift",
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You slept like a hibernating kettlebear.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your steps were higher than Pete Davidson’s dating roster.",
+      "tags": [
+        "#Cardio",
+        "#Steps",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You benched like a trebuchet at a medieval arm day.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pulled like gravity was just a polite suggestion.",
+      "tags": [
+        "#Deadlift",
+        "#Pullup",
+        "#Strength"
+      ]
+    },
+    {
+      "text": "Your VO₂ max just filed for divorce — it can’t keep up with you.",
+      "tags": [
+        "#Cardio",
+        "#Run",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You sprinted like the treadmill was repossessing your shoes.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Those lunges were more dramatic than a soap opera finale.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your curls had more drama than a Bravo reunion.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You foam rolled like you were flattening croissants.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Sleep score so high you’re basically a mattress salesman.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Those calories didn’t stand a chance — you hunted them down like prey.",
+      "tags": [
+        "#Cardio",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You hydrated like an Amazon rainforest.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "PRs fell like dominoes in a CrossFit box.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your core was tighter than a drum at a rock concert.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You rowed like Poseidon was your spotter.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You squatted like Atlas after a double espresso.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You benched like the earth itself needed pressing.",
+      "tags": [
+        "#Bench",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You deadlifted like gravity had a personal vendetta.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your planks were sturdier than medieval drawbridges.",
+      "tags": [
+        "#Core",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You moved kettlebells like Thor misplaced his hammer.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You sprinted like your Uber Eats driver was outside.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your pull-ups soared higher than inflation.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You shrugged like Atlas dropping the globe.",
+      "tags": [
+        "#Shoulders",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Those step counts were wilder than a TikTok dance trend.",
+      "tags": [
+        "#Steps",
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You squatted like democracy depended on it.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That deadlift had more suspense than a Netflix thriller.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your calories burned brighter than a bonfire at Glastonbury.",
+      "tags": [
+        "#Cardio",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You trained harder than a Rocky montage marathon.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You slept like you were auditioning for a mattress ad.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That lunge was longer than the Lord of the Rings trilogy.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your sweat flowed like Niagara Falls in August.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You curled like the stock market in a recession.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your push-ups were sharper than a chef’s knife set.",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You flexed like a Greek statue on payday.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You ran like cardio was your side hustle.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You hip-thrusted like the glutes had a vendetta.",
+      "tags": [
+        "#Glutes",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That plank lasted longer than a Marvel end-credit scene.",
+      "tags": [
+        "#Core",
+        "#Consistency"
+      ]
+    },
+    {
+      "text": "You benched like a trebuchet hurling medieval gossip.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your sprints were more intense than a Black Friday sale.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "You hydrated like an overwatered cactus.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your quads roared louder than a V8 engine.",
+      "tags": [
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You lifted like rent was due and plates were the currency.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your hamstrings twanged like rock guitar solos.",
+      "tags": [
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You squatted lower than bank interest rates.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That deadlift was smoother than jazz on a Sunday.",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pressed like Zeus himself was watching.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You rowed harder than Vikings late for a raid.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your endurance ran longer than Pete’s catchphrase list.",
+      "tags": [
+        "#Cardio",
+        "#Consistency",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You recovered like Wolverine on cheat day.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You flexed like the cover of Muscle Monthly.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That RDL was straighter than an honour student’s posture.",
+      "tags": [
+        "#Deadlift",
+        "#Hamstrings",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your steps marched like a Roman legion.",
+      "tags": [
+        "#Steps",
+        "#Cardio",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You lunged across time zones.",
+      "tags": [
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That squat shook tectonic plates.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You benched like a power plant.",
+      "tags": [
+        "#Bench",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your planks had more tension than a boardroom coup.",
+      "tags": [
+        "#Core",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You pulled harder than Brexit negotiations.",
+      "tags": [
+        "#Deadlift",
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That curl was juicier than fresh gossip.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your sets were bigger than box office hits.",
+      "tags": [
+        "#Strength",
+        "#Volume"
+      ]
+    },
+    {
+      "text": "You jumped like gravity was optional.",
+      "tags": [
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "You rowed like you were escaping Mordor.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your squats dropped lower than SoundCloud rap.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That deadlift was more gripping than a horror movie.",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You burned calories like arson.",
+      "tags": [
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "You pressed like the morning snooze button owed you money.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You ran like Forrest on a deadline.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That push-up had more drama than Shakespeare in tights.",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You sprinted faster than a student after free pizza.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your sets banged louder than festival basslines.",
+      "tags": [
+        "#Strength",
+        "#Volume",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You flexed harder than tax season.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That recovery was deeper than therapy.",
+      "tags": [
+        "#Recovery",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your deadlifts hit harder than a bass drop.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You slept harder than a narcoleptic bear.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your PR slapped harder than Pete’s metaphors.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Those steps marched longer than a Taylor Swift setlist.",
+      "tags": [
+        "#Steps",
+        "#Cardio"
+      ]
+    },
+    {
+      "text": "You rowed harder than Oppenheimer’s conscience.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your core was tighter than skinny jeans at brunch.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That curl was sweeter than a protein donut.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You gripped that bar like an angry koala.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your lunges were more dramatic than reality TV.",
+      "tags": [
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pressed harder than a stuck elevator button.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That squat cracked more ground than a geological survey.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You sprinted like rent was chasing you.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your bench bounced harder than a payday check.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That RDL was straighter than my taxes.",
+      "tags": [
+        "#Deadlift",
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You flexed harder than a Marvel casting call.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That hydration was wetter than British weather.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your endurance outlasted Game of Thrones filler.",
+      "tags": [
+        "#Cardio",
+        "#Consistency"
+      ]
+    },
+    {
+      "text": "That deadlift was darker than Pete’s sense of humour.",
+      "tags": [
+        "#Deadlift",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You planked like tectonic plates in a standoff.",
+      "tags": [
+        "#Core",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your sweat flowed like a Taylor Swift breakup album.",
+      "tags": [
+        "#Effort",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That pull-up was higher than Bezos’ rocket.",
+      "tags": [
+        "#Pullup",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your sets hit harder than Shakespeare in a cage fight.",
+      "tags": [
+        "#Strength",
+        "#Volume",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You ran longer than a conference call rant.",
+      "tags": [
+        "#Run",
+        "#Cardio"
+      ]
+    },
+    {
+      "text": "That squat was heavier than student debt.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You benched like the floor was made of trampolines.",
+      "tags": [
+        "#Bench",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That curl was cleaner than new sneakers.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pressed like it was the last day on earth.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You rowed with more force than Brexit papers.",
+      "tags": [
+        "#Cardio",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That sprint outran gossip itself.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your plank held tighter than family secrets.",
+      "tags": [
+        "#Core",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That PR exploded louder than fireworks on NYE.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You flexed brighter than a disco ball.",
+      "tags": [
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That lunge crossed time itself.",
+      "tags": [
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "Your sweat wrote history in salt.",
+      "tags": [
+        "#Effort",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That bench was louder than stadium chants.",
+      "tags": [
+        "#Bench",
+        "#Chest",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You rowed like the ocean was personal.",
+      "tags": [
+        "#Row",
+        "#Cardio",
+        "#Back",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your quads stomped harder than Godzilla in heels.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That recovery was smoother than butter coffee.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You sprinted sharper than caffeine jitters.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "Your hamstrings twanged like violin strings.",
+      "tags": [
+        "#Hamstrings",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That deadlift was heavier than Monday mornings.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You benched like you were printing money.",
+      "tags": [
+        "#Bench",
+        "#Chest",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That set had more suspense than Stranger Things.",
+      "tags": [
+        "#Strength",
+        "#Volume",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pulled like the earth owed you gravity.",
+      "tags": [
+        "#Deadlift",
+        "#Pullup",
+        "#Strength",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That plank was stiffer than British upper lips.",
+      "tags": [
+        "#Core",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You curled like you were rewriting genetics.",
+      "tags": [
+        "#Arms",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "That squat was bigger than the Big Bang.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You flexed brighter than a Christmas tree in Vegas.",
+      "tags": [
+        "#Strength",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your PR echoed like a stadium roar.",
+      "tags": [
+        "#PR",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That RDL was straighter than a laser pointer.",
+      "tags": [
+        "#Deadlift",
+        "#Hamstrings",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "You rowed like a Viking Uber.",
+      "tags": [
+        "#Row",
+        "#Cardio",
+        "#Back",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your sprints were hotter than July pavements.",
+      "tags": [
+        "#Run",
+        "#Cardio",
+        "#Effort"
+      ]
+    },
+    {
+      "text": "That hydration was wetter than a water park.",
+      "tags": [
+        "#Recovery",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Your bench was more uplifting than a TED talk.",
+      "tags": [
+        "#Bench",
+        "#Chest",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That push-up was tighter than skinny jeans.",
+      "tags": [
+        "#Arms",
+        "#Chest",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "You pressed like Zeus on creatine.",
+      "tags": [
+        "#Bench",
+        "#Press",
+        "#Motivation"
+      ]
+    },
+    {
+      "text": "That deadlift rewrote gravity.",
+      "tags": [
+        "#Deadlift",
+        "#Motivation",
+        "#Serious"
+      ]
+    }
+  ],
+  "COACHISMS": [
+    {
+      "text": "Glutes to the moon 🚀",
+      "tags": [
+        "#Glutes",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration station, all aboard!",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Core tight, future bright.",
+      "tags": [
+        "#Core",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Recovery is just training in disguise.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat equity: the only crypto that never crashes.",
+      "tags": [
+        "#Consistency",
+        "#Effort",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Macros are the new horoscopes.",
+      "tags": [
+        "#Nutrition",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hamstrings of destiny.",
+      "tags": [
+        "#Hamstrings",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydrate or diedrate.",
+      "tags": [
+        "#Recovery",
+        "#Coachism",
+        "#Humour"
+      ]
+    },
+    {
+      "text": "Eat clean, lift dirty.",
+      "tags": [
+        "#Nutrition",
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Gym hair, don’t care.",
+      "tags": [
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Rest days are secret growth days.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Your biceps are RSVP’d to the gun show.",
+      "tags": [
+        "#Arms",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Leg day: democracy in action.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Bench press: the chest’s autobiography.",
+      "tags": [
+        "#Bench",
+        "#Chest",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Squats pay the rent, deadlifts pay the mortgage.",
+      "tags": [
+        "#Squat",
+        "#Deadlift",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Carbs are friends, not enemies.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Warm up like you mean it, cool down like you earned it.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every foam roll is a love letter to tomorrow’s mobility.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretch like you’re auditioning for Cirque du Soleil.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Pete believes in you, even when your hamstrings don’t.",
+      "tags": [
+        "#Hamstrings",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Never trust a man who skips leg day.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Your mirror is lying — but the barbell tells the truth.",
+      "tags": [
+        "#Strength",
+        "#Serious",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Cardio is just patience practice.",
+      "tags": [
+        "#Cardio",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Protein shakes taste better with victory.",
+      "tags": [
+        "#Nutrition",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Always rack your weights, even if life won’t rack itself.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "A PR a day keeps the doctor away.",
+      "tags": [
+        "#PR",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Deadlifts cure sadness. Temporarily.",
+      "tags": [
+        "#Deadlift",
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Pete’s gospel: squats save souls.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Biceps are the hello, triceps are the goodbye.",
+      "tags": [
+        "#Arms",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every gym bag is a suitcase of dreams.",
+      "tags": [
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Shoes off, gains on.",
+      "tags": [
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "The foam roller is cruel but fair.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Protein is the duct tape of the body.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Caffeine is pre-workout for the soul.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Abs are made in the kitchen, revealed in the squat rack.",
+      "tags": [
+        "#Core",
+        "#Squat",
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "You can’t flex excuses.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Barbells > Barbies.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every rep is an affirmation.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Respect the rest, respect the reps.",
+      "tags": [
+        "#Consistency",
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretch now, thank yourself later.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "The warm-up is the workout’s handshake.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat is just confidence leaking.",
+      "tags": [
+        "#Effort",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "If you can talk, you can do another rep.",
+      "tags": [
+        "#Effort",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Lifting is therapy; therapy doesn’t give you traps.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Friends don’t let friends skip deadlifts.",
+      "tags": [
+        "#Deadlift",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "No squat, no respect.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Foam roll or face the consequences.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration before hydration.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "PRs are the universe applauding.",
+      "tags": [
+        "#PR",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "A set unfinished is a story untold.",
+      "tags": [
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Machines don’t build men, but men build on machines.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "The scale is negotiable, the barbell is not.",
+      "tags": [
+        "#Strength",
+        "#Serious",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Calories are opinions, reps are facts.",
+      "tags": [
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every plank is a promise.",
+      "tags": [
+        "#Core",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretch like you’ve got all the time in the world.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Recovery is free muscle.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Dumbbells are friends with handles.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Strength is contagious — spot generously.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "You don’t need luck, you need lunges.",
+      "tags": [
+        "#Legs",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "The squat rack is the church of iron.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat now, swagger later.",
+      "tags": [
+        "#Effort",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Barbells don’t ghost you.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "If it jiggles, it just wants more squats.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Rest days are anabolic investments.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration is holy.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretching is aging backwards.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Your warm-up should make you sweat.",
+      "tags": [
+        "#Recovery",
+        "#Effort",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "You can’t spell cardio without crying.",
+      "tags": [
+        "#Cardio",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Abs aren’t for looks, they’re for laughs.",
+      "tags": [
+        "#Core",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Spot others the way you want to be spotted.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Machines for precision, barbells for poetry.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Pete’s law: sweat is thicker than water.",
+      "tags": [
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Flexing is free advertising.",
+      "tags": [
+        "#Strength",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Don’t fear failure; fear missing a rep.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "If the shoe fits, it’s probably flat-soled.",
+      "tags": [
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Macros > astrology.",
+      "tags": [
+        "#Nutrition",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Leg day loyalty test.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every lunge is a love letter to balance.",
+      "tags": [
+        "#Legs",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydrate until your pee is Instagrammable.",
+      "tags": [
+        "#Recovery",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretching is soul floss.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Core is king, glutes are the crown.",
+      "tags": [
+        "#Core",
+        "#Glutes",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Protein before nonsense.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Your triceps tell the story of your past.",
+      "tags": [
+        "#Arms",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Curls are punctuation for your sentences.",
+      "tags": [
+        "#Arms",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "The bench is the diary of your chest.",
+      "tags": [
+        "#Bench",
+        "#Chest",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Quads are democracy in action.",
+      "tags": [
+        "#Legs",
+        "#Squat",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat is the gym’s incense.",
+      "tags": [
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Recovery naps are anabolic magic.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Carbs fuel the engine, protein builds the engine.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration: the cheapest supplement.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Squats are honesty tests.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "If Pete claps, you’re not done.",
+      "tags": [
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretch until your excuses leave.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "DOMS = proof you exist.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "A rep skipped is a debt unpaid.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Foam rollers are medieval torture devices — use them.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Lifting with Pete is like praying with iron.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration station never leaves the tracks.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every dumbbell has a destiny.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat equity compounds interest.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Protein shakes > milkshakes.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Macros matter more than gossip.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Squat like your ancestors are watching.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Recovery isn’t lazy; it’s proactive lifting.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Every PR is sacred.",
+      "tags": [
+        "#PR",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Abs are just the receipts for good behaviour.",
+      "tags": [
+        "#Core",
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Weights don’t cheat, but they make you honest.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretching = maintenance for your chassis.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Pete’s rule: plates before dates.",
+      "tags": [
+        "#Strength",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Hydration cures 90% of your problems.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Spotting is love in action.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Rest now, lift later, flex forever.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Never underestimate the triceps.",
+      "tags": [
+        "#Arms",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Flexing burns calories (technically).",
+      "tags": [
+        "#Strength",
+        "#Humour",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "You can’t spell strength without sweat.",
+      "tags": [
+        "#Strength",
+        "#Consistency",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Gym time is me time, and me time is swole time.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Recovery today, domination tomorrow.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Glutes > excuses.",
+      "tags": [
+        "#Glutes",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "No gym, no peace.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "PRs > arguments.",
+      "tags": [
+        "#PR",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Deadlifts = diplomacy.",
+      "tags": [
+        "#Deadlift",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sleep like a champion, wake like a legend.",
+      "tags": [
+        "#Recovery",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Stretch like a rubber band of destiny.",
+      "tags": [
+        "#Recovery",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Leg day separates lifters from tourists.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Carbs are hugs for your muscles.",
+      "tags": [
+        "#Nutrition",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "If you fail, fail forward with a barbell.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Spot strong, spot safe.",
+      "tags": [
+        "#Strength",
+        "#Coachism"
+      ]
+    },
+    {
+      "text": "Sweat equity is Pete’s economy.",
+      "tags": [
+        "#Consistency",
+        "#Motivation",
+        "#Coachism"
+      ]
+    }
+  ],
+  "LEGENDARY": [
+    {
+      "text": "🏆 You’ve unlocked Beast Mode DLC.",
+      "tags": [
+        "#Motivation",
+        "#PR",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "🍕 Cheat day approved by Pete — order pizza immediately.",
+      "tags": [
+        "#Nutrition",
+        "#Recovery",
+        "#Humour",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "🦄 You squatted so deep you found Narnia.",
+      "tags": [
+        "#Squat",
+        "#Legs",
+        "#Humour",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "☠️ Cardio killed me, you’re on your own.",
+      "tags": [
+        "#Cardio",
+        "#Run",
+        "#Humour",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "📈 Your quads have gone public — NASDAQ ticker: SQUAT.",
+      "tags": [
+        "#Legs",
+        "#Squat",
+        "#Humour",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "🎸 Deadlifts heavier than Metallica’s back catalogue.",
+      "tags": [
+        "#Deadlift",
+        "#Strength",
+        "#Humour",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "🦍 Gains so strong Darwin wants a word.",
+      "tags": [
+        "#Strength",
+        "#Motivation",
+        "#Legendary"
+      ]
+    },
+    {
+      "text": "🚑 DOMS level: hospital wing at Hogwarts.",
+      "tags": [
+        "#Recovery",
+        "#Humour",
+        "#Legendary"
+      ]
+    }
+  ]
 }
