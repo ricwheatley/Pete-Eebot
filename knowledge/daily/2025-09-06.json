@@ -1,0 +1,45 @@
+{
+  "date": "2025-09-06",
+  "body": {
+    "weight_kg": 89.9,
+    "body_fat_pct": 31.77,
+    "muscle_mass_kg": null,
+    "water_pct": null
+  },
+  "activity": {
+    "steps": 10017,
+    "exercise_minutes": 45,
+    "stand_minutes": 153,
+    "distance_km": 7.43,
+    "calories": {
+      "active": 706,
+      "resting": 2094,
+      "total": 2800
+    }
+  },
+  "heart": {
+    "resting_bpm": 47,
+    "avg_bpm": 78,
+    "min_bpm": 45,
+    "max_bpm": 131
+  },
+  "sleep": {
+    "total_minutes": 388,
+    "asleep_minutes": 322,
+    "rem_minutes": 62,
+    "deep_minutes": 26,
+    "core_minutes": 234,
+    "awake_minutes": 66
+  },
+  "body_age": {
+    "body_age_years": 45.4,
+    "age_delta_years": 1.4,
+    "subscores": {
+      "crf": 47.9,
+      "body_comp": 0,
+      "activity": 70.1,
+      "recovery": 66.2
+    },
+    "composite": 43.1
+  }
+}

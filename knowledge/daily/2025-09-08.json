@@ -1,0 +1,89 @@
+{
+  "date": "2025-09-08",
+  "strength": [
+    {
+      "exercise_id": 1295,
+      "exercise_name": "Barbell Bench Press - NB",
+      "category": "Chest",
+      "sets": 4,
+      "reps": [
+        8,
+        8,
+        9,
+        8
+      ],
+      "weights_kg": [
+        40.0,
+        40.0,
+        40.0,
+        40.0
+      ],
+      "volume_kg": 1320.0
+    },
+    {
+      "exercise_id": 1186,
+      "exercise_name": "One Arm Bent Row",
+      "category": "Back",
+      "sets": 3,
+      "reps": [
+        10,
+        10,
+        10
+      ],
+      "weights_kg": [
+        10.0,
+        10.0,
+        10.0
+      ],
+      "volume_kg": 300.0
+    },
+    {
+      "exercise_id": 222,
+      "exercise_name": "Facepull",
+      "category": "Shoulders",
+      "sets": 3,
+      "reps": [
+        10,
+        10,
+        11
+      ],
+      "weights_kg": [
+        10.0,
+        10.0,
+        10.0
+      ],
+      "volume_kg": 310.0
+    }
+  ],
+  "body": {
+    "weight_kg": 90.55,
+    "body_fat_pct": 29.55,
+    "muscle_mass_kg": null,
+    "water_pct": null
+  },
+  "activity": {
+    "steps": 6764,
+    "exercise_minutes": 113,
+    "stand_minutes": 150,
+    "distance_km": 5.7,
+    "calories": {
+      "active": 1387,
+      "resting": 2095,
+      "total": 3482
+    }
+  },
+  "heart": {
+    "resting_bpm": 50,
+    "avg_bpm": 125,
+    "min_bpm": 48,
+    "max_bpm": 185
+  },
+  "sleep": {
+    "total_minutes": 406,
+    "asleep_minutes": 402,
+    "rem_minutes": 103,
+    "deep_minutes": 49,
+    "core_minutes": 250,
+    "awake_minutes": 4
+  }
+}

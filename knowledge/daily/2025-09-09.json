@@ -1,0 +1,53 @@
+{
+  "date": "2025-09-09",
+  "strength": [
+    {
+      "exercise_id": 507,
+      "exercise_name": "Romanian Deadlift",
+      "category": "Legs",
+      "sets": 3,
+      "reps": [
+        8,
+        8,
+        8
+      ],
+      "weights_kg": [
+        50.0,
+        50.0,
+        50.0
+      ],
+      "volume_kg": 1200.0
+    }
+  ],
+  "body": {
+    "weight_kg": 90.0,
+    "body_fat_pct": 30.91,
+    "muscle_mass_kg": null,
+    "water_pct": null
+  },
+  "activity": {
+    "steps": 7189,
+    "exercise_minutes": 92,
+    "stand_minutes": 129,
+    "distance_km": 5.8,
+    "calories": {
+      "active": 1150,
+      "resting": 2065,
+      "total": 3215
+    }
+  },
+  "heart": {
+    "resting_bpm": 53,
+    "avg_bpm": 116,
+    "min_bpm": 48,
+    "max_bpm": 183
+  },
+  "sleep": {
+    "total_minutes": 399,
+    "asleep_minutes": 388,
+    "rem_minutes": 93,
+    "deep_minutes": 46,
+    "core_minutes": 249,
+    "awake_minutes": 11
+  }
+}
