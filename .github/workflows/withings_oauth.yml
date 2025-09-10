@@ -1,4 +1,4 @@
-name: Withings OAuth Helper (vars + secret, no-heredoc)
+name: Withings OAuth Handskake
 
 on:
   workflow_dispatch:
