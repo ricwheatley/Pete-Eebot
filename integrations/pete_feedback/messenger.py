@@ -1,5 +1,5 @@
-import argparse, os, json, pathlib, subprocess, random
-from datetime import datetime, date
+import argparse, os, json, pathlib, subprocess, random, pytz
+from datetime import datetime, date, timedelta
 from integrations.pete_feedback import narrative_builder as nb
 from integrations.pete_feedback.phrase_picker import random_phrase
 from integrations.pete_feedback.utils import stitch_sentences
@@ -62,7 +62,25 @@ def main():
     metrics = load_metrics()
 
     if args.type == "daily":
-        msg = nb.build_daily_narrative(metrics)
+        # Use local timezone (adjust to yours)
+        tz = pytz.timezone("Europe/London")
+        yesterday = (datetime.now(tz) - timedelta(days=1)).date().isoformat()
+
+        days = metrics.get("days", {})
+        day_data = days.get(yesterday)
+
+        if not day_data:
+            # Fall back to the latest available date
+            if days:
+                latest_date = max(days.keys())
+                day_data = days[latest_date]
+                msg = f"No log found for yesterday ({yesterday}) — showing latest from {latest_date}.\n\n"
+                msg += nb.build_daily_narrative({"days": {latest_date: day_data}})
+            else:
+                msg = "No logs found at all! Did you rest? 😴"
+        else:
+            msg = nb.build_daily_narrative({"days": {yesterday: day_data}})
+
         phrase = random_phrase(mode="serious")
     elif args.type == "weekly":
         msg = nb.build_weekly_narrative(metrics)
