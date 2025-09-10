@@ -36,13 +36,20 @@ def random_phrase(kind="any", mode="balanced", tags=None) -> str:
     if kind != "any" and not tags:
         phrases = [p for p in phrases if kind == (p.get("mode") or "").lower()]
 
-    # Map higher-level Pete modes to categories
+    # Map Pete modes to categories
+    serious = [p for p in phrases if (p.get("mode") or "").lower() in ("motivational", "coachism")]
+    chaotic = [p for p in phrases if (p.get("mode") or "").lower() in ("silly", "portmanteau", "metaphor")]
+
     if mode == "serious":
-        phrases = [p for p in phrases if (p.get("mode") or "").lower() in ("motivational", "coachism")]
+        phrases = serious
     elif mode == "chaotic":
-        phrases = [p for p in phrases if (p.get("mode") or "").lower() in ("silly", "portmanteau", "metaphor")]
+        phrases = chaotic
     elif mode == "balanced":
-        pass  # keep everything
+        # Weighted pick: 80% serious, 20% chaotic
+        if random.random() < 0.8 and serious:
+            phrases = serious
+        elif chaotic:
+            phrases = chaotic
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
