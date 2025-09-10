@@ -2,12 +2,12 @@ name: Pete Reports
 
 on:
   schedule:
-    - cron: "0 5 * * *"     # Daily 05:00 UTC, 05:00 UK in winter, 06:00 UK in summer
-    - cron: "0 10 * * 5"    # Friday 10:00 UTC, 10:00 UK in winter, 11:00 UK in summer
-    - cron: "0 15 * * 0"    # Sunday 15:00 UTC, 15:00 UK in winter, 16:00 UK in summer
-    - cron: "0 4 * * *"     # Daily 04:00 UTC, 05:00 UK in summer
-    - cron: "0 9 * * 5"     # Friday 09:00 UTC, 10:00 UK in summer
-    - cron: "0 14 * * 0"    # Sunday 14:00 UTC, 15:00 UK in summer
+    - cron: "0 5 * * *"     # Daily 05:00 UTC
+    - cron: "0 10 * * 5"    # Friday 10:00 UTC
+    - cron: "0 15 * * 0"    # Sunday 15:00 UTC
+    - cron: "0 4 * * *"     # Daily 04:00 UTC
+    - cron: "0 9 * * 5"     # Friday 09:00 UTC
+    - cron: "0 14 * * 0"    # Sunday 14:00 UTC
   workflow_dispatch:
     inputs:
       kind:
@@ -16,6 +16,10 @@ on:
         default: "d"
         type: choice
         options: [d, w, c]
+      start_date:
+        description: "Optional: Force cycle start date (YYYY-MM-DD, ignores 28-day rule)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -75,7 +79,12 @@ jobs:
         run: python summaries/build_knowledge.py
 
       - name: Run Pete Messenger (Cycle → build/upload plan + notify)
-        run: python integrations/pete_feedback/messenger.py --type cycle
+        run: |
+          if [ "${{ github.event.inputs.start_date }}" != "" ]; then
+            python integrations/pete_feedback/messenger.py --type cycle --start-date "${{ github.event.inputs.start_date }}"
+          else
+            python integrations/pete_feedback/messenger.py --type cycle
+          fi
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
