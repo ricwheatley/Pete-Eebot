@@ -109,7 +109,7 @@ def main():
         plan_path = plan_dir / f"plan_{start_date.isoformat()}.json"
         plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
 
-        # Convert to entries for WGER
+        # Convert block -> entries for WGER
         entries = []
         for day in block.get("days", []):
             for session in day.get("sessions", []):
