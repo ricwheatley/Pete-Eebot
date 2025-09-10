@@ -1,6 +1,6 @@
 import random
 from datetime import datetime, timedelta
-from .phrase_picker import phrase_for
+from .phrase_picker import random_phrase as phrase_for
 from .utils import stitch_sentences
 
 
