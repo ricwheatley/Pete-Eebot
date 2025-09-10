@@ -52,7 +52,7 @@ def commit_changes(report_type: str, phrase: str):
     except subprocess.CalledProcessError:
         print("No changes to commit.")
 
-# --- New helpers for cycle gating ---
+# --- Cycle gating helpers ---
 def get_last_cycle_start():
     # 1. Find latest plan file by creation time
     files = [os.path.join(PLANS_DIR, f) for f in os.listdir(PLANS_DIR) if f.startswith("plan_") and f.endswith(".json")]
@@ -77,6 +77,7 @@ def can_start_new_cycle(today=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", choices=["daily", "weekly", "cycle", "random"], required=True)
+    parser.add_argument("--start-date", type=str, help="Force cycle start date (YYYY-MM-DD, ignores 28-day rule)")
     args = parser.parse_args()
 
     metrics = load_metrics()
@@ -90,14 +91,21 @@ def main():
         phrase = random_phrase(kind="coachism")
 
     elif args.type == "cycle":
-        if not can_start_new_cycle():
-            msg = f"⏸ Still mid-cycle (last start {get_last_cycle_start()}). No new cycle created."
-            send_telegram(msg)
-            log_message(msg)
-            return
+        if args.start_date:
+            # Manual override: force cycle
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+            msg = f"⚡ Forced new cycle starting {start_date} (manual override)."
+        else:
+            # Normal flow with 28-day gating
+            if not can_start_new_cycle():
+                msg = f"⏸ Still mid-cycle (last start {get_last_cycle_start()}). No new cycle created."
+                send_telegram(msg)
+                log_message(msg)
+                return
+            start_date = date.today()
+            msg = f"✅ New cycle created | Start: {start_date}"
 
         # Build new 4-week cycle
-        start_date = date.today()
         block = plan_next_block.build_block(start_date)
 
         # Save JSON plan
@@ -111,7 +119,6 @@ def main():
         for session in payload:
             wger_uploads.create_session(session)
 
-        msg = f"✅ New cycle created | Start: {start_date}"
         phrase = random_phrase(mode="serious")
 
     elif args.type == "random":
