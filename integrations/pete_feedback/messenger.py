@@ -1,7 +1,7 @@
 import argparse, os, json, pathlib, subprocess, random
 from datetime import datetime, date
 from integrations.pete_feedback import narrative_builder as nb
-from integrations.pete_feedback.catchphrases import random_phrase
+from integrations.pete_feedback.phrase_picker import random_phrase
 from integrations.pete_feedback.utils import stitch_sentences
 from integrations.wger import plan_next_block, wger_uploads
 
