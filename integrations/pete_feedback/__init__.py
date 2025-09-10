@@ -10,5 +10,3 @@ Modules:
 - narrative_builder.py : daily/weekly/cycle narrative construction
 - rules/ : interpreters for metrics (weight, steps, recovery, etc.)
 """
-
-from . import catchphrases
