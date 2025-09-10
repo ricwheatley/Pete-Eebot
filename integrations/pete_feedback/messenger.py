@@ -15,6 +15,7 @@ WEEK_INTENSITY = {
     4: {"name": "deload"},
 }
 
+
 def load_metrics():
     if METRICS_PATH.exists():
         return json.loads(METRICS_PATH.read_text())
@@ -56,35 +57,19 @@ def commit_changes(report_type: str, phrase: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--type", choices=["daily", "weekly", "cycle", "rant"], required=True)
+    parser.add_argument("--type", choices=["daily", "weekly", "cycle", "random"], required=True)
     args = parser.parse_args()
 
     metrics = load_metrics()
 
     if args.type == "daily":
-        # Use local timezone (adjust to yours)
-        tz = pytz.timezone("Europe/London")
-        yesterday = (datetime.now(tz) - timedelta(days=1)).date().isoformat()
-
-        days = metrics.get("days", {})
-        day_data = days.get(yesterday)
-
-        if not day_data:
-            # Fall back to the latest available date
-            if days:
-                latest_date = max(days.keys())
-                day_data = days[latest_date]
-                msg = f"No log found for yesterday ({yesterday}) — showing latest from {latest_date}.\n\n"
-                msg += nb.build_daily_narrative({"days": {latest_date: day_data}})
-            else:
-                msg = "No logs found at all! Did you rest? 😴"
-        else:
-            msg = nb.build_daily_narrative({"days": {yesterday: day_data}})
-
+        msg = nb.build_daily_narrative(metrics)
         phrase = random_phrase(mode="serious")
+
     elif args.type == "weekly":
         msg = nb.build_weekly_narrative(metrics)
         phrase = random_phrase(kind="coachism")
+
     elif args.type == "cycle":
         # 1. Build next 4-week block
         start_date = date.today()
@@ -101,7 +86,7 @@ def main():
         for session in payload:
             wger_uploads.create_session(session)
 
-        # 4. Summarise for Telegram
+        # 4. Friendly summary for Telegram
         week1 = [d for d in block["days"] if d["week"] == 1]
         summary_lines = []
         for day in week1:
@@ -112,17 +97,33 @@ def main():
                     f"{day['day']}: {main['name']} {main['sets']}×{main['reps']} ({main['intensity']})"
                 )
 
-        msg = "📅 New 4-Week Training Block Uploaded!\n\n"
+        greeting = random.choice([
+            "Ey up Ric 👋 got your new block sorted.",
+            "Alright mate, fresh 4-week cycle coming in.",
+            "New block time 💪 here’s what’s on deck:"
+        ])
+
+        msg = f"{greeting}\n\n"
         msg += f"Start date: {start_date}\n"
         msg += f"Cycle: {WEEK_INTENSITY[1]['name']} → {WEEK_INTENSITY[4]['name']}\n\n"
-        msg += "Week 1 Main Lifts:\n" + "\n".join(summary_lines)
-        msg += "\n\n🔥 Blaze classes are booked in as usual."
+        msg += "Week 1 main lifts:\n" + "\n".join(summary_lines)
+        msg += "\n\nBlaze classes are in as usual 🔥"
 
         phrase = random_phrase(mode="serious")
-    elif args.type == "rant":
-        sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(3, 6))]
-        msg = "🔥 Random Pete Rant 🔥\n\n" + stitch_sentences([], sprinkles, short_mode=random.random() < 0.2)
-        phrase = random_phrase(mode="chaotic")
+
+    elif args.type == "random":
+        # Cheeky casual messages for a laugh or motivation
+        greeting = random.choice([
+            "Ey up Ric 👋",
+            "Alright mate, here’s one for you:",
+            "Oi Ric, check this:",
+            "",  # sometimes no greeting at all
+        ])
+
+        sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(1, 3))]
+        msg = (greeting + "\n\n" if greeting else "") + stitch_sentences([], sprinkles, short_mode=True)
+
+        phrase = random.choice(sprinkles)
 
     send_telegram(msg)
     log_message(msg)
