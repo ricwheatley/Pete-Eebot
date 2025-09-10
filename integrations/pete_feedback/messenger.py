@@ -54,13 +54,10 @@ def commit_changes(report_type: str, phrase: str):
 
 # --- Cycle gating helpers ---
 def get_last_cycle_start():
-    # 1. Find latest plan file by creation time
     files = [os.path.join(PLANS_DIR, f) for f in os.listdir(PLANS_DIR) if f.startswith("plan_") and f.endswith(".json")]
     if not files:
         return None
     latest_file = max(files, key=os.path.getctime)
-
-    # 2. Load JSON and find minimum "date"
     with open(latest_file, "r", encoding="utf-8") as f:
         data = json.load(f)
     dates = [datetime.strptime(d["date"], "%Y-%m-%d").date() for d in data.get("days", []) if d.get("date")]
@@ -70,7 +67,7 @@ def can_start_new_cycle(today=None):
     today = today or datetime.today().date()
     last_start = get_last_cycle_start()
     if not last_start:
-        return True  # no previous plans
+        return True
     return today >= last_start + timedelta(days=28)
 
 # --- Main ---
@@ -92,11 +89,9 @@ def main():
 
     elif args.type == "cycle":
         if args.start_date:
-            # Manual override: force cycle
             start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
             msg = f"⚡ Forced new cycle starting {start_date} (manual override)."
         else:
-            # Normal flow with 28-day gating
             if not can_start_new_cycle():
                 msg = f"⏸ Still mid-cycle (last start {get_last_cycle_start()}). No new cycle created."
                 send_telegram(msg)
@@ -114,8 +109,13 @@ def main():
         plan_path = plan_dir / f"plan_{start_date.isoformat()}.json"
         plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
 
-        # Upload to WGER
-        payload = wger_uploads.load_and_normalize(str(plan_path))
+        # Convert to entries for WGER
+        entries = []
+        for day in block.get("days", []):
+            for session in day.get("sessions", []):
+                entries.append(session)
+
+        payload = wger_uploads.load_and_normalize({"entries": entries})
         for session in payload:
             wger_uploads.create_session(session)
 
