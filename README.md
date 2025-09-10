@@ -1,4 +1,4 @@
-# Fitness OAuth Bridge
+# Pete Eebot
 
 This repository contains a set of tools and workflows to consolidate personal fitness data from various sources, including Withings, Apple Health, and wger workout manager. It uses GitHub Actions to automate data fetching, processing, and storage, creating a personal fitness data warehouse.
 
