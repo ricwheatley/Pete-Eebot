@@ -1,10 +1,13 @@
-name: Sync WGER Logs
+name: Sync Wger
 
 on:
   schedule:
     - cron: "0 2 * * *"   # 03:00 UK in summer
     - cron: "0 3 * * *"   # 03:00 UK in winter
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   wger-sync:
@@ -16,12 +19,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install requests
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Sync WGER Logs (past 7 days)
         run: python integrations/wger/sync_wger_logs.py
         env:
           WGER_API_KEY: ${{ secrets.WGER_API_KEY }}
+          PYTHONPATH: .
 
       - name: Commit results
         run: |
