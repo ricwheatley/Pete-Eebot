@@ -15,14 +15,16 @@ def build_daily_narrative(metrics: dict) -> str:
 
     tags = set(["#Motivation"])  # default fallback
 
-    heading = f"🌞💪 Daily Sweat Sermon | {phrase_for(['#Motivation'])}"
+    heading = f"🌞💪 Daily Sweat Sermon | {phrase_for(tags=['#Motivation'])}"
     insights = []
 
     # Strength summary
     if "strength" in data:
         total_volume = sum(ex["volume_kg"] for ex in data["strength"])
         top_lift = max(data["strength"], key=lambda x: x["volume_kg"])
-        insights.append(f"Strength totalled {int(total_volume)}kg lifted, led by {top_lift['exercise_name']} 🏋️")
+        insights.append(
+            f"Strength totalled {int(total_volume)}kg lifted, led by {top_lift['exercise_name']} 💪"
+        )
         tags.add(f"#{top_lift['category']}")
         if any(ex.get("pr") for ex in data["strength"]):
             tags.add("#PR")
@@ -33,7 +35,7 @@ def build_daily_narrative(metrics: dict) -> str:
         dist = data["activity"].get("distance_km")
         mins = data["activity"].get("exercise_minutes")
         if steps:
-            insights.append(f"You walked {steps:,} steps 🚶")
+            insights.append(f"You walked {steps:,} steps 🚶‍♂️")
             tags.add("#Cardio")
             tags.add("#Steps")
         if dist:
@@ -46,7 +48,7 @@ def build_daily_narrative(metrics: dict) -> str:
     if "heart" in data:
         hr = data["heart"].get("resting_bpm")
         if hr:
-            insights.append(f"Resting HR steady at {hr} bpm ❤️")
+            insights.append(f"Resting HR steady at {hr} bpm 🫀")
             tags.add("#Recovery")
 
     # Sleep
@@ -68,16 +70,16 @@ def build_daily_narrative(metrics: dict) -> str:
         ba = data["body_age"].get("body_age_years")
         delta = data["body_age"].get("age_delta_years")
         if ba:
-            insights.append(f"Body age sits at {ba} years (Δ {delta:+.1f}) 📊")
+            insights.append(f"Body age sits at {ba} years ({delta:+.1f}y) 🧬")
             tags.add("#Recovery")
 
     if not insights:
         return f"{heading}\n\nNothing logged yesterday — maybe a rest day 🛌"
 
     # Select a phrase matching yesterday's tags
-    phrase = phrase_for(list(tags))
+    phrase = phrase_for(tags=list(tags))
 
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 2))]
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
     return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
 
 
@@ -90,44 +92,52 @@ def build_weekly_narrative(metrics: dict) -> str:
     last_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
     week_data = [days[d] for d in last_week if d in days]
 
-    heading = f"📅 Weekly Grind Recap | {phrase_for(['#Coachism'])}"
+    heading = f"🌟 Weekly Grind Recap | {phrase_for(tags=['#Coachism'])}"
     insights = []
 
     # Strength totals
     total_volume = sum(
-        ex["volume_kg"] for day in week_data for ex in day.get("strength", [])
+        ex["volume_kg"]
+        for day in week_data
+        for ex in day.get("strength", [])
     )
     if total_volume:
         insights.append(f"Weekly strength volume hit {int(total_volume)}kg 🏋️")
 
     # Cardio totals
-    total_km = sum(day.get("activity", {}).get("distance_km", 0) or 0 for day in week_data)
+    total_km = sum(
+        day.get("activity", {}).get("distance_km", 0)
+        for day in week_data
+    )
     if total_km:
-        insights.append(f"Cardio covered {round(total_km, 1)} km 🌍")
+        insights.append(f"Cardio covered {round(total_km, 1)} km 🏃‍♂️")
 
     # Sleep avg
-    sleep_minutes = [day.get("sleep", {}).get("asleep_minutes", 0) or 0 for day in week_data]
+    sleep_minutes = [
+        day.get("sleep", {}).get("asleep_minutes", 0)
+        for day in week_data
+    ]
     if sleep_minutes:
-        avg_sleep = round(sum(sleep_minutes) / len([s for s in sleep_minutes if s]), 1)
-        insights.append(f"Averaged {avg_sleep/60:.1f} hrs sleep 😴")
+        avg_sleep = round(sum(sleep_minutes) / len(sleep_minutes) / 60, 1)
+        insights.append(f"Averaged {avg_sleep} hrs sleep 🛌")
 
     if not insights:
         return heading + "\n\nQuiet week logged — recovery matters too."
 
-    phrase = phrase_for(["#Motivation"])
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 2))]
+    phrase = phrase_for(tags=["#Motivation"])
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
     return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
 
 
 def build_cycle_narrative(metrics: dict) -> str:
     days = metrics.get("days", {})
     if not days:
-        return "No logs found for last cycle. 🛌"
+        return "No logs found for last cycle. 💤"
 
     all_dates = sorted(days.keys())
     cycle_data = [days[d] for d in all_dates[-28:]]  # assume 4-week cycle
 
-    heading = f"🔥 Training Cycle Reflections | {phrase_for(['#Chaotic'])}"
+    heading = f"🔥 Training Cycle Reflections | {phrase_for(tags=['#Chaotic'])}"
     insights = []
 
     # Strength PRs in cycle
@@ -141,19 +151,24 @@ def build_cycle_narrative(metrics: dict) -> str:
 
     # Volume total
     total_volume = sum(
-        ex["volume_kg"] for day in cycle_data for ex in day.get("strength", [])
+        ex["volume_kg"]
+        for day in cycle_data
+        for ex in day.get("strength", [])
     )
     if total_volume:
-        insights.append(f"Total strength volume this cycle: {int(total_volume)}kg 🏋️")
+        insights.append(f"Total strength volume this cycle: {int(total_volume)}kg 💪")
 
     # Distance total
-    total_km = sum(day.get("activity", {}).get("distance_km", 0) or 0 for day in cycle_data)
+    total_km = sum(
+        day.get("activity", {}).get("distance_km", 0)
+        for day in cycle_data
+    )
     if total_km:
-        insights.append(f"Total cardio distance: {round(total_km, 1)} km 🌍")
+        insights.append(f"Total cardio distance: {round(total_km, 1)} km 🏃")
 
     if not insights:
         return heading + "\n\nCycle was light on data — maybe deload phase?"
 
-    phrase = phrase_for(["#Motivation"])
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 3))]
+    phrase = phrase_for(tags=["#Motivation"])
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 3))]
     return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
