@@ -5,7 +5,7 @@ from integrations.pete_feedback.phrase_picker import random_phrase
 from integrations.pete_feedback.utils import stitch_sentences
 from integrations.wger import plan_next_block, wger_uploads
 
-METRICS_PATH = pathlib.Path("docs/analytics/unified_metrics.json")
+METRICS_PATH = pathlib.Path("knowledge/history.json")
 LOG_PATH = pathlib.Path("summaries/logs/pete_history.log")
 
 WEEK_INTENSITY = {
