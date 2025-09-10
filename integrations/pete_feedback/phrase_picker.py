@@ -1,6 +1,6 @@
 import json, random, pathlib
 
-PHRASES_PATH = pathlib.Path("integrations/pete_feedback/motivational_phrases_tagged.json")
+PHRASES_PATH = pathlib.Path("integrations/pete_feedback/phrases_tagged.json")
 _all_phrases = None
 
 def load_phrases():
