@@ -33,7 +33,7 @@ APPLE_HIST    = pathlib.Path("docs/apple/history.json")
 
 # Output directory (note hyphen per user request)
 OUT_DIR = pathlib.Path("docs-body_age")
-DAY_DIR = OUT_DIR  # per-day JSON files are written directly here (YYYY-MM-DD.json)
+DAY_DIR = OUT_DIR / "days" # per-day JSON files are written directly here (YYYY-MM-DD.json)
 DAILY_PATH = OUT_DIR / "daily.json"
 HIST_PATH  = OUT_DIR / "history.json"
 
