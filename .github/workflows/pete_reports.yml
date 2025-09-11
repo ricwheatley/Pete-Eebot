@@ -35,6 +35,9 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt
 
+      - name: Calculate Body Age
+        run: python integrations/body_age/calculate_body_age.py
+
       - name: Build Knowledge (consolidate Apple, Withings, WGER)
         run: python summaries/build_knowledge.py
 
