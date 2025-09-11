@@ -88,17 +88,6 @@ def refresh_exercises() -> int:
         "id","uuid","name","category",
         "equipment","muscles_primary","muscles_secondary","license","description_html"
     ]
-    with open(EX_CSV, "w", encoding="utf-8", newline="") as cf:
-        w = csv.DictWriter(cf, fieldnames=fieldnames)
-        w.writeheader()
-        for t in tidy:
-            w.writerow({
-                **t,
-                "equipment": "; ".join(t["equipment"]),
-                "muscles_primary": "; ".join(t["muscles_primary"]),
-                "muscles_secondary": "; ".join(t["muscles_secondary"]),
-            })
-    print(f"[wger] Wrote {len(tidy)} rows → {EX_JSON} and {EX_CSV}")
     return len(tidy)
 
 def refresh_simple(endpoint: str, out_file: str) -> int:

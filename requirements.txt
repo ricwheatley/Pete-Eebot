@@ -4,8 +4,5 @@
 # HTTP requests to APIs (Withings, Wger, Telegram)
 requests>=2.31.0
 
-# Data wrangling (for analytics / CSV handling if needed)
-pandas>=2.1.0
-
 # Optional: time zone support for scheduling/analytics
 python-dateutil>=2.8.2

@@ -1,5 +1,6 @@
-import argparse, os, json, pathlib, subprocess, random, pytz
+import argparse, os, json, pathlib, subprocess, random
 from datetime import datetime, date, timedelta
+import requests
 from integrations.pete_feedback import narrative_builder as nb
 from integrations.pete_feedback.phrase_picker import random_phrase
 from integrations.pete_feedback.utils import stitch_sentences
@@ -7,6 +8,7 @@ from integrations.wger import plan_next_block, wger_uploads
 
 METRICS_PATH = pathlib.Path("knowledge/history.json")
 LOG_PATH = pathlib.Path("summaries/logs/pete_history.log")
+PLANS_DIR = "integrations/wger/plans"
 
 WEEK_INTENSITY = {
     1: {"name": "light"},
@@ -16,36 +18,38 @@ WEEK_INTENSITY = {
 }
 
 def load_metrics():
-    if METRICS_PATH.exists():
-        return json.loads(METRICS_PATH.read_text())
-    return {}
-
+    return json.loads(METRICS_PATH.read_text()) if METRICS_PATH.exists() else {}
 
 def send_telegram(msg: str):
-    token = os.getenv("TELEGRAM_TOKEN")
+    token   = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         raise RuntimeError("Missing TELEGRAM_TOKEN or TELEGRAM_CHAT_ID")
-    subprocess.run([
-        "curl", "-s", "-X", "POST",
+    r = requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
-        "-d", f"chat_id={chat_id}",
-        "-d", f"text={msg}"
-    ], check=True)
-
+        json={"chat_id": chat_id, "text": msg},
+        timeout=20,
+    )
+    r.raise_for_status()
 
 def log_message(msg: str):
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(f"[{datetime.utcnow().isoformat()}] {msg}\n")
 
-
 def commit_changes(report_type: str, phrase: str):
     subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
     subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-
-    subprocess.run(["git", "add", "summaries", "knowledge", "integrations/wger/logs", "docs/analytics", "integrations/wger/plans"], check=False)
-
+    # Add only the relevant output paths
+    paths = [
+        "summaries",
+        "knowledge/history.json",
+        "integrations/wger/plans",
+        "docs/analytics",
+        "docs/wger",
+        "docs/withings",
+    ]
+    subprocess.run(["git", "add", *paths], check=False)
     msg = f"Pete log update ({report_type}) | {phrase} ({datetime.utcnow().strftime('%Y-%m-%d')})"
     try:
         subprocess.run(["git", "commit", "-m", msg], check=True)
@@ -53,81 +57,69 @@ def commit_changes(report_type: str, phrase: str):
     except subprocess.CalledProcessError:
         print("No changes to commit.")
 
+def get_last_cycle_start():
+    files = [os.path.join(PLANS_DIR, f) for f in os.listdir(PLANS_DIR) if f.startswith("plan_") and f.endswith(".json")]
+    if not files:
+        return None
+    latest = max(files, key=os.path.getctime)
+    with open(latest, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    dates = [datetime.strptime(d["date"], "%Y-%m-%d").date() for d in data.get("days", []) if d.get("date")]
+    return min(dates) if dates else None
+
+def can_start_new_cycle(today=None):
+    today = today or datetime.today().date()
+    last = get_last_cycle_start()
+    return True if not last else today >= last + timedelta(days=28)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--type", choices=["daily", "weekly", "cycle", "rant"], required=True)
+    parser.add_argument("--type", choices=["daily","weekly","cycle","random"], required=True)
+    parser.add_argument("--start-date", type=str)
     args = parser.parse_args()
 
     metrics = load_metrics()
 
     if args.type == "daily":
-        # Use local timezone (adjust to yours)
-        tz = pytz.timezone("Europe/London")
-        yesterday = (datetime.now(tz) - timedelta(days=1)).date().isoformat()
-
-        days = metrics.get("days", {})
-        day_data = days.get(yesterday)
-
-        if not day_data:
-            # Fall back to the latest available date
-            if days:
-                latest_date = max(days.keys())
-                day_data = days[latest_date]
-                msg = f"No log found for yesterday ({yesterday}) — showing latest from {latest_date}.\n\n"
-                msg += nb.build_daily_narrative({"days": {latest_date: day_data}})
-            else:
-                msg = "No logs found at all! Did you rest? 😴"
-        else:
-            msg = nb.build_daily_narrative({"days": {yesterday: day_data}})
-
+        msg = nb.build_daily_narrative(metrics)
         phrase = random_phrase(mode="serious")
     elif args.type == "weekly":
         msg = nb.build_weekly_narrative(metrics)
         phrase = random_phrase(kind="coachism")
     elif args.type == "cycle":
-        # 1. Build next 4-week block
-        start_date = date.today()
+        if args.start_date:
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()
+            msg = f"⚡ Forced new cycle starting {start_date} (manual override)."
+        else:
+            if not can_start_new_cycle():
+                msg = f"⏸ Still mid-cycle (last start {get_last_cycle_start()}). No new cycle created."
+                send_telegram(msg)
+                log_message(msg)
+                return
+            start_date = date.today()
+            msg = f"✅ New cycle created | Start: {start_date}"
+        # Build block and send to wger
         block = plan_next_block.build_block(start_date)
-
-        # 2. Save JSON plan
-        plan_dir = pathlib.Path("integrations/wger/plans")
+        plan_dir = pathlib.Path(PLANS_DIR)
         plan_dir.mkdir(parents=True, exist_ok=True)
         plan_path = plan_dir / f"plan_{start_date.isoformat()}.json"
         plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
-
-        # 3. Upload to WGER
-        payload = wger_uploads.load_and_normalize(str(plan_path))
+        entries = [session for day in block.get("days", []) for session in day.get("sessions", [])]
+        payload = wger_uploads.load_and_normalize({"entries": entries})
         for session in payload:
             wger_uploads.create_session(session)
-
-        # 4. Summarise for Telegram
-        week1 = [d for d in block["days"] if d["week"] == 1]
-        summary_lines = []
-        for day in week1:
-            weights = next((s for s in day["sessions"] if s["type"] == "weights"), None)
-            if weights:
-                main = weights["exercises"][0]
-                summary_lines.append(
-                    f"{day['day']}: {main['name']} {main['sets']}×{main['reps']} ({main['intensity']})"
-                )
-
-        msg = "📅 New 4-Week Training Block Uploaded!\n\n"
-        msg += f"Start date: {start_date}\n"
-        msg += f"Cycle: {WEEK_INTENSITY[1]['name']} → {WEEK_INTENSITY[4]['name']}\n\n"
-        msg += "Week 1 Main Lifts:\n" + "\n".join(summary_lines)
-        msg += "\n\n🔥 Blaze classes are booked in as usual."
-
         phrase = random_phrase(mode="serious")
-    elif args.type == "rant":
-        sprinkles = [random_phrase(mode="chaotic") for _ in range(random.randint(3, 6))]
-        msg = "🔥 Random Pete Rant 🔥\n\n" + stitch_sentences([], sprinkles, short_mode=random.random() < 0.2)
+    elif args.type == "random":
+        greetings = random.choice([
+            "Ey up Ric 👊 got your new block sorted.",
+            "Alright mate, fresh 4-week cycle coming in.",
+            "New block time 🔥 here’s what’s on deck:",
+        ])
+        msg = greetings
         phrase = random_phrase(mode="chaotic")
-
     send_telegram(msg)
     log_message(msg)
     commit_changes(args.type, phrase)
-
 
 if __name__ == "__main__":
     main()

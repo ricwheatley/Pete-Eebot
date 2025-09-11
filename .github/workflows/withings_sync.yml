@@ -1,214 +1,55 @@
-name: Sync Withings
+name: Sync Withings (JSON only)
 
 on:
   schedule:
-    - cron: "0 3 * * *"   # 03:00 UTC daily (Europe/London date handled in code)
-  workflow_dispatch:
+    - cron: "0 3 * * *"  # daily at 03:00 UTC – script determines yesterday in Europe/London
+  workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: withings-sync
+  cancel-in-progress: false
+
 jobs:
-  measures:
+  withings:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests pynacl
+          pip install -r requirements.txt
 
-      - name: Fetch previous-day measures, rotate token, write CSV + JSON
+      - name: Run Withings sync (JSON only)
         env:
           WITHINGS_CLIENT_ID:     ${{ vars.WITHINGS_CLIENT_ID }}
           WITHINGS_CLIENT_SECRET: ${{ secrets.WITHINGS_CLIENT_SECRET }}
           WITHINGS_REDIRECT_URI:  ${{ vars.WITHINGS_REDIRECT_URI }}
           WITHINGS_REFRESH_TOKEN: ${{ secrets.WITHINGS_REFRESH_TOKEN }}
-
-          WEIGHT_CSV: knowledge/weight_log.csv
-
-          REPO_FULL_NAME: ${{ github.repository }}
-          GH_SECRETS_TOKEN: ${{ secrets.GH_SECRETS_TOKEN }}
         run: |
-          python - <<'PY'
-          from __future__ import annotations
-          import os, csv, json, requests, sys, base64
-          from pathlib import Path
-          from datetime import datetime, timedelta, timezone
-          from zoneinfo import ZoneInfo
-          from nacl import public
+          python integrations/withings/withings_sync.py
 
-          TOKEN_URL   = "https://wbsapi.withings.net/v2/oauth2"
-          MEASURE_URL = "https://wbsapi.withings.net/measure"
-          SECRET_NAME = "WITHINGS_REFRESH_TOKEN"
-
-          def ensure_csv(path: str, header: list[str]) -> None:
-              p = Path(path)
-              p.parent.mkdir(parents=True, exist_ok=True)
-              if not p.exists():
-                  with p.open("w", newline="", encoding="utf-8") as f:
-                      csv.writer(f).writerow(header)
-
-          def redact_token(tok: str | None) -> str | None:
-              if not tok or not isinstance(tok, str): return tok
-              return tok[:4] + "..." + tok[-4:] if len(tok) > 8 else "****"
-
-          def redact_body(obj):
-              if isinstance(obj, dict):
-                  return {k:(redact_token(v) if k.lower() in {"access_token","refresh_token","token"} and isinstance(v,str)
-                             else redact_body(v) if isinstance(v,(dict,list)) else v)
-                          for k,v in obj.items()}
-              if isinstance(obj, list):
-                  return [redact_body(x) for x in obj]
-              return obj
-
-          def write_redacted(path: Path, status_code: int | None, body) -> None:
-              path.parent.mkdir(parents=True, exist_ok=True)
-              safe = {"status_code": status_code, "body": redact_body(body)}
-              path.write_text(json.dumps(safe, indent=2), encoding="utf-8")
-
-          def gh_headers():
-              tok = os.environ.get("GH_SECRETS_TOKEN")
-              if not tok:
-                  raise RuntimeError("GH_SECRETS_TOKEN not set")
-              return {"Authorization": f"Bearer {tok}", "Accept":"application/vnd.github+json"}
-
-          def get_public_key(owner_repo: str) -> dict:
-              r = requests.get(f"https://api.github.com/repos/{owner_repo}/actions/secrets/public-key",
-                               headers=gh_headers(), timeout=30)
-              r.raise_for_status()
-              return r.json()
-
-          def seal_with_public_key(public_key_b64: str, value: str) -> str:
-              pk = public.PublicKey(base64.b64decode(public_key_b64))
-              sealed = public.SealedBox(pk).encrypt(value.encode())
-              return base64.b64encode(sealed).decode()
-
-          def put_secret(owner_repo: str, secret_name: str, ciphertext: str, key_id: str) -> None:
-              url = f"https://api.github.com/repos/{owner_repo}/actions/secrets/{secret_name}"
-              payload = {"encrypted_value": ciphertext, "key_id": key_id}
-              r = requests.put(url, headers=gh_headers(), json=payload, timeout=30)
-              if r.status_code not in (201,204):
-                  raise RuntimeError(f"Failed to update secret: {r.status_code} {r.text}")
-
-          # Date window = yesterday in Europe/London
-          london = ZoneInfo("Europe/London")
-          now_ldn = datetime.now(london)
-          prev_date = now_ldn.date() - timedelta(days=1)
-          start_ldn = datetime(prev_date.year, prev_date.month, prev_date.day, tzinfo=london)
-          end_ldn   = start_ldn + timedelta(days=1) - timedelta(seconds=1)
-          start_utc, end_utc = int(start_ldn.astimezone(timezone.utc).timestamp()), int(end_ldn.astimezone(timezone.utc).timestamp())
-
-          weight_csv = os.environ.get("WEIGHT_CSV", "knowledge/weight_log.csv")
-
-          # Base dirs under docs/withings
-          base = Path("docs/withings")
-          raw_dir   = base/"raw"
-          days_dir  = base/"days"
-          daily_p   = base/"daily.json"
-          hist_p    = base/"history.json"
-          raw_dir.mkdir(parents=True, exist_ok=True)
-          days_dir.mkdir(parents=True, exist_ok=True)
-
-          # 1) Refresh token
-          tok_resp = requests.post(TOKEN_URL, data={
-              "action":"requesttoken",
-              "grant_type":"refresh_token",
-              "client_id":os.environ["WITHINGS_CLIENT_ID"],
-              "client_secret":os.environ["WITHINGS_CLIENT_SECRET"],
-              "refresh_token":os.environ["WITHINGS_REFRESH_TOKEN"]
-          }, timeout=45)
-          try: tok_json = tok_resp.json()
-          except Exception: tok_json = {"non_json": tok_resp.text}
-          write_redacted(raw_dir/"withings_token.json", tok_resp.status_code, tok_json)
-          if tok_json.get("status")!=0: sys.exit("Token refresh failed")
-          body = tok_json["body"]; access=body["access_token"]; new_refresh=body["refresh_token"]
-
-          # Rotate secret
-          pk = get_public_key(os.environ["REPO_FULL_NAME"])
-          put_secret(os.environ["REPO_FULL_NAME"], SECRET_NAME,
-                     seal_with_public_key(pk["key"], new_refresh), pk["key_id"])
-
-          # 2) Fetch measures
-          meas_resp = requests.get(MEASURE_URL, headers={"Authorization":f"Bearer {access}"}, params={
-              "action":"getmeas","meastypes":"1,6,76,77","category":1,
-              "startdate":start_utc,"enddate":end_utc
-          }, timeout=45)
-          try: meas_json = meas_resp.json()
-          except Exception: meas_json = {"non_json":meas_resp.text}
-          write_redacted(raw_dir/f"withings_measures_{prev_date}.json", meas_resp.status_code, meas_json)
-
-          weight_by_day={}
-          if meas_json.get("status")==0:
-              for grp in meas_json.get("body",{}).get("measuregrps",[]):
-                  dt = datetime.fromtimestamp(grp["date"], tz=timezone.utc).astimezone(london)
-                  d  = dt.date().isoformat()
-                  def val(t): 
-                      for m in grp.get("measures",[]): 
-                          if m.get("type")==t: return m["value"]*(10**m["unit"])
-                  weight_by_day[d] = {
-                      "date": d,
-                      "weight_kg": f"{val(1):.2f}" if val(1) is not None else "",
-                      "body_fat_pct": f"{val(6):.2f}" if val(6) is not None else "",
-                      "muscle_mass_kg": f"{val(76):.2f}" if val(76) is not None else "",
-                      "water_pct": f"{val(77):.2f}" if val(77) is not None else "",
-                      "source":"withings","notes":""
-                  }
-
-          # CSV upsert
-          w_hdr=["date","weight_kg","body_fat_pct","muscle_mass_kg","water_pct","source","notes"]
-          ensure_csv(weight_csv, w_hdr)
-          existing={}
-          try:
-              with open(weight_csv,"r",newline="",encoding="utf-8") as f:
-                  for r in csv.DictReader(f): existing[r["date"]]=r
-          except FileNotFoundError: pass
-
-          d=prev_date.isoformat()
-          row=weight_by_day.get(d, existing.get(d, {"date":d,"weight_kg":"","body_fat_pct":"","muscle_mass_kg":"","water_pct":"","source":"withings","notes":""}))
-          existing[d]=row
-          with open(weight_csv,"w",newline="",encoding="utf-8") as f:
-              w=csv.DictWriter(f,fieldnames=w_hdr); w.writeheader()
-              for k in sorted(existing): w.writerow({h:existing[k].get(h,"") for h in w_hdr})
-
-          # Per-day + daily + history JSON
-          day_json = {
-              "date": row["date"],
-              "weight_kg": row["weight_kg"] or None,
-              "body_fat_pct": row["body_fat_pct"] or None,
-              "muscle_mass_kg": row["muscle_mass_kg"] or None,
-              "water_pct": row["water_pct"] or None,
-              "source":"withings",
-              "is_partial_weight": not bool(row["weight_kg"])
-          }
-          (days_dir/f"{d}.json").write_text(json.dumps(day_json,indent=2),encoding="utf-8")
-          daily_p.write_text(json.dumps(day_json,indent=2),encoding="utf-8")
-
-          history=[]
-          if hist_p.exists():
-              try: history=json.loads(hist_p.read_text(encoding="utf-8"))
-              except: history=[]
-          history=[h for h in history if h.get("date")!=d]; history.append(day_json)
-          history=sorted(history,key=lambda x:x.get("date",""),reverse=True)[:90]
-          hist_p.write_text(json.dumps(history,indent=2),encoding="utf-8")
-
-          print(json.dumps({"prev_day":d,"csv":weight_csv,"json_dir":str(days_dir)}))
-          PY
-
-      - name: Commit updates (CSV + Withings JSON)
+      - name: Commit JSON updates
         run: |
-          if [[ -n "$(git status --porcelain knowledge/*.csv docs/withings 2>/dev/null || true)" ]]; then
-            git config user.name "github-actions[bot]"
+          if [[ -n "$(git status --porcelain docs/withings 2>/dev/null || true)" ]]; then
+            git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add knowledge/*.csv docs/withings
-            git commit -m "chore: withings measures sync (prev Europe/London day)"
+            git add docs/withings
+            git commit -m "chore: withings measures sync (prev Europe/London day) – JSON only"
             git push
           else
             echo "No changes to commit."

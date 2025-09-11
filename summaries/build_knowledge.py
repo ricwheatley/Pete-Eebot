@@ -1,41 +1,35 @@
-import json
-import pathlib
-import csv
+import json, pathlib, csv
 from datetime import datetime, timedelta
 
 # Paths
-DOCS_DIR = pathlib.Path("docs")
+DOCS_DIR   = pathlib.Path("docs")
 KNOWLEDGE_DIR = pathlib.Path("knowledge")
-DAILY_DIR = KNOWLEDGE_DIR / "daily"
+DAILY_DIR  = KNOWLEDGE_DIR / "daily"
 HISTORY_PATH = KNOWLEDGE_DIR / "history.json"
-EXERCISES_CSV = pathlib.Path("integrations/wger/catalog/exercises_en.csv")
+EXERCISES_JSON = pathlib.Path("integrations/wger/catalog/exercises_en.json")
 
+def load_json(path):
+    return json.loads(path.read_text()) if path.exists() else {}
 
-def load_json(path: pathlib.Path):
-    if path.exists():
-        return json.loads(path.read_text())
-    return {}
-
-
-def save_json(path: pathlib.Path, data: dict):
+def save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
 
-
 def load_exercise_catalog():
     catalog = {}
-    if not EXERCISES_CSV.exists():
+    if not EXERCISES_JSON.exists():
         return catalog
-    with open(EXERCISES_CSV, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            try:
-                catalog[int(row["id"])] = {
-                    "name": row["name"],
-                    "category": row["category"]
+    try:
+        data = json.loads(EXERCISES_JSON.read_text(encoding="utf-8"))
+        for row in data:
+            ex_id = row.get("id")
+            if isinstance(ex_id, int):
+                catalog[int(ex_id)] = {
+                    "name": row.get("name"),
+                    "category": row.get("category")
                 }
-            except ValueError:
-                continue
+    except Exception:
+        pass
     return catalog
 
 

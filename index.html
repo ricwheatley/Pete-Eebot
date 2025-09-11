@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>Withings OAuth Redirect</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
   <style>
     :root { color-scheme: light dark; }
     body {
@@ -102,27 +103,21 @@
       }
     }
 
-    async function autoCopy() {
-      if (!code) {
-        box.value = '';
-        setInfo('No ?code=... found in the URL. Did you approve the app?');
-        setStatus('');
-        return;
+      async function autoCopy() {
+        if (!code) { /* existing no-code handling */ return; }
+        box.value = code;
+        setInfo(`Code length: <strong>${code.length}</strong> characters`);
+        const ok = await copy(code);
+        setStatus(ok ? 'Auto-copied to clipboard ✔' : 'Auto-copy failed, tap the button to copy manually.');
+        history.replaceState(null, "", location.pathname);  // remove ?code=... from the URL
       }
-      box.value = code;
-      setInfo(`Code length: <strong>${code.length}</strong> characters`);
-      const ok = await copy(code);
-      setStatus(ok ? 'Auto-copied to clipboard ✔' : 'Auto-copy failed, tap the button to copy manually.');
-    }
-
-    btn.addEventListener('click', async () => {
-      if (!box.value) { setStatus('Nothing to copy.'); return; }
-      const ok = await copy(box.value);
-      setStatus(ok ? 'Copied to clipboard ✔' : 'Copy failed, please select and copy manually.');
-    });
-
-    // Run on load
-    autoCopy();
+      btn.addEventListener('click', async () => {
+        if (!box.value) { setStatus('Nothing to copy.'); return; }
+        const ok = await copy(box.value);
+        setStatus(ok ? 'Copied to clipboard ✔' : 'Copy failed, please select and copy manually.');
+        history.replaceState(null, "", location.pathname);
+      });
+      autoCopy();
   </script>
 </body>
 </html>
