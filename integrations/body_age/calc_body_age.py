@@ -1,9 +1,42 @@
-import json, pathlib, csv
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
+"""
+Compute a composite "body age" metric from recent Withings and Apple Health histories and
+persist the results as JSON files.  This version does not write any CSV logs and stores
+per-day outputs under a dedicated directory `docs-body_age`.
+
+Inputs:
+  docs/withings/history.json    – rolling history of body composition from Withings
+  docs/apple/history.json       – rolling history of activity/heart/sleep from Apple Health
+
+Outputs (created under docs-body_age/):
+  <YYYY-MM-DD>.json  – per-day body age record
+  daily.json         – latest record, for quick access
+  history.json       – list of all records (max 180 days)
+
+The body-age calculation uses 7-day windows for averaging weight, body fat, steps, exercise minutes,
+calories (active/rest), heart rate, and sleep.  It then combines cardiorespiratory fitness, body
+composition, activity, and recovery into a composite score, from which a "body age" is derived.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+# Input histories
 WITHINGS_HIST = pathlib.Path("docs/withings/history.json")
 APPLE_HIST    = pathlib.Path("docs/apple/history.json")
-OUT_DIR       = pathlib.Path("docs/analytics")
-CSV_PATH      = pathlib.Path("knowledge/body_age_log.csv")
+
+# Output directory (note hyphen per user request)
+OUT_DIR = pathlib.Path("docs-body_age")
+DAY_DIR = OUT_DIR  # per-day JSON files are written directly here (YYYY-MM-DD.json)
+DAILY_PATH = OUT_DIR / "daily.json"
+HIST_PATH  = OUT_DIR / "history.json"
+
 
 def load_hist(p: pathlib.Path):
     if not p.exists():
@@ -13,28 +46,32 @@ def load_hist(p: pathlib.Path):
     except Exception:
         return []
 
-def main():
+
+def to_float(v: Any) -> Optional[float]:
+    try:
+        if v in (None, ""):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def main() -> None:
     wh = load_hist(WITHINGS_HIST)
     ah = load_hist(APPLE_HIST)
     if not wh or not ah:
         print("Missing input data")
         return
 
+    # Map by date for quick lookup
     wm = {r.get("date"): r for r in wh if r.get("date")}
     am = {r.get("date"): r for r in ah if r.get("date")}
     dates = sorted(set(wm) | set(am))
     if not dates:
         return
-    dates = dates[-7:]
+    dates = dates[-7:]  # last 7 days window
 
-    def to_float(v):
-        try:
-            if v in (None, ""):
-                return None
-            return float(v)
-        except Exception:
-            return None
-
+    # Helper: average a function over last 7 days, ignoring None
     def avg_from(fn):
         vals = [to_float(fn(d)) for d in dates]
         vals = [v for v in vals if v is not None]
@@ -53,7 +90,10 @@ def main():
     hravg   = avg_from(lambda d: am.get(d, {}).get("hr_avg"))
     sleepm  = avg_from(lambda d: (am.get(d, {}).get("sleep_minutes") or {}).get("asleep"))
 
+    # Chronological age assumption; customise as needed
     chrono_age = 44
+
+    # Cardiorespiratory fitness (CRF) via VO2max estimation
     vo2 = None
     if rhr is not None:
         vo2 = 38 - 0.15 * (chrono_age - 40) - 0.15 * ((rhr or 60) - 60) + 0.01 * (exmin or 0)
@@ -61,6 +101,7 @@ def main():
         vo2 = 35
     crf = max(0, min(100, ((vo2 - 20) / (60 - 20)) * 100))
 
+    # Body composition score from body fat percentage
     if bodyfat is None:
         body_comp = 50
     elif bodyfat <= 15:
@@ -70,10 +111,12 @@ def main():
     else:
         body_comp = (30 - bodyfat) / (30 - 15) * 100
 
+    # Activity score from steps and exercise minutes
     steps_score = 0 if steps is None else max(0, min(100, (steps / 12000) * 100))
     ex_score    = 0 if exmin is None else max(0, min(100, (exmin / 30) * 100))
     activity    = 0.6 * steps_score + 0.4 * ex_score
 
+    # Recovery score from sleep and resting HR
     if sleepm is None:
         sleep_score = 50
     else:
@@ -95,6 +138,7 @@ def main():
 
     recovery = 0.66 * sleep_score + 0.34 * rhr_score
 
+    # Composite score and body age
     composite = 0.40 * crf + 0.25 * body_comp + 0.20 * activity + 0.15 * recovery
     body_age = chrono_age - 0.2 * (composite - 50)
     cap_min = chrono_age - 10
@@ -104,7 +148,7 @@ def main():
         cap = True
     age_delta = body_age - chrono_age
 
-    out = {
+    out: Dict[str, Any] = {
         "date": dates[-1],
         "inputs_window_days": 7,
         "subscores": {
@@ -116,48 +160,38 @@ def main():
         "composite": round(composite, 1),
         "body_age_years": round(body_age, 1),
         "age_delta_years": round(age_delta, 1),
-        "assumptions": {"used_vo2max_direct": False, "cap_minus_10_applied": cap},
+        "assumptions": {
+            "used_vo2max_direct": False,
+            "cap_minus_10_applied": cap,
+        },
     }
 
+    # Ensure output directory exists
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "body_age.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
 
-    hist_p = OUT_DIR / "history.json"
-    try:
-        hist = json.loads(hist_p.read_text()) if hist_p.exists() else []
-    except Exception:
-        hist = []
-    hist = [h for h in hist if h.get("date") != out["date"]]
-    hist.append(out)
-    hist = sorted(hist, key=lambda x: x["date"])[-180:]
-    hist_p.write_text(json.dumps(hist, indent=2), encoding="utf-8")
+    # Write per-day JSON file
+    (DAY_DIR / f"{out['date']}.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
 
-    hdr = ["date", "body_age_years", "age_delta_years", "composite", "crf", "body_comp", "activity", "recovery"]
-    CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-    rows = {}
-    try:
-        with open(CSV_PATH, "r", newline="", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                rows[r["date"]] = r
-    except FileNotFoundError:
-        pass
-    rows[out["date"]] = {
-        "date": out["date"],
-        "body_age_years": out["body_age_years"],
-        "age_delta_years": out["age_delta_years"],
-        "composite": out["composite"],
-        "crf": out["subscores"]["crf"],
-        "body_comp": out["subscores"]["body_comp"],
-        "activity": out["subscores"]["activity"],
-        "recovery": out["subscores"]["recovery"],
-    }
-    with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=hdr)
-        w.writeheader()
-        for k in sorted(rows):
-            w.writerow(rows[k])
+    # Write daily.json for convenience
+    DAILY_PATH.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
+    # Append/update history
+    history = []  # list of body-age entries
+    if HIST_PATH.exists():
+        try:
+            history = json.loads(HIST_PATH.read_text())
+        except Exception:
+            history = []
+    # Remove any existing entry for this date
+    history = [h for h in history if h.get("date") != out["date"]]
+    history.append(out)
+    # Keep the last 180 days
+    history = sorted(history, key=lambda x: x.get("date"))[-180:]
+    HIST_PATH.write_text(json.dumps(history, indent=2), encoding="utf-8")
+
+    # Print JSON to stdout for CI logs
     print(json.dumps(out, indent=2))
+
 
 if __name__ == "__main__":
     main()

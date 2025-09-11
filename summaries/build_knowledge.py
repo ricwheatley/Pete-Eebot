@@ -1,19 +1,30 @@
-import json, pathlib, csv
+import json
+import pathlib
 from datetime import datetime, timedelta
 
 # Paths
-DOCS_DIR   = pathlib.Path("docs")
+DOCS_DIR = pathlib.Path("docs")
 KNOWLEDGE_DIR = pathlib.Path("knowledge")
-DAILY_DIR  = KNOWLEDGE_DIR / "daily"
+DAILY_DIR = KNOWLEDGE_DIR / "daily"
 HISTORY_PATH = KNOWLEDGE_DIR / "history.json"
+
+# Use JSON catalog instead of CSV
 EXERCISES_JSON = pathlib.Path("integrations/wger/catalog/exercises_en.json")
 
-def load_json(path):
-    return json.loads(path.read_text()) if path.exists() else {}
+# Body age output directory
+BODY_AGE_DIR = pathlib.Path("docs-body_age")
 
-def save_json(path, data):
+
+def load_json(path: pathlib.Path):
+    if path.exists():
+        return json.loads(path.read_text())
+    return {}
+
+
+def save_json(path: pathlib.Path, data: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
+
 
 def load_exercise_catalog():
     catalog = {}
@@ -22,23 +33,23 @@ def load_exercise_catalog():
     try:
         data = json.loads(EXERCISES_JSON.read_text(encoding="utf-8"))
         for row in data:
-            ex_id = row.get("id")
-            if isinstance(ex_id, int):
-                catalog[int(ex_id)] = {
-                    "name": row.get("name"),
-                    "category": row.get("category")
-                }
+            try:
+                ex_id = int(row.get("id"))
+            except (TypeError, ValueError):
+                continue
+            catalog[ex_id] = {
+                "name": row.get("name"),
+                "category": row.get("category"),
+            }
     except Exception:
         pass
     return catalog
 
 
 def parse_wger_day(date: str, catalog: dict) -> list:
-    """Parse WGER raw JSON logs into grouped exercise summaries."""
     path = DOCS_DIR / "wger" / "days" / f"{date}.json"
     if not path.exists():
         return []
-
     raw_logs = load_json(path)
     grouped = {}
     for entry in raw_logs:
@@ -47,7 +58,6 @@ def parse_wger_day(date: str, catalog: dict) -> list:
             continue
         reps = int(float(entry.get("repetitions", 0)))
         weight = float(entry.get("weight") or 0)
-
         if ex_id not in grouped:
             grouped[ex_id] = {
                 "exercise_id": ex_id,
@@ -56,14 +66,13 @@ def parse_wger_day(date: str, catalog: dict) -> list:
                 "sets": 0,
                 "reps": [],
                 "weights_kg": [],
-                "volume_kg": 0
+                "volume_kg": 0,
             }
         g = grouped[ex_id]
         g["sets"] += 1
         g["reps"].append(reps)
         g["weights_kg"].append(weight)
         g["volume_kg"] += reps * weight
-
     return list(grouped.values())
 
 
@@ -76,7 +85,7 @@ def parse_withings_day(date: str) -> dict:
         "weight_kg": float(raw.get("weight_kg")) if raw.get("weight_kg") else None,
         "body_fat_pct": float(raw.get("body_fat_pct")) if raw.get("body_fat_pct") else None,
         "muscle_mass_kg": float(raw.get("muscle_mass_kg")) if raw.get("muscle_mass_kg") else None,
-        "water_pct": float(raw.get("water_pct")) if raw.get("water_pct") else None
+        "water_pct": float(raw.get("water_pct")) if raw.get("water_pct") else None,
     }
 
 
@@ -94,14 +103,14 @@ def parse_apple_day(date: str) -> dict:
             "calories": {
                 "active": raw.get("calories_active"),
                 "resting": raw.get("calories_resting"),
-                "total": raw.get("calories_total")
-            }
+                "total": raw.get("calories_total"),
+            },
         },
         "heart": {
             "resting_bpm": raw.get("hr_resting"),
             "avg_bpm": raw.get("hr_avg"),
             "min_bpm": raw.get("hr_min"),
-            "max_bpm": raw.get("hr_max")
+            "max_bpm": raw.get("hr_max"),
         },
         "sleep": {
             "total_minutes": raw.get("sleep_minutes", {}).get("in_bed"),
@@ -109,44 +118,52 @@ def parse_apple_day(date: str) -> dict:
             "rem_minutes": raw.get("sleep_minutes", {}).get("rem"),
             "deep_minutes": raw.get("sleep_minutes", {}).get("deep"),
             "core_minutes": raw.get("sleep_minutes", {}).get("core"),
-            "awake_minutes": raw.get("sleep_minutes", {}).get("awake")
-        }
+            "awake_minutes": raw.get("sleep_minutes", {}).get("awake"),
+        },
     }
 
 
 def parse_body_age_day(date: str) -> dict:
-    path = DOCS_DIR / "analytics" / "body_age.json"
-    if not path.exists():
-        return {}
-    raw = load_json(path)
-    if raw.get("date") != date:
-        return {}
-    return {
-        "body_age_years": raw.get("body_age_years"),
-        "age_delta_years": raw.get("age_delta_years"),
-        "subscores": raw.get("subscores", {}),
-        "composite": raw.get("composite")
-    }
+    """Parse the body-age for a specific date from the new docs-body_age directory."""
+    # Check per-day file first
+    path = BODY_AGE_DIR / f"{date}.json"
+    if path.exists():
+        raw = load_json(path)
+        if raw.get("date") == date:
+            return {
+                "body_age_years": raw.get("body_age_years"),
+                "age_delta_years": raw.get("age_delta_years"),
+                "subscores": raw.get("subscores", {}),
+                "composite": raw.get("composite"),
+            }
+    # Fall back to daily.json if per-day file missing
+    daily = BODY_AGE_DIR / "daily.json"
+    if daily.exists():
+        raw = load_json(daily)
+        if raw.get("date") == date:
+            return {
+                "body_age_years": raw.get("body_age_years"),
+                "age_delta_years": raw.get("age_delta_years"),
+                "subscores": raw.get("subscores", {}),
+                "composite": raw.get("composite"),
+            }
+    return {}
 
 
 def consolidate_day(date: str, catalog: dict) -> dict:
     day_data = {"date": date}
 
-    # WGER workouts → normalised strength list
     strength = parse_wger_day(date, catalog)
     if strength:
         day_data["strength"] = strength
 
-    # Withings → body composition
     body = parse_withings_day(date)
     if body:
         day_data["body"] = body
 
-    # Apple → activity, heart, sleep
     apple = parse_apple_day(date)
     day_data.update(apple)
 
-    # Body age
     body_age = parse_body_age_day(date)
     if body_age:
         day_data["body_age"] = body_age
