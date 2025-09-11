@@ -72,6 +72,14 @@ def can_start_new_cycle(today=None):
     last = get_last_cycle_start()
     return True if not last else today >= last + timedelta(days=28)
 
+def can_start_new_cycle(today=None):
+    today = today or datetime.today().date()
+    last_start = get_last_cycle_start()
+    if not last_start:
+        return True
+    return today >= last_start + timedelta(days=28)
+
+# --- Main ---
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--type", choices=["daily","weekly","cycle","random"], required=True)
@@ -83,9 +91,11 @@ def main():
     if args.type == "daily":
         msg = nb.build_daily_narrative(metrics)
         phrase = random_phrase(mode="serious")
+
     elif args.type == "weekly":
         msg = nb.build_weekly_narrative(metrics)
         phrase = random_phrase(kind="coachism")
+
     elif args.type == "cycle":
         if args.start_date:
             start_date = datetime.strptime(args.start_date, "%Y-%m-%d").date()

@@ -4,156 +4,164 @@ from .phrase_picker import random_phrase as phrase_for
 from .utils import stitch_sentences
 
 
+def compare_text(current, previous, unit="", context=""):
+    """Return chatty comparative text instead of robotic % changes."""
+    if previous is None or previous == 0:
+        return f"{current}{unit} {context}".strip()
+
+    diff = current - previous
+    pct = (diff / previous) * 100
+
+    if abs(pct) < 5:
+        return f"{current}{unit} {context}, about the same as before".strip()
+    elif pct > 0:
+        return f"{current}{unit} {context}, up a bit from {previous}{unit}".strip()
+    else:
+        return f"{current}{unit} {context}, down a bit from {previous}{unit}".strip()
+
+
 def build_daily_narrative(metrics: dict) -> str:
     days = metrics.get("days", {})
     if not days:
-        return "No logs found for yesterday. Did you rest? 😴"
+        return "Morning mate 👋\n\nNo logs found for yesterday. Did you rest? 😴"
 
-    # Yesterday’s date
-    yesterday = sorted(days.keys())[-1]
-    data = days[yesterday]
+    all_dates = sorted(days.keys())
+    yesterday = all_dates[-1]
+    today_data = days[yesterday]
+    prev_data = days.get(all_dates[-2]) if len(all_dates) > 1 else {}
 
-    tags = set(["#Motivation"])  # default fallback
+    greeting = random.choice([
+        "Morning mate 👋",
+        "Morning Ric 🌞",
+        "Hey Ric, ready for today?"
+    ])
 
-    heading = f"🌞💪 Daily Sweat Sermon | {phrase_for(['#Motivation'])}"
     insights = []
 
-    # Strength summary
-    if "strength" in data:
-        total_volume = sum(ex["volume_kg"] for ex in data["strength"])
-        top_lift = max(data["strength"], key=lambda x: x["volume_kg"])
-        insights.append(f"Strength totalled {int(total_volume)}kg lifted, led by {top_lift['exercise_name']} 🏋️")
-        tags.add(f"#{top_lift['category']}")
-        if any(ex.get("pr") for ex in data["strength"]):
-            tags.add("#PR")
+    # Strength
+    if "strength" in today_data:
+        total_vol = sum(ex["volume_kg"] for ex in today_data["strength"])
+        prev_vol = sum(ex["volume_kg"] for ex in prev_data.get("strength", [])) if prev_data else None
+        insights.append(f"You lifted {compare_text(int(total_vol), int(prev_vol) if prev_vol else None, 'kg')}.")
 
-    # Activity (Apple)
-    if "activity" in data:
-        steps = data["activity"].get("steps")
-        dist = data["activity"].get("distance_km")
-        mins = data["activity"].get("exercise_minutes")
-        if steps:
-            insights.append(f"You walked {steps:,} steps 🚶")
-            tags.add("#Cardio")
-            tags.add("#Steps")
-        if dist:
-            insights.append(f"Covered {dist} km 🌍")
-            tags.add("#Cardio")
-        if mins:
-            insights.append(f"Logged {mins} minutes of exercise ⏱️")
-
-    # Heart
-    if "heart" in data:
-        hr = data["heart"].get("resting_bpm")
-        if hr:
-            insights.append(f"Resting HR steady at {hr} bpm ❤️")
-            tags.add("#Recovery")
+    # Steps
+    steps = today_data.get("activity", {}).get("steps")
+    prev_steps = prev_data.get("activity", {}).get("steps") if prev_data else None
+    if steps:
+        insights.append(f"You did {compare_text(int(steps), prev_steps, 'steps', 'yesterday')}.")
 
     # Sleep
-    if "sleep" in data:
-        sleep = data["sleep"].get("asleep_minutes")
-        if sleep:
-            hrs = round(sleep / 60, 1)
-            insights.append(f"Slept {hrs} hrs 😴")
-            tags.add("#Recovery")
+    sleep = today_data.get("sleep", {}).get("asleep_minutes")
+    prev_sleep = prev_data.get("sleep", {}).get("asleep_minutes") if prev_data else None
+    if sleep:
+        hrs = round(sleep / 60)
+        prev_hrs = round(prev_sleep / 60) if prev_sleep else None
+        insights.append(f"You slept {compare_text(hrs, prev_hrs, 'h')}.")
 
-    # Body (Withings)
-    if "body" in data:
-        w = data["body"].get("weight_kg")
-        if w:
-            insights.append(f"Weight recorded at {w} kg ⚖️")
-
-    # Body age
-    if "body_age" in data:
-        ba = data["body_age"].get("body_age_years")
-        delta = data["body_age"].get("age_delta_years")
-        if ba:
-            insights.append(f"Body age sits at {ba} years (Δ {delta:+.1f}) 📊")
-            tags.add("#Recovery")
+    # Weight
+    weight = today_data.get("body", {}).get("weight_kg")
+    prev_weight = prev_data.get("body", {}).get("weight_kg") if prev_data else None
+    if weight:
+        insights.append(f"Weight came in at {compare_text(round(weight,1), round(prev_weight,1) if prev_weight else None, 'kg')}.")
 
     if not insights:
-        return f"{heading}\n\nNothing logged yesterday — maybe a rest day 🛌"
+        return f"{greeting}\n\nNo major metrics logged yesterday."
 
-    # Select a phrase matching yesterday's tags
-    phrase = phrase_for(list(tags))
-
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 2))]
-    return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    phrase = phrase_for(tags=["#Motivation"])
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
+    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
 
 
 def build_weekly_narrative(metrics: dict) -> str:
     days = metrics.get("days", {})
     if not days:
-        return "No logs found for last week. Rest week? 😴"
+        return "Howdy Ric 🤠\n\nNo logs found for last week. Rest week?"
 
     today = datetime.utcnow().date()
-    last_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
-    week_data = [days[d] for d in last_week if d in days]
+    all_dates = sorted(days.keys())
 
-    heading = f"📅 Weekly Grind Recap | {phrase_for(['#Coachism'])}"
+    last_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
+    prev_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(8, 15)]
+
+    week_data = [days[d] for d in last_week if d in days]
+    prev_data = [days[d] for d in prev_week if d in days]
+
+    greeting = random.choice([
+        "Howdy Ric 🤠",
+        "Ey up Ric 👋",
+        "Another week down, mate!"
+    ])
+
     insights = []
 
-    # Strength totals
-    total_volume = sum(
-        ex["volume_kg"] for day in week_data for ex in day.get("strength", [])
-    )
-    if total_volume:
-        insights.append(f"Weekly strength volume hit {int(total_volume)}kg 🏋️")
+    # Strength
+    total_vol = sum(ex["volume_kg"] for day in week_data for ex in day.get("strength", []))
+    prev_vol = sum(ex["volume_kg"] for day in prev_data for ex in day.get("strength", [])) if prev_data else None
+    if total_vol:
+        insights.append(f"Lifting volume hit {compare_text(int(total_vol), int(prev_vol) if prev_vol else None, 'kg')} this week.")
 
-    # Cardio totals
-    total_km = sum(day.get("activity", {}).get("distance_km", 0) or 0 for day in week_data)
-    if total_km:
-        insights.append(f"Cardio covered {round(total_km, 1)} km 🌍")
+    # Steps
+    total_steps = sum(day.get("activity", {}).get("steps", 0) for day in week_data)
+    prev_steps = sum(day.get("activity", {}).get("steps", 0) for day in prev_data) if prev_data else None
+    if total_steps:
+        insights.append(f"You clocked {compare_text(int(total_steps), prev_steps, 'steps', 'this week')}.")
 
-    # Sleep avg
-    sleep_minutes = [day.get("sleep", {}).get("asleep_minutes", 0) or 0 for day in week_data]
+    # Sleep
+    sleep_minutes = [day.get("sleep", {}).get("asleep_minutes", 0) for day in week_data]
+    prev_sleep = [day.get("sleep", {}).get("asleep_minutes", 0) for day in prev_data] if prev_data else []
     if sleep_minutes:
-        avg_sleep = round(sum(sleep_minutes) / len([s for s in sleep_minutes if s]), 1)
-        insights.append(f"Averaged {avg_sleep/60:.1f} hrs sleep 😴")
+        avg_sleep = round(sum(sleep_minutes) / len(sleep_minutes) / 60)
+        prev_avg = round(sum(prev_sleep) / len(prev_sleep) / 60) if prev_sleep else None
+        insights.append(f"Average sleep was {compare_text(avg_sleep, prev_avg, 'h', 'per night')}.")
 
     if not insights:
-        return heading + "\n\nQuiet week logged — recovery matters too."
+        return f"{greeting}\n\nQuiet week logged — recovery matters too."
 
-    phrase = phrase_for(["#Motivation"])
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 2))]
-    return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    phrase = phrase_for(tags=["#Motivation"])
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
+    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
 
 
 def build_cycle_narrative(metrics: dict) -> str:
     days = metrics.get("days", {})
     if not days:
-        return "No logs found for last cycle. 🛌"
+        return "Ey up Ric 👋\n\nNo logs found for last cycle."
 
     all_dates = sorted(days.keys())
-    cycle_data = [days[d] for d in all_dates[-28:]]  # assume 4-week cycle
+    cycle_data = [days[d] for d in all_dates[-28:]]
+    prev_cycle = [days[d] for d in all_dates[-56:-28]] if len(all_dates) > 28 else []
 
-    heading = f"🔥 Training Cycle Reflections | {phrase_for(['#Chaotic'])}"
+    greeting = random.choice([
+        "Ey up Ric 👋",
+        "Cycle wrap-up time 🔄",
+        "Alright Ric, here’s how the block went 💪"
+    ])
+
     insights = []
 
-    # Strength PRs in cycle
-    prs = []
-    for day in cycle_data:
-        for ex in day.get("strength", []):
-            if ex.get("pr"):
-                prs.append(ex["exercise_name"])
-    if prs:
-        insights.append(f"PRs smashed this cycle: {', '.join(set(prs))} 🏆")
+    # Strength
+    total_vol = sum(ex["volume_kg"] for day in cycle_data for ex in day.get("strength", []))
+    prev_vol = sum(ex["volume_kg"] for day in prev_cycle for ex in day.get("strength", [])) if prev_cycle else None
+    if total_vol:
+        insights.append(f"Cycle lifting came to {compare_text(int(total_vol), int(prev_vol) if prev_vol else None, 'kg')}.")
 
-    # Volume total
-    total_volume = sum(
-        ex["volume_kg"] for day in cycle_data for ex in day.get("strength", [])
-    )
-    if total_volume:
-        insights.append(f"Total strength volume this cycle: {int(total_volume)}kg 🏋️")
-
-    # Distance total
-    total_km = sum(day.get("activity", {}).get("distance_km", 0) or 0 for day in cycle_data)
+    # Cardio
+    total_km = sum(day.get("activity", {}).get("distance_km", 0) for day in cycle_data)
+    prev_km = sum(day.get("activity", {}).get("distance_km", 0) for day in prev_cycle) if prev_cycle else None
     if total_km:
-        insights.append(f"Total cardio distance: {round(total_km, 1)} km 🌍")
+        insights.append(f"Cardio totalled {compare_text(round(total_km), round(prev_km) if prev_km else None, 'km')}.")
+
+    # Sleep
+    sleep_minutes = [day.get("sleep", {}).get("asleep_minutes", 0) for day in cycle_data]
+    prev_sleep = [day.get("sleep", {}).get("asleep_minutes", 0) for day in prev_cycle] if prev_cycle else []
+    if sleep_minutes:
+        avg_sleep = round(sum(sleep_minutes) / len(sleep_minutes) / 60)
+        prev_avg = round(sum(prev_sleep) / len(prev_sleep) / 60) if prev_sleep else None
+        insights.append(f"Average sleep was {compare_text(avg_sleep, prev_avg, 'h', 'per night')}.")
 
     if not insights:
-        return heading + "\n\nCycle was light on data — maybe deload phase?"
+        return f"{greeting}\n\nCycle was light on data — maybe deload phase?"
 
-    phrase = phrase_for(["#Motivation"])
-    sprinkles = [phrase_for(["#Humour"]) for _ in range(random.randint(1, 3))]
-    return f"{heading}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    phrase = phrase_for(tags=["#Motivation"])
+    sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 3))]
+    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)

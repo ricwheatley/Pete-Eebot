@@ -12,12 +12,13 @@ def load_phrases():
     return _all_phrases
 
 
-def random_phrase(kind="any", mode="balanced") -> str:
+def random_phrase(kind="any", mode="balanced", tags=None) -> str:
     """
     Pick a random phrase from Pete's arsenal.
 
-    kind can be: motivational, silly, portmanteau, metaphor, coachism, legendary, or any
-    mode can be: serious | chaotic | balanced
+    kind: motivational, silly, portmanteau, metaphor, coachism, legendary, or any
+    mode: serious | chaotic | balanced
+    tags: optional list of hashtags to filter (e.g. ["#Motivation"])
     """
     phrases = load_phrases()
 
@@ -26,22 +27,33 @@ def random_phrase(kind="any", mode="balanced") -> str:
     if legendary and random.random() < 0.01:
         return random.choice(legendary)["text"]
 
-    # Filter by kind
-    if kind != "any":
-        phrases = [p for p in phrases if kind in (p.get("mode") or "").lower()]
+    # Filter by tags
+    if tags:
+        tagset = set(tags)
+        phrases = [p for p in phrases if tagset & set(p.get("tags", []))]
 
-    # Map higher-level Pete modes to categories
+    # Filter by kind (only if tags not used)
+    if kind != "any" and not tags:
+        phrases = [p for p in phrases if kind == (p.get("mode") or "").lower()]
+
+    # Map Pete modes to categories
+    serious = [p for p in phrases if (p.get("mode") or "").lower() in ("motivational", "coachism")]
+    chaotic = [p for p in phrases if (p.get("mode") or "").lower() in ("silly", "portmanteau", "metaphor")]
+
     if mode == "serious":
-        phrases = [p for p in phrases if (p.get("mode") or "").lower() in ("motivational", "coachism")]
+        phrases = serious
     elif mode == "chaotic":
-        phrases = [p for p in phrases if (p.get("mode") or "").lower() in ("silly", "portmanteau", "metaphor")]
+        phrases = chaotic
     elif mode == "balanced":
-        # keep everything
-        pass
+        # Weighted pick: 80% serious, 20% chaotic
+        if random.random() < 0.8 and serious:
+            phrases = serious
+        elif chaotic:
+            phrases = chaotic
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
     if not phrases:
-        raise ValueError(f"No phrases found for kind={kind}, mode={mode}")
+        raise ValueError(f"No phrases found for kind={kind}, mode={mode}, tags={tags}")
 
     return random.choice(phrases)["text"]
