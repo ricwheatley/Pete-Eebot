@@ -3,20 +3,21 @@ Wger API client for Pete-E
 Refactored from sync_wger_logs.py – no legacy artefacts, returns clean dicts.
 """
 
-Import os
+import os
 import requests
 from datetime import datetime, timedelta, timezone
 
 API_KEY = os.getenv("WGER_API_KEY")
 BASE_URL = (os.getenv("WGER_BASE_URL") or "https://wger.de/api/v2").strip().strip("/")
 HEADERS = {
-    "Authorization": f"Token {API_KEY}",
+    "Authorization": f"Token {API_KEY}" if API_KEY else "",
     "Accept": "application/json",
     "Content-Type": "application/json",
 }
 
-def fetch_logs(days: int = 1):
-    """Fatch workout logs from Wger for the past N days."""
+
+def fetch_logs(days: int = 1) -> list[dict]:
+    """Fetch workout logs from Wger for the past N days."""
     end = datetime.now(timezone.utc).date()
     start = end - timedelta(days=days)
 
@@ -34,14 +35,16 @@ def fetch_logs(days: int = 1):
     return js.get("results", [])
 
 
-def get_wger_logs(days: int = 1) -> dict:
+def get_wger_logs(days: int = 1) -> dict[str, list[dict]]:
     """Return dict of logs keyed by date with clean exercise entries."""
     logs = fetch_logs(days=days)
-    out = {}
+    out: dict[str, list[dict]] = {}
+
     for log in logs:
         d = log.get("date")
         if not d:
             continue
+
         row = {
             "exercise_id": log.get("exercise"),
             "sets": log.get("sets"),
@@ -50,6 +53,6 @@ def get_wger_logs(days: int = 1) -> dict:
             "rir": log.get("rir"),
             "rest_seconds": log.get("rest"),
         }
-        out.setdefault(d, [])
-        out[d].append(row)
+        out.setdefault(d, []).append(row)
+
     return out

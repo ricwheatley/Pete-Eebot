@@ -22,44 +22,66 @@ OUT_DIR = "integrations/wger/plans"
 STATE_DIR = "integrations/wger/state"
 
 
-def load_knowledge():
+def load_knowledge() -> dict:
+    """Load historical training knowledge, if available."""
     if not os.path.exists(KNOWLEDGE_PATH):
         return {}
     with open(KNOWLEDGE_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def build_block(start_date):
+def build_block(start_date: dt.date) -> dict:
     """Build a 4-week cycle grouped by weeks."""
     history = load_knowledge()
 
     weeks = []
-    for wekindex in range(1, 5):  # week 1 to 4
+    for week_index in range(1, 5):  # week 1 to 4
         days = []
-        for day_offset in range(0 , 7):
-            d = start_date + dt.timedelta(days=((wekindex-1) * 7 + day_offset)
+        for day_offset in range(0, 7):
+            d = start_date + dt.timedelta(days=((week_index - 1) * 7 + day_offset))
             day_name = d.strftime("%a")
-            entry = {"date": d.isoformat(), "week": wekindex, "day": day_name, "sessions": []}
+
+            entry = {
+                "date": d.isoformat(),
+                "week": week_index,
+                "day": day_name,
+                "sessions": [],
+            }
+
             if day_name in ["Mon", "Tue", "Thu", "Fri"]:
                 entry["sessions"].append({"type": "weights", "exercises": []})
-            elif day_name in ["Wed"]:
-                entry["sessions"].append({"type": "hiit", "name": "Blaze", "duration_min": 45, "time": "07:00", "is_class": True, "location": "David Lloyd Gym"})
+            elif day_name == "Wed":
+                entry["sessions"].append(
+                    {
+                        "type": "hiit",
+                        "name": "Blaze",
+                        "duration_min": 45,
+                        "time": "07:00",
+                        "is_class": True,
+                        "location": "David Lloyd Gym",
+                    }
+                )
             elif day_name in ["Sat", "Sun"]:
                 entry["sessions"].append({"type": "rest"})
 
             days.append(entry)
-        weeks.append({"week_index": wekindex, "days": days})
+        weeks.append({"week_index": week_index, "days": days})
 
     return {"start": start_date.isoformat(), "weeks": weeks}
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--start-date", required=True)
+    parser = argparse.ArgumentParser(description="Build a 4-week training block plan.")
+    parser.add_argument("--start-date", required=True, help="Start date in YYYY-MM-DD format")
     args = parser.parse_args()
+
     start_date = dt.date.fromisoformat(args.start_date)
     block = build_block(start_date)
-    os.makedir(OUT_DIR, exist_ok=True)
+
+    os.makedirs(OUT_DIR, exist_ok=True)
     out_path = os.path.join(OUT_DIR, f"plan_{start_date.isoformat()}.json")
+
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(block, f, indent=2)
+
     print(f"[build_block] Wrote {out_path}")
