@@ -17,7 +17,7 @@ A) Legacy block format (object with 'entries'):
     {
       "date": "YYYY-MM-DD",
       "kind": "weights" | "class" | "mobility" | "recovery",
-      "title": "Weights — Lower Body" | "Blaze HIIT",
+      "title": "Weights – Lower Body" | "Blaze HIIT",
       "time": "06:15",
       "duration_min": 60,
       "rpe_target": "7–8",
@@ -35,14 +35,14 @@ B) Flat list-of-entries format:
     "date": "YYYY-MM-DD",
     "type": "weights" | "class" | "rest",
     "title": "Blaze HIIT @ 06:15",
-    "duration": 45,      # minutes (int)
-    "feeling": 3,        # 1..5
+    "duration": 45,       # minutes (int)
+    "feeling": 3,         # 1..5
     "notes": "optional"
   },
   ...
 ]
 
-Behavior:
+Behaviour:
 - Posts to /workoutsession/ (one session per eligible day).
 - Always sends numeric 'duration' and 'feeling' to avoid app crashes on null casting.
 - Skips 'mobility', 'recovery', and 'rest' entries by default.
@@ -62,10 +62,10 @@ from typing import Any, Dict, List, Optional
 import requests
 
 
-# -------------------- Config --------------------
+# ---------- Config ----------
 
 def base_url() -> str:
-    base = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
+    base = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().strip("/")
     if not base.startswith("http"):
         print(f"[ERROR] WGER_BASE_URL invalid: '{base}'", file=sys.stderr)
         sys.exit(2)
@@ -83,14 +83,13 @@ def api_headers() -> Dict[str, str]:
     }
 
 
-# -------------------- HTTP helpers --------------------
+# ---------- HTTP helpers ----------
 
 def _request(method: str, path: str, *, params: Optional[Dict[str, Any]] = None,
              payload: Optional[Dict[str, Any]] = None, timeout: int = 30) -> requests.Response:
     url = f"{base_url()}{path}"
     r = requests.request(method=method.upper(), url=url, headers=api_headers(),
                          params=params, json=payload, timeout=timeout)
-    # Print a compact error body snippet if not OK (DRF may return HTML)
     if not r.ok:
         snippet = (r.text or "")[:400].replace("\n", " ")
         print(f"{method} {url} -> {r.status_code}: {snippet}", file=sys.stderr)
@@ -107,11 +106,10 @@ def patch_json(path: str, payload: Dict[str, Any]) -> Any:
     return _request("PATCH", path, payload=payload).json()
 
 
-# -------------------- Normalization --------------------
+# ---------- Normalization ----------
 
 def _build_notes(title: str, entry: Dict[str, Any], extra: Optional[str] = None) -> str:
     parts: List[str] = []
-    # legacy: include time, duration_min, rpe_target, details.notes, and exercise list
     t = entry.get("time")
     if t:
         parts.append(f"Time: {t}")
@@ -133,22 +131,18 @@ def _build_notes(title: str, entry: Dict[str, Any], extra: Optional[str] = None)
                 name = x.get("name", "Exercise")
                 sets = x.get("sets", "?")
                 reps = x.get("reps", "?")
-                rxpe = x.get("RPE", "—")
+                rxpe = x.get("RPE", "–")
                 lines.append(f"- {name}: {sets} x {reps} @ RPE {rxpe}")
             parts.append("Exercises:\n" + "\n".join(lines))
     if extra:
         parts.append(extra)
-    base = f"{title} — planned via automation"
+    base = f"{title} – planned via automation"
     return base + ("\n\n" + "\n".join(parts) if parts else "")
 
 def normalize_legacy(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Convert a legacy 'entries' item into a /workoutsession/ payload.
-    Skips mobility/recovery by design.
-    """
     kind = (entry.get("kind") or "").lower().strip()
     if kind in ("mobility", "recovery"):
-        return None  # skip
+        return None
     if kind not in ("weights", "class"):
         return None
 
@@ -157,16 +151,13 @@ def normalize_legacy(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     title = entry.get("title") or ("Blaze HIIT" if kind == "class" else "Weights")
-    # Duration: prefer provided; otherwise choose sensible defaults
     duration_min = entry.get("duration_min")
     try:
         duration = int(duration_min) if duration_min is not None else (45 if kind == "class" else 60)
     except Exception:
         duration = 45 if kind == "class" else 60
 
-    # Feeling: neutral default
     feeling = 3
-
     notes = _build_notes(title, entry)
     return {
         "date": date,
@@ -176,10 +167,6 @@ def normalize_legacy(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 def normalize_flat(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Convert a flat list entry into a /workoutsession/ payload.
-    Skips type 'rest'.
-    """
     etype = (entry.get("type") or "").lower().strip()
     if etype in ("rest", "recovery", "mobility"):
         return None
@@ -203,7 +190,7 @@ def normalize_flat(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     feeling = max(1, min(5, feeling))
 
     extra = entry.get("notes")
-    notes = f"{title} — planned via automation" + (f"\n\n{extra}" if extra else "")
+    notes = f"{title} – planned via automation" + (f"\n\n{extra}" if extra else "")
 
     return {
         "date": date,
@@ -212,18 +199,20 @@ def normalize_flat(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "notes": notes,
     }
 
-def load_and_normalize(schedule_path: str) -> List[Dict[str, Any]]:
+def load_and_normalize(schedule) -> List[Dict[str, Any]]:
     """
-    Load JSON and normalize into a list of /workoutsession/ payloads.
+    Load JSON (from path or dict/list) and normalize into a list of /workoutsession/ payloads.
     Accepts both schemas (legacy object-with-entries OR flat list).
     """
-    with open(schedule_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    if isinstance(schedule, (dict, list)):
+        data = schedule
+    else:
+        with open(schedule, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
     normalized: List[Dict[str, Any]] = []
 
     if isinstance(data, dict) and isinstance(data.get("entries"), list):
-        # Legacy schema
         print("[wger] Detected legacy block schema with 'entries'")
         for e in data["entries"]:
             if not isinstance(e, dict):
@@ -232,7 +221,6 @@ def load_and_normalize(schedule_path: str) -> List[Dict[str, Any]]:
             if n:
                 normalized.append(n)
     elif isinstance(data, list):
-        # Flat list schema
         print("[wger] Detected flat list schema")
         for e in data:
             if not isinstance(e, dict):
@@ -246,7 +234,7 @@ def load_and_normalize(schedule_path: str) -> List[Dict[str, Any]]:
     return normalized
 
 
-# -------------------- Upload & Repair --------------------
+# ---------- Upload & Repair ----------
 
 def create_session(payload: Dict[str, Any], *, dry_run: bool = False) -> Optional[Dict[str, Any]]:
     if dry_run:
@@ -258,15 +246,11 @@ def create_session(payload: Dict[str, Any], *, dry_run: bool = False) -> Optiona
     return res
 
 def ensure_numeric_defaults(session: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Build a PATCH payload to replace null numerics with safe defaults.
-    """
     patch: Dict[str, Any] = {}
     if session.get("duration") is None:
         patch["duration"] = 1
     if session.get("feeling") is None:
         patch["feeling"] = 3
-    # The app crash indicates a num cast; distance/energy vary by instance, so don't touch unless present and null.
     if "distance" in session and session.get("distance") is None:
         patch["distance"] = 0
     if "energy" in session and session.get("energy") is None:
@@ -277,7 +261,6 @@ def repair_dates(dates: List[str]) -> None:
     fixed = 0
     checked = 0
     for d in sorted(set([x for x in dates if x])):
-        # Many instances support filtering by 'date'
         resp = get_json("/workoutsession/", params={"date": d})
         results = resp.get("results") if isinstance(resp, dict) else resp
         if not isinstance(results, list):
@@ -293,22 +276,22 @@ def repair_dates(dates: List[str]) -> None:
     print(f"[REPAIR] Checked {checked} sessions, fixed {fixed} with null numeric fields.")
 
 
-# -------------------- Main --------------------
+# ---------- Main ----------
 
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: python integrations/wger/wger_uploads.py <schedule.json> [--dry-run|--repair]", file=sys.stderr)
         sys.exit(2)
 
-    schedule_path = sys.argv[1]
+    schedule_arg = sys.argv[1]
     dry_run = "--dry-run" in sys.argv
     do_repair = "--repair" in sys.argv
 
     print(f"[wger] Base URL: {base_url()}")
     print(f"[wger] Mode: {'REPAIR' if do_repair else ('DRY-RUN' if dry_run else 'UPLOAD')}")
-    print(f"[wger] Reading schedule: {schedule_path}")
+    print(f"[wger] Reading schedule: {schedule_arg}")
 
-    normalized_payloads = load_and_normalize(schedule_path)
+    normalized_payloads = load_and_normalize(schedule_arg)
     print(f"[wger] Eligible for upload (non-rest/mobility/recovery): {len(normalized_payloads)}")
 
     if do_repair:
