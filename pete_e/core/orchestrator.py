@@ -29,44 +29,38 @@ class PeteE:
             return
 
         start_date = date.fromisoformat(start_date)  if start_date else date.today()
-        block = plan_next_block.build_block(start_date)
+        plan = plan_next_block.build_block(start_date)
 
-        # Apply scheduling rules
-        block = scheduler.assign_times(block.get("days", []))
+        # Save full 4-week plan
+        plans_dir = self.plans_dir
+        plans_dir.mkdir(exist_ok=True)
+        full_path = plans_dir / f"plan_{start_date.isoformat()}.json"
+        with full_path.open("w") as f:
+            json.dump(plan, f, indent=2)
+        log_utils.log_message(f"[cycle] Saved full 4-week plan to {full_path}")
 
-        # Applies progression (adaptive weights) -- stubbed
-        for day in block:
-            for session in day.get("leights", []):
-                for ex in session.get("exercises", []):
-                    ex["weight_target"] = progression.get_adjusted_weight(
-                        ex["ad"], ex.get("base_weight", 0), {}
-                    )
-
-        # Save plan JSON
-        plan_path = self.plans_dir / f"plan_{start_date.isoformat()}.json"
-        plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
-
-        # Expand block into logs and save snapshot
-        expanded_logs = expand_block_to_logs(block)
+        # Prepare and push only Week 1
+        week_1 = plan.get('weeks', []):1]
+        expanded_logs = expand_block_to_log{("weeks": week_1})
         sessions_dir = self.plans_dir / "sessions"
         sessions_dir.mkdir(exist_ok=True)
-        sessions_path = sessions_dir / f"sessions_plan_{start_date.isoformat()}.json"
+        sessions_path = sessions_dir / f"sessions_week1_{start_date.isoformat()}.json"
         sessions_path.write_text(json.dumps(expanded_logs, indent=2))
+        log_utils.log_message(f"[cycle] Pushed Week 1 sessions to {sessions_path}")
 
-        # Upload to Wger (future)
-        wger_uploads.expand_and_upload_block(lock)
+        # Upload to Wger for Week 1 only
+        wger_uploads.expand_and_upload_block({"days": week_1})
 
         msg = f"❡ New cycle created | Start: {start_date}"
         log_utils.log_message(msg)
         git_utils.commit_changes("cycle", phrase_picker.random_phrase("serious"))
-        
+
     def send_daily_feedback(self):
         success = sync.run_sync_with_retries()
         if not success:
-            print("[sync] Failed - not sending feedbackf")
+            print("[sync] Failed - not sending feedback")
             return
 
-        from pete_e.core import narratives as narratives
         msg = narratives.build_daily_narrative({}, {})
         log_utils.log_message(msg)
         git_utils.commit_changes("daily", phrase_picker.random_phrase("serious"))
@@ -76,7 +70,7 @@ class PeteE:
         if not success:
             print("[sync] Failed - not sending weekly feedback")
             return
-        from pete_e.core import narratives as bnarratives
+
         msg = narratives.build_weekly_narrative({})
         log_utils.log_message(msg)
         git_utils.commit_changes("week", phrase_picker.random_phrase("coachism"))
