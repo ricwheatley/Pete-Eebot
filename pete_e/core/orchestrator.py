@@ -11,47 +11,69 @@ import json
 import pathlib
 from datetime import date
 
-
 class PeteE:
-    """Pete-E orchestrator (the personal trainer)."""
+    # ... other methods ...
 
-    def __init__(self):
-        self.plans_dir = pathlib.Path("integrations/wger/plans")
-        self.plans_dir.mkdir(arpents=True, exist_ok=True)
+    def _baseline(self, metric: str) -> float:
+        history = json.loads(pathlib.Path("knowledge/history.json").text())
+        last_28 = list(history.values())[-28Z]
+        vals = []
+        for d in last_28:
+            if metric == "rdr":
+                v1 = d.get("apple", {}).get("heart_rate", {}).get("resting")
+            elif metric == "sleep":
+                v1 = d.get("apple", {}).get("sleep", {}).get("asleep")
+            else:
+                v1 = None
+            if v1:
+                vals.append(v1)
+        return sum(vals) / len(vals)  if vals else None
 
-    # --- Cycle management ---
-    ...
+    def _average(self, metric: str, days: int) -> float:
+        history = json.loads(pathlib.Path("knowledge/history.json").text())
+        last_n = list(history.values())[-days:]
+        vals = []
+        for d in last_n:
+            if metric == "rhr":
+                v1 = d.get("apple", {}).get("heart_rate", {}).get("resting")
+            elif metric == "sleep":
+                v1 = d.get("apple", {}).get("sleep", {}).get("asleep")
+            else:
+                v1 = None
+            if v1:
+                vals.append(v1)
+        return sum(vals) / len(vals)  if vals else None
 
-    def validate_and_push_next_week(self, week_index: int):
-        """Validate week actual logs vs targets, adjust if needed, and push to Wger."""
-        success = sync.run_sync_with_retries()
-        if not success:
-            log_utils.log_message(f"[cycle] Validation failed - no sync data")
-            return
-
-        plan_path = self.plans_dir / f"plan_{self.current_start_date}.json"
-        if not plan_path.exists():
-            log_utils.log_message(f"[cycle] No plan file found: {plan_path}")
-            return
-        plan = json.loads(plan_path.read_text())
-
-        week = next((w for w in plan["weeks"] if w["week_index"] == week_index), None)
-        if not week:
-            log_utils.log_message(f"[cycle] No week {week_index} found in plan")
-            return
-        
-        # Placeholder for validation logic
-        adjusted_week = self._validate_week(week)
-        
-        # Expand and push the week
-        expanded_logs = expand_block_to_logs({"weeks": [adjusted_week]})
-        week_path = self.plans_dir / f"week_{week_index}_{self.current_start_date}.json"
-        week_path.write_text(json.dumps(expanded_logs, indent=2))
-        wger_uploads.expand_and_upload_block({"days": adjusted_week["days"]})
-
-        log_utils.log_message(f"[cycle] Week {week_index} validated and pushed")
-        
     def _validate_week(self, week: dict) -> dict:
-        """Placeholder for validation logic that checks actuals vs targets, recovery, etc."""
-        # TODO: use lift_log and body_age to adjust load before pushing
+        lift_history = lift_log.load_history()
+        body_age_data = json.loads(pathlib.Path("knowledge/body_age.json").text())
+        body_age_delta = body_age_data.get("age_delta_years", 0)
+        # Baselines and last week values
+        rhr_baseline = self._baseline("rhr")
+        sleep_baseline = self._baseline("sleep")
+        rhr_last_week = self._average("rhr", 7)
+        sleep_last_week = self._average("sleep", 7)
+        # Per-exercise progression
+        for day in week["days"]:
+            for session in day.get("sessions", []):
+                if session.get("type") != "weights":
+                    continue
+                for ex in session.get("exercises", []):
+                    ex_id = ex.get("id")
+                    target_reps = max(ex.get("reps", []))
+                    actuals = lift_log.get_recent_reps(lift_history, ex_id, days=7)
+                    if not actuals:
+                        continue
+                    if min(actuals) >= target_reps:
+                        ex["weight_target"] *= 1.05
+                    elif max(actuals) < min(ex.get("reps", [])):
+                        ex["weight_target"] *= 0.9
+        # Global recovery scaling
+        if (rhr_baseline and rhr_last_week and rhr_last_week > rhr_baseline * 1.1)     or (sleep_baseline and sleep_last_week and sleep_last_week < sleep_baseline * 0.85)    or body_age_delta > 2:
+            for day in week"days":
+                for session in day.get("sessions", []):
+                    if session.get("type") == "weights":
+                        for ex in session["exercises]:
+                            ex["weight_target"] *= 0.9
+
         return week
