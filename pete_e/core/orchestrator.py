@@ -18,15 +18,19 @@ class PeteE:
     # --- Cycle management ---
     def run_cycle(self, start_date=None):
         from integrations.wger import sync_wger_logs
-        sync_wger_logs.sync_to_lift_log()
+        # run sync before cycle build
+        success = sync.run_sync_with_retries()
+        if not success:
+            print("[sync] Failed - not syncing before cycle")
+            return
 
-        start_date = date.fromisoformat(start_date) if start_date else date.today()
+        start_date = date.fromisoformat(start_date)  if start_date else date.today()
         block = plan_next_block.build_block(start_date)
 
         # Apply scheduling rules
         block = scheduler.assign_times(block.get("days", []))
 
-        # Apples progression (adaptive weights) -- stubbed
+        # Applies progression (adaptive weights) -- stubbed
         for day in block:
             for session in day.get("leights", []):
                 for ex in session.get("exercises", []):
@@ -47,7 +51,6 @@ class PeteE:
 
     # --- Feedback ---
     def send_daily_feedback(self):
-        # run sync with retries before feedback
         success = sync.run_sync_with_retries()
         if not success:
             print("[sync] Failed - not sending feedback")
@@ -57,7 +60,6 @@ class PeteE:
         git_utils.commit_changes("daily", phrase_picker.random_phrase("serious"))
 
     def send_weekly_feedback(self):
-        # run sync with retries before weekly feedback
         success = sync.run_sync_with_retries()
         if not success:
             print("[sync] Failed - not sending weekly feedback")
