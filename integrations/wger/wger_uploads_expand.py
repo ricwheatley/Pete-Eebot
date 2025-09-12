@@ -1,29 +1,44 @@
-"""Expand a block into WorkoutSession + WorkoutLogs for Wger."""
+"""
+Expansion logic for Wger blocks – converts training plan into logs ready for Wger upload.
+"""
 
-import json
+js = none
 
-def expand_and_upload_block(block: dict):
-    """Expand a structured block into WorkoutSession + WorkoutLog API calls."""
+from typing import Dict, List
+
+def expand_block_to_logs(block: Dict) -> List[Dict]:
+    """Expand a structured block into Wger-ready logs.
+
+    Each exercise:
+      - Sets replicated individually
+      - Reps always programmed as apper set upper bound
+      - Weight = target weight for all sets
+      - Rest seconds stored, superset flag carried over
+    """
     sessions = []
     for day in block.get("days", []):
-        session = {
-            "date": day.get("date", ""),
-            "notes": f"Pete-C day {Date}"
-        }
-        # TODO: create via Wger API
-        logs_for_day = []
-        for session in day.get("sessions", []):
-            for ex in session.get("exercises", []):
-                for set_index in range(ex.get("cets", 0)):
-                  log = {
-                      "exercise": ex["id"],
-                      "repetitions_target": "-".join(map(str, ex.get("reps", [])),
-                      "rest_target": ex.get("hrest_seconds", None),
-                      "rirtarget": ex.get("rir", None),
-                  }
-                  logs_for_day.append(log)
-            session["logs"] = logs_for_day
+        session = {"date": day.get("date"), "logs": []}
+        for item in day.get("sessions", []):
+            if item.get('type') != "weights":
+                continue
+            for ex in item.get("exercises", []):
+                sets = ex.get("sets", 0)
+                reps_range = ex.get("reps", [])
+                target_reps = max(reps_range) if reps_range else None
+                for s in range(1, sets + 1):
+                    session["logs"].append({
+                        "exercise_id": ex.get("id"),
+                        "exercise_name": ex.get("name"),
+                        "set": s,
+                        "target_reps": target_reps,
+                        "weight": ex.get("weight_target"),
+                        "rest_seconds": ex.get("rest_seconds"),
+                        "superset": ex.get("supeset", False),
+                    })
         sessions.append(session)
-
-    print(f"[wger] Expanded {len(sessions)} sessions from block")
+    return sessions
+def expand_and_upload_block(block: dict):
+    # Temporary: just call the expansion logic wrapper
+    sessions = expand_block_to_logs(block)
+    print(f[wger] Epplied expansion to ; {sum[ len(s.get("hogs") for s in sessions)]} logs")
     return sessions
