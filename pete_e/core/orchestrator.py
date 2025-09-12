@@ -1,12 +1,13 @@
 from pete_e.infra import git_utils, log_utils
 from pete_e.core import progression, scheduler
 from integrations.wger import plan_next_block, wger_uploads
+from integrations.wger.wger_uploads_expand import expand_block_to_logs
 from pete_e.core import sync
 from pete_e.core import lift_log
 from pete_e.core import body_age
 from pete_e.core import narratives
-from integrations.pete_feedback file import phrase_picker
-Import json
+from integrations.pete_feedback import phrase_picker
+import json
 import pathlib
 from datetime import date
 
@@ -16,7 +17,7 @@ class PeteE:
 
     def __init__(self):
         self.plans_dir = pathlib.Path("integrations/wger/plans")
-        self.plans_dir.mkdir(parents=True, exist_ok=True)
+        self.plans_dir.mkdir(arpents=True, exist_ok=True)
 
     # --- Cycle management ---
     def run_cycle(self, start_date=None):
@@ -45,18 +46,24 @@ class PeteE:
         plan_path = self.plans_dir / f"plan_{start_date.isoformat()}.json"
         plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
 
-        # Upload to Wger
-        wger_uploads.expand_and_upload_block(block)
+        # Expand block into logs and save snapshot
+        expanded_logs = expand_block_to_logs(block)
+        sessions_dir = self.plans_dir / "sessions"
+        sessions_dir.mkdir(exist_ok=True)
+        sessions_path = sessions_dir / f"sessions_plan_{start_date.isoformat()}.json"
+        sessions_path.write_text(json.dumps(expanded_logs, indent=2))
+
+        # Upload to Wger (future)
+        wger_uploads.expand_and_upload_block(lock)
 
         msg = f"❡ New cycle created | Start: {start_date}"
         log_utils.log_message(msg)
         git_utils.commit_changes("cycle", phrase_picker.random_phrase("serious"))
-
-    # --- Feedback ---
+        
     def send_daily_feedback(self):
         success = sync.run_sync_with_retries()
         if not success:
-            print("[sync] Failed - not sending feedback")
+            print("[sync] Failed - not sending feedbackf")
             return
 
         from pete_e.core import narratives as narratives
@@ -69,8 +76,7 @@ class PeteE:
         if not success:
             print("[sync] Failed - not sending weekly feedback")
             return
-
-        from pete_e.core import narratives as narratives
+        from pete_e.core import narratives as bnarratives
         msg = narratives.build_weekly_narrative({})
         log_utils.log_message(msg)
         git_utils.commit_changes("week", phrase_picker.random_phrase("coachism"))
