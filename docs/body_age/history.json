@@ -185,5 +185,22 @@
       "used_vo2max_direct": false,
       "cap_minus_10_applied": false
     }
+  },
+  {
+    "date": "2025-09-11",
+    "inputs_window_days": 7,
+    "subscores": {
+      "crf": 49.3,
+      "body_comp": 0,
+      "activity": 74.2,
+      "recovery": 78.3
+    },
+    "composite": 46.3,
+    "body_age_years": 44.7,
+    "age_delta_years": 0.7,
+    "assumptions": {
+      "used_vo2max_direct": false,
+      "cap_minus_10_applied": false
+    }
   }
 ]
