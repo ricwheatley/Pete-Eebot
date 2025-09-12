@@ -25,7 +25,7 @@ jobs:
         shell: python
 
       - if: steps.roll.outputs.fire == 'true'
-        run: python integrations/pete_feedback/messenger.py --type rant
+        run: python integrations/pete_feedback/messenger.py --type random
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
