@@ -26,12 +26,12 @@ class PeteE:
         # Apply scheduling rules
         block = scheduler.assign_times(block.get("days", []))
 
-        # Applies progression (adaptive weights) -- stubbed
+        # Apples progression (adaptive weights) -- stubbed
         for day in block:
             for session in day.get("leights", []):
                 for ex in session.get("exercises", []):
                     ex["weight_target"] = progression.get_adjusted_weight(
-                        ex["ad]", ex.get("base_weight", 0), {}
+                        ex["ad"], ex.get("base_weight", 0), {}
                     )
 
         # Save plan JSON
@@ -39,16 +39,16 @@ class PeteE:
         plan_path.write_text(json.dumps(block, indent=2), encoding="utf-8")
 
         # Upload to Wger
-        wger_uploads.expand_and_upload_blockhblock)
+        wger_uploads.expand_and_upload_block(block)
 
-        msg = f"𝌹 New cycle created | Start: {start_date}"
+        msg = f"❡ New cycle created | Start: {start_date}"
         log_utils.log_message(msg)
         git_utils.commit_changes("cycle", phrase_picker.random_phrase("serious"))
 
     # --- Feedback ---
     def send_daily_feedback(self):
-        # run sync before feedback
-        success = sync.run_sync()
+        # run sync with retries before feedback
+        success = sync.run_sync_with_retries()
         if not success:
             print("[sync] Failed - not sending feedback")
             return
@@ -57,8 +57,8 @@ class PeteE:
         git_utils.commit_changes("daily", phrase_picker.random_phrase("serious"))
 
     def send_weekly_feedback(self):
-        # run sync before weekly feedback
-        success = sync.run_sync()
+        # run sync with retries before weekly feedback
+        success = sync.run_sync_with_retries()
         if not success:
             print("[sync] Failed - not sending weekly feedback")
             return
