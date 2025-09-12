@@ -44,16 +44,10 @@ def log_message(msg: str):
 def commit_changes(report_type: str, phrase: str):
     subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
     subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-    # Add only the relevant output paths
-    paths = [
-        "summaries",
-        "knowledge/history.json",
-        "integrations/wger/plans",
-        "docs/analytics",
-        "docs/wger",
-        "docs/withings",
-    ]
-    subprocess.run(["git", "add", *paths], check=False)
+    
+    # Stage everything (fix for untracked files)
+    subprocess.run(["git", "add", "-A"], check=False)
+    
     msg = f"Pete log update ({report_type}) | {phrase} ({datetime.utcnow().strftime('%Y-%m-%d')})"
     try:
         subprocess.run(["git", "commit", "-m", msg], check=True)
