@@ -1,4 +1,4 @@
-name: Refresh Wger Exercise Catalog
+name: Wger Exercise Catalog Refresh
 
 on:
   workflow_dispatch: {}
