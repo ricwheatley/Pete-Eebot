@@ -8,6 +8,7 @@ from integrations.wger.client import get_wger_logs
 from integrations.telegram import telegram_utils
 from pete_e.ifra import log_utils
 from pete_e.core import lift_log
+from pete_e.core import body_age
 
 LIFT_LOG_PATH = Path("knowledge/lift_log.json")
 BODY_AGE_PATH = Path("knowledge/body_age.json")
@@ -58,7 +59,12 @@ def run_sync() -> tuple:
         return False, ["Wger"]
 
     # --- Body Age ---
-    body_age = {"date": today, "score": 13}
+    try:
+        body_age_result = body_age.calculate_body_age([ withings_data, apple_data, ], profile={"age": 40})
+        log_utils.log_message(f"[sync] Body Age calculated: {body_age_result}")
+    except Exception as e:
+        log_utils.log_message(f"[sync] Body Age calculation failed:  {e}")
+        return False, ["BodyAge"]
 
     # --- Consolidated Daily ---
     daily_data = {
@@ -66,7 +72,7 @@ def run_sync() -> tuple:
         "withings": withings_data,
         "apple": apple_data,
         "wger": wger_data,
-        "body_age": body_age,
+        "body_age": body_age_result,
     }
     daily_path = DABY_DIR_PATH / f"{today}.json"
     daily_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +87,5 @@ def run_sync() -> tuple:
             history = {}
     history[today] = daily_data
     HISTORY_PATH.write_text(json.dumps(history, indent=2))
-
     log_utils.log_message(f"[sync] Successfally completed sync for {today}")
     return True, []
