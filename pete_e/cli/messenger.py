@@ -1,5 +1,7 @@
 import argparse
 from pete_e.core.orchestrator import PeteE
+from pete_e.core import sync
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -10,13 +12,28 @@ def main():
     pete = PeteE()
 
     if args.type == "daily":
-        pete.send_daily_feedback()
+        print("[sync] Attempting sync before daily feedback...")
+        success = sync.run_sync_with_retries()
+        if success:
+            pete.send_daily_feedback()
+        else:
+            print("[sync] Sync failed - aborting daily feedback.")
     elif args.type == "weekly":
-        pete.send_weekly_feedback()
+        print("[sync] Attempting sync before weekly feedback...")
+        success = sync.run_sync_with_retries()
+        if success:
+            pete.send_weekly_feedback()
+        else:
+            print("[sync] Sync failed - aborting weekly feedback.")
     elif args.type == "cycle":
-        pete.run_cycle(start_date=args.start_date)
+        print("[sync] Attempting sync before cycle build...")
+        success = sync.run_sync_with_retries()
+        if success:
+            pete.run_cycle(start_date=args.start_date)
+        else:
+            print("[sync] Sync failed - aborting cycle")
     elif args.type == "random":
         pete.send_random_message()
 
- if __name__ == "__main__":
+if __name__ == "__main__":
     main()
