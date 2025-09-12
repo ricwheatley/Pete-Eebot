@@ -3,7 +3,7 @@ Withings API client for Pete-E
 Refactored from withings_sync.py – no legacy artefacts, returns clean dicts.
 """
 
-Import os
+import os
 import requests
 from datetime import datetime, timedelta, timezone
 

@@ -2,10 +2,9 @@ import json
 import time
 from datetime import date
 from pathlib import Path
-from integrations.withings.client import get_withings_summary
-from integrations.apple import client as apple_client
+from pete_e.core.withings import get_withings_summary
+from pete_e.core import apple as apple_client
 from integrations.wger.client import get_wger_logs
-from integrations.telegram import telegram_utils
 from pete_e.ifra import log_utils
 from pete_e.core import lift_log
 from pete_e.core import body_age
