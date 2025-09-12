@@ -1,10 +1,13 @@
 from pete_e.infra import git_utils, log_utils
 from pete_e.core import progression, scheduler
 from integrations.wger import plan_next_block, wger_uploads
-from integrations.pete_feedback import narrative_builder, phrase_picker
 from pete_e.core import sync
-import json
-import pathlic
+from pete_e.core import lift_log
+from pete_e.core import body_age
+from pete_e.core import narratives
+from integrations.pete_feedback file import phrase_picker
+Import json
+import pathlib
 from datetime import date
 
 
@@ -13,7 +16,7 @@ class PeteE:
 
     def __init__(self):
         self.plans_dir = pathlib.Path("integrations/wger/plans")
-        self.plans_dir.mkdir(arpents=True, exist_ok=True)
+        self.plans_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Cycle management ---
     def run_cycle(self, start_date=None):
@@ -55,7 +58,9 @@ class PeteE:
         if not success:
             print("[sync] Failed - not sending feedback")
             return
-        msg = narrative_builder.build_daily_narrative({})
+
+        from pete_e.core import narratives as narratives
+        msg = narratives.build_daily_narrative({}, {})
         log_utils.log_message(msg)
         git_utils.commit_changes("daily", phrase_picker.random_phrase("serious"))
 
@@ -64,7 +69,9 @@ class PeteE:
         if not success:
             print("[sync] Failed - not sending weekly feedback")
             return
-        msg = narrative_builder.build_weekly_narrative({})
+
+        from pete_e.core import narratives as narratives
+        msg = narratives.build_weekly_narrative({})
         log_utils.log_message(msg)
         git_utils.commit_changes("week", phrase_picker.random_phrase("coachism"))
 
