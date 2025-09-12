@@ -1,4 +1,4 @@
-name: Sync Withings (JSON only)
+name: Sync Withings
 
 on:
   schedule:
