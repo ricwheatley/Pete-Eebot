@@ -30,16 +30,5 @@
     "deep_minutes": 26,
     "core_minutes": 234,
     "awake_minutes": 66
-  },
-  "body_age": {
-    "body_age_years": 45.4,
-    "age_delta_years": 1.4,
-    "subscores": {
-      "crf": 47.9,
-      "body_comp": 0,
-      "activity": 70.1,
-      "recovery": 66.2
-    },
-    "composite": 43.1
   }
 }

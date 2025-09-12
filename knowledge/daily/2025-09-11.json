@@ -1,0 +1,106 @@
+{
+  "date": "2025-09-11",
+  "strength": [
+    {
+      "exercise_id": 687,
+      "exercise_name": "Overhead Press",
+      "category": "Chest",
+      "sets": 4,
+      "reps": [
+        6,
+        7,
+        7,
+        7
+      ],
+      "weights_kg": [
+        20.0,
+        20.0,
+        20.0,
+        20.0
+      ],
+      "volume_kg": 540.0
+    },
+    {
+      "exercise_id": 1185,
+      "exercise_name": "Triceps Pushdown",
+      "category": "Arms",
+      "sets": 3,
+      "reps": [
+        12,
+        12,
+        12
+      ],
+      "weights_kg": [
+        20.0,
+        20.0,
+        15.0
+      ],
+      "volume_kg": 660.0
+    },
+    {
+      "exercise_id": 348,
+      "exercise_name": "Lateral Raises",
+      "category": "Shoulders",
+      "sets": 3,
+      "reps": [
+        12,
+        12,
+        12
+      ],
+      "weights_kg": [
+        8.0,
+        8.0,
+        8.0
+      ],
+      "volume_kg": 288.0
+    },
+    {
+      "exercise_id": 1434,
+      "exercise_name": "Lat Pull DB",
+      "category": "Back",
+      "sets": 3,
+      "reps": [
+        12,
+        12,
+        12
+      ],
+      "weights_kg": [
+        20.0,
+        20.0,
+        20.0
+      ],
+      "volume_kg": 720.0
+    }
+  ],
+  "body": {
+    "weight_kg": 89.8,
+    "body_fat_pct": 31.07,
+    "muscle_mass_kg": null,
+    "water_pct": null
+  },
+  "activity": {
+    "steps": 5998,
+    "exercise_minutes": 173,
+    "stand_minutes": 132,
+    "distance_km": 4.85,
+    "calories": {
+      "active": 1595,
+      "resting": 2054,
+      "total": 3649
+    }
+  },
+  "heart": {
+    "resting_bpm": 50,
+    "avg_bpm": 108,
+    "min_bpm": 46,
+    "max_bpm": 182
+  },
+  "sleep": {
+    "total_minutes": 390,
+    "asleep_minutes": 386,
+    "rem_minutes": 118,
+    "deep_minutes": 27,
+    "core_minutes": 241,
+    "awake_minutes": 4
+  }
+}

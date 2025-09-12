@@ -1,0 +1,1177 @@
+{
+  "start": "2025-09-01",
+  "days": [
+    {
+      "date": "2025-09-01",
+      "week": 1,
+      "day": "Mon",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 615,
+              "name": "Squat",
+              "sets": 4,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 90
+            },
+            {
+              "id": 257,
+              "name": "Front Squat",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Left)",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60,
+              "superset": true
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Right)",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60,
+              "superset": true
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Plank",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-02",
+      "week": 1,
+      "day": "Tue",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 73,
+              "name": "Bench Press",
+              "sets": 4,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 90
+            },
+            {
+              "id": 538,
+              "name": "Incline Bench Press",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60
+            },
+            {
+              "id": 194,
+              "name": "Dips",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Hollow Hold",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-03",
+      "week": 1,
+      "day": "Wed",
+      "sessions": [
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-04",
+      "week": 1,
+      "day": "Thu",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 184,
+              "name": "Deadlift",
+              "sets": 3,
+              "reps": [
+                3,
+                6
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 90
+            },
+            {
+              "id": 507,
+              "name": "Romanian Deadlift",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60
+            },
+            {
+              "id": 1392,
+              "name": "Good Morning",
+              "sets": 3,
+              "reps": [
+                8,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.9,
+              "rest_seconds": 60
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Side Plank",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-05",
+      "week": 1,
+      "day": "Fri",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 687,
+              "name": "Overhead Press",
+              "sets": 4,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "light",
+              "load_factor": 0.85,
+              "rest_seconds": 90
+            },
+            {
+              "id": 918,
+              "name": "Dumbbell Lateral Raise",
+              "sets": 3,
+              "reps": [
+                10,
+                10
+              ],
+              "intensity": "light",
+              "load_factor": 0.85,
+              "rest_seconds": 60
+            },
+            {
+              "id": 222,
+              "name": "Facepull",
+              "sets": 3,
+              "reps": [
+                12,
+                15
+              ],
+              "intensity": "light",
+              "load_factor": 0.85,
+              "rest_seconds": 60
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Bird Dog",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-06",
+      "week": 1,
+      "day": "Sat",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-07",
+      "week": 1,
+      "day": "Sun",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-08",
+      "week": 2,
+      "day": "Mon",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 615,
+              "name": "Squat",
+              "sets": 4,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 120
+            },
+            {
+              "id": 257,
+              "name": "Front Squat",
+              "sets": 3,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Left)",
+              "sets": 3,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90,
+              "superset": true
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Right)",
+              "sets": 3,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90,
+              "superset": true
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Ab Wheel",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-09",
+      "week": 2,
+      "day": "Tue",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 73,
+              "name": "Bench Press",
+              "sets": 4,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 120
+            },
+            {
+              "id": 538,
+              "name": "Incline Bench Press",
+              "sets": 3,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90
+            },
+            {
+              "id": 194,
+              "name": "Dips",
+              "sets": 3,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Hanging Leg Raise",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-10",
+      "week": 2,
+      "day": "Wed",
+      "sessions": [
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-11",
+      "week": 2,
+      "day": "Thu",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 184,
+              "name": "Deadlift",
+              "sets": 3,
+              "reps": [
+                6,
+                6
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 120
+            },
+            {
+              "id": 507,
+              "name": "Romanian Deadlift",
+              "sets": 3,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90
+            },
+            {
+              "id": 1392,
+              "name": "Good Morning",
+              "sets": 3,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 1.0,
+              "rest_seconds": 90
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Russian Twist",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-12",
+      "week": 2,
+      "day": "Fri",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 687,
+              "name": "Overhead Press",
+              "sets": 4,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "medium",
+              "load_factor": 0.95,
+              "rest_seconds": 120
+            },
+            {
+              "id": 918,
+              "name": "Dumbbell Lateral Raise",
+              "sets": 3,
+              "reps": [
+                10,
+                15
+              ],
+              "intensity": "medium",
+              "load_factor": 0.95,
+              "rest_seconds": 90
+            },
+            {
+              "id": 222,
+              "name": "Facepull",
+              "sets": 3,
+              "reps": [
+                12,
+                15
+              ],
+              "intensity": "medium",
+              "load_factor": 0.95,
+              "rest_seconds": 90
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Deadbug",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-13",
+      "week": 2,
+      "day": "Sat",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-14",
+      "week": 2,
+      "day": "Sun",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-15",
+      "week": 3,
+      "day": "Mon",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 615,
+              "name": "Squat",
+              "sets": 4,
+              "reps": [
+                5,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 180
+            },
+            {
+              "id": 257,
+              "name": "Front Squat",
+              "sets": 3,
+              "reps": [
+                6,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Left)",
+              "sets": 3,
+              "reps": [
+                8,
+                12
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150,
+              "superset": true
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Right)",
+              "sets": 3,
+              "reps": [
+                8,
+                12
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150,
+              "superset": true
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Cable Woodchop",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-16",
+      "week": 3,
+      "day": "Tue",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 73,
+              "name": "Bench Press",
+              "sets": 4,
+              "reps": [
+                5,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 180
+            },
+            {
+              "id": 538,
+              "name": "Incline Bench Press",
+              "sets": 3,
+              "reps": [
+                6,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150
+            },
+            {
+              "id": 194,
+              "name": "Dips",
+              "sets": 3,
+              "reps": [
+                8,
+                12
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "V-Sit Hold",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-17",
+      "week": 3,
+      "day": "Wed",
+      "sessions": [
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-18",
+      "week": 3,
+      "day": "Thu",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 184,
+              "name": "Deadlift",
+              "sets": 3,
+              "reps": [
+                3,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 180
+            },
+            {
+              "id": 507,
+              "name": "Romanian Deadlift",
+              "sets": 3,
+              "reps": [
+                8,
+                12
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150
+            },
+            {
+              "id": 1392,
+              "name": "Good Morning",
+              "sets": 3,
+              "reps": [
+                8,
+                12
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.1,
+              "rest_seconds": 150
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Toe-to-Bar",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-19",
+      "week": 3,
+      "day": "Fri",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 687,
+              "name": "Overhead Press",
+              "sets": 4,
+              "reps": [
+                5,
+                6
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.04,
+              "rest_seconds": 180
+            },
+            {
+              "id": 918,
+              "name": "Dumbbell Lateral Raise",
+              "sets": 3,
+              "reps": [
+                10,
+                15
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.04,
+              "rest_seconds": 150
+            },
+            {
+              "id": 222,
+              "name": "Facepull",
+              "sets": 3,
+              "reps": [
+                12,
+                15
+              ],
+              "intensity": "heavy",
+              "load_factor": 1.04,
+              "rest_seconds": 150
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Pallof Press",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-20",
+      "week": 3,
+      "day": "Sat",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-21",
+      "week": 3,
+      "day": "Sun",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-22",
+      "week": 4,
+      "day": "Mon",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 615,
+              "name": "Squat",
+              "sets": 3,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 60
+            },
+            {
+              "id": 257,
+              "name": "Front Squat",
+              "sets": 2,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Left)",
+              "sets": 2,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45,
+              "superset": true
+            },
+            {
+              "id": 984,
+              "name": "Lunge (Right)",
+              "sets": 2,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45,
+              "superset": true
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Hollow Rocks",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-23",
+      "week": 4,
+      "day": "Tue",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 73,
+              "name": "Bench Press",
+              "sets": 3,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 60
+            },
+            {
+              "id": 538,
+              "name": "Incline Bench Press",
+              "sets": 2,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45
+            },
+            {
+              "id": 194,
+              "name": "Dips",
+              "sets": 2,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Side Crunch",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-24",
+      "week": 4,
+      "day": "Wed",
+      "sessions": [
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:00",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-25",
+      "week": 4,
+      "day": "Thu",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 184,
+              "name": "Deadlift",
+              "sets": 2,
+              "reps": [
+                6,
+                6
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 60
+            },
+            {
+              "id": 507,
+              "name": "Romanian Deadlift",
+              "sets": 2,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45
+            },
+            {
+              "id": 1392,
+              "name": "Good Morning",
+              "sets": 2,
+              "reps": [
+                8,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.7,
+              "rest_seconds": 45
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "06:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Plank Shoulder Taps",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-26",
+      "week": 4,
+      "day": "Fri",
+      "sessions": [
+        {
+          "type": "weights",
+          "exercises": [
+            {
+              "id": 687,
+              "name": "Overhead Press",
+              "sets": 3,
+              "reps": [
+                6,
+                8
+              ],
+              "intensity": "deload",
+              "load_factor": 0.66,
+              "rest_seconds": 60
+            },
+            {
+              "id": 918,
+              "name": "Dumbbell Lateral Raise",
+              "sets": 2,
+              "reps": [
+                10,
+                15
+              ],
+              "intensity": "deload",
+              "load_factor": 0.66,
+              "rest_seconds": 45
+            },
+            {
+              "id": 222,
+              "name": "Facepull",
+              "sets": 2,
+              "reps": [
+                12,
+                15
+              ],
+              "intensity": "deload",
+              "load_factor": 0.66,
+              "rest_seconds": 45
+            }
+          ]
+        },
+        {
+          "name": "Blaze",
+          "type": "HIIT",
+          "duration_min": 45,
+          "time": "07:15",
+          "is_class": true,
+          "location": "David Lloyd Gym"
+        },
+        {
+          "type": "core",
+          "exercise": "Dragon Flag",
+          "duration": "3 min (3 \u00d7 1 min rounds)"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-27",
+      "week": 4,
+      "day": "Sat",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    },
+    {
+      "date": "2025-09-28",
+      "week": 4,
+      "day": "Sun",
+      "sessions": [
+        {
+          "type": "rest"
+        }
+      ]
+    }
+  ]
+}
