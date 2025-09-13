@@ -50,6 +50,24 @@ class Settings(BaseSettings):
     POSTGRES_DB: Optional[str] = None
     DATABASE_URL: Optional[str] = Field(None, validate_default=True)
 
+    # --- PROGRESSION SETTINGS ---
+    PROGRESSION_INCREMENT: float = 0.05  # 5 percent increase
+    PROGRESSION_DECREMENT: float = 0.05  # 5 percent decrease
+
+    # --- RECOVERY & VALIDATION THRESHOLDS ---
+    RHR_ALLOWED_INCREASE: float = 0.10  # 10% above baseline triggers back-off
+    SLEEP_ALLOWED_DECREASE: float = 0.85  # 85% of baseline triggers back-off
+    BODY_AGE_ALLOWED_INCREASE: float = 2.0  # years
+    GLOBAL_BACKOFF_FACTOR: float = 0.90  # reduce weights by 10%
+
+    # --- METRIC WINDOWS ---
+    BASELINE_DAYS: int = 28
+    CYCLE_DAYS: int = 28
+
+    # --- PLAN BUILDER RECOVERY THRESHOLDS ---
+    RECOVERY_SLEEP_THRESHOLD_MINUTES: int = 420  # 7 hours
+    RECOVERY_RHR_THRESHOLD: int = 60  # bpm
+
     def __init__(self, **values):
         super().__init__(**values)
         # --- THIS LOGIC IS UPDATED ---

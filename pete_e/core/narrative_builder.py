@@ -2,6 +2,7 @@ import random
 from datetime import datetime, timedelta
 from pete_e.core.phrase_picker import random_phrase as phrase_for
 from pete_e.core.narrative_utils import stitch_sentences
+from pete_e.config import settings
 
 
 def compare_text(current, previous, unit="", context=""):
@@ -120,8 +121,9 @@ def build_cycle_narrative(metrics: dict) -> str:
         return "Ey up Ric 👋\n\nNo logs found for last cycle."
 
     all_dates = sorted(days.keys())
-    cycle_data = [days[d] for d in all_dates[-28:]]
-    prev_cycle = [days[d] for d in all_dates[-56:-28]] if len(all_dates) > 28 else []
+    cycle_days = settings.CYCLE_DAYS
+    cycle_data = [days[d] for d in all_dates[-cycle_days:]]
+    prev_cycle = [days[d] for d in all_dates[-2 * cycle_days:-cycle_days]] if len(all_dates) > cycle_days else []
 
     greeting = random.choice(["Ey up Ric 👋", "Cycle wrap-up time 🔄", "Alright Ric, here’s how the block went 💪"])
 

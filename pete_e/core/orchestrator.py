@@ -12,6 +12,7 @@ from typing import Optional
 
 # Import the abstract DAL, not a concrete implementation
 from pete_e.data_access.dal import DataAccessLayer
+from pete_e.config import settings
 from pete_e.infra import log_utils
 
 # Import the core logic modules that the orchestrator will coordinate
@@ -90,8 +91,7 @@ class Orchestrator:
         start_date = start_date or date.today()
         self.current_start_date = start_date
 
-        block = plan_builder.build_block(self.dal, start_date)
-        self.dal.save_training_plan(block, start_date)
+        plan_builder.build_block(self.dal, start_date)
         log_utils.log_message(
             f"New 4-week plan generated starting {start_date.isoformat()}", "INFO"
         )
@@ -126,5 +126,5 @@ class Orchestrator:
         return sum(vals) / len(vals) if vals else None
 
     def _baseline(self, history: dict, metric: str) -> Optional[float]:
-        """Calculates the 28-day baseline for a given metric."""
-        return self._average(history, metric, 28)
+        """Calculates the baseline for a given metric."""
+        return self._average(history, metric, settings.BASELINE_DAYS)
