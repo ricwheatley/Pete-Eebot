@@ -1,0 +1,187 @@
+# =================================================================
+
+# Python bytecode and caches
+
+# =================================================================
+
+__pycache__/
+
+*.py[cod]
+
+*$py.class
+
+
+
+# =================================================================
+
+# Virtual Environments
+
+# =================================================================
+
+# Standard virtual environment directories
+
+.venv/
+
+venv/
+
+ENV/
+
+env/
+
+
+
+# pyenv
+
+.python-version
+
+
+
+# =================================================================
+
+# Build and distribution artifacts
+
+# =================================================================
+
+build/
+
+develop-eggs/
+
+dist/
+
+downloads/
+
+eggs/
+
+.eggs/
+
+lib/
+
+lib64/
+
+parts/
+
+sdist/
+
+var/
+
+wheels/
+
+*.egg-info/
+
+.installed.cfg
+
+*.egg
+
+MANIFEST
+
+
+
+# =================================================================
+
+# IDE and Editor-specific files
+
+# =================================================================
+
+# VSCode
+
+.vscode/
+
+
+
+# PyCharm
+
+.idea/
+
+
+
+# Sublime Text
+
+*.sublime-project
+
+*.sublime-workspace
+
+
+
+# =================================================================
+
+# Secrets and Environment Variables
+
+# =================================================================
+
+# Environment variables file
+
+.env
+
+
+
+# =================================================================
+
+# Testing and Coverage
+
+# =================================================================
+
+.pytest_cache/
+
+.coverage
+
+.coverage.*
+
+htmlcov/
+
+nosetests.xml
+
+coverage.xml
+
+*.cover
+
+*.py,cover
+
+
+
+# =================================================================
+
+# Operating System files
+
+# =================================================================
+
+# macOS
+
+.DS_Store
+
+.AppleDouble
+
+.LSOverride
+
+
+
+# Windows
+
+Thumbs.db
+
+ehthumbs.db
+
+Desktop.ini
+
+
+
+# =================================================================
+
+# Logs and Runtime Data
+
+# =================================================================
+
+*.log
+
+*.log.*
+
+*.logs
+
+
+
+# The knowledge/ and docs/ directories should NOT be ignored in your
+
+# current setup, as they contain the source of truth for your data.
+
+# However, once fully migrated to a self-hosted database, you might
+
+# consider ignoring them if they are no longer needed in the repo.
