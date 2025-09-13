@@ -1,30 +1,48 @@
 """Adaptive weight progression logic using the Data Access Layer."""
 
-import statistics
+from statistics import mean
 from typing import Tuple
 
 from pete_e.data_access.dal import DataAccessLayer
 from pete_e.config import settings
 
 
+def _average(values: list[float]) -> float:
+    """Return the mean of a list, or 0 if empty."""
+
+    return mean(values) if values else 0.0
+
+
 def apply_progression(
     dal: DataAccessLayer, week: dict, lift_history: dict | None = None
 ) -> Tuple[dict, list[str]]:
-    """
-    Adjust weights per exercise based on recent actuals in lift log.
+    """Adjust weights based on lift log and recovery metrics."""
 
-    Args:
-        dal: Data access layer for retrieving lift history.
-        week: Training week structure.
-        lift_history: Cached lift_log data. If None, load via DAL.
-
-    Returns:
-        (adjusted_week, adjustment_logs)
-    """
     if lift_history is None:
         lift_history = dal.load_lift_log()
 
-    adjustments = []
+    recent_metrics = dal.get_historical_metrics(7)
+    baseline_metrics = dal.get_historical_metrics(settings.BASELINE_DAYS)
+
+    rhr_7 = _average(
+        [m.get("apple", {}).get("heart_rate", {}).get("resting") for m in recent_metrics if m.get("apple", {}).get("heart_rate", {}).get("resting") is not None]
+    )
+    sleep_7 = _average(
+        [m.get("apple", {}).get("sleep", {}).get("asleep") for m in recent_metrics if m.get("apple", {}).get("sleep", {}).get("asleep") is not None]
+    )
+    rhr_baseline = _average(
+        [m.get("apple", {}).get("heart_rate", {}).get("resting") for m in baseline_metrics if m.get("apple", {}).get("heart_rate", {}).get("resting") is not None]
+    )
+    sleep_baseline = _average(
+        [m.get("apple", {}).get("sleep", {}).get("asleep") for m in baseline_metrics if m.get("apple", {}).get("sleep", {}).get("asleep") is not None]
+    )
+
+    recovery_good = True
+    if rhr_baseline and sleep_baseline:
+        if rhr_7 > rhr_baseline * (1 + settings.RHR_ALLOWED_INCREASE) or sleep_7 < sleep_baseline * settings.SLEEP_ALLOWED_DECREASE:
+            recovery_good = False
+
+    adjustments: list[str] = []
 
     for day in week.get("days", []):
         for session in day.get("sessions", []):
@@ -36,34 +54,56 @@ def apply_progression(
 
                 entries = lift_history.get(ex_id, [])
                 if not entries:
-                    adjustments.append(f"{name}: no history, kept at {ex.get('weight_target', 0)}kg")
+                    adjustments.append(
+                        f"{name}: no history, kept at {ex.get('weight_target', 0)}kg"
+                    )
                     continue
 
-                # Look at the last 4 entries
                 last_entries = entries[-4:]
-                weights = [e.get("weight") for e in last_entries if e.get("weight")]
+                weights = [e.get("weight") for e in last_entries if e.get("weight") is not None]
+                rirs = [e.get("rir") for e in last_entries if e.get("rir") is not None]
 
                 if not weights:
-                    adjustments.append(f"{name}: no valid weight data, kept at {ex.get('weight_target', 0)}kg")
+                    adjustments.append(
+                        f"{name}: no valid weight data, kept at {ex.get('weight_target', 0)}kg"
+                    )
                     continue
 
-                avg = statistics.mean(weights)
-                base_weight = ex.get("weight_target", weights[-1])
+                avg_weight = mean(weights)
+                use_rir = bool(rirs)
+                avg_rir = mean(rirs) if use_rir else None
 
-                inc_factor = 1 + settings.PROGRESSION_INCREMENT
-                dec_factor = 1 - settings.PROGRESSION_DECREMENT
+                target = ex.get("weight_target", avg_weight)
+                inc = settings.PROGRESSION_INCREMENT
+                dec = settings.PROGRESSION_DECREMENT
 
-                if avg >= base_weight:
-                    ex["weight_target"] = round(base_weight * inc_factor, 2)
+                if use_rir:
+                    if avg_rir <= 1:
+                        inc += settings.PROGRESSION_INCREMENT / 2
+                    elif avg_rir >= 2:
+                        inc /= 2
+
+                if not recovery_good:
+                    inc /= 2
+                    dec *= 1.5
+
+                detail = (
+                    f"avg RIR {avg_rir:.1f}" if use_rir else "no RIR"
+                ) + f", recovery {'good' if recovery_good else 'poor'}"
+
+                if avg_weight >= target and (not use_rir or avg_rir <= 2):
+                    ex["weight_target"] = round(target * (1 + inc), 2)
                     adjustments.append(
-                        f"{name}: progressed +{settings.PROGRESSION_INCREMENT*100:.0f}% (avg {avg:.1f} ≥ base {base_weight:.1f})"
+                        f"{name}: +{inc*100:.1f}% ({detail})"
                     )
-                elif avg < base_weight:
-                    ex["weight_target"] = round(base_weight * dec_factor, 2)
+                elif avg_weight < target or (use_rir and avg_rir > 2):
+                    ex["weight_target"] = round(target * (1 - dec), 2)
                     adjustments.append(
-                        f"{name}: backed off -{settings.PROGRESSION_DECREMENT*100:.0f}% (avg {avg:.1f} < base {base_weight:.1f})"
+                        f"{name}: -{dec*100:.1f}% ({detail})"
                     )
                 else:
-                    adjustments.append(f"{name}: held at {base_weight}kg")
+                    adjustments.append(
+                        f"{name}: no change ({detail})"
+                    )
 
     return week, adjustments
