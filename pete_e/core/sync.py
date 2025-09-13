@@ -1,4 +1,3 @@
-import json
 import time
 from datetime import date
 
@@ -27,6 +26,7 @@ def run_sync(dal: DataAccessLayer) -> tuple[bool, list[str]]:
     failed_sources = []
     withings_data = {}
     apple_data = {}
+    wger_data = {}
 
     # --- Withings ---
     try:
@@ -44,13 +44,17 @@ def run_sync(dal: DataAccessLayer) -> tuple[bool, list[str]]:
         log_utils.log_message(f"[sync] Apple fetch failed: {e}", "ERROR")
         failed_sources.append("Apple")
 
+    # Save Withings and Apple summaries so foreign key exists for strength logs
+    dal.save_daily_summary({"withings": withings_data, "apple": apple_data}, today)
+
     # --- Wger Logs ---
     try:
         wger_data = wger_client.get_logs(days=1)
-        log_utils.log_message(f"[sync] Wger logs fetched: {len(wger_data.get(today_iso, []))} entries")
+        log_utils.log_message(
+            f"[sync] Wger logs fetched: {len(wger_data.get(today_iso, []))} entries"
+        )
         for d, logs_list in wger_data.items():
             for log in logs_list:
-                # Pass the DAL down to the business logic function
                 lift_log.append_log_entry(
                     dal=dal,
                     exercise_id=log.get("exercise_id"),
@@ -85,14 +89,6 @@ def run_sync(dal: DataAccessLayer) -> tuple[bool, list[str]]:
         "wger": wger_data.get(today_iso, []),
         "body_age": body_age_result,
     }
-    
-    # Use the DAL to save the daily summary
-    dal.save_daily_summary(daily_data, today)
-
-    # --- Update History File using the DAL ---
-    history = dal.load_history()
-    history[today_iso] = daily_data
-    dal.save_history(history)
 
     log_utils.log_message(f"[sync] Successfully completed sync for {today_iso}")
     return True, []

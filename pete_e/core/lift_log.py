@@ -14,31 +14,16 @@ def append_log_entry(
     rir: int | None = None,
     log_date: str | None = None,
 ) -> None:
-    """
-    Appends a new entry to the log for a given exercise using the provided DAL.
-    """
-    # Use the DAL to load the data, instead of reading the file directly
-    log = dal.load_lift_log()
-    key = str(exercise_id)
-    if key not in log:
-        log[key] = []
-
-    entry = {
-        "date": log_date or date.today().isoformat(),
-        "weight": weight,
-        "reps": reps,
-        "sets": sets,
-    }
-    if rir is not None:
-        entry["rir"] = rir
-
-    log[key].append(entry)
-
-    # Keep sorted by date
-    log[key] = sorted(log[key], key=lambda x: x["date"])
-    
-    # Use the DAL to save the data
-    dal.save_lift_log(log)
+    """Persist a strength training entry using the DAL."""
+    log_dt = date.fromisoformat(log_date) if log_date else date.today()
+    for _ in range(sets):
+        dal.save_strength_log_entry(
+            exercise_id=exercise_id,
+            log_date=log_dt,
+            reps=reps,
+            weight_kg=weight,
+            rir=rir,
+        )
 
 
 def get_history_for_exercise(
