@@ -3,51 +3,56 @@ Narratives and reporting for Pete-E.
 Handles daily, weekly, and random messaging, plus commits and logging.
 """
 
-import os
 import json
-import pathlib
 import subprocess
 import random
 from datetime import datetime
 import requests
 
-from pete_e.core import narratives as nb
+# Import centralized components
+from pete_e.config import settings
+from pete_e.infra.log_utils import log_message
+
+# Import local components for narrative building
+from pete_e.core import narrative_builders as nb
 from pete_e.core.phrase_picker import random_phrase
-from pete_e.core.narrative_utils import stitch_sentences
 
-# Paths
-METRICS_PATH = pathlib.Path("knowledge/history.json")
-LOG_PATH = pathlib.Path("summaries/logs/pete_history.log")
-
+# Hardcoded paths and local log_message function have been removed.
 
 # --- Helpers ---
 def load_metrics() -> dict:
-    return json.loads(METRICS_PATH.read_text()) if METRICS_PATH.exists() else {}
+    """Load the historical metrics from the knowledge/history.json file."""
+    history_path = settings.HISTORY_PATH
+    if not history_path.exists():
+        log_message("History file not found, returning empty metrics.", "WARN")
+        return {}
+    return json.loads(history_path.read_text(encoding="utf-8"))
 
 
 def send_telegram(msg: str) -> None:
-    """Send a message to Telegram using bot token + chat id."""
-    token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    """Send a message to Telegram using bot token + chat id from settings."""
+    token = settings.TELEGRAM_TOKEN
+    chat_id = settings.TELEGRAM_CHAT_ID
+    
     if not token or not chat_id:
-        raise RuntimeError("Missing TELEGRAM_TOKEN or TELEGRAM_CHAT_ID")
-    r = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": msg},
-        timeout=20,
-    )
-    r.raise_for_status()
-
-
-def log_message(msg: str) -> None:
-    """Append timestamped log entry to Pete history log."""
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.utcnow().isoformat()}] {msg}\n")
+        log_message("TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set. Skipping message.", "WARN")
+        return
+        
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"},
+            timeout=20,
+        )
+        r.raise_for_status()
+        log_message("Telegram message sent successfully.")
+    except requests.RequestException as e:
+        log_message(f"Failed to send Telegram message: {e}", "ERROR")
 
 
 def commit_changes(report_type: str, phrase: str) -> None:
     """Commit changes to git with a standardised message."""
+    log_message("Attempting to commit changes to the repository.")
     subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
     subprocess.run(
         ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
@@ -57,10 +62,13 @@ def commit_changes(report_type: str, phrase: str) -> None:
 
     msg = f"Pete log update ({report_type}) | {phrase} ({datetime.utcnow().strftime('%Y-%m-%d')})"
     try:
-        subprocess.run(["git", "commit", "-m", msg], check=True)
-        subprocess.run(["git", "push"], check=True)
-    except subprocess.CalledProcessError:
-        print("No changes to commit.")
+        # Using --quiet to reduce log noise
+        subprocess.run(["git", "commit", "-m", msg], check=True, capture_output=True)
+        subprocess.run(["git", "push"], check=True, capture_output=True)
+        log_message(f"Committed and pushed changes with message: {msg}")
+    except subprocess.CalledProcessError as e:
+        # This often means there were no changes to commit, which is not an error.
+        log_message("No changes to commit or push.")
 
 
 # --- Entrypoint ---
@@ -68,7 +76,10 @@ def run_narrative(report_type: str) -> None:
     """
     Run a narrative flow for daily, weekly, or random messages.
     """
+    log_message(f"Running '{report_type}' narrative.")
     metrics = load_metrics()
+    msg = ""
+    phrase = ""
 
     if report_type == "daily":
         msg = nb.build_daily_narrative(metrics)
@@ -79,6 +90,8 @@ def run_narrative(report_type: str) -> None:
         phrase = random_phrase(kind="coachism")
 
     elif report_type == "random":
+        # Note: This logic seems incomplete based on the audit.
+        # It sends a greeting but doesn't include the generated block.
         greetings = random.choice(
             [
                 "Ey up Ric 👋 got your new block sorted.",
@@ -92,6 +105,9 @@ def run_narrative(report_type: str) -> None:
     else:
         raise ValueError(f"Unknown report_type: {report_type}")
 
-    send_telegram(msg)
-    log_message(msg)
-    commit_changes(report_type, phrase)
+    if msg:
+        send_telegram(msg)
+        log_message(f"Generated message: {msg}")
+        commit_changes(report_type, phrase)
+    else:
+        log_message(f"No message generated for '{report_type}' narrative. Skipping send and commit.", "WARN")

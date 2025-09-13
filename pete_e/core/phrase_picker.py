@@ -1,8 +1,11 @@
 import json
 import random
-import pathlib
 
-PHRASES_PATH = pathlib.Path("knowledge/phrases_tagged.json")
+# Import centralized components
+from pete_e.config import settings
+from pete_e.infra.log_utils import log_message
+
+# Global cache for phrases to avoid repeated file reads
 _all_phrases = None
 
 
@@ -10,9 +13,12 @@ def load_phrases():
     """Load phrases from JSON into memory (cached)."""
     global _all_phrases
     if _all_phrases is None:
-        if not PHRASES_PATH.exists():
-            raise FileNotFoundError(f"Missing phrases file: {PHRASES_PATH}")
-        _all_phrases = json.loads(PHRASES_PATH.read_text(encoding="utf-8"))
+        phrases_path = settings.PHRASES_PATH
+        if not phrases_path.exists():
+            log_message(f"Missing phrases file at {phrases_path}", "ERROR")
+            # Return an empty list to prevent crashes, but log the error
+            return []
+        _all_phrases = json.loads(phrases_path.read_text(encoding="utf-8"))
     return _all_phrases
 
 
@@ -25,6 +31,8 @@ def random_phrase(kind="any", mode="balanced", tags=None) -> str:
     tags: optional list of hashtags to filter (e.g. ["#Motivation"])
     """
     phrases = load_phrases()
+    if not phrases:
+        return "No phrases available. Check logs for errors."
 
     # 1% chance to drop a legendary easter egg
     legendary = [p for p in phrases if (p.get("mode") or "").lower() == "legendary"]
@@ -37,8 +45,8 @@ def random_phrase(kind="any", mode="balanced", tags=None) -> str:
         phrases = [p for p in phrases if tagset & set(p.get("tags", []))]
 
     # Filter by kind (only if tags not used)
-    if kind != "any" and not tags:
-        phrases = [p for p in phrases if kind == (p.get("mode") or "").lower()]
+    elif kind != "any":
+        phrases = [p for p in phrases if kind == (p.get("kind") or "").lower()]
 
     # Mode selection
     serious = [p for p in phrases if (p.get("mode") or "").lower() in ("motivational", "coachism")]
@@ -49,14 +57,16 @@ def random_phrase(kind="any", mode="balanced", tags=None) -> str:
     elif mode == "chaotic":
         phrases = chaotic
     elif mode == "balanced":
+        # Default to serious 80% of the time, otherwise chaotic
         if random.random() < 0.8 and serious:
             phrases = serious
         elif chaotic:
             phrases = chaotic
     else:
-        raise ValueError(f"Unknown mode: {mode}")
+        log_message(f"Unknown mode specified: {mode}", "WARN")
 
     if not phrases:
-        raise ValueError(f"No phrases found for kind={kind}, mode={mode}, tags={tags}")
+        # Fallback to a generic phrase if no specific matches are found
+        return "Let's get to work."
 
     return random.choice(phrases)["text"]

@@ -1,50 +1,58 @@
 import json
+import time
 from datetime import date
-from pathlib import Path
 
-from pete_e.core.withings_client import get_withings_summary
-from pete_e.core import apple_client
-from integrations.wger.client import get_wger_logs
+# Import centralized components
+from pete_e.config import settings
 from pete_e.infra import log_utils
-from pete_e.core import lift_log
-from pete_e.core import body_age
 
-LIFT_LOG_PATH = Path("knowledge/lift_log.json")
-BODY_AGE_PATH = Path("knowledge/body_age.json")
-DAILY_DIR_PATH = Path("knowledge/daily")
-HISTORY_PATH = Path("knowledge/history.json")
+# Import refactored clients, modules, and the DAL contract
+from pete_e.core.withings_client import WithingsClient
+from integrations.wger.client import WgerClient
+from pete_e.core import apple_client, body_age, lift_log
+from pete_e.data_access.dal import DataAccessLayer
 
 
-def run_sync() -> tuple[bool, list[str]]:
-    """Run the daily sync consolidating all knowledge files."""
-    today = date.today().isoformat()
-    log_utils.log_message(f"[sync] Starting sync for {today}")
+def run_sync(dal: DataAccessLayer) -> tuple[bool, list[str]]:
+    """
+    Run the daily sync, consolidating data from all sources and saving via the DAL.
+    """
+    today = date.today()
+    today_iso = today.isoformat()
+    log_utils.log_message(f"[sync] Starting sync for {today_iso}")
+
+    # Initialize clients
+    withings_client = WithingsClient()
+    wger_client = WgerClient()
+    failed_sources = []
+    withings_data = {}
+    apple_data = {}
 
     # --- Withings ---
     try:
-        withings_data = get_withings_summary(0)
-        log_utils.log_message(f"[sync] Withings data: {withings_data}")
+        withings_data = withings_client.get_summary(target_date=today)
+        log_utils.log_message(f"[sync] Withings data fetched: {withings_data}")
     except Exception as e:
-        log_utils.log_message(f"[sync] Withings fetch failed: {e}")
-        return False, ["Withings"]
+        log_utils.log_message(f"[sync] Withings fetch failed: {e}", "ERROR")
+        failed_sources.append("Withings")
 
     # --- Apple ---
     try:
-        apple_data = apple_client.get_apple_summary({"date": today})
-        log_utils.log_message(f"[sync] Apple data: {apple_data}")
+        apple_data = apple_client.get_apple_summary({"date": today_iso})
+        log_utils.log_message(f"[sync] Apple data fetched: {apple_data}")
     except Exception as e:
-        log_utils.log_message(f"[sync] Apple fetch failed: {e}")
-        return False, ["Apple"]
+        log_utils.log_message(f"[sync] Apple fetch failed: {e}", "ERROR")
+        failed_sources.append("Apple")
 
     # --- Wger Logs ---
     try:
-        wger_data = get_wger_logs(days=1)
-        log_utils.log_message(f"[sync] Wger data: {wger_data}")
-
-        # Append to lift_log.json
+        wger_data = wger_client.get_logs(days=1)
+        log_utils.log_message(f"[sync] Wger logs fetched: {len(wger_data.get(today_iso, []))} entries")
         for d, logs_list in wger_data.items():
             for log in logs_list:
+                # Pass the DAL down to the business logic function
                 lift_log.append_log_entry(
+                    dal=dal,
                     exercise_id=log.get("exercise_id"),
                     weight=log.get("weight"),
                     reps=log.get("reps"),
@@ -53,8 +61,11 @@ def run_sync() -> tuple[bool, list[str]]:
                     log_date=d,
                 )
     except Exception as e:
-        log_utils.log_message(f"[sync] Wger fetch failed: {e}")
-        return False, ["Wger"]
+        log_utils.log_message(f"[sync] Wger fetch failed: {e}", "ERROR")
+        failed_sources.append("Wger")
+
+    if failed_sources:
+        return False, failed_sources
 
     # --- Body Age ---
     try:
@@ -63,31 +74,41 @@ def run_sync() -> tuple[bool, list[str]]:
         )
         log_utils.log_message(f"[sync] Body Age calculated: {body_age_result}")
     except Exception as e:
-        log_utils.log_message(f"[sync] Body Age calculation failed: {e}")
-        return False, ["BodyAge"]
+        log_utils.log_message(f"[sync] Body Age calculation failed: {e}", "ERROR")
+        body_age_result = {}
 
     # --- Consolidated Daily ---
     daily_data = {
-        "date": today,
+        "date": today_iso,
         "withings": withings_data,
         "apple": apple_data,
-        "wger": wger_data,
+        "wger": wger_data.get(today_iso, []),
         "body_age": body_age_result,
     }
-    daily_path = DAILY_DIR_PATH / f"{today}.json"
-    daily_path.parent.mkdir(parents=True, exist_ok=True)
-    daily_path.write_text(json.dumps(daily_data, indent=2))
+    
+    # Use the DAL to save the daily summary
+    dal.save_daily_summary(daily_data, today)
 
-    # Update history
-    history = {}
-    if HISTORY_PATH.exists():
-        try:
-            history = json.loads(HISTORY_PATH.read_text())
-        except Exception:
-            history = {}
+    # --- Update History File using the DAL ---
+    history = dal.load_history()
+    history[today_iso] = daily_data
+    dal.save_history(history)
 
-    history[today] = daily_data
-    HISTORY_PATH.write_text(json.dumps(history, indent=2))
-
-    log_utils.log_message(f"[sync] Successfully completed sync for {today}")
+    log_utils.log_message(f"[sync] Successfully completed sync for {today_iso}")
     return True, []
+
+
+def run_sync_with_retries(dal: DataAccessLayer, retries: int = 3, delay: int = 60) -> bool:
+    """Attempt to run the sync multiple times if it fails, passing the DAL."""
+    for i in range(retries):
+        # Pass the dal object to the run_sync function
+        success, failed = run_sync(dal=dal)
+        if success:
+            return True
+        log_utils.log_message(
+            f"[sync] Attempt {i + 1}/{retries} failed. Failed sources: {failed}. Retrying in {delay}s...", "WARN"
+        )
+        time.sleep(delay)
+    log_utils.log_message(f"[sync] All {retries} sync attempts failed.", "ERROR")
+    return False
+
