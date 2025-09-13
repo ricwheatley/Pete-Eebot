@@ -239,18 +239,110 @@ class PostgresDal(DataAccessLayer):
                     f"Error saving history for {day_str}: {e}", "ERROR"
                 )
 
+    def _row_to_summary(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "withings": {
+                "weight": float(row["weight_kg"]) if row["weight_kg"] is not None else None,
+                "fat_percent": float(row["body_fat_pct"]) if row["body_fat_pct"] is not None else None,
+                "muscle_mass": float(row["muscle_mass_kg"]) if row["muscle_mass_kg"] is not None else None,
+                "water_percent": float(row["water_pct"]) if row["water_pct"] is not None else None,
+            },
+            "apple": {
+                "steps": row["steps"],
+                "exercise_minutes": row["exercise_minutes"],
+                "calories": {
+                    "active": row["calories_active"],
+                    "resting": row["calories_resting"],
+                },
+                "stand_minutes": row["stand_minutes"],
+                "distance_m": row["distance_m"],
+                "heart_rate": {
+                    "resting": row["hr_resting"],
+                    "avg": row["hr_avg"],
+                    "max": row["hr_max"],
+                    "min": row["hr_min"],
+                },
+                "sleep": {
+                    "in_bed": row["sleep_total_minutes"],
+                    "asleep": row["sleep_asleep_minutes"],
+                    "rem": row["sleep_rem_minutes"],
+                    "deep": row["sleep_deep_minutes"],
+                    "core": row["sleep_core_minutes"],
+                    "awake": row["sleep_awake_minutes"],
+                },
+            },
+        }
+
     def load_body_age(self) -> Dict[str, Any]:
-        # This implementation remains the same as in your file.
-        pass
-    
+        out: Dict[str, Any] = {}
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT summary_date, body_age_years, delta_years FROM body_age_log ORDER BY summary_date ASC;"
+                    )
+                    for row in cur.fetchall():
+                        out[row["summary_date"].isoformat()] = {
+                            "body_age_years": float(row["body_age_years"]) if row["body_age_years"] is not None else None,
+                            "delta_years": float(row["delta_years"]) if row["delta_years"] is not None else None,
+                        }
+        except Exception as e:
+            log_utils.log_message(f"Error loading body age from Postgres: {e}", "ERROR")
+        return out
+
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
-        # This implementation remains the same as in your file.
-        pass
+        out: List[Dict[str, Any]] = []
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT * FROM daily_summary ORDER BY summary_date DESC LIMIT %s;",
+                        (days,),
+                    )
+                    rows = cur.fetchall()
+                    for row in reversed(rows):
+                        out.append(self._row_to_summary(row))
+        except Exception as e:
+            log_utils.log_message(
+                f"Error loading historical metrics for last {days} days: {e}", "ERROR"
+            )
+        return out
 
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
-        # This implementation remains the same as in your file.
-        pass
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT * FROM daily_summary WHERE summary_date = %s;",
+                        (target_date,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        return self._row_to_summary(row)
+        except Exception as e:
+            log_utils.log_message(
+                f"Error loading daily summary for {target_date}: {e}", "ERROR"
+            )
+        return None
 
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        # This implementation remains the same as in your file.
-        pass
+        out: List[Dict[str, Any]] = []
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT * FROM daily_summary
+                        WHERE summary_date BETWEEN %s AND %s
+                        ORDER BY summary_date ASC;
+                        """,
+                        (start_date, end_date),
+                    )
+                    for row in cur.fetchall():
+                        out.append(self._row_to_summary(row))
+        except Exception as e:
+            log_utils.log_message(
+                f"Error loading historical data between {start_date} and {end_date}: {e}",
+                "ERROR",
+            )
+        return out

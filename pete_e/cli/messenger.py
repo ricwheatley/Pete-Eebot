@@ -16,6 +16,10 @@ from datetime import date
 from pete_e.config import settings
 from pete_e.core.orchestrator import Orchestrator
 from pete_e.data_access.json_dal import JsonDal
+try:
+    from pete_e.data_access.postgres_dal import PostgresDal
+except Exception:  # pragma: no cover - Postgres optional
+    PostgresDal = None
 from pete_e.infra.telegram_sender import send_telegram_message
 from pete_e.infra import log_utils
 
@@ -42,7 +46,20 @@ def main():
     # We instantiate the DAL here and pass it to the orchestrator.
     # This is Dependency Injection! The orchestrator doesn't know or
     # care which DAL implementation it's using.
-    dal = JsonDal()
+    if (
+        PostgresDal
+        and settings.DATABASE_URL
+        and settings.ENVIRONMENT == "production"
+    ):
+        try:
+            dal = PostgresDal()
+        except Exception as e:
+            log_utils.log_message(
+                f"Postgres DAL init failed: {e}. Falling back to JSON.", "WARN"
+            )
+            dal = JsonDal()
+    else:
+        dal = JsonDal()
     orchestrator = Orchestrator(dal)
 
     # 2. Generate the report content using the orchestrator

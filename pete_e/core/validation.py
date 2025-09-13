@@ -4,12 +4,14 @@ Handles recovery-based checks: RHR, sleep, body age.
 Applies global back-off if needed and writes logs.
 """
 
-import json
-import pathlib
 from typing import Tuple
+
+from pete_e.data_access.dal import DataAccessLayer
+from pete_e.infra import log_utils
 
 
 def check_recovery(
+    dal: DataAccessLayer,
     week: dict,
     current_start_date: str,
     rhr_baseline: float,
@@ -17,7 +19,6 @@ def check_recovery(
     sleep_baseline: float,
     sleep_last_week: float,
     body_age_delta: float,
-    plans_dir: pathlib.Path,
 ) -> Tuple[dict, list[str]]:
     """
     Apply recovery checks and adjust weights globally if needed.
@@ -57,8 +58,10 @@ def check_recovery(
                     for ex in session["exercises"]:
                         ex["weight_target"] *= 0.9
 
-    # Save validation log
-    log_path = plans_dir / f"validation_week{week['week_index']}_{current_start_date}.json"
-    log_path.write_text(json.dumps(adjustments, indent=2))
+    # Persist validation outcome via log utils (uses settings.log_path)
+    log_utils.log_message(
+        f"validation_week{week['week_index']}_{current_start_date}: {adjustments}",
+        "INFO",
+    )
 
     return week, adjustments

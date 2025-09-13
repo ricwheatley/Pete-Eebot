@@ -1,23 +1,27 @@
-"""Adaptive weight progression logic using lift_log repository."""
+"""Adaptive weight progression logic using the Data Access Layer."""
 
 import statistics
-from pete_e.core import lift_log
 from typing import Tuple
 
+from pete_e.data_access.dal import DataAccessLayer
 
-def apply_progression(week: dict, lift_history: dict | None = None) -> Tuple[dict, list[str]]:
+
+def apply_progression(
+    dal: DataAccessLayer, week: dict, lift_history: dict | None = None
+) -> Tuple[dict, list[str]]:
     """
     Adjust weights per exercise based on recent actuals in lift log.
 
     Args:
-        week (dict): Training week structure.
-        lift_history (dict | None): Cached lift_log data. If None, load fresh.
+        dal: Data access layer for retrieving lift history.
+        week: Training week structure.
+        lift_history: Cached lift_log data. If None, load via DAL.
 
     Returns:
         (adjusted_week, adjustment_logs)
     """
     if lift_history is None:
-        lift_history = lift_log.load_log()
+        lift_history = dal.load_lift_log()
 
     adjustments = []
 

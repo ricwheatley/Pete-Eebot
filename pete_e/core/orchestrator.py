@@ -18,9 +18,7 @@ from pete_e.infra import log_utils
 from . import narratives
 from . import progression
 from . import validation
-
-# Legacy import - this will be the next component to be refactored
-from integrations.wger import plan_next_block
+from . import plan_builder
 
 
 class Orchestrator:
@@ -92,13 +90,10 @@ class Orchestrator:
         start_date = start_date or date.today()
         self.current_start_date = start_date
 
-        # The `build_block` function is a legacy component we still need to refactor.
-        # It should eventually also use the DAL to get its required data.
-        block = plan_next_block.build_block(start_date)
-
-        # TODO: The new plan (`block`) should be saved via the DAL, not directly.
-        # e.g., `self.dal.save_training_plan(block, start_date)`
-        log_utils.log_message(f"New 4-week plan generated starting {start_date.isoformat()}", "INFO")
+        block = plan_builder.build_block(self.dal, start_date)
+        log_utils.log_message(
+            f"New 4-week plan generated starting {start_date.isoformat()}", "INFO"
+        )
 
         # For now, we return a simple message. Later, this could summarize the plan.
         return f"✅ New 4-week training cycle planned, starting {start_date.isoformat()}."
