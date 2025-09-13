@@ -92,3 +92,13 @@ class JsonDal(DataAccessLayer):
                 out.append(summary)
             current += timedelta(days=1)
         return out
+
+    # --- Plan & Validation Persistence --------------------------------------
+    def save_training_plan(self, plan: dict, start_date: date) -> None:
+        """Write the training plan to disk under wger_plans_path."""
+        path = settings.wger_plans_path / f"plan_{start_date.isoformat()}.json"
+        self._write_json(path, plan)
+
+    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        """Persist validation logs via the central log util."""
+        log_utils.log_message(f"{tag}: {adjustments}", "INFO")

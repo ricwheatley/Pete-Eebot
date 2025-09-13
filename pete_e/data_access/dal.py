@@ -84,3 +84,13 @@ class DataAccessLayer(ABC):
             A list of daily summary dictionaries.
         """
         pass
+
+    @abstractmethod
+    def save_training_plan(self, plan: dict, start_date: date) -> None:
+        """Persist the generated multi-week training plan."""
+        pass
+
+    @abstractmethod
+    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        """Persist validation outcomes for audit/logging."""
+        pass

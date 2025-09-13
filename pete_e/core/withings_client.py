@@ -27,7 +27,7 @@ class WithingsClient:
 
     def _refresh_access_token(self):
         """Exchanges the refresh token for a new access token."""
-        log_message("Refreshing Withings access token.")
+        log_message("Refreshing Withings access token.", "INFO")
         data = {
             "action": "requesttoken",
             "grant_type": "refresh_token",
@@ -42,7 +42,7 @@ class WithingsClient:
             raise RuntimeError(f"Withings token refresh failed: {js}")
         
         self.access_token = js["body"]["access_token"]
-        log_message("Successfully refreshed Withings access token.")
+        log_message("Successfully refreshed Withings access token.", "INFO")
 
     def _fetch_measures(self, start: datetime, end: datetime) -> dict:
         """Fetches Withings measures for a given time window."""
@@ -82,7 +82,9 @@ class WithingsClient:
 
         measures = js.get("body", {}).get("measuregrps", [])
         if not measures:
-            log_message(f"No Withings measures found for {target_date.isoformat()}.")
+            log_message(
+                f"No Withings measures found for {target_date.isoformat()}.", "WARN"
+            )
             return {"date": target_date.isoformat()}
 
         latest = measures[-1]
@@ -99,5 +101,8 @@ class WithingsClient:
         row["muscle_mass"] = round(val(76), 2) if val(76) is not None else None
         row["water_percent"] = round(val(77), 2) if val(77) is not None else None
 
-        log_message(f"Successfully fetched Withings summary for {target_date.isoformat()}.")
+        log_message(
+            f"Successfully fetched Withings summary for {target_date.isoformat()}.",
+            "INFO",
+        )
         return row

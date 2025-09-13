@@ -126,3 +126,14 @@ COMMENT ON TABLE strength_log IS 'Stores individual sets from strength training 
 
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
+
+-- -----------------------------------------------------------------------------
+-- Table: training_plans
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS training_plans (
+    id SERIAL PRIMARY KEY,
+    start_date DATE UNIQUE NOT NULL,
+    plan JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_plans_start_date ON training_plans(start_date);

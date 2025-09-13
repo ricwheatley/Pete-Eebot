@@ -91,6 +91,7 @@ class Orchestrator:
         self.current_start_date = start_date
 
         block = plan_builder.build_block(self.dal, start_date)
+        self.dal.save_training_plan(block, start_date)
         log_utils.log_message(
             f"New 4-week plan generated starting {start_date.isoformat()}", "INFO"
         )
