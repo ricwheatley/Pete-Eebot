@@ -4,6 +4,7 @@ import statistics
 from typing import Tuple
 
 from pete_e.data_access.dal import DataAccessLayer
+from pete_e.config import settings
 
 
 def apply_progression(
@@ -49,12 +50,19 @@ def apply_progression(
                 avg = statistics.mean(weights)
                 base_weight = ex.get("weight_target", weights[-1])
 
+                inc_factor = 1 + settings.PROGRESSION_INCREMENT
+                dec_factor = 1 - settings.PROGRESSION_DECREMENT
+
                 if avg >= base_weight:
-                    ex["weight_target"] = round(base_weight * 1.05, 2)
-                    adjustments.append(f"{name}: progressed +5% (avg {avg:.1f} ≥ base {base_weight:.1f})")
+                    ex["weight_target"] = round(base_weight * inc_factor, 2)
+                    adjustments.append(
+                        f"{name}: progressed +{settings.PROGRESSION_INCREMENT*100:.0f}% (avg {avg:.1f} ≥ base {base_weight:.1f})"
+                    )
                 elif avg < base_weight:
-                    ex["weight_target"] = round(base_weight * 0.95, 2)
-                    adjustments.append(f"{name}: backed off -5% (avg {avg:.1f} < base {base_weight:.1f})")
+                    ex["weight_target"] = round(base_weight * dec_factor, 2)
+                    adjustments.append(
+                        f"{name}: backed off -{settings.PROGRESSION_DECREMENT*100:.0f}% (avg {avg:.1f} < base {base_weight:.1f})"
+                    )
                 else:
                     adjustments.append(f"{name}: held at {base_weight}kg")
 

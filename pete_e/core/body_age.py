@@ -1,6 +1,5 @@
 """
-Body Age calculation for Pete-E
-Refactored from calc_body_age.py – no legacy artefacts, returns clean dicts.
+Body Age calculation for Pete-E.
 """
 
 from datetime import date
