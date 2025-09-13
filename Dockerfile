@@ -23,13 +23,13 @@ RUN pip install --no-cache-dir psycopg[binary] pydantic pydantic-settings
 
 # Copy the .gitignore file so the migration script can find the project root
 COPY .gitignore .
-
 # Copy the entire pete_e application code into the container
 COPY ./pete_e ./pete_e
 
 # Copy the migration script and schema
 COPY migration.py .
-COPY schema.sql .
+# --- THIS IS THE CORRECTED LINE ---
+COPY ./init-db/schema.sql .
 
 # Copy the data files needed for the migration
 COPY ./knowledge ./knowledge
