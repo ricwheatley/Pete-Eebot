@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from datetime import date
 
 
@@ -46,3 +46,29 @@ class DataAccessLayer(ABC):
         """Retrieves the last N days of historical metrics."""
         pass
 
+    @abstractmethod
+    def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves a consolidated summary for a specific day.
+
+        Args:
+            target_date: The date for which to retrieve the summary.
+
+        Returns:
+            A dictionary containing the day's data, or None if not found.
+        """
+        pass
+
+    @abstractmethod
+    def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        """
+        Retrieves a range of historical daily summaries.
+
+        Args:
+            start_date: The starting date of the range.
+            end_date: The ending date of the range.
+
+        Returns:
+            A list of daily summary dictionaries.
+        """
+        pass

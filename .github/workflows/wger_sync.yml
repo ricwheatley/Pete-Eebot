@@ -3,11 +3,14 @@ name: Sync Wger
 on:
   schedule:
     - cron: "0 2 * * *"   # 03:00 UK in summer
-    - cron: "0 3 * * *"   # 03:00 UK in winter
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wger-sync:

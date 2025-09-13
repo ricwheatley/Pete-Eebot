@@ -1,4 +1,4 @@
-name: Withings OAuth Handskake
+name: Withings OAuth Handshake
 
 on:
   workflow_dispatch:

@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: withings-sync
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   withings:

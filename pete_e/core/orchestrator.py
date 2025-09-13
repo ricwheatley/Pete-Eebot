@@ -1,48 +1,116 @@
-import json
-from datetime import date
+"""
+The central orchestrator for all Pete-E business logic.
 
-# Import centralized components first
-from pete_e.config import settings
-from pete_e.infra import git_utils, log_utils
+This class is responsible for coordinating the various services (narratives,
+progression, validation) to generate reports and manage the training cycle.
+It is completely decoupled from the data storage mechanism, relying entirely on
+the DataAccessLayer (DAL) that is injected during its initialization.
+"""
 
-# Import core modules
-from pete_e.core import (
-    body_age,
-    lift_log,
-    narratives,
-    progression,
-    scheduler,
-    sync,
-    validation,
-)
+from datetime import date, timedelta
+from typing import Optional
 
-# Import from legacy integrations (temporary)
+# Import the abstract DAL, not a concrete implementation
+from pete_e.data_access.dal import DataAccessLayer
+from pete_e.infra import log_utils
+
+# Import the core logic modules that the orchestrator will coordinate
+from . import narratives
+from . import progression
+from . import validation
+
+# Legacy import - this will be the next component to be refactored
 from integrations.wger import plan_next_block
 
 
-class PeteE:
-    def __init__(self):
-        """Initialises the orchestrator, sourcing paths from central config."""
-        self.plans_dir = settings.WGER_PLANS_PATH
-        # Note: sessions_dir is unused in the original code, but we keep it for now
-        self.sessions_dir = self.plans_dir.parent / "sessions"
-        self.current_start_date = None
+class Orchestrator:
+    """Orchestrates high-level operations using the DAL."""
 
-    # --- Helpers ---
-    def _load_history(self) -> dict:
-        """Loads the consolidated history JSON file safely."""
-        history_path = settings.HISTORY_PATH
-        if not history_path.exists():
-            log_utils.log_message(f"History file not found at {history_path}", "WARN")
-            return {}
-        try:
-            return json.loads(history_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, IOError) as e:
-            log_utils.log_message(f"Error reading history file: {e}", "ERROR")
-            return {}
+    def __init__(self, dal: DataAccessLayer):
+        """
+        Initialises the orchestrator with a data access layer.
+
+        Args:
+            dal: A concrete implementation of the DataAccessLayer abstract base class.
+                 This allows the orchestrator to be storage-agnostic.
+        """
+        self.dal = dal
+        self.current_start_date: Optional[date] = None # Manages state for the current cycle
+
+    # --- PUBLIC REPORTING METHODS ---
+
+    def generate_daily_report(self, target_date: date) -> str:
+        """
+        Generates the daily narrative by fetching the latest data via the DAL.
+
+        Args:
+            target_date: The date for which to generate the report.
+
+        Returns:
+            A string containing the daily report message.
+        """
+        log_utils.log_message("[Orchestrator] Generating daily report.", "INFO")
+        # The orchestrator asks the DAL for data; it doesn't know how to get it.
+        history = self.dal.load_history()
+        if not history:
+            log_utils.log_message("History is empty, cannot generate daily report.", "WARN")
+            return ""
+
+        # The core logic module (narratives) is responsible for building the text
+        return narratives.build_daily_narrative(history)
+
+
+    def generate_weekly_report(self, target_date: date) -> str:
+        """
+        Generates the weekly narrative by fetching the latest data via the DAL.
+
+        Args:
+            target_date: The date for which to generate the report.
+
+        Returns:
+            A string containing the weekly report message.
+        """
+        log_utils.log_message("[Orchestrator] Generating weekly report.", "INFO")
+        history = self.dal.load_history()
+        if not history:
+            log_utils.log_message("History is empty, cannot generate weekly report.", "WARN")
+            return ""
+
+        return narratives.build_weekly_narrative(history)
+
+    def generate_cycle_report(self, start_date: Optional[date] = None) -> str:
+        """
+        Plans the next 4-week training block and generates a confirmation message.
+
+        Args:
+            start_date: An optional date to override the start of the cycle.
+
+        Returns:
+            A confirmation message string.
+        """
+        log_utils.log_message("[Orchestrator] Generating new cycle plan.", "INFO")
+        start_date = start_date or date.today()
+        self.current_start_date = start_date
+
+        # The `build_block` function is a legacy component we still need to refactor.
+        # It should eventually also use the DAL to get its required data.
+        block = plan_next_block.build_block(start_date)
+
+        # TODO: The new plan (`block`) should be saved via the DAL, not directly.
+        # e.g., `self.dal.save_training_plan(block, start_date)`
+        log_utils.log_message(f"New 4-week plan generated starting {start_date.isoformat()}", "INFO")
+
+        # For now, we return a simple message. Later, this could summarize the plan.
+        return f"✅ New 4-week training cycle planned, starting {start_date.isoformat()}."
+
+
+    # --- INTERNAL HELPER METHODS ---
+    # These methods for calculating averages are now powered by the DAL.
 
     def _get_metric_values(self, history: dict, metric: str, days: int) -> list:
         """Extracts metric values from the last N days of history."""
+        # This logic remains the same, but the `history` object it receives
+        # is now guaranteed to have come from the DAL.
         last_n = list(history.values())[-days:]
         vals = []
         for day_data in last_n:
@@ -56,97 +124,11 @@ class PeteE:
                 vals.append(v)
         return vals
 
-    def _baseline(self, history: dict, metric: str) -> float | None:
-        """Calculates the 28-day baseline for a given metric."""
-        vals = self._get_metric_values(history, metric, 28)
-        return sum(vals) / len(vals) if vals else None
-
-    def _average(self, history: dict, metric: str, days: int) -> float | None:
+    def _average(self, history: dict, metric: str, days: int) -> Optional[float]:
         """Calculates the average of a metric over the last N days."""
         vals = self._get_metric_values(history, metric, days)
         return sum(vals) / len(vals) if vals else None
 
-    # --- Cycle Management ---
-    def run_cycle(self, start_date: date | None = None):
-        """Build a 4-week block, save it, and push week 1."""
-        if not sync.run_sync_with_retries():
-            log_utils.log_message("[cycle] Aborted: sync failed", "ERROR")
-            return
-
-        start_date = start_date or date.today()
-        self.current_start_date = start_date.isoformat()
-
-        block = plan_next_block.build_block(start_date)
-
-        self.plans_dir.mkdir(parents=True, exist_ok=True)
-        plan_path = self.plans_dir / f"plan_{self.current_start_date}.json"
-        plan_path.write_text(json.dumps(block, indent=2))
-        log_utils.log_message(f"[cycle] Saved 4-week plan starting {self.current_start_date}")
-
-        # TODO: expand + push week 1 to Wger here
-
-    def validate_and_push_next_week(self, week_index: int):
-        """Validate actuals + recovery, adjust next week, and push it."""
-        if not sync.run_sync_with_retries():
-            log_utils.log_message("[cycle] Validation aborted: sync failed", "ERROR")
-            return
-
-        plan_path = self.plans_dir / f"plan_{self.current_start_date}.json"
-        if not plan_path.exists():
-            log_utils.log_message(f"[cycle] No saved plan found at {plan_path}", "ERROR")
-            return
-        plan = json.loads(plan_path.read_text())
-
-        week = next((w for w in plan["weeks"] if w["week_index"] == week_index), None)
-        if not week:
-            log_utils.log_message(f"[cycle] No week {week_index} in plan", "ERROR")
-            return
-
-        lift_history = lift_log.load_log()
-        history_data = self._load_history()
-
-        body_age_path = settings.BODY_AGE_PATH
-        body_age_data = json.loads(body_age_path.read_text()) if body_age_path.exists() else {}
-        body_age_delta = body_age_data.get("age_delta_years", 0)
-
-        week, prog_adjustments = progression.apply_progression(week, lift_history)
-        week, recovery_adjustments = validation.check_recovery(
-            week=week,
-            current_start_date=self.current_start_date,
-            rhr_baseline=self._baseline(history_data, "rhr"),
-            rhr_last_week=self._average(history_data, "rhr", 7),
-            sleep_baseline=self._baseline(history_data, "sleep"),
-            sleep_last_week=self._average(history_data, "sleep", 7),
-            body_age_delta=body_age_delta,
-            plans_dir=self.plans_dir,
-        )
-        adjustments = prog_adjustments + recovery_adjustments
-
-        week_path = self.plans_dir / f"week{week_index}_{self.current_start_date}.json"
-        week_path.write_text(json.dumps(week, indent=2))
-        log_utils.log_message(f"[cycle] Week {week_index} validated and saved")
-        for adj in adjustments:
-            log_utils.log_message(f"[cycle] {adj}")
-
-        # TODO: expand + push week {week_index} to Wger here
-
-    # --- Feedback ---
-    def send_daily_feedback(self):
-        if not sync.run_sync_with_retries():
-            log_utils.log_message("[daily] Feedback aborted: sync failed", "ERROR")
-            return
-        history = self._load_history()
-        msg = narratives.build_daily_narrative(history)
-        log_utils.log_message(f"[daily] {msg}")
-
-    def send_weekly_feedback(self):
-        if not sync.run_sync_with_retries():
-            log_utils.log_message("[weekly] Feedback aborted: sync failed", "ERROR")
-            return
-        history = self._load_history()
-        msg = narratives.build_weekly_narrative(history)
-        log_utils.log_message(f"[weekly] {msg}")
-
-    def send_random_message(self):
-        msg = "Random Pete-E message (TODO: hook into phrase picker)"
-        log_utils.log_message(f"[random] {msg}")
+    def _baseline(self, history: dict, metric: str) -> Optional[float]:
+        """Calculates the 28-day baseline for a given metric."""
+        return self._average(history, metric, 28)

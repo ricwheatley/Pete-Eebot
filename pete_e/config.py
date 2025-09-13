@@ -1,43 +1,104 @@
+﻿"""
+Centralised config for the entire application.
+
+This module consolidates all configuration settings, loading sensitive values
+from environment variables and providing typed, validated access to them
+through a singleton `settings` object.
+"""
+
 import os
+from urllib.parse import quote_plus
 from pathlib import Path
 from typing import Optional
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
     Centralized application settings.
-    Pydantic's BaseSettings will automatically load values from environment
-    variables. For example, TELEGRAM_TOKEN will be loaded from the
-    TELEGRAM_TOKEN environment variable.
-    """
-    # Model config
-    model_config = SettingsConfigDict(extra='ignore')
 
-    # API Credentials
+    Pydantic's BaseSettings will automatically load values from a `.env` file
+    or from system environment variables. This keeps secrets out of the code
+    and allows for different configurations across environments.
+    """
+    # Model config: Load from a .env file, and treat env vars as case-insensitive
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False)
+
+    # --- CORE SETTINGS ---
+    # The root directory of the project.
+    # We determine this by finding the parent directory of this config file.
+    PROJECT_ROOT: Path = Path(__file__).parent.parent.resolve()
+    ENVIRONMENT: str = "development"
+
+    # --- API CREDENTIALS (from environment) ---
+    TELEGRAM_TOKEN: str
+    TELEGRAM_CHAT_ID: str
     WITHINGS_CLIENT_ID: str
     WITHINGS_CLIENT_SECRET: str
     WITHINGS_REDIRECT_URI: str
     WITHINGS_REFRESH_TOKEN: str
-    TELEGRAM_TOKEN: str
-    TELEGRAM_CHAT_ID: str
     WGER_API_KEY: str
     WGER_API_URL: str = "https://wger.de/api/v2"
 
-    # File Paths (relative to project root)
-    LOG_PATH: Path = Path("summaries/logs/pete_history.log")
-    LIFT_LOG_PATH: Path = Path("knowledge/lift_log.json")
-    HISTORY_PATH: Path = Path("knowledge/history.json")
-    DAILY_KNOWLEDGE_PATH: Path = Path("knowledge/daily")
-    WGER_CATALOG_PATH: Path = Path("knowledge/wger")
-    PHRASES_PATH: Path = Path("knowledge/phrases.json")
-    WGER_PLANS_PATH: Path = Path("knowledge/wger/plans")  # New path
-    BODY_AGE_PATH: Path = Path("knowledge/body_age.json") # New path
+    # --- DATABASE (from environment) ---
+    POSTGRES_USER: Optional[str] = None
+    POSTGRES_PASSWORD: Optional[str] = None
+    POSTGRES_HOST: Optional[str] = None
+    POSTGRES_PORT: Optional[int] = 5432
+    POSTGRES_DB: Optional[str] = None
+    DATABASE_URL: Optional[str] = Field(None, validate_default=True)
 
-    # Future Database URL placeholder
-    DATABASE_URL: Optional[str] = None
+    def __init__(self, **values):
+        super().__init__(**values)
+        # --- THIS LOGIC IS UPDATED ---
+        # Check for an explicit override for the host from the environment
+        db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
+        if self.POSTGRES_USER and self.POSTGRES_PASSWORD and db_host and self.POSTGRES_DB:
+            # URL-encode user/pass to support special characters like @ and #
+            user_enc = quote_plus(self.POSTGRES_USER)
+            pass_enc = quote_plus(self.POSTGRES_PASSWORD)
+            self.DATABASE_URL = (
+                f"postgresql://{user_enc}:{pass_enc}@{db_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        else:
+            self.DATABASE_URL = None
+
+
+    # --- FILE PATHS (derived from PROJECT_ROOT) ---
+    @property
+    def log_path(self) -> Path:
+        return self.PROJECT_ROOT / "summaries/logs/pete_history.log"
+
+    @property
+    def lift_log_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/lift_log.json"
+
+    @property
+    def history_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/history.json"
+
+    @property
+    def daily_knowledge_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/daily"
+
+    @property
+    def wger_catalog_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/wger"
+
+    @property
+    def phrases_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/phrases.json"
+
+    @property
+    def wger_plans_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/wger/plans"
+
+    @property
+    def body_age_path(self) -> Path:
+        return self.PROJECT_ROOT / "knowledge/body_age.json"
+
 
 # Create a single, importable instance of the settings
 settings = Settings()
-

@@ -1,0 +1,52 @@
+﻿services:
+  db:
+    image: postgres:15
+    container_name: pete_db_container
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pete_user -d pete_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    environment:
+      POSTGRES_DB: pete_db
+      POSTGRES_USER: pete_user
+      POSTGRES_PASSWORD: your_docker_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # --- THIS IS THE UPDATED LINE ---
+      # Mount the entire init directory instead of just the file
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - pete-net
+
+  app:
+    build: .
+    container_name: pete_app_container
+    depends_on:
+      db:
+        condition: service_healthy
+    command: tail -f /dev/null
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - WITHINGS_CLIENT_ID=${WITHINGS_CLIENT_ID}
+      - WITHINGS_CLIENT_SECRET=${WITHINGS_CLIENT_SECRET}
+      - WITHINGS_REDIRECT_URI=${WITHINGS_REDIRECT_URI}
+      - WITHINGS_REFRESH_TOKEN=${WITHINGS_REFRESH_TOKEN}
+      - WGER_API_KEY=${WGER_API_KEY}
+    networks:
+      - pete-net
+
+volumes:
+  postgres_data:
+
+networks:
+  pete-net:
+    driver: bridge
