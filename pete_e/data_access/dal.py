@@ -22,6 +22,18 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def save_strength_log_entry(
+        self,
+        exercise_id: int,
+        log_date: date,
+        reps: int,
+        weight_kg: float,
+        rir: Optional[float] = None,
+    ) -> None:
+        """Persists a single strength training set."""
+        pass
+
+    @abstractmethod
     def load_history(self) -> Dict[str, Any]:
         """Loads the consolidated history file."""
         pass
