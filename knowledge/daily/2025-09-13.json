@@ -1,0 +1,29 @@
+{
+  "apple": {
+    "calories": {
+      "active": null,
+      "resting": null,
+      "total": null
+    },
+    "date": "2025-09-13",
+    "distance_m": null,
+    "exercise_minutes": null,
+    "heart_rate": {
+      "avg": null,
+      "max": null,
+      "min": null,
+      "resting": null
+    },
+    "sleep": {
+      "asleep": null,
+      "awake": null,
+      "core": null,
+      "deep": null,
+      "in_bed": null,
+      "rem": null
+    },
+    "stand_minutes": null,
+    "steps": null
+  },
+  "withings": {}
+}

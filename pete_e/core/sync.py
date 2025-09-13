@@ -1,5 +1,5 @@
 import time
-from datetime import date
+from datetime import date, timedelta
 
 # Import centralized components
 from pete_e.config import settings
@@ -51,7 +51,7 @@ def run_sync(dal: DataAccessLayer) -> tuple[bool, list[str]]:
 
     # --- Withings ---
     try:
-        withings_data = withings_client.get_summary(target_date=today)
+        withings_data = withings_client.get_summary(target_date=today - timedelta(days=1))
         log_utils.log_message(f"[sync] Withings data fetched: {withings_data}", "INFO")
     except Exception as e:
         log_utils.log_message(f"[sync] Withings fetch failed: {e}", "ERROR")

@@ -13,7 +13,7 @@ def load_phrases():
     """Load phrases from JSON into memory (cached)."""
     global _all_phrases
     if _all_phrases is None:
-        phrases_path = settings.PHRASES_PATH
+        phrases_path = settings.phrases_path
         if not phrases_path.exists():
             log_message(f"Missing phrases file at {phrases_path}", "ERROR")
             # Return an empty list to prevent crashes, but log the error

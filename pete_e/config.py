@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     def body_age_path(self) -> Path:
         return self.PROJECT_ROOT / "knowledge/body_age.json"
 
+    @property
+    def phrases_path(self) -> Path:
+        return self.PROJECT_ROOT / "resources" / "phrases_tagged.json"
 
 # Create a single, importable instance of the settings
 settings = Settings()

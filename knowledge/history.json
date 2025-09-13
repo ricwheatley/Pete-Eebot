@@ -1,528 +1,557 @@
 {
+  "2025-09-13": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-13",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
   "days": {
-    "2025-09-09": {
-      "date": "2025-09-09",
+    "2025-09-03": {
+      "activity": {
+        "calories": {
+          "active": 776,
+          "resting": 2101,
+          "total": 2877
+        },
+        "distance_km": 6.25,
+        "exercise_minutes": 68,
+        "stand_minutes": 123,
+        "steps": 8628
+      },
+      "body": {
+        "body_fat_pct": 32.66,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 90.05
+      },
+      "date": "2025-09-03",
+      "heart": {
+        "avg_bpm": 101,
+        "max_bpm": 167,
+        "min_bpm": 52,
+        "resting_bpm": 56
+      },
+      "sleep": {
+        "asleep_minutes": 330,
+        "awake_minutes": 4,
+        "core_minutes": 212,
+        "deep_minutes": 30,
+        "rem_minutes": 88,
+        "total_minutes": 334
+      }
+    },
+    "2025-09-04": {
+      "activity": {
+        "calories": {
+          "active": 797,
+          "resting": 2077,
+          "total": 2874
+        },
+        "distance_km": 2.36,
+        "exercise_minutes": 71,
+        "stand_minutes": 77,
+        "steps": 3232
+      },
+      "body": {
+        "body_fat_pct": 30.86,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 89.4
+      },
+      "date": "2025-09-04",
+      "heart": {
+        "avg_bpm": 98,
+        "max_bpm": 143,
+        "min_bpm": 47,
+        "resting_bpm": 51
+      },
+      "sleep": {
+        "asleep_minutes": 292,
+        "awake_minutes": 3,
+        "core_minutes": 187,
+        "deep_minutes": 38,
+        "rem_minutes": 67,
+        "total_minutes": 295
+      },
       "strength": [
         {
-          "exercise_id": 507,
-          "exercise_name": "Romanian Deadlift",
-          "category": "Legs",
+          "category": "Arms",
+          "exercise_id": 1185,
+          "exercise_name": "Triceps Pushdown",
+          "reps": [
+            15,
+            15,
+            15
+          ],
           "sets": 3,
+          "volume_kg": 675.0,
+          "weights_kg": [
+            15.0,
+            15.0,
+            15.0
+          ]
+        },
+        {
+          "category": "Chest",
+          "exercise_id": 687,
+          "exercise_name": "Overhead Press",
           "reps": [
             8,
             8,
-            8
+            6,
+            7
           ],
+          "sets": 4,
+          "volume_kg": 870.0,
           "weights_kg": [
-            50.0,
-            50.0,
-            50.0
+            30.0,
+            30.0,
+            30.0,
+            30.0
+          ]
+        },
+        {
+          "category": "Back",
+          "exercise_id": 1434,
+          "exercise_name": "Lat Pull DB",
+          "reps": [
+            12,
+            10,
+            12
           ],
-          "volume_kg": 1200.0
+          "sets": 3,
+          "volume_kg": 816.0,
+          "weights_kg": [
+            24.0,
+            24.0,
+            24.0
+          ]
+        },
+        {
+          "category": "Shoulders",
+          "exercise_id": 348,
+          "exercise_name": "Lateral Raises",
+          "reps": [
+            15,
+            15,
+            15
+          ],
+          "sets": 3,
+          "volume_kg": 360.0,
+          "weights_kg": [
+            8.0,
+            8.0,
+            8.0
+          ]
         }
-      ],
-      "body": {
-        "weight_kg": 90.0,
-        "body_fat_pct": 30.91,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
+      ]
+    },
+    "2025-09-05": {
       "activity": {
-        "steps": 7189,
-        "exercise_minutes": 92,
-        "stand_minutes": 129,
-        "distance_km": 5.8,
         "calories": {
-          "active": 1150,
-          "resting": 2065,
-          "total": 3215
-        }
+          "active": 1092,
+          "resting": 2077,
+          "total": 3169
+        },
+        "distance_km": 5.03,
+        "exercise_minutes": 69,
+        "stand_minutes": 129,
+        "steps": 6144
       },
+      "body": {
+        "body_fat_pct": 31.13,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 89.8
+      },
+      "date": "2025-09-05",
       "heart": {
-        "resting_bpm": 53,
-        "avg_bpm": 116,
-        "min_bpm": 48,
-        "max_bpm": 183
+        "avg_bpm": 128,
+        "max_bpm": 188,
+        "min_bpm": 47,
+        "resting_bpm": 49
       },
       "sleep": {
-        "total_minutes": 399,
-        "asleep_minutes": 388,
-        "rem_minutes": 93,
-        "deep_minutes": 46,
-        "core_minutes": 249,
-        "awake_minutes": 11
+        "asleep_minutes": 330,
+        "awake_minutes": 5,
+        "core_minutes": 212,
+        "deep_minutes": 40,
+        "rem_minutes": 78,
+        "total_minutes": 335
+      }
+    },
+    "2025-09-06": {
+      "activity": {
+        "calories": {
+          "active": 706,
+          "resting": 2094,
+          "total": 2800
+        },
+        "distance_km": 7.43,
+        "exercise_minutes": 45,
+        "stand_minutes": 153,
+        "steps": 10017
+      },
+      "body": {
+        "body_fat_pct": 31.77,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 89.9
+      },
+      "date": "2025-09-06",
+      "heart": {
+        "avg_bpm": 78,
+        "max_bpm": 131,
+        "min_bpm": 45,
+        "resting_bpm": 47
+      },
+      "sleep": {
+        "asleep_minutes": 322,
+        "awake_minutes": 66,
+        "core_minutes": 234,
+        "deep_minutes": 26,
+        "rem_minutes": 62,
+        "total_minutes": 388
+      }
+    },
+    "2025-09-07": {
+      "activity": {
+        "calories": {
+          "active": 449,
+          "resting": 2099,
+          "total": 2548
+        },
+        "distance_km": 3.33,
+        "exercise_minutes": 7,
+        "stand_minutes": 79,
+        "steps": 4548
+      },
+      "body": {
+        "body_fat_pct": 31.77,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 90.0
+      },
+      "date": "2025-09-07",
+      "heart": {
+        "avg_bpm": 63,
+        "max_bpm": 137,
+        "min_bpm": 47,
+        "resting_bpm": 49
+      },
+      "sleep": {
+        "asleep_minutes": 472,
+        "awake_minutes": 5,
+        "core_minutes": 317,
+        "deep_minutes": 28,
+        "rem_minutes": 127,
+        "total_minutes": 477
       }
     },
     "2025-09-08": {
+      "activity": {
+        "calories": {
+          "active": 1387,
+          "resting": 2095,
+          "total": 3482
+        },
+        "distance_km": 5.7,
+        "exercise_minutes": 113,
+        "stand_minutes": 150,
+        "steps": 6764
+      },
+      "body": {
+        "body_fat_pct": 29.55,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 90.55
+      },
       "date": "2025-09-08",
+      "heart": {
+        "avg_bpm": 125,
+        "max_bpm": 185,
+        "min_bpm": 48,
+        "resting_bpm": 50
+      },
+      "sleep": {
+        "asleep_minutes": 402,
+        "awake_minutes": 4,
+        "core_minutes": 250,
+        "deep_minutes": 49,
+        "rem_minutes": 103,
+        "total_minutes": 406
+      },
       "strength": [
         {
+          "category": "Shoulders",
           "exercise_id": 222,
           "exercise_name": "Facepull",
-          "category": "Shoulders",
-          "sets": 3,
           "reps": [
             11,
             10,
             10
           ],
+          "sets": 3,
+          "volume_kg": 310.0,
           "weights_kg": [
             10.0,
             10.0,
             10.0
-          ],
-          "volume_kg": 310.0
+          ]
         },
         {
+          "category": "Chest",
           "exercise_id": 1295,
           "exercise_name": "Barbell Bench Press - NB",
-          "category": "Chest",
-          "sets": 4,
           "reps": [
             8,
             8,
             9,
             8
           ],
+          "sets": 4,
+          "volume_kg": 1320.0,
           "weights_kg": [
             40.0,
             40.0,
             40.0,
             40.0
-          ],
-          "volume_kg": 1320.0
+          ]
         },
         {
+          "category": "Back",
           "exercise_id": 1186,
           "exercise_name": "One Arm Bent Row",
-          "category": "Back",
-          "sets": 3,
           "reps": [
             10,
             10,
             10
           ],
+          "sets": 3,
+          "volume_kg": 300.0,
           "weights_kg": [
             10.0,
             10.0,
             10.0
-          ],
-          "volume_kg": 300.0
+          ]
         }
-      ],
-      "body": {
-        "weight_kg": 90.55,
-        "body_fat_pct": 29.55,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 6764,
-        "exercise_minutes": 113,
-        "stand_minutes": 150,
-        "distance_km": 5.7,
-        "calories": {
-          "active": 1387,
-          "resting": 2095,
-          "total": 3482
-        }
-      },
-      "heart": {
-        "resting_bpm": 50,
-        "avg_bpm": 125,
-        "min_bpm": 48,
-        "max_bpm": 185
-      },
-      "sleep": {
-        "total_minutes": 406,
-        "asleep_minutes": 402,
-        "rem_minutes": 103,
-        "deep_minutes": 49,
-        "core_minutes": 250,
-        "awake_minutes": 4
-      }
+      ]
     },
-    "2025-09-07": {
-      "date": "2025-09-07",
-      "body": {
-        "weight_kg": 90.0,
-        "body_fat_pct": 31.77,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
+    "2025-09-09": {
       "activity": {
-        "steps": 4548,
-        "exercise_minutes": 7,
-        "stand_minutes": 79,
-        "distance_km": 3.33,
         "calories": {
-          "active": 449,
-          "resting": 2099,
-          "total": 2548
-        }
-      },
-      "heart": {
-        "resting_bpm": 49,
-        "avg_bpm": 63,
-        "min_bpm": 47,
-        "max_bpm": 137
-      },
-      "sleep": {
-        "total_minutes": 477,
-        "asleep_minutes": 472,
-        "rem_minutes": 127,
-        "deep_minutes": 28,
-        "core_minutes": 317,
-        "awake_minutes": 5
-      }
-    },
-    "2025-09-06": {
-      "date": "2025-09-06",
-      "body": {
-        "weight_kg": 89.9,
-        "body_fat_pct": 31.77,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 10017,
-        "exercise_minutes": 45,
-        "stand_minutes": 153,
-        "distance_km": 7.43,
-        "calories": {
-          "active": 706,
-          "resting": 2094,
-          "total": 2800
-        }
-      },
-      "heart": {
-        "resting_bpm": 47,
-        "avg_bpm": 78,
-        "min_bpm": 45,
-        "max_bpm": 131
-      },
-      "sleep": {
-        "total_minutes": 388,
-        "asleep_minutes": 322,
-        "rem_minutes": 62,
-        "deep_minutes": 26,
-        "core_minutes": 234,
-        "awake_minutes": 66
-      }
-    },
-    "2025-09-05": {
-      "date": "2025-09-05",
-      "body": {
-        "weight_kg": 89.8,
-        "body_fat_pct": 31.13,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 6144,
-        "exercise_minutes": 69,
+          "active": 1150,
+          "resting": 2065,
+          "total": 3215
+        },
+        "distance_km": 5.8,
+        "exercise_minutes": 92,
         "stand_minutes": 129,
-        "distance_km": 5.03,
-        "calories": {
-          "active": 1092,
-          "resting": 2077,
-          "total": 3169
-        }
+        "steps": 7189
       },
+      "body": {
+        "body_fat_pct": 30.91,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 90.0
+      },
+      "date": "2025-09-09",
       "heart": {
-        "resting_bpm": 49,
-        "avg_bpm": 128,
-        "min_bpm": 47,
-        "max_bpm": 188
+        "avg_bpm": 116,
+        "max_bpm": 183,
+        "min_bpm": 48,
+        "resting_bpm": 53
       },
       "sleep": {
-        "total_minutes": 335,
-        "asleep_minutes": 330,
-        "rem_minutes": 78,
-        "deep_minutes": 40,
-        "core_minutes": 212,
-        "awake_minutes": 5
-      }
-    },
-    "2025-09-04": {
-      "date": "2025-09-04",
+        "asleep_minutes": 388,
+        "awake_minutes": 11,
+        "core_minutes": 249,
+        "deep_minutes": 46,
+        "rem_minutes": 93,
+        "total_minutes": 399
+      },
       "strength": [
         {
-          "exercise_id": 1185,
-          "exercise_name": "Triceps Pushdown",
-          "category": "Arms",
-          "sets": 3,
-          "reps": [
-            15,
-            15,
-            15
-          ],
-          "weights_kg": [
-            15.0,
-            15.0,
-            15.0
-          ],
-          "volume_kg": 675.0
-        },
-        {
-          "exercise_id": 687,
-          "exercise_name": "Overhead Press",
-          "category": "Chest",
-          "sets": 4,
+          "category": "Legs",
+          "exercise_id": 507,
+          "exercise_name": "Romanian Deadlift",
           "reps": [
             8,
             8,
-            6,
-            7
+            8
           ],
-          "weights_kg": [
-            30.0,
-            30.0,
-            30.0,
-            30.0
-          ],
-          "volume_kg": 870.0
-        },
-        {
-          "exercise_id": 1434,
-          "exercise_name": "Lat Pull DB",
-          "category": "Back",
           "sets": 3,
-          "reps": [
-            12,
-            10,
-            12
-          ],
+          "volume_kg": 1200.0,
           "weights_kg": [
-            24.0,
-            24.0,
-            24.0
-          ],
-          "volume_kg": 816.0
-        },
-        {
-          "exercise_id": 348,
-          "exercise_name": "Lateral Raises",
-          "category": "Shoulders",
-          "sets": 3,
-          "reps": [
-            15,
-            15,
-            15
-          ],
-          "weights_kg": [
-            8.0,
-            8.0,
-            8.0
-          ],
-          "volume_kg": 360.0
+            50.0,
+            50.0,
+            50.0
+          ]
         }
-      ],
-      "body": {
-        "weight_kg": 89.4,
-        "body_fat_pct": 30.86,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 3232,
-        "exercise_minutes": 71,
-        "stand_minutes": 77,
-        "distance_km": 2.36,
-        "calories": {
-          "active": 797,
-          "resting": 2077,
-          "total": 2874
-        }
-      },
-      "heart": {
-        "resting_bpm": 51,
-        "avg_bpm": 98,
-        "min_bpm": 47,
-        "max_bpm": 143
-      },
-      "sleep": {
-        "total_minutes": 295,
-        "asleep_minutes": 292,
-        "rem_minutes": 67,
-        "deep_minutes": 38,
-        "core_minutes": 187,
-        "awake_minutes": 3
-      }
-    },
-    "2025-09-03": {
-      "date": "2025-09-03",
-      "body": {
-        "weight_kg": 90.05,
-        "body_fat_pct": 32.66,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 8628,
-        "exercise_minutes": 68,
-        "stand_minutes": 123,
-        "distance_km": 6.25,
-        "calories": {
-          "active": 776,
-          "resting": 2101,
-          "total": 2877
-        }
-      },
-      "heart": {
-        "resting_bpm": 56,
-        "avg_bpm": 101,
-        "min_bpm": 52,
-        "max_bpm": 167
-      },
-      "sleep": {
-        "total_minutes": 334,
-        "asleep_minutes": 330,
-        "rem_minutes": 88,
-        "deep_minutes": 30,
-        "core_minutes": 212,
-        "awake_minutes": 4
-      }
+      ]
     },
     "2025-09-10": {
-      "date": "2025-09-10",
-      "body": {
-        "weight_kg": 89.65,
-        "body_fat_pct": 30.46,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
       "activity": {
-        "steps": 7225,
-        "exercise_minutes": 71,
-        "stand_minutes": 135,
-        "distance_km": 5.9,
         "calories": {
           "active": 1114,
           "resting": 2042,
           "total": 3156
-        }
+        },
+        "distance_km": 5.9,
+        "exercise_minutes": 71,
+        "stand_minutes": 135,
+        "steps": 7225
       },
+      "body": {
+        "body_fat_pct": 30.46,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 89.65
+      },
+      "date": "2025-09-10",
       "heart": {
-        "resting_bpm": 52,
         "avg_bpm": 127,
+        "max_bpm": 185,
         "min_bpm": 48,
-        "max_bpm": 185
+        "resting_bpm": 52
       },
       "sleep": {
-        "total_minutes": 373,
         "asleep_minutes": 365,
-        "rem_minutes": 111,
-        "deep_minutes": 27,
+        "awake_minutes": 8,
         "core_minutes": 227,
-        "awake_minutes": 8
+        "deep_minutes": 27,
+        "rem_minutes": 111,
+        "total_minutes": 373
       }
     },
     "2025-09-11": {
+      "activity": {
+        "calories": {
+          "active": 1595,
+          "resting": 2054,
+          "total": 3649
+        },
+        "distance_km": 4.85,
+        "exercise_minutes": 173,
+        "stand_minutes": 132,
+        "steps": 5998
+      },
+      "body": {
+        "body_fat_pct": 31.07,
+        "muscle_mass_kg": null,
+        "water_pct": null,
+        "weight_kg": 89.8
+      },
       "date": "2025-09-11",
+      "heart": {
+        "avg_bpm": 108,
+        "max_bpm": 182,
+        "min_bpm": 46,
+        "resting_bpm": 50
+      },
+      "sleep": {
+        "asleep_minutes": 386,
+        "awake_minutes": 4,
+        "core_minutes": 241,
+        "deep_minutes": 27,
+        "rem_minutes": 118,
+        "total_minutes": 390
+      },
       "strength": [
         {
+          "category": "Chest",
           "exercise_id": 687,
           "exercise_name": "Overhead Press",
-          "category": "Chest",
-          "sets": 4,
           "reps": [
             6,
             7,
             7,
             7
           ],
+          "sets": 4,
+          "volume_kg": 540.0,
           "weights_kg": [
             20.0,
             20.0,
             20.0,
             20.0
-          ],
-          "volume_kg": 540.0
+          ]
         },
         {
+          "category": "Arms",
           "exercise_id": 1185,
           "exercise_name": "Triceps Pushdown",
-          "category": "Arms",
-          "sets": 3,
           "reps": [
             12,
             12,
             12
           ],
+          "sets": 3,
+          "volume_kg": 660.0,
           "weights_kg": [
             20.0,
             20.0,
             15.0
-          ],
-          "volume_kg": 660.0
+          ]
         },
         {
+          "category": "Shoulders",
           "exercise_id": 348,
           "exercise_name": "Lateral Raises",
-          "category": "Shoulders",
-          "sets": 3,
           "reps": [
             12,
             12,
             12
           ],
+          "sets": 3,
+          "volume_kg": 288.0,
           "weights_kg": [
             8.0,
             8.0,
             8.0
-          ],
-          "volume_kg": 288.0
+          ]
         },
         {
+          "category": "Back",
           "exercise_id": 1434,
           "exercise_name": "Lat Pull DB",
-          "category": "Back",
-          "sets": 3,
           "reps": [
             12,
             12,
             12
           ],
+          "sets": 3,
+          "volume_kg": 720.0,
           "weights_kg": [
             20.0,
             20.0,
             20.0
-          ],
-          "volume_kg": 720.0
+          ]
         }
-      ],
-      "body": {
-        "weight_kg": 89.8,
-        "body_fat_pct": 31.07,
-        "muscle_mass_kg": null,
-        "water_pct": null
-      },
-      "activity": {
-        "steps": 5998,
-        "exercise_minutes": 173,
-        "stand_minutes": 132,
-        "distance_km": 4.85,
-        "calories": {
-          "active": 1595,
-          "resting": 2054,
-          "total": 3649
-        }
-      },
-      "heart": {
-        "resting_bpm": 50,
-        "avg_bpm": 108,
-        "min_bpm": 46,
-        "max_bpm": 182
-      },
-      "sleep": {
-        "total_minutes": 390,
-        "asleep_minutes": 386,
-        "rem_minutes": 118,
-        "deep_minutes": 27,
-        "core_minutes": 241,
-        "awake_minutes": 4
-      }
+      ]
     }
   }
 }
