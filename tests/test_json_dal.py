@@ -28,3 +28,9 @@ def test_json_dal_roundtrip(tmp_path, monkeypatch):
 
     data = dal.get_historical_data(day, day)
     assert data == [summary]
+
+    # Training plan persistence
+    plan = {"start": day.isoformat(), "weeks": []}
+    dal.save_training_plan(plan, day)
+    plan_path = settings.wger_plans_path / f"plan_{day.isoformat()}.json"
+    assert plan_path.exists()

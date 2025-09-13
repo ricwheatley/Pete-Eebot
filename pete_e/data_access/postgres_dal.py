@@ -7,6 +7,7 @@ robust connection pool for efficiency and reliability.
 
 from datetime import date
 from typing import Any, Dict, List, Optional
+import json
 
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -346,3 +347,28 @@ class PostgresDal(DataAccessLayer):
                 "ERROR",
             )
         return out
+
+    def save_training_plan(self, plan: dict, start_date: date) -> None:
+        """Upsert a training plan into the training_plans table."""
+        log_utils.log_message(
+            f"[PostgresDal] Saving training plan for {start_date.isoformat()}", "INFO"
+        )
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO training_plans (start_date, plan)
+                        VALUES (%s, %s)
+                        ON CONFLICT (start_date) DO UPDATE SET plan = EXCLUDED.plan;
+                        """,
+                        (start_date, json.dumps(plan)),
+                    )
+        except Exception as e:
+            log_utils.log_message(
+                f"Error saving training plan for {start_date}: {e}", "ERROR"
+            )
+
+    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        """Persist validation logs via log utils (DB currently not used)."""
+        log_utils.log_message(f"{tag}: {adjustments}", "INFO")

@@ -39,8 +39,7 @@ jobs:
         run: |
           python - <<'PY'
           from pete_e.core.sync import run_sync_with_retries
-          from pete_e.data_access.json_dal import JsonDal
-          run_sync_with_retries(JsonDal())
+          run_sync_with_retries()
           PY
 
       - name: Run Pete Messenger (Daily)
@@ -64,8 +63,7 @@ jobs:
         run: |
           python - <<'PY'
           from pete_e.core.sync import run_sync_with_retries
-          from pete_e.data_access.json_dal import JsonDal
-          run_sync_with_retries(JsonDal())
+          run_sync_with_retries()
           PY
 
       - name: Run Pete Messenger (Weekly)
@@ -89,8 +87,7 @@ jobs:
         run: |
           python - <<'PY'
           from pete_e.core.sync import run_sync_with_retries
-          from pete_e.data_access.json_dal import JsonDal
-          run_sync_with_retries(JsonDal())
+          run_sync_with_retries()
           PY
 
       - name: Run Pete Messenger (Cycle → build/upload plan + notify)
