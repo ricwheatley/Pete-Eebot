@@ -68,7 +68,7 @@ def _safe_get_apple_summary(target_iso: str) -> Dict:
 
 def _safe_get_wger_logs(client: WgerClient, days: int):
     try:
-        data = client.get_logs(days=days)
+        data = client.fetch_logs(days=days)
         if isinstance(data, list):
             # Normalise to dict keyed by date
             out: Dict[str, List[Dict]] = {}
