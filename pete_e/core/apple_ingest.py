@@ -13,7 +13,7 @@ INCOMING = Path.home() / "pete-eebot" / "apple-incoming"
 
 def fetch_files():
     # clear Downloads into incoming before getting new
-    for f in DOWNLOADS.glob("apple_*.json"):
+    for f in DOWNLOADS.glob("apple_*.*"):
         shutil.move(str(f), INCOMING / f.name)
     subprocess.run(["tailscale", "file", "get", str(DOWNLOADS)], check=False)
 
@@ -29,7 +29,7 @@ def ingest_file(path: Path):
         log_utils.log_message(f"Failed to ingest {path.name}: {e}", "ERROR")
 
 def process_downloads():
-    for file in DOWNLOADS.glob("*.json"):
+    for file in DOWNLOADS.glob("apple_*.*"):
         dest = INCOMING / file.name
         try:
             shutil.move(str(file), dest)
