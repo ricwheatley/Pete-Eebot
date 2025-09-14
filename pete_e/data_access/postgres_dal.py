@@ -21,18 +21,23 @@ from .dal import DataAccessLayer
 
 
 # -------------------------------------------------------------------------
-# Connection Pool + DictRow wrapper
+# Connection Pool (with recycling + logging)
 # -------------------------------------------------------------------------
 if not settings.DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
 
-_pool = ConnectionPool(
-    conninfo=settings.DATABASE_URL,
-    min_size=1,
-    max_size=3,
-    max_lifetime=60,
-    timeout=10,
-)
+try:
+    _pool = ConnectionPool(
+        conninfo=settings.DATABASE_URL,
+        min_size=1,
+        max_size=3,
+        max_lifetime=60,   # recycle connections every 60s
+        timeout=10,        # fail fast if DB not reachable
+    )
+    log_utils.log_message("[PostgresDal] Connection pool initialized", "INFO")
+except Exception as e:
+    log_utils.log_message(f"[PostgresDal] Failed to initialize connection pool: {e}", "ERROR")
+    raise
 
 
 class DictConn:
