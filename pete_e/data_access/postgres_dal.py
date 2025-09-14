@@ -138,40 +138,40 @@ class PostgresDal(DataAccessLayer):
                 f"Error saving daily summary to Postgres for {day}: {e}", "ERROR"
             )
 
-    # --- Other DAL methods from your implementation ---
-    # (I've omitted them for brevity but they should remain as you wrote them,
-    # just ensure they also use `with pool.connection() as conn:`)
-
-    def save_lift_log(self, log: Dict[str, Any]) -> None:
-        log_utils.log_message(
-            "[PostgresDal] save_lift_log deprecated; use save_strength_log_entry",
-            "WARN",
-        )
-
     def save_strength_log_entry(
         self,
         exercise_id: int,
         log_date: date,
+        set_number: int,
         reps: int,
         weight_kg: float,
         rir: Optional[float] = None,
     ) -> None:
-        """Insert a single set into ``strength_log``."""
+        """Insert a single set into ``strength_log`` with set ordering.
+
+        Uniqueness enforced by (summary_date, exercise_id, set_number).
+        """
         try:
             with pool.connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
                         INSERT INTO strength_log (
-                            summary_date, exercise_id, reps, weight_kg, rir
-                        ) VALUES (%s, %s, %s, %s, %s);
+                            summary_date, exercise_id, set_number, reps, weight_kg, rir
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (summary_date, exercise_id, set_number)
+                        DO UPDATE SET
+                            reps = EXCLUDED.reps,
+                            weight_kg = EXCLUDED.weight_kg,
+                            rir = EXCLUDED.rir;
                         """,
-                        (log_date, exercise_id, reps, weight_kg, rir),
+                        (log_date, exercise_id, set_number, reps, weight_kg, rir),
                     )
         except Exception as e:
             log_utils.log_message(
                 f"Error saving strength log entry for {log_date}: {e}", "ERROR"
             )
+
 
     def load_history(self) -> Dict[str, Any]:
         """Return all rows from ``daily_summary`` keyed by ISO date."""

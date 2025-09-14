@@ -114,6 +114,7 @@ CREATE TABLE strength_log (
     id SERIAL PRIMARY KEY,
     summary_date DATE NOT NULL REFERENCES daily_summary(summary_date) ON DELETE CASCADE,
     exercise_id INTEGER NOT NULL REFERENCES wger_exercise(id),
+    set_number int NOT NULL DEFAULT 1,
     reps INTEGER,
     weight_kg NUMERIC(6, 2),
     rir NUMERIC(3, 1)
@@ -124,8 +125,9 @@ CREATE INDEX idx_strength_log_exercise_id ON strength_log(exercise_id);
 
 COMMENT ON TABLE strength_log IS 'Stores individual sets from strength training workouts.';
 
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
+ALTER TABLE strength_log
+ADD CONSTRAINT strength_log_unique_set
+UNIQUE (summary_date, exercise_id, set_number);
 
 -- -----------------------------------------------------------------------------
 -- Table: training_plans
@@ -137,3 +139,18 @@ CREATE TABLE IF NOT EXISTS training_plans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_training_plans_start_date ON training_plans(start_date);
+
+-- -----------------------------------------------------------------------------
+-- Table: body_age_log
+-- -----------------------------------------------------------------------------
+CREATE TABLE body_age_log (
+    summary_date DATE PRIMARY KEY,
+    body_age_years NUMERIC(4,1),
+    delta_years NUMERIC(4,1)
+);
+
+-- -----------------------------------------------------------------------------
+-- Grant privileges to pete_user
+-- -----------------------------------------------------------------------------
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
