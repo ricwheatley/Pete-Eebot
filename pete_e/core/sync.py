@@ -5,9 +5,7 @@ Daily sync orchestrator for Pete-Eebot.
 - Backfills the last `days` calendar days on each run, so missed runs get filled.
 - Upserts daily summaries into the DAL (Postgres or JSON fallback).
 - Inserts strength logs from Wger per set.
-- Calculates body age per day for logging or future persistence.
-
-This module is side effect free except for DAL writes and client API calls.
+- Calculates body age per day from DB and persists.
 """
 
 from __future__ import annotations
@@ -24,7 +22,7 @@ from pete_e.infra import log_utils
 # Refactored clients and modules
 from pete_e.core.withings_client import WithingsClient
 from integrations.wger.client import WgerClient
-from pete_e.core import apple_client, body_age, lift_log
+from pete_e.core import apple_client, lift_log
 
 # DAL contract and implementations
 from pete_e.data_access.dal import DataAccessLayer
@@ -42,11 +40,7 @@ DEFAULT_RETRY_DELAY_SECS = 60
 
 
 def _get_dal() -> DataAccessLayer:
-    """
-    Choose a DAL based on environment.
-    - Production with DATABASE_URL and importable PostgresDal uses PostgresDal.
-    - Otherwise fall back to JsonDal.
-    """
+    """Choose a DAL based on environment."""
     if (
         PostgresDal
         and getattr(settings, "DATABASE_URL", None)
@@ -75,7 +69,6 @@ def _safe_get_withings_summary(client: WithingsClient, target_day: date) -> Dict
 
 def _safe_get_apple_summary(target_iso: str) -> Dict:
     try:
-        # Keep the same call signature you already use
         return apple_client.get_apple_summary({"date": target_iso})
     except Exception as e:
         log_utils.log_message(
@@ -84,23 +77,24 @@ def _safe_get_apple_summary(target_iso: str) -> Dict:
         return {}
 
 
-def _safe_get_wger_logs(client: WgerClient, days: int) -> Dict[str, List[Dict]]:
-    """
-    Fetch logs once for the whole window.
-    Returns a mapping of ISO date -> list of log dicts for that date.
-    """
+def _safe_get_wger_logs(client: WgerClient, days: int):
     try:
-        data = client.fetch_logs(days=days)
-        # Be defensive about the shape
-        if not isinstance(data, dict):
+        data = client.get_logs(days=days)
+        if isinstance(data, list):
+            # Normalise to dict keyed by date
+            out: Dict[str, List[Dict]] = {}
+            for log in data:
+                d = log.get("date")
+                out.setdefault(d, []).append(log)
+            log_utils.log_message(f"[sync] Normalised {len(data)} Wger logs", "INFO")
+            return out
+        elif isinstance(data, dict):
+            return data
+        else:
             log_utils.log_message(
-                f"[sync] Wger logs unexpected shape, expected dict got {type(data)}. Treating as empty.", "WARN"
+                f"[sync] Wger logs unexpected shape: {type(data)}", "WARN"
             )
             return {}
-        log_utils.log_message(
-            f"[sync] Wger logs fetched for last {days} days.", "INFO"
-        )
-        return data
     except Exception as e:
         log_utils.log_message(f"[sync] Wger fetch failed: {e}", "ERROR")
         return {}
@@ -131,7 +125,6 @@ def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: d
                 reps=log.get("reps"),
                 sets=log.get("sets"),
                 rir=log.get("rir"),
-                # Use the actual day we are processing
                 log_date=the_day,
             )
             inserted += 1
@@ -142,49 +135,34 @@ def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: d
     log_utils.log_message(
         f"[sync] Inserted {inserted} Wger set logs for {the_day.isoformat()}", "INFO"
     )
-
-
-def _calculate_and_log_body_age(dal: DataAccessLayer, withings: Dict, apple: Dict, the_day: date) -> None:
-    """Calculate body age and persist the result via DAL."""
+    # Roll up strength volume into daily_summary
     try:
-        result = body_age.calculate_body_age(
-            withings_history=withings,
-            apple_history=apple,
-            profile={"age": 40},
+        dal.update_strength_volume(the_day)
+    except Exception as e:
+        log_utils.log_message(
+            f"[sync] Failed to update strength volume for {the_day.isoformat()}: {e}", "ERROR"
         )
-        if result:
-            log_utils.log_message(
-                f"[sync] Body Age for {the_day.isoformat()}: {result}", "INFO"
-            )
-            dal.save_body_age(result)
-        else:
-            log_utils.log_message(
-                f"[sync] No body age result produced for {the_day.isoformat()}", "WARN"
-            )
+
+
+def _calculate_and_save_body_age(dal: DataAccessLayer, the_day: date) -> None:
+    """Calculate body age from DB history and persist into both body_age_log and daily_summary."""
+    try:
+        window_start = the_day - timedelta(days=6)
+        dal.calculate_and_save_body_age(window_start, the_day, profile={"age": 40})
     except Exception as e:
         log_utils.log_message(
             f"[sync] Body Age calculation failed for {the_day.isoformat()}: {e}", "ERROR"
         )
 
 
-
-
 def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[bool, List[str]]:
     """
     Run a backfilling sync for the previous `days` calendar days.
-
-    Example: on 2025-09-14 at 03:00, with days=7, this processes 2025-09-07 to 2025-09-13 inclusive.
-
-    Returns:
-        (success, failed_sources)
-        - success is True if no upstream sources failed across the whole window
-        - failed_sources is a unique list of source names that had at least one failure
     """
     today = date.today()
     window_desc = f"{(today - timedelta(days=days)).isoformat()}..{(today - timedelta(days=1)).isoformat()}"
     log_utils.log_message(f"[sync] Starting backfill sync for {days} days, window {window_desc}", "INFO")
 
-    # Instantiate clients once
     withings_client = WithingsClient()
     wger_client = WgerClient()
 
@@ -193,7 +171,6 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
 
     failed_sources: List[str] = []
 
-    # Process from oldest to newest for deterministic behaviour
     for offset in range(days, 0, -1):
         target_day = today - timedelta(days=offset)
         target_iso = target_day.isoformat()
@@ -209,15 +186,12 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
 
         _upsert_daily_summary(dal, target_day, withings_data, apple_data)
 
-        # Wger logs may be keyed by ISO string dates
         day_logs = wger_data.get(target_iso, [])
         if not wger_data and "Wger" not in failed_sources:
-            # Only mark as failed if the entire fetch failed, not if a specific day is empty
             failed_sources.append("Wger")
         _insert_wger_logs_for_day(dal, day_logs, target_day)
 
-        # Optional calculation - logged for observability
-        _calculate_and_log_body_age(dal, withings_data, apple_data, target_day)
+        _calculate_and_save_body_age(dal, target_day)
 
     if failed_sources:
         log_utils.log_message(
@@ -235,19 +209,7 @@ def run_sync_with_retries(
     delay: int = DEFAULT_RETRY_DELAY_SECS,
     days: int = DEFAULT_BACKFILL_DAYS,
 ) -> bool:
-    """
-    Run the sync with simple retries. Useful when scheduled by cron where transient
-    upstream or network issues are common around nightly windows.
-
-    Args:
-        dal: optional DAL instance. If None, selects one based on environment.
-        retries: number of attempts before giving up.
-        delay: seconds to wait between attempts.
-        days: backfill window length.
-
-    Returns:
-        True if a run completed without any source failures, else False.
-    """
+    """Run the sync with simple retries."""
     dal = dal or _get_dal()
     for attempt in range(1, max(1, retries) + 1):
         success, failed = run_sync(dal=dal, days=days)
@@ -264,14 +226,7 @@ def run_sync_with_retries(
 
 
 def _main() -> int:
-    """
-    CLI entry point so this module can be executed directly by cron.
-
-    Environment control:
-      - settings.ENVIRONMENT
-      - settings.DATABASE_URL
-      - optional future knobs for days, retries, delay if you add them to settings
-    """
+    """CLI entry point so this module can be executed directly by cron."""
     days = getattr(settings, "SYNC_BACKFILL_DAYS", DEFAULT_BACKFILL_DAYS)
     retries = getattr(settings, "SYNC_RETRIES", DEFAULT_RETRIES)
     delay = getattr(settings, "SYNC_RETRY_DELAY_SECS", DEFAULT_RETRY_DELAY_SECS)

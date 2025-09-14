@@ -52,7 +52,14 @@ CREATE TABLE daily_summary (
     sleep_rem_minutes INTEGER,
     sleep_deep_minutes INTEGER,
     sleep_core_minutes INTEGER,
-    sleep_awake_minutes INTEGER
+    sleep_awake_minutes INTEGER,
+
+    -- Body Age Metrics full metrics are stored in a separate table (body_age_log)
+    body_age_years NUMERIC(4,1),
+    body_age_delta_years NUMERIC(4,1),
+
+    -- Strength Training Volume (aggregated from strength_log)
+    strength_volume_kg NUMERIC(12,2);
 );
 
 COMMENT ON TABLE daily_summary IS 'Central table for daily aggregated health and fitness metrics.';
