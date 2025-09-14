@@ -12,7 +12,9 @@ DOWNLOADS = Path.home() / "Downloads"
 INCOMING = Path.home() / "pete-eebot" / "apple-incoming"
 
 def fetch_files():
-    """Run `tailscale file get` to pull any waiting files into ~/Downloads."""
+    target_file = DOWNLOADS / "apple_{}.txt".format(date.today().isoformat())
+    if target_file.exists():
+        target_file.unlink()  # remove the old file first
     subprocess.run(["tailscale", "file", "get", str(DOWNLOADS)], check=False)
 
 def ingest_file(path: Path):
