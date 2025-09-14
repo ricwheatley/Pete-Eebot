@@ -12,9 +12,9 @@ DOWNLOADS = Path.home() / "Downloads"
 INCOMING = Path.home() / "pete-eebot" / "apple-incoming"
 
 def fetch_files():
-    target_file = DOWNLOADS / "apple_{}.txt".format(date.today().isoformat())
-    if target_file.exists():
-        target_file.unlink()  # remove the old file first
+    # clear Downloads into incoming before getting new
+    for f in DOWNLOADS.glob("apple_*.json"):
+        shutil.move(str(f), INCOMING / f.name)
     subprocess.run(["tailscale", "file", "get", str(DOWNLOADS)], check=False)
 
 def ingest_file(path: Path):
