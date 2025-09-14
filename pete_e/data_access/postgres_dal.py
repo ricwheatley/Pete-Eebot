@@ -60,8 +60,27 @@ class DictConn:
 
 
 def get_conn() -> DictConn:
-    """Get a pooled connection with dict_row as default cursor output."""
-    return DictConn(_pool)
+    """
+    Get a pooled connection with dict_row as default cursor output.
+    Ensures the connection is alive before returning it.
+    """
+    conn = DictConn(_pool)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+    except Exception as e:
+        log_utils.log_message(f"[PostgresDal] Discarding bad connection: {e}", "WARN")
+        # Force recycle: close all and reopen
+        _pool.closeall()
+        _pool.open(wait=True)
+        # Retry once
+        conn = DictConn(_pool)
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+            cur.fetchone()
+    return conn
+
 
 
 # -------------------------------------------------------------------------
