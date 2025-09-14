@@ -16,10 +16,11 @@ def append_log_entry(
 ) -> None:
     """Persist a strength training entry using the DAL."""
     log_dt = date.fromisoformat(log_date) if log_date else date.today()
-    for _ in range(sets):
+    for set_number in range(1, sets + 1):
         dal.save_strength_log_entry(
             exercise_id=exercise_id,
             log_date=log_dt,
+            set_number=set_number,
             reps=reps,
             weight_kg=weight,
             rir=rir,
@@ -39,4 +40,3 @@ def get_history_for_exercise(
     if last_n:
         return entries[-last_n:]
     return entries
-
