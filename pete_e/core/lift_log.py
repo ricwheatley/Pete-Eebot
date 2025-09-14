@@ -32,11 +32,16 @@ def get_history_for_exercise(
 ) -> List[Dict[str, Any]]:
     """
     Retrieves history for an exercise using the provided DAL.
+    Includes set_number for clarity.
     """
-    # Use the DAL to load the data
     log = dal.load_lift_log()
     entries = log.get(str(exercise_id), [])
-    
+
+    # Ensure set_number is included if not already
+    for idx, entry in enumerate(entries, start=1):
+        if "set_number" not in entry:
+            entry["set_number"] = idx
+
     if last_n:
         return entries[-last_n:]
     return entries

@@ -142,18 +142,24 @@ def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: d
     )
 
 
-def _calculate_and_log_body_age(withings: Dict, apple: Dict, the_day: date) -> None:
+def _calculate_and_log_body_age(dal: DataAccessLayer, withings: Dict, apple: Dict, the_day: date) -> None:
+    """Calculate body age and persist the result via DAL."""
     try:
-        # Keep your current profile usage. You can wire this to settings later if desired.
         result = body_age.calculate_body_age([withings, apple], profile={"age": 40})
-        log_utils.log_message(
-            f"[sync] Body Age for {the_day.isoformat()}: {result}", "INFO"
-        )
-        # If you add DAL persistence for body age in future, call it here.
+        if result:
+            log_utils.log_message(
+                f"[sync] Body Age for {the_day.isoformat()}: {result}", "INFO"
+            )
+            dal.save_body_age(result)
+        else:
+            log_utils.log_message(
+                f"[sync] No body age result produced for {the_day.isoformat()}", "WARN"
+            )
     except Exception as e:
         log_utils.log_message(
             f"[sync] Body Age calculation failed for {the_day.isoformat()}: {e}", "ERROR"
         )
+
 
 
 def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[bool, List[str]]:
@@ -204,7 +210,7 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
         _insert_wger_logs_for_day(dal, day_logs, target_day)
 
         # Optional calculation - logged for observability
-        _calculate_and_log_body_age(withings_data, apple_data, target_day)
+        _calculate_and_log_body_age(dal, withings_data, apple_data, target_day)
 
     if failed_sources:
         log_utils.log_message(

@@ -274,18 +274,84 @@ class PostgresDal(DataAccessLayer):
             },
         }
 
+    def save_body_age(self, result: Dict[str, Any]) -> None:
+        """Upsert a flattened body age record into body_age_log."""
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO body_age_log (
+                            summary_date, input_window_days,
+                            crf, body_comp, activity, recovery,
+                            composite, body_age_years, delta_years,
+                            used_vo2max_direct, cap_minus_10_applied
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (summary_date) DO UPDATE SET
+                            input_window_days = EXCLUDED.input_window_days,
+                            crf = EXCLUDED.crf,
+                            body_comp = EXCLUDED.body_comp,
+                            activity = EXCLUDED.activity,
+                            recovery = EXCLUDED.recovery,
+                            composite = EXCLUDED.composite,
+                            body_age_years = EXCLUDED.body_age_years,
+                            delta_years = EXCLUDED.delta_years,
+                            used_vo2max_direct = EXCLUDED.used_vo2max_direct,
+                            cap_minus_10_applied = EXCLUDED.cap_minus_10_applied;
+                        """,
+                        (
+                            date.fromisoformat(result["date"]),
+                            result.get("input_window_days"),
+                            result.get("subscores", {}).get("crf"),
+                            result.get("subscores", {}).get("body_comp"),
+                            result.get("subscores", {}).get("activity"),
+                            result.get("subscores", {}).get("recovery"),
+                            result.get("composite"),
+                            result.get("body_age_years"),
+                            result.get("age_delta_years"),
+                            result.get("assumptions", {}).get("used_vo2max_direct"),
+                            result.get("assumptions", {}).get("cap_minus_10_applied"),
+                        ),
+                    )
+        except Exception as e:
+            log_utils.log_message(
+                f"Error saving body age result for {result.get('date')}: {e}", "ERROR"
+            )
+
     def load_body_age(self) -> Dict[str, Any]:
+        """Load all flattened body age records keyed by ISO date."""
         out: Dict[str, Any] = {}
         try:
             with pool.connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT summary_date, body_age_years, delta_years FROM body_age_log ORDER BY summary_date ASC;"
+                        """
+                        SELECT
+                            summary_date, input_window_days,
+                            crf, body_comp, activity, recovery,
+                            composite, body_age_years, delta_years,
+                            used_vo2max_direct, cap_minus_10_applied
+                        FROM body_age_log
+                        ORDER BY summary_date ASC;
+                        """
                     )
                     for row in cur.fetchall():
                         out[row["summary_date"].isoformat()] = {
+                            "input_window_days": row["input_window_days"],
+                            "subscores": {
+                                "crf": float(row["crf"]) if row["crf"] is not None else None,
+                                "body_comp": float(row["body_comp"]) if row["body_comp"] is not None else None,
+                                "activity": float(row["activity"]) if row["activity"] is not None else None,
+                                "recovery": float(row["recovery"]) if row["recovery"] is not None else None,
+                            },
+                            "composite": float(row["composite"]) if row["composite"] is not None else None,
                             "body_age_years": float(row["body_age_years"]) if row["body_age_years"] is not None else None,
-                            "delta_years": float(row["delta_years"]) if row["delta_years"] is not None else None,
+                            "age_delta_years": float(row["delta_years"]) if row["delta_years"] is not None else None,
+                            "assumptions": {
+                                "used_vo2max_direct": row["used_vo2max_direct"],
+                                "cap_minus_10_applied": row["cap_minus_10_applied"],
+                            },
                         }
         except Exception as e:
             log_utils.log_message(f"Error loading body age from Postgres: {e}", "ERROR")
