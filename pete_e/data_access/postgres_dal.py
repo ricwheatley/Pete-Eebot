@@ -47,6 +47,7 @@ class DictConn:
     """
     def __init__(self, pool: ConnectionPool):
         self._pool = pool
+        self._conn = None
 
     def __enter__(self):
         self._conn = self._pool.connection().__enter__()
@@ -56,31 +57,14 @@ class DictConn:
         return self._conn.__exit__(exc_type, exc_val, exc_tb)
 
     def cursor(self):
+        if not self._conn:
+            raise RuntimeError("Connection not open")
         return self._conn.cursor(row_factory=dict_row)
 
 
 def get_conn() -> DictConn:
-    """
-    Get a pooled connection with dict_row as default cursor output.
-    Ensures the connection is alive before returning it.
-    """
-    conn = DictConn(_pool)
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-            cur.fetchone()
-    except Exception as e:
-        log_utils.log_message(f"[PostgresDal] Discarding bad connection: {e}", "WARN")
-        # Force recycle: close all and reopen
-        _pool.closeall()
-        _pool.open(wait=True)
-        # Retry once
-        conn = DictConn(_pool)
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1;")
-            cur.fetchone()
-    return conn
-
+    """Get a pooled connection with dict_row as default cursor output."""
+    return DictConn(_pool)
 
 
 # -------------------------------------------------------------------------
@@ -141,7 +125,6 @@ class PostgresDal(DataAccessLayer):
                     )
         except Exception as e:
             log_utils.log_message(f"Error saving full lift log: {e}", "ERROR")
-
 
     def save_strength_log_entry(
         self,
@@ -330,13 +313,12 @@ class PostgresDal(DataAccessLayer):
                     "awake": row["sleep_awake_minutes"],
                 },
             },
-            # Headline fields, nullable in schema
             "body_age_summary": {
-                "years": float(row["body_age_years"]) if "body_age_years" in row and row["body_age_years"] is not None else None,
-                "delta_years": float(row["body_age_delta_years"]) if "body_age_delta_years" in row and row["body_age_delta_years"] is not None else None,
+                "years": float(row["body_age_years"]) if row.get("body_age_years") is not None else None,
+                "delta_years": float(row["body_age_delta_years"]) if row.get("body_age_delta_years") is not None else None,
             },
             "strength": {
-                "volume_kg": float(row["strength_volume_kg"]) if "strength_volume_kg" in row and row["strength_volume_kg"] is not None else None,
+                "volume_kg": float(row["strength_volume_kg"]) if row.get("strength_volume_kg") is not None else None,
             },
         }
 
@@ -427,12 +409,8 @@ class PostgresDal(DataAccessLayer):
         return out
 
     def calculate_and_save_body_age(self, start_date: date, end_date: date, profile: Dict[str, Any]) -> None:
-        """
-        Recalculate body age from daily_summary rows between start_date and end_date,
-        and persist into body_age_log for end_date. Also updates headline fields in daily_summary.
-        """
+        """Recalculate body age and persist into body_age_log + daily_summary headline fields."""
         try:
-            # Fetch the window of summaries
             with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -452,7 +430,6 @@ class PostgresDal(DataAccessLayer):
                 )
                 return
 
-            # Build histories from rows
             withings_history: List[Dict[str, Any]] = []
             apple_history: List[Dict[str, Any]] = []
             for r in rows:
@@ -481,7 +458,6 @@ class PostgresDal(DataAccessLayer):
                     "sleep_awake_minutes": r["sleep_awake_minutes"],
                 })
 
-            # Calculate using your existing function
             result = body_age.calculate_body_age(
                 withings_history=withings_history,
                 apple_history=apple_history,
@@ -493,13 +469,9 @@ class PostgresDal(DataAccessLayer):
                 )
                 return
 
-            # Ensure the result is tagged with end_date
             result["date"] = end_date.isoformat()
-
-            # Persist full record
             self.save_body_age(result)
 
-            # Update headline fields on daily_summary
             try:
                 with get_conn() as conn:
                     with conn.cursor() as cur:
@@ -523,7 +495,6 @@ class PostgresDal(DataAccessLayer):
                 log_utils.log_message(
                     f"[BodyAge] Error updating headline fields for {end_date}: {e}", "ERROR"
                 )
-
         except Exception as e:
             log_utils.log_message(
                 f"Error calculating body age for {end_date}: {e}", "ERROR"
