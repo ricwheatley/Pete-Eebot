@@ -3,7 +3,7 @@ Daily sync orchestrator for Pete-Eebot.
 
 - Intended to be run from cron at 03:00 local time.
 - Backfills the last `days` calendar days on each run, so missed runs get filled.
-- Upserts daily summaries into the DAL (Postgres or JSON fallback).
+- Upserts daily summaries into Postgres.
 - Inserts strength logs from Wger per set.
 - Calculates body age per day from DB and persists.
 """
@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import time
 from datetime import date, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, cast
 
 # Centralised components
 from pete_e.config import settings
@@ -26,12 +26,7 @@ from pete_e.core import apple_client, lift_log
 
 # DAL contract and implementations
 from pete_e.data_access.dal import DataAccessLayer
-from pete_e.data_access.json_dal import JsonDal
-
-try:
-    from pete_e.data_access.postgres_dal import PostgresDal  # type: ignore
-except Exception:  # pragma: no cover - optional import
-    PostgresDal = None  # type: ignore
+from pete_e.data_access.postgres_dal import PostgresDal
 
 
 DEFAULT_BACKFILL_DAYS = 7
@@ -40,19 +35,13 @@ DEFAULT_RETRY_DELAY_SECS = 60
 
 
 def _get_dal() -> DataAccessLayer:
-    """Choose a DAL based on environment."""
-    if (
-        PostgresDal
-        and getattr(settings, "DATABASE_URL", None)
-        and getattr(settings, "ENVIRONMENT", "").lower() == "production"
-    ):
-        try:
-            return PostgresDal()  # type: ignore[operator]
-        except Exception as e:  # pragma: no cover - fallback path
-            log_utils.log_message(
-                f"[sync] Postgres DAL init failed: {e}. Falling back to JSON.", "WARN"
-            )
-    return JsonDal()
+    """Return a Postgres DAL or raise if misconfigured."""
+    if not getattr(settings, "DATABASE_URL", None):
+        raise RuntimeError("[sync] DATABASE_URL not configured for PostgresDal")
+    try:
+        return PostgresDal()
+    except Exception as e:  # pragma: no cover - misconfiguration path
+        raise RuntimeError(f"[sync] Postgres DAL init failed: {e}") from e
 
 
 def _safe_get_withings_summary(client: WithingsClient, target_day: date) -> Dict:
@@ -144,7 +133,7 @@ def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: d
         )
 
 
-def _calculate_and_save_body_age(dal: DataAccessLayer, the_day: date) -> None:
+def _calculate_and_save_body_age(dal: PostgresDal, the_day: date) -> None:
     """Calculate body age from DB history and persist into both body_age_log and daily_summary."""
     try:
         window_start = the_day - timedelta(days=6)
@@ -191,7 +180,7 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
             failed_sources.append("Wger")
         _insert_wger_logs_for_day(dal, day_logs, target_day)
 
-        _calculate_and_save_body_age(dal, target_day)
+        _calculate_and_save_body_age(cast(PostgresDal, dal), target_day)
 
     if failed_sources:
         log_utils.log_message(
