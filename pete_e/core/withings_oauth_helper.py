@@ -1,0 +1,45 @@
+import os
+import requests
+from urllib.parse import urlencode
+
+from pete_e.config import settings
+
+AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"
+TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
+
+def build_authorize_url():
+    params = {
+        "response_type": "code",
+        "client_id": settings.WITHINGS_CLIENT_ID,
+        "redirect_uri": settings.WITHINGS_REDIRECT_URI,
+        "scope": "user.metrics",  # adjust scopes if needed
+        "state": "peteebot"
+    }
+    return f"{AUTH_URL}?{urlencode(params)}"
+
+def exchange_code_for_tokens(code: str):
+    data = {
+        "action": "requesttoken",
+        "grant_type": "authorization_code",
+        "client_id": settings.WITHINGS_CLIENT_ID,
+        "client_secret": settings.WITHINGS_CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": settings.WITHINGS_REDIRECT_URI,
+    }
+    r = requests.post(TOKEN_URL, data=data, timeout=30)
+    r.raise_for_status()
+    js = r.json()
+    if js.get("status") != 0:
+        raise RuntimeError(f"Token request failed: {js}")
+    return js["body"]
+
+if __name__ == "__main__":
+    print("Step 1: Visit this URL in your browser and approve access:")
+    print(build_authorize_url())
+    print()
+    code = input("Step 2: Paste the ?code=... value from the redirect URL here: ").strip()
+    tokens = exchange_code_for_tokens(code)
+    print("\n✅ Success! Here are your tokens:")
+    print(f"Access token:  {tokens['access_token']}")
+    print(f"Refresh token: {tokens['refresh_token']}")
+    print("\n👉 Paste the refresh token into your .env as WITHINGS_REFRESH_TOKEN")
