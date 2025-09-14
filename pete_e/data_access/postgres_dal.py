@@ -30,6 +30,8 @@ _pool = ConnectionPool(
     conninfo=settings.DATABASE_URL,
     min_size=1,
     max_size=3,
+    max_lifetime=60,
+    timeout=10,
 )
 
 
