@@ -5,7 +5,9 @@ This class handles all communication with the PostgreSQL database using a
 robust connection pool for efficiency and reliability.
 """
 
-from datetime import date
+from __future__ import annotations
+
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 import json
 
@@ -14,11 +16,11 @@ from psycopg_pool import ConnectionPool
 
 from pete_e.config import settings
 from pete_e.infra import log_utils
+from pete_e.core import body_age
 from .dal import DataAccessLayer
 
 
 # A single, global connection pool instance is created when the module is imported.
-# This is the modern and efficient way to manage database connections.
 # It will raise an error on startup if DATABASE_URL is not set.
 if not settings.DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
@@ -27,38 +29,44 @@ pool = ConnectionPool(
     conninfo=settings.DATABASE_URL,
     min_size=1,
     max_size=3,
-    # This tells psycopg to return rows as dictionary-like objects, which is
-    # very convenient for converting to/from our application's data structures.
-    row_factory=dict_row
+    row_factory=dict_row,
 )
 
 
 class PostgresDal(DataAccessLayer):
     """
     A Data Access Layer implementation that uses a PostgreSQL database as the backend.
-    This class fulfills the contract defined by the DataAccessLayer ABC.
+    This class fulfils the contract defined by the DataAccessLayer ABC.
     """
 
-    # We no longer need an __init__ or __del__ method, as the global
-    # connection pool handles the entire connection lifecycle.
+    # Connection lifecycle is handled by the global pool.
 
+    # -------------------------------------------------------------------------
+    # Strength log
+    # -------------------------------------------------------------------------
     def load_lift_log(self) -> Dict[str, Any]:
-        """Loads the entire lift log from the strength_log table."""
+        """Loads the entire lift log from the strength_log table, grouped by exercise_id."""
         log_utils.log_message("[PostgresDal] Loading lift log", "INFO")
-        lift_log = {}
+        lift_log: Dict[str, List[Dict[str, Any]]] = {}
         try:
             with pool.connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT exercise_id, summary_date, reps, weight_kg, rir FROM strength_log ORDER BY summary_date ASC;")
+                    cur.execute(
+                        """
+                        SELECT exercise_id, summary_date, set_number, reps, weight_kg, rir
+                        FROM strength_log
+                        ORDER BY summary_date ASC, exercise_id ASC, set_number ASC;
+                        """
+                    )
                     for row in cur.fetchall():
                         key = str(row["exercise_id"])
                         if key not in lift_log:
                             lift_log[key] = []
-                        
                         lift_log[key].append({
                             "date": row["summary_date"].isoformat(),
+                            "set_number": row["set_number"],
                             "reps": row["reps"],
-                            "weight": float(row["weight_kg"]),
+                            "weight": float(row["weight_kg"]) if row["weight_kg"] is not None else None,
                             "rir": float(row["rir"]) if row["rir"] is not None else None,
                         })
         except Exception as e:
@@ -66,6 +74,74 @@ class PostgresDal(DataAccessLayer):
             return {}
         return lift_log
 
+    def save_strength_log_entry(
+        self,
+        exercise_id: int,
+        log_date: date,
+        set_number: int,
+        reps: int,
+        weight_kg: float,
+        rir: Optional[float] = None,
+    ) -> None:
+        """Insert a single set into ``strength_log`` with set ordering.
+
+        Uniqueness is enforced by (summary_date, exercise_id, set_number).
+        """
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO strength_log (
+                            summary_date, exercise_id, set_number, reps, weight_kg, rir
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (summary_date, exercise_id, set_number)
+                        DO UPDATE SET
+                            reps = EXCLUDED.reps,
+                            weight_kg = EXCLUDED.weight_kg,
+                            rir = EXCLUDED.rir;
+                        """,
+                        (log_date, exercise_id, set_number, reps, weight_kg, rir),
+                    )
+        except Exception as e:
+            log_utils.log_message(
+                f"Error saving strength log entry for {log_date}: {e}", "ERROR"
+            )
+
+    def update_strength_volume(self, log_date: date) -> None:
+        """Aggregate total kg lifted (weight_kg * reps) for a day into daily_summary.strength_volume_kg."""
+        try:
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COALESCE(SUM(weight_kg * reps), 0)
+                        FROM strength_log
+                        WHERE summary_date = %s;
+                        """,
+                        (log_date,),
+                    )
+                    total_volume = cur.fetchone()[0]
+                    cur.execute(
+                        """
+                        UPDATE daily_summary
+                        SET strength_volume_kg = %s
+                        WHERE summary_date = %s;
+                        """,
+                        (total_volume, log_date),
+                    )
+            log_utils.log_message(
+                f"[PostgresDal] Updated strength_volume_kg={total_volume} for {log_date.isoformat()}",
+                "INFO",
+            )
+        except Exception as e:
+            log_utils.log_message(
+                f"Error updating strength volume for {log_date}: {e}", "ERROR"
+            )
+
+    # -------------------------------------------------------------------------
+    # Daily summary
+    # -------------------------------------------------------------------------
     def save_daily_summary(self, summary: Dict[str, Any], day: date) -> None:
         """Upserts a row into ``daily_summary``."""
         log_utils.log_message(
@@ -138,41 +214,6 @@ class PostgresDal(DataAccessLayer):
                 f"Error saving daily summary to Postgres for {day}: {e}", "ERROR"
             )
 
-    def save_strength_log_entry(
-        self,
-        exercise_id: int,
-        log_date: date,
-        set_number: int,
-        reps: int,
-        weight_kg: float,
-        rir: Optional[float] = None,
-    ) -> None:
-        """Insert a single set into ``strength_log`` with set ordering.
-
-        Uniqueness enforced by (summary_date, exercise_id, set_number).
-        """
-        try:
-            with pool.connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO strength_log (
-                            summary_date, exercise_id, set_number, reps, weight_kg, rir
-                        ) VALUES (%s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (summary_date, exercise_id, set_number)
-                        DO UPDATE SET
-                            reps = EXCLUDED.reps,
-                            weight_kg = EXCLUDED.weight_kg,
-                            rir = EXCLUDED.rir;
-                        """,
-                        (log_date, exercise_id, set_number, reps, weight_kg, rir),
-                    )
-        except Exception as e:
-            log_utils.log_message(
-                f"Error saving strength log entry for {log_date}: {e}", "ERROR"
-            )
-
-
     def load_history(self) -> Dict[str, Any]:
         """Return all rows from ``daily_summary`` keyed by ISO date."""
         out: Dict[str, Any] = {}
@@ -184,46 +225,7 @@ class PostgresDal(DataAccessLayer):
                     )
                     for row in cur.fetchall():
                         day = row["summary_date"].isoformat()
-                        out[day] = {
-                            "withings": {
-                                "weight": float(row["weight_kg"])
-                                if row["weight_kg"] is not None
-                                else None,
-                                "fat_percent": float(row["body_fat_pct"])
-                                if row["body_fat_pct"] is not None
-                                else None,
-                                "muscle_mass": float(row["muscle_mass_kg"])
-                                if row["muscle_mass_kg"] is not None
-                                else None,
-                                "water_percent": float(row["water_pct"])
-                                if row["water_pct"] is not None
-                                else None,
-                            },
-                            "apple": {
-                                "steps": row["steps"],
-                                "exercise_minutes": row["exercise_minutes"],
-                                "calories": {
-                                    "active": row["calories_active"],
-                                    "resting": row["calories_resting"],
-                                },
-                                "stand_minutes": row["stand_minutes"],
-                                "distance_m": row["distance_m"],
-                                "heart_rate": {
-                                    "resting": row["hr_resting"],
-                                    "avg": row["hr_avg"],
-                                    "max": row["hr_max"],
-                                    "min": row["hr_min"],
-                                },
-                                "sleep": {
-                                    "in_bed": row["sleep_total_minutes"],
-                                    "asleep": row["sleep_asleep_minutes"],
-                                    "rem": row["sleep_rem_minutes"],
-                                    "deep": row["sleep_deep_minutes"],
-                                    "core": row["sleep_core_minutes"],
-                                    "awake": row["sleep_awake_minutes"],
-                                },
-                            },
-                        }
+                        out[day] = self._row_to_summary(row)
         except Exception as e:
             log_utils.log_message(
                 f"Error loading daily history from Postgres: {e}", "ERROR"
@@ -241,6 +243,7 @@ class PostgresDal(DataAccessLayer):
                 )
 
     def _row_to_summary(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Internal helper to convert a daily_summary row to the API shape."""
         return {
             "withings": {
                 "weight": float(row["weight_kg"]) if row["weight_kg"] is not None else None,
@@ -272,8 +275,19 @@ class PostgresDal(DataAccessLayer):
                     "awake": row["sleep_awake_minutes"],
                 },
             },
+            # Headline fields, nullable in schema
+            "body_age_summary": {
+                "years": float(row["body_age_years"]) if "body_age_years" in row and row["body_age_years"] is not None else None,
+                "delta_years": float(row["body_age_delta_years"]) if "body_age_delta_years" in row and row["body_age_delta_years"] is not None else None,
+            },
+            "strength": {
+                "volume_kg": float(row["strength_volume_kg"]) if "strength_volume_kg" in row and row["strength_volume_kg"] is not None else None,
+            },
         }
 
+    # -------------------------------------------------------------------------
+    # Body age
+    # -------------------------------------------------------------------------
     def save_body_age(self, result: Dict[str, Any]) -> None:
         """Upsert a flattened body age record into body_age_log."""
         try:
@@ -357,6 +371,112 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error loading body age from Postgres: {e}", "ERROR")
         return out
 
+    def calculate_and_save_body_age(self, start_date: date, end_date: date, profile: Dict[str, Any]) -> None:
+        """
+        Recalculate body age from daily_summary rows between start_date and end_date,
+        and persist into body_age_log for end_date. Also updates headline fields in daily_summary.
+        """
+        try:
+            # Fetch the window of summaries
+            with pool.connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT *
+                        FROM daily_summary
+                        WHERE summary_date BETWEEN %s AND %s
+                        ORDER BY summary_date ASC;
+                        """,
+                        (start_date, end_date),
+                    )
+                    rows = cur.fetchall()
+
+            if not rows:
+                log_utils.log_message(
+                    f"[BodyAge] No daily_summary data for window {start_date}..{end_date}", "WARN"
+                )
+                return
+
+            # Build histories from rows
+            withings_history: List[Dict[str, Any]] = []
+            apple_history: List[Dict[str, Any]] = []
+            for r in rows:
+                withings_history.append({
+                    "weight": r["weight_kg"],
+                    "fat_percent": r["body_fat_pct"],
+                    "muscle_mass": r["muscle_mass_kg"],
+                    "water_percent": r["water_pct"],
+                })
+                apple_history.append({
+                    "steps": r["steps"],
+                    "exercise_minutes": r["exercise_minutes"],
+                    "calories_active": r["calories_active"],
+                    "calories_resting": r["calories_resting"],
+                    "stand_minutes": r["stand_minutes"],
+                    "distance_m": r["distance_m"],
+                    "hr_resting": r["hr_resting"],
+                    "hr_avg": r["hr_avg"],
+                    "hr_max": r["hr_max"],
+                    "hr_min": r["hr_min"],
+                    "sleep_total_minutes": r["sleep_total_minutes"],
+                    "sleep_asleep_minutes": r["sleep_asleep_minutes"],
+                    "sleep_rem_minutes": r["sleep_rem_minutes"],
+                    "sleep_deep_minutes": r["sleep_deep_minutes"],
+                    "sleep_core_minutes": r["sleep_core_minutes"],
+                    "sleep_awake_minutes": r["sleep_awake_minutes"],
+                })
+
+            # Calculate using your existing function
+            result = body_age.calculate_body_age(
+                withings_history=withings_history,
+                apple_history=apple_history,
+                profile=profile,
+            )
+            if not result:
+                log_utils.log_message(
+                    f"[BodyAge] No result produced for {end_date.isoformat()}", "WARN"
+                )
+                return
+
+            # Ensure the result is tagged with end_date
+            result["date"] = end_date.isoformat()
+
+            # Persist full record
+            self.save_body_age(result)
+
+            # Update headline fields on daily_summary
+            try:
+                with pool.connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            UPDATE daily_summary
+                            SET body_age_years = %s,
+                                body_age_delta_years = %s
+                            WHERE summary_date = %s;
+                            """,
+                            (
+                                result.get("body_age_years"),
+                                result.get("age_delta_years"),
+                                end_date,
+                            ),
+                        )
+                log_utils.log_message(
+                    f"[BodyAge] Calculated and saved for {end_date.isoformat()}", "INFO"
+                )
+            except Exception as e:
+                log_utils.log_message(
+                    f"[BodyAge] Error updating headline fields for {end_date}: {e}", "ERROR"
+                )
+
+        except Exception as e:
+            log_utils.log_message(
+                f"Error calculating body age for {end_date}: {e}", "ERROR"
+            )
+
+    # -------------------------------------------------------------------------
+    # Historical accessors
+    # -------------------------------------------------------------------------
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         try:
@@ -414,6 +534,9 @@ class PostgresDal(DataAccessLayer):
             )
         return out
 
+    # -------------------------------------------------------------------------
+    # Training plans
+    # -------------------------------------------------------------------------
     def save_training_plan(self, plan: dict, start_date: date) -> None:
         """Upsert a training plan into the training_plans table."""
         log_utils.log_message(
@@ -435,6 +558,9 @@ class PostgresDal(DataAccessLayer):
                 f"Error saving training plan for {start_date}: {e}", "ERROR"
             )
 
+    # -------------------------------------------------------------------------
+    # Misc
+    # -------------------------------------------------------------------------
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
-        """Persist validation logs via log utils (DB currently not used)."""
+        """Persist validation logs via log utils."""
         log_utils.log_message(f"{tag}: {adjustments}", "INFO")
