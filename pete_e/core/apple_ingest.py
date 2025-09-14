@@ -1,7 +1,7 @@
 import subprocess
 import shutil
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 
 from pete_e.core import apple_client
 from pete_e.core.sync import _get_dal
@@ -23,10 +23,27 @@ def ingest_file(path: Path):
         data = json.loads(path.read_text())
         summary = apple_client.get_apple_summary(data)
         day = summary.get("date") or date.today().isoformat()
-        dal.save_daily_summary({"apple": summary, "withings": {}, "wger": {}}, date.fromisoformat(day))
+        day_dt = date.fromisoformat(day)
+
+        # 1. Save / upsert Apple data
+        dal.save_daily_summary({"apple": summary, "withings": {}, "wger": {}}, day_dt)
         log_utils.log_message(f"Ingested Apple file {path.name} for {day}", "INFO")
+
+        # 2. Update strength volume headline for this day
+        try:
+            dal.update_strength_volume(day_dt)
+        except Exception as e:
+            log_utils.log_message(f"Failed to update strength volume for {day}: {e}", "ERROR")
+
+        # 3. Recalculate body age headline using 7-day window up to this day
+        try:
+            dal.calculate_and_save_body_age(day_dt - timedelta(days=6), day_dt, profile={"age": 40})
+        except Exception as e:
+            log_utils.log_message(f"Failed to update body age for {day}: {e}", "ERROR")
+
     except Exception as e:
         log_utils.log_message(f"Failed to ingest {path.name}: {e}", "ERROR")
+
 
 def process_downloads():
     for file in DOWNLOADS.glob("apple_*.*"):
