@@ -15,7 +15,7 @@ more-itertools==10.3.0
 nh3==0.2.17
 packaging==24.1
 pluggy==1.5.0
-psycopg[binary]
+psycopg[binary,pool]
 py-cpuinfo==9.0.0
 pydantic==2.8.2
 pydantic-core==2.20.1
