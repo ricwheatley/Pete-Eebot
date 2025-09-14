@@ -1,34 +1,29 @@
 {
-  "date": "2025-09-10",
-  "body": {
-    "weight_kg": 89.65,
-    "body_fat_pct": 30.46,
-    "muscle_mass_kg": null,
-    "water_pct": null
-  },
-  "activity": {
-    "steps": 7225,
-    "exercise_minutes": 71,
-    "stand_minutes": 135,
-    "distance_km": 5.9,
+  "apple": {
     "calories": {
-      "active": 1114,
-      "resting": 2042,
-      "total": 3156
-    }
+      "active": null,
+      "resting": null,
+      "total": null
+    },
+    "date": "2025-09-10",
+    "distance_m": null,
+    "exercise_minutes": null,
+    "heart_rate": {
+      "avg": null,
+      "max": null,
+      "min": null,
+      "resting": null
+    },
+    "sleep": {
+      "asleep": null,
+      "awake": null,
+      "core": null,
+      "deep": null,
+      "in_bed": null,
+      "rem": null
+    },
+    "stand_minutes": null,
+    "steps": null
   },
-  "heart": {
-    "resting_bpm": 52,
-    "avg_bpm": 127,
-    "min_bpm": 48,
-    "max_bpm": 185
-  },
-  "sleep": {
-    "total_minutes": 373,
-    "asleep_minutes": 365,
-    "rem_minutes": 111,
-    "deep_minutes": 27,
-    "core_minutes": 227,
-    "awake_minutes": 8
-  }
+  "withings": {}
 }

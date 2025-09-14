@@ -62,8 +62,10 @@ def _get_dal() -> DataAccessLayer:
 
 
 def _safe_get_withings_summary(client: WithingsClient, target_day: date) -> Dict:
+    """Fetch Withings summary for a specific day using days_back offset."""
     try:
-        return client.get_summary(target_date=target_day)
+        days_back = (date.today() - target_day).days
+        return client.get_summary(days_back=days_back)
     except Exception as e:
         log_utils.log_message(
             f"[sync] Withings fetch failed for {target_day.isoformat()}: {e}", "ERROR"
@@ -88,7 +90,7 @@ def _safe_get_wger_logs(client: WgerClient, days: int) -> Dict[str, List[Dict]]:
     Returns a mapping of ISO date -> list of log dicts for that date.
     """
     try:
-        data = client.get_logs(days=days)
+        data = client.fetch_logs(days=days)
         # Be defensive about the shape
         if not isinstance(data, dict):
             log_utils.log_message(
@@ -145,7 +147,11 @@ def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: d
 def _calculate_and_log_body_age(dal: DataAccessLayer, withings: Dict, apple: Dict, the_day: date) -> None:
     """Calculate body age and persist the result via DAL."""
     try:
-        result = body_age.calculate_body_age([withings, apple], profile={"age": 40})
+        result = body_age.calculate_body_age(
+            withings_history=withings,
+            apple_history=apple,
+            profile={"age": 40},
+        )
         if result:
             log_utils.log_message(
                 f"[sync] Body Age for {the_day.isoformat()}: {result}", "INFO"
@@ -159,6 +165,7 @@ def _calculate_and_log_body_age(dal: DataAccessLayer, withings: Dict, apple: Dic
         log_utils.log_message(
             f"[sync] Body Age calculation failed for {the_day.isoformat()}: {e}", "ERROR"
         )
+
 
 
 
