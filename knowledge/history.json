@@ -1,4 +1,178 @@
 {
+  "2025-09-07": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-07",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
+  "2025-09-08": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-08",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
+  "2025-09-09": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-09",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
+  "2025-09-10": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-10",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
+  "2025-09-11": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-11",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
+  "2025-09-12": {
+    "apple": {
+      "calories": {
+        "active": null,
+        "resting": null,
+        "total": null
+      },
+      "date": "2025-09-12",
+      "distance_m": null,
+      "exercise_minutes": null,
+      "heart_rate": {
+        "avg": null,
+        "max": null,
+        "min": null,
+        "resting": null
+      },
+      "sleep": {
+        "asleep": null,
+        "awake": null,
+        "core": null,
+        "deep": null,
+        "in_bed": null,
+        "rem": null
+      },
+      "stand_minutes": null,
+      "steps": null
+    },
+    "withings": {}
+  },
   "2025-09-13": {
     "apple": {
       "calories": {
