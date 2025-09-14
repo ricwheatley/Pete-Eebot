@@ -7,7 +7,7 @@ robust connection pool for efficiency and reliability.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Dict, List, Optional
 import json
 
@@ -20,26 +20,50 @@ from pete_e.core import body_age
 from .dal import DataAccessLayer
 
 
-# A single, global connection pool instance is created when the module is imported.
-# It will raise an error on startup if DATABASE_URL is not set.
+# -------------------------------------------------------------------------
+# Connection Pool + DictRow wrapper
+# -------------------------------------------------------------------------
 if not settings.DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
 
-pool = ConnectionPool(
+_pool = ConnectionPool(
     conninfo=settings.DATABASE_URL,
     min_size=1,
     max_size=3,
-    row_factory=dict_row,
 )
 
 
+class DictConn:
+    """
+    Wrapper around a pooled connection that ensures every cursor
+    automatically uses dict_row.
+    """
+    def __init__(self, pool: ConnectionPool):
+        self._pool = pool
+
+    def __enter__(self):
+        self._conn = self._pool.connection().__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._conn.__exit__(exc_type, exc_val, exc_tb)
+
+    def cursor(self):
+        return self._conn.cursor(row_factory=dict_row)
+
+
+def get_conn() -> DictConn:
+    """Get a pooled connection with dict_row as default cursor output."""
+    return DictConn(_pool)
+
+
+# -------------------------------------------------------------------------
+# Postgres DAL
+# -------------------------------------------------------------------------
 class PostgresDal(DataAccessLayer):
     """
     A Data Access Layer implementation that uses a PostgreSQL database as the backend.
-    This class fulfils the contract defined by the DataAccessLayer ABC.
     """
-
-    # Connection lifecycle is handled by the global pool.
 
     # -------------------------------------------------------------------------
     # Strength log
@@ -49,7 +73,7 @@ class PostgresDal(DataAccessLayer):
         log_utils.log_message("[PostgresDal] Loading lift log", "INFO")
         lift_log: Dict[str, List[Dict[str, Any]]] = {}
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -60,9 +84,7 @@ class PostgresDal(DataAccessLayer):
                     )
                     for row in cur.fetchall():
                         key = str(row["exercise_id"])
-                        if key not in lift_log:
-                            lift_log[key] = []
-                        lift_log[key].append({
+                        lift_log.setdefault(key, []).append({
                             "date": row["summary_date"].isoformat(),
                             "set_number": row["set_number"],
                             "reps": row["reps"],
@@ -71,7 +93,6 @@ class PostgresDal(DataAccessLayer):
                         })
         except Exception as e:
             log_utils.log_message(f"Error loading lift log from Postgres: {e}", "ERROR")
-            return {}
         return lift_log
 
     def save_strength_log_entry(
@@ -83,12 +104,9 @@ class PostgresDal(DataAccessLayer):
         weight_kg: float,
         rir: Optional[float] = None,
     ) -> None:
-        """Insert a single set into ``strength_log`` with set ordering.
-
-        Uniqueness is enforced by (summary_date, exercise_id, set_number).
-        """
+        """Insert a single set into ``strength_log`` with set ordering."""
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -111,23 +129,15 @@ class PostgresDal(DataAccessLayer):
     def update_strength_volume(self, log_date: date) -> None:
         """Aggregate total kg lifted (weight_kg * reps) for a day into daily_summary.strength_volume_kg."""
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """
-                        SELECT COALESCE(SUM(weight_kg * reps), 0)
-                        FROM strength_log
-                        WHERE summary_date = %s;
-                        """,
+                        "SELECT COALESCE(SUM(weight_kg * reps), 0) AS total FROM strength_log WHERE summary_date = %s;",
                         (log_date,),
                     )
-                    total_volume = cur.fetchone()[0]
+                    total_volume = cur.fetchone()["total"]
                     cur.execute(
-                        """
-                        UPDATE daily_summary
-                        SET strength_volume_kg = %s
-                        WHERE summary_date = %s;
-                        """,
+                        "UPDATE daily_summary SET strength_volume_kg = %s WHERE summary_date = %s;",
                         (total_volume, log_date),
                     )
             log_utils.log_message(
@@ -144,15 +154,13 @@ class PostgresDal(DataAccessLayer):
     # -------------------------------------------------------------------------
     def save_daily_summary(self, summary: Dict[str, Any], day: date) -> None:
         """Upserts a row into ``daily_summary``."""
-        log_utils.log_message(
-            f"[PostgresDal] Saving daily summary for {day.isoformat()}", "INFO"
-        )
+        log_utils.log_message(f"[PostgresDal] Saving daily summary for {day.isoformat()}", "INFO")
         withings = summary.get("withings", {})
         apple = summary.get("apple", {})
         sleep = apple.get("sleep", {})
 
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -162,7 +170,8 @@ class PostgresDal(DataAccessLayer):
                             distance_m, hr_resting, hr_avg, hr_max, hr_min,
                             sleep_total_minutes, sleep_asleep_minutes, sleep_rem_minutes,
                             sleep_deep_minutes, sleep_core_minutes, sleep_awake_minutes
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (summary_date) DO UPDATE SET
                             weight_kg = EXCLUDED.weight_kg,
                             body_fat_pct = EXCLUDED.body_fat_pct,
@@ -210,15 +219,13 @@ class PostgresDal(DataAccessLayer):
                         ),
                     )
         except Exception as e:
-            log_utils.log_message(
-                f"Error saving daily summary to Postgres for {day}: {e}", "ERROR"
-            )
+            log_utils.log_message(f"Error saving daily summary to Postgres for {day}: {e}", "ERROR")
 
     def load_history(self) -> Dict[str, Any]:
         """Return all rows from ``daily_summary`` keyed by ISO date."""
         out: Dict[str, Any] = {}
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT * FROM daily_summary ORDER BY summary_date ASC;"
@@ -291,7 +298,7 @@ class PostgresDal(DataAccessLayer):
     def save_body_age(self, result: Dict[str, Any]) -> None:
         """Upsert a flattened body age record into body_age_log."""
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -337,7 +344,7 @@ class PostgresDal(DataAccessLayer):
         """Load all flattened body age records keyed by ISO date."""
         out: Dict[str, Any] = {}
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -378,7 +385,7 @@ class PostgresDal(DataAccessLayer):
         """
         try:
             # Fetch the window of summaries
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -446,7 +453,7 @@ class PostgresDal(DataAccessLayer):
 
             # Update headline fields on daily_summary
             try:
-                with pool.connection() as conn:
+                with get_conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
@@ -480,7 +487,7 @@ class PostgresDal(DataAccessLayer):
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT * FROM daily_summary ORDER BY summary_date DESC LIMIT %s;",
@@ -497,7 +504,7 @@ class PostgresDal(DataAccessLayer):
 
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT * FROM daily_summary WHERE summary_date = %s;",
@@ -515,7 +522,7 @@ class PostgresDal(DataAccessLayer):
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -543,7 +550,7 @@ class PostgresDal(DataAccessLayer):
             f"[PostgresDal] Saving training plan for {start_date.isoformat()}", "INFO"
         )
         try:
-            with pool.connection() as conn:
+            with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
