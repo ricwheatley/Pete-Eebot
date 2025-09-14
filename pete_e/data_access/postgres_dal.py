@@ -95,6 +95,28 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error loading lift log from Postgres: {e}", "ERROR")
         return lift_log
 
+    def save_lift_log(self, log: Dict[str, Any]) -> None:
+        """
+        Save a full lift log (exercise_id -> list of sets).
+
+        Iterates through each exercise and its sets, and persists them using
+        save_strength_log_entry. The set_number ensures idempotency (no dupes).
+        """
+        try:
+            for exercise_id, sets in log.items():
+                for i, entry in enumerate(sets, start=1):
+                    self.save_strength_log_entry(
+                        exercise_id=int(exercise_id),
+                        log_date=date.fromisoformat(entry["date"]),
+                        set_number=i,
+                        reps=entry.get("reps"),
+                        weight_kg=entry.get("weight"),
+                        rir=entry.get("rir"),
+                    )
+        except Exception as e:
+            log_utils.log_message(f"Error saving full lift log: {e}", "ERROR")
+
+
     def save_strength_log_entry(
         self,
         exercise_id: int,
