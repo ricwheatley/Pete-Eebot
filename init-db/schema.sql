@@ -18,7 +18,7 @@ DROP TABLE IF EXISTS wger_muscle;
 DROP TABLE IF EXISTS wger_equipment;
 DROP TABLE IF EXISTS wger_category;
 DROP TABLE IF EXISTS daily_summary;
-
+DROP TABLE IF EXISTS body_age_log;
 
 -- -----------------------------------------------------------------------------
 -- Table: daily_summary
@@ -145,9 +145,29 @@ CREATE INDEX IF NOT EXISTS idx_training_plans_start_date ON training_plans(start
 -- -----------------------------------------------------------------------------
 CREATE TABLE body_age_log (
     summary_date DATE PRIMARY KEY,
+
+    -- Metadata
+    input_window_days INTEGER,
+
+    -- Subscores
+    crf NUMERIC(4,1),
+    body_comp NUMERIC(4,1),
+    activity NUMERIC(4,1),
+    recovery NUMERIC(4,1),
+
+    -- Composite score
+    composite NUMERIC(4,1),
+
+    -- Final body age outputs
     body_age_years NUMERIC(4,1),
-    delta_years NUMERIC(4,1)
+    delta_years NUMERIC(4,1),
+
+    -- Assumptions (flattened)
+    used_vo2max_direct BOOLEAN,
+    cap_minus_10_applied BOOLEAN
 );
+
+COMMENT ON TABLE body_age_log IS 'Stores flattened body age calculation outputs, including subscores and assumptions.';
 
 -- -----------------------------------------------------------------------------
 -- Grant privileges to pete_user
