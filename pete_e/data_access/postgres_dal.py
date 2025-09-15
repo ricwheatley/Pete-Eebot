@@ -322,7 +322,59 @@ class PostgresDal(DataAccessLayer):
         except Exception as e:
             log_utils.log_message(f"Error fetching actual muscle volume: {e}", "ERROR")
             return []
-        
+
+    # ---------------------------------------------------------------------
+    # Training Plan Helpers and Views
+    # ---------------------------------------------------------------------
+
+    def get_active_plan(self) -> Optional[Dict[str, Any]]:
+        """Finds the current training plan marked as active."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT * FROM training_plans WHERE is_active = true LIMIT 1;")
+                return cur.fetchone()
+        except Exception as e:
+            log_utils.log_message(f"Error fetching active plan: {e}", "ERROR")
+            return None
+
+    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        """Fetches all workouts for a specific week of a plan."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT tpw.*, e.name as exercise_name
+                    FROM training_plan_workouts tpw
+                    JOIN training_plan_weeks tw ON tpw.week_id = tw.id
+                    JOIN wger_exercise e ON tpw.exercise_id = e.id
+                    WHERE tw.plan_id = %s AND tw.week_number = %s
+                    ORDER BY tpw.day_of_week;
+                    """,
+                    (plan_id, week_number),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            log_utils.log_message(f"Error fetching plan week data: {e}", "ERROR")
+            return []
+    
+    def refresh_plan_view(self) -> None:
+        """Refreshes the materialized view for plan muscle volume."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
+                log_utils.log_message("Refreshed plan_muscle_volume view.", "INFO")
+        except Exception as e:
+            log_utils.log_message(f"Error refreshing plan_muscle_volume view: {e}", "ERROR")
+
+    def refresh_actual_view(self) -> None:
+        """Refreshes the materialized view for actual muscle volume."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
+                log_utils.log_message("Refreshed actual_muscle_volume view.", "INFO")
+        except Exception as e:
+            log_utils.log_message(f"Error refreshing actual_muscle_volume view: {e}", "ERROR")
+
     # ---------------------------------------------------------------------
     # Wger Catalog Upserts
     # ---------------------------------------------------------------------

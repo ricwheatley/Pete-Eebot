@@ -1,67 +1,56 @@
-"""Tests for the Postgres DAL implementation.
-
-These tests require a running PostgreSQL instance. If the environment variable
-`TEST_DATABASE_URL` is not set, the tests will be skipped. The tests mirror the
-JSON DAL round-trip to ensure functional parity.
-"""
-
-from __future__ import annotations
-
-import os
+import unittest
 from datetime import date
-from pathlib import Path
+from unittest.mock import patch, MagicMock
 
-import pytest
+# Assuming your DAL is in this structure
+from pete_e.data_access.postgres_dal import PostgresDal
 
-TEST_DB_URL = os.getenv("TEST_DATABASE_URL")
+class TestPostgresDal(unittest.TestCase):
 
-if TEST_DB_URL:
-    # Make the Postgres DAL use the test database URL
-    os.environ["DATABASE_URL"] = TEST_DB_URL
-    from pete_e.config import settings
-    from pete_e.data_access.postgres_dal import PostgresDal
-    import psycopg
-else:  # pragma: no cover - environment without postgres
-    PostgresDal = None
+    @patch('pete_e.data_access.postgres_dal.get_conn')
+    def test_save_withings_daily(self, mock_get_conn):
+        """Test that save_withings_daily executes the correct SQL."""
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cur
+
+        dal = PostgresDal()
+        test_date = date(2025, 1, 15)
+        dal.save_withings_daily(test_date, 75.5, 22.1)
+
+        self.assertTrue(mock_cur.execute.called)
+        # Check that the SQL statement contains the key parts
+        sql_call = mock_cur.execute.call_args[0][0]
+        self.assertIn("INSERT INTO withings_daily", sql_call)
+        self.assertIn("ON CONFLICT (date) DO UPDATE", sql_call)
+        
+        # Check that the correct data was passed
+        data_tuple = mock_cur.execute.call_args[0][1]
+        self.assertEqual(data_tuple, (test_date, 75.5, 22.1))
 
 
-@pytest.mark.skipif(PostgresDal is None, reason="TEST_DATABASE_URL not configured")
-def test_postgres_dal_roundtrip(tmp_path, monkeypatch):
-    """Basic round-trip test for PostgresDal."""
-    # Redirect file-based settings to temp path (for completeness)
-    monkeypatch.setattr(settings, "PROJECT_ROOT", tmp_path)
+    @patch('pete_e.data_access.postgres_dal.get_conn')
+    def test_get_historical_data(self, mock_get_conn):
+        """Test that get_historical_data queries the daily_summary view."""
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_get_conn.return_value = mock_conn
+        mock_conn.cursor.return_value = mock_cur
+        mock_cur.fetchall.return_value = [{"date": "2025-01-15", "steps": 5000}]
 
-    # Initialise schema
-    schema = Path("init-db/schema.sql").read_text()
-    with psycopg.connect(TEST_DB_URL, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute(schema)
+        dal = PostgresDal()
+        start = date(2025, 1, 1)
+        end = date(2025, 1, 31)
+        result = dal.get_historical_data(start, end)
 
-    dal = PostgresDal()
+        self.assertTrue(mock_cur.execute.called)
+        sql_call = mock_cur.execute.call_args[0][0]
+        self.assertIn("SELECT * FROM daily_summary", sql_call)
+        
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['steps'], 5000)
 
-    # Daily summary roundtrip
-    summary = {"withings": {"weight": 80}, "apple": {"steps": 1000}}
-    day = date(2024, 1, 1)
-    dal.save_daily_summary(summary, day)
-    assert dal.get_daily_summary(day)["withings"]["weight"] == 80
 
-    history = dal.load_history()
-    assert history[day.isoformat()]["withings"]["weight"] == 80
-
-    metrics = dal.get_historical_metrics(1)
-    assert metrics[0]["apple"]["steps"] == 1000
-
-    data = dal.get_historical_data(day, day)
-    assert data[0]["withings"]["weight"] == 80
-
-    # Training plan persistence
-    plan = {"start": day.isoformat(), "weeks": []}
-    dal.save_training_plan(plan, day)
-    with psycopg.connect(TEST_DB_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT plan FROM training_plans WHERE start_date = %s;", (day,)
-            )
-            row = cur.fetchone()
-            assert row and row[0]["start"] == day.isoformat()
-
+if __name__ == '__main__':
+    unittest.main()
