@@ -74,7 +74,7 @@ CREATE TABLE wger_exercise_muscle_primary (
     muscle_id INTEGER REFERENCES wger_muscle(id) ON DELETE CASCADE,
     PRIMARY KEY (exercise_id, muscle_id)
 );
-COMMENT ON TABLE wger_exercise_muscle_primary IS 'Junction table linking exercises to primary muscles targeted.'
+COMMENT ON TABLE wger_exercise_muscle_primary IS 'Junction table linking exercises to primary muscles targeted.';
 
 CREATE TABLE wger_exercise_muscle_secondary (
     exercise_id INTEGER REFERENCES wger_exercise(id) ON DELETE CASCADE,
@@ -228,8 +228,6 @@ GROUP BY d.date, w.weight_kg, w.body_fat_pct,
          a.sleep_deep_minutes, a.sleep_core_minutes, a.sleep_awake_minutes,
          b.body_age_years, b.body_age_delta_years;
 
-CREATE INDEX idx_daily_summary_date ON daily_summary(date);
-CREATE INDEX idx_daily_summary_strength_volume ON daily_summary(strength_volume_kg);
 
 COMMENT ON VIEW daily_summary IS 'Central view aggregating daily health and fitness metrics from various sources.';
 
