@@ -8,24 +8,25 @@
 --  - Flattened sleep data into individual columns for easier querying.
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- Grant privileges to pete_user
--- -----------------------------------------------------------------------------
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
-
 
 -- Drop tables in reverse order of dependency to avoid foreign key errors
-DROP TABLE IF EXISTS strength_log;
-DROP TABLE IF EXISTS wger_exercise_muscle_secondary;
-DROP TABLE IF EXISTS wger_exercise_muscle_primary;
-DROP TABLE IF EXISTS wger_exercise_equipment;
-DROP TABLE IF EXISTS wger_exercise;
-DROP TABLE IF EXISTS wger_muscle;
-DROP TABLE IF EXISTS wger_equipment;
-DROP TABLE IF EXISTS wger_category;
-DROP TABLE IF EXISTS daily_summary;
-DROP TABLE IF EXISTS body_age_log;
+DROP TABLE IF EXISTS withings_daily CASCADE;
+DROP TABLE IF EXISTS apple_daily CASCADE;
+DROP TABLE IF EXISTS wger_exercise_muscle_secondary CASCADE;
+DROP TABLE IF EXISTS wger_exercise_muscle_primary CASCADE;
+DROP TABLE IF EXISTS wger_exercise_equipment CASCADE;
+DROP TABLE IF EXISTS wger_exercise CASCADE;
+DROP TABLE IF EXISTS wger_muscle CASCADE;
+DROP TABLE IF EXISTS wger_equipment CASCADE;
+DROP TABLE IF EXISTS wger_category CASCADE;
+DROP TABLE IF EXISTS wger_logs CASCADE;
+DROP TABLE IF EXISTS body_age_daily CASCADE;
+DROP TABLE IF EXISTS training_plans CASCADE;
+DROP TABLE IF EXISTS training_plan_weeks CASCADE;
+DROP TABLE IF EXISTS training_plan_workouts CASCADE;
+DROP VIEW IF EXISTS daily_summary;
+DROP MATERIALIZED VIEW IF EXISTS plan_muscle_volume;
+DROP MATERIALIZED VIEW IF EXISTS actual_muscle_volume;
 
 
 -- =============================================================================
@@ -227,8 +228,6 @@ GROUP BY d.date, w.weight_kg, w.body_fat_pct,
          a.sleep_total_minutes, a.sleep_asleep_minutes, a.sleep_rem_minutes,
          a.sleep_deep_minutes, a.sleep_core_minutes, a.sleep_awake_minutes,
          b.body_age_years, b.body_age_delta_years;
-
-
 COMMENT ON VIEW daily_summary IS 'Central view aggregating daily health and fitness metrics from various sources.';
 
 
@@ -269,3 +268,10 @@ LEFT JOIN wger_exercise_muscle_primary p ON e.id = p.exercise_id
 LEFT JOIN wger_exercise_muscle_secondary s ON e.id = s.exercise_id
 LEFT JOIN wger_muscle m ON m.id = COALESCE(p.muscle_id, s.muscle_id)
 GROUP BY gl.date, m.id;
+
+-- -----------------------------------------------------------------------------
+-- Grant privileges to pete_user
+-- -----------------------------------------------------------------------------
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO pete_user;

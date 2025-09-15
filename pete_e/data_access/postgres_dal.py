@@ -14,6 +14,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 import json
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
@@ -39,6 +40,12 @@ _pool = ConnectionPool(
 def get_conn():
     return _pool.connection()
 
+def close_pool():
+    """Explicitly close the connection pool."""
+    if not _pool.closed:
+        _pool.close()
+        log_utils.log_message("Database connection pool closed.", "INFO")
+
 
 # -------------------------------------------------------------------------
 # Postgres DAL
@@ -48,7 +55,6 @@ class PostgresDal(DataAccessLayer):
     PostgreSQL implementation of the Pete-Eebot Data Access Layer.
     """
 
-    # ... (existing methods for Withings, Apple, Wger Logs, etc. remain unchanged) ...
     # ---------------------------------------------------------------------
     # Withings
     # ---------------------------------------------------------------------
@@ -190,7 +196,7 @@ class PostgresDal(DataAccessLayer):
                         metrics.get("recovery"),
                         metrics.get("composite"),
                         body_age_years,
-                        body_age_delta_years, # <-- Use the calculated delta
+                        body_age_delta_years,
                         metrics.get("used_vo2max_direct"),
                         metrics.get("cap_minus_10_applied"),
                     ),
@@ -198,7 +204,7 @@ class PostgresDal(DataAccessLayer):
         except Exception as e:
             log_utils.log_message(f"Error saving body age data for {day}: {e}", "ERROR")
 
-    # ... (summary and training plan methods are also unchanged) ...
+
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         try:
             with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -236,99 +242,192 @@ class PostgresDal(DataAccessLayer):
             return []
     
     # ---------------------------------------------------------------------
+    # Training plans
+    # ---------------------------------------------------------------------
+    def save_training_plan(self, plan: dict, start_date: date) -> int:
+        """Insert plan, weeks, and workouts in a single transaction."""
+        try:
+            with get_conn() as conn, conn.transaction(), conn.cursor() as cur:
+                # 1. Deactivate any existing active plans
+                cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+
+                # 2. Insert the new plan and get its ID
+                cur.execute(
+                    "INSERT INTO training_plans (start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
+                    (start_date, len(plan.get("weeks", []))),
+                )
+                plan_id = cur.fetchone()[0]
+
+                # 3. Insert weeks and workouts
+                for week_num, week_data in enumerate(plan.get("weeks", []), 1):
+                    cur.execute(
+                        "INSERT INTO training_plan_weeks (plan_id, week_number) VALUES (%s, %s) RETURNING id;",
+                        (plan_id, week_num),
+                    )
+                    week_id = cur.fetchone()[0]
+
+                    for workout_data in week_data.get("workouts", []):
+                        cur.execute(
+                            """
+                            INSERT INTO training_plan_workouts
+                                (week_id, day_of_week, exercise_id, sets, reps, rir)
+                            VALUES (%s, %s, %s, %s, %s, %s);
+                            """,
+                            (
+                                week_id,
+                                workout_data.get("day_of_week"),
+                                workout_data.get("exercise_id"),
+                                workout_data.get("sets"),
+                                workout_data.get("reps"),
+                                workout_data.get("rir"),
+                            ),
+                        )
+                return plan_id
+        except Exception as e:
+            log_utils.log_message(f"Error saving training plan: {e}", "ERROR")
+            return -1
+
+    def get_plan(self, plan_id: int) -> Dict[str, Any]:
+        """Fetches a full training plan with weeks and workouts."""
+        # This is a complex query, you might build this out later if needed.
+        # For now, a placeholder is fine.
+        log_utils.log_message(f"Placeholder: Fetching plan {plan_id}", "INFO")
+        return {}
+
+    # ---------------------------------------------------------------------
+    # Muscle volume comparison
+    # ---------------------------------------------------------------------
+    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        """Fetch pre-calculated muscle volume for a given plan and week."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT * FROM plan_muscle_volume WHERE plan_id = %s AND week_number = %s;",
+                    (plan_id, week_number),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            log_utils.log_message(f"Error fetching plan muscle volume: {e}", "ERROR")
+            return []
+
+    def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        """Fetch actual muscle volume over a date range."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT * FROM actual_muscle_volume WHERE date BETWEEN %s AND %s;",
+                    (start_date, end_date),
+                )
+                return cur.fetchall()
+        except Exception as e:
+            log_utils.log_message(f"Error fetching actual muscle volume: {e}", "ERROR")
+            return []
+        
+    # ---------------------------------------------------------------------
     # Wger Catalog Upserts
     # ---------------------------------------------------------------------
     def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
-        """Upserts a list of categories into the wger_category table."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                stmt = """
-                    INSERT INTO wger_category (id, name)
-                    VALUES (%(id)s, %(name)s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name;
-                """
-                cur.executemany(stmt, categories)
-                log_utils.log_message(f"Upserted {len(categories)} Wger categories.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error upserting Wger categories: {e}", "ERROR")
+        success_count = 0
+        for item in categories:
+            try:
+                # Get a fresh connection for each item
+                with get_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO wger_category (id, name) VALUES (%(id)s, %(name)s)
+                        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+                        """,
+                        item
+                    )
+                    success_count += 1
+            except psycopg.Error as e:
+                details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
+                log_utils.log_message(f"Skipping category due to DB error. Details: {details} | Data: {item}", "WARN")
+                continue
+        log_utils.log_message(f"Successfully upserted {success_count}/{len(categories)} Wger categories.", "INFO")
 
     def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
-        """Upserts a list of equipment into the wger_equipment table."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                stmt = """
-                    INSERT INTO wger_equipment (id, name)
-                    VALUES (%(id)s, %(name)s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name;
-                """
-                cur.executemany(stmt, equipment)
-                log_utils.log_message(f"Upserted {len(equipment)} Wger equipment items.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error upserting Wger equipment: {e}", "ERROR")
+        success_count = 0
+        for item in equipment:
+            try:
+                with get_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO wger_equipment (id, name) VALUES (%(id)s, %(name)s)
+                        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+                        """,
+                        item
+                    )
+                    success_count += 1
+            except psycopg.Error as e:
+                details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
+                log_utils.log_message(f"Skipping equipment due to DB error. Details: {details} | Data: {item}", "WARN")
+                continue
+        log_utils.log_message(f"Successfully upserted {success_count}/{len(equipment)} Wger equipment items.", "INFO")
 
     def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
-        """Upserts a list of muscles into the wger_muscle table."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                stmt = """
-                    INSERT INTO wger_muscle (id, name, name_en, is_front)
-                    VALUES (%(id)s, %(name)s, %(name_en)s, %(is_front)s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        name = EXCLUDED.name,
-                        name_en = EXCLUDED.name_en,
-                        is_front = EXCLUDED.is_front;
-                """
-                cur.executemany(stmt, muscles)
-                log_utils.log_message(f"Upserted {len(muscles)} Wger muscles.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error upserting Wger muscles: {e}", "ERROR")
+        success_count = 0
+        for item in muscles:
+            try:
+                with get_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO wger_muscle (id, name, name_en, is_front)
+                        VALUES (%(id)s, %(name)s, %(name_en)s, %(is_front)s)
+                        ON CONFLICT (id) DO UPDATE SET
+                            name = EXCLUDED.name, name_en = EXCLUDED.name_en, is_front = EXCLUDED.is_front;
+                        """,
+                        item
+                    )
+                    success_count += 1
+            except psycopg.Error as e:
+                details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
+                log_utils.log_message(f"Skipping muscle due to DB error. Details: {details} | Data: {item}", "WARN")
+                continue
+        log_utils.log_message(f"Successfully upserted {success_count}/{len(muscles)} Wger muscles.", "INFO")
 
     def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
-        """
-        Upserts exercises and their many-to-many relationships in a single transaction.
-        """
-        try:
-            with get_conn() as conn, conn.transaction(), conn.cursor() as cur:
-                # 1. Upsert main exercise data
-                stmt_exercise = """
-                    INSERT INTO wger_exercise (id, uuid, name, description, category_id)
-                    VALUES (%(id)s, %(uuid)s, %(name)s, %(description)s, %(category_id)s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        uuid = EXCLUDED.uuid,
-                        name = EXCLUDED.name,
-                        description = EXCLUDED.description,
-                        category_id = EXCLUDED.category_id;
-                """
-                cur.executemany(stmt_exercise, exercises)
+        success_count = 0
+        for ex in exercises:
+            try:
+                # Use a single connection and transaction for the entire exercise and its relations
+                with get_conn() as conn, conn.cursor() as cur:
+                    # Main exercise upsert
+                    cur.execute(
+                        """
+                        INSERT INTO wger_exercise (id, uuid, name, description, category_id)
+                        VALUES (%(id)s, %(uuid)s, %(name)s, %(description)s, %(category_id)s)
+                        ON CONFLICT (id) DO UPDATE SET
+                            uuid = EXCLUDED.uuid, name = EXCLUDED.name,
+                            description = EXCLUDED.description, category_id = EXCLUDED.category_id;
+                        """,
+                        ex
+                    )
 
-                # 2. Upsert junction table data (delete and re-insert for simplicity)
-                for ex in exercises:
+                    # Junction tables
                     ex_id = ex['id']
-
-                    # Equipment
-                    cur.execute("DELETE FROM wger_exercise_equipment WHERE exercise_id = %s;", (ex_id,))
                     if ex.get('equipment_ids'):
+                        cur.execute("DELETE FROM wger_exercise_equipment WHERE exercise_id = %s;", (ex_id,))
                         equip_data = [(ex_id, eq_id) for eq_id in ex['equipment_ids']]
                         cur.executemany("INSERT INTO wger_exercise_equipment (exercise_id, equipment_id) VALUES (%s, %s);", equip_data)
-
-                    # Primary Muscles
-                    cur.execute("DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = %s;", (ex_id,))
+                    
                     if ex.get('primary_muscle_ids'):
+                        cur.execute("DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = %s;", (ex_id,))
                         primary_data = [(ex_id, m_id) for m_id in ex['primary_muscle_ids']]
                         cur.executemany("INSERT INTO wger_exercise_muscle_primary (exercise_id, muscle_id) VALUES (%s, %s);", primary_data)
 
-                    # Secondary Muscles
-                    cur.execute("DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = %s;", (ex_id,))
                     if ex.get('secondary_muscle_ids'):
+                        cur.execute("DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = %s;", (ex_id,))
                         secondary_data = [(ex_id, m_id) for m_id in ex['secondary_muscle_ids']]
                         cur.executemany("INSERT INTO wger_exercise_muscle_secondary (exercise_id, muscle_id) VALUES (%s, %s);", secondary_data)
+                    
+                    success_count += 1
+            except psycopg.Error as e:
+                details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
+                log_utils.log_message(f"Skipping exercise due to DB error. Details: {details} | Data: {ex}", "WARN")
+                continue
+        
+        log_utils.log_message(f"Successfully upserted {success_count}/{len(exercises)} Wger exercises.", "INFO")
 
-                log_utils.log_message(f"Upserted {len(exercises)} Wger exercises and their relations.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error upserting Wger exercises: {e}", "ERROR")
-
-    # ... (all other methods remain) ...
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         log_utils.log_message(f"[VALIDATION] {tag}: {adjustments}", "INFO")
