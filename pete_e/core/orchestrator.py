@@ -4,10 +4,16 @@ Main orchestrator for Pete-Eebot's core logic.
 from datetime import date, timedelta
 from typing import Dict, Any, List, Tuple
 
-from pete_e.core import DataAccessLayer, WithingsClient, WgerClient, PlanBuilder
+# DAL and Clients
+from pete_e.data_access.dal import DataAccessLayer
 from pete_e.data_access.postgres_dal import PostgresDal
 from pete_e.core.withings_client import WithingsClient
+from pete_e.core.wger_client import WgerClient
 from pete_e.core import apple_client, body_age
+
+# Core Logic and Helpers
+from pete_e.core.narrative_builder import NarrativeBuilder
+from pete_e.core.plan_builder import PlanBuilder
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infra import log_utils, telegram_sender
 from pete_e.config import settings
@@ -20,18 +26,75 @@ class Orchestrator:
 
     def __init__(self, dal: DataAccessLayer = None):
         self.dal = dal or PostgresDal()
+        self.narrative_builder = NarrativeBuilder()
 
-    def get_daily_summary(self) -> str:
-        # ... (this method remains the same)
-        return "Daily summary logic here."
+    def get_daily_summary(self, target_date: date = None) -> str:
+        """
+        Generates a human-readable summary for a given day.
+        Fetches the latest data from the DB and uses NarrativeBuilder to format it.
+        """
+        if target_date is None:
+            target_date = date.today() - timedelta(days=1) # Default to yesterday
 
-    def get_week_plan_summary(self) -> str:
-        # ... (this method remains the same)
-        return "Weekly plan summary logic here."
+        log_utils.log_message(f"Generating daily summary for {target_date.isoformat()}", "INFO")
+        summary_data = self.dal.get_daily_summary(target_date)
+
+        if not summary_data:
+            return f"I have no data for {target_date.strftime('%A, %B %d')}. Something might have gone wrong with the daily sync."
+
+        return self.narrative_builder.build_daily_summary(summary_data)
+
+
+    def get_week_plan_summary(self, target_date: date = None) -> str:
+        """
+        Generates a human-readable summary of the current week's training plan.
+        """
+        if target_date is None:
+            target_date = date.today()
+
+        log_utils.log_message(f"Generating weekly plan summary for week of {target_date.isoformat()}", "INFO")
+        
+        # Note: You will need to implement `get_active_plan` and `get_plan_week` in your DAL
+        active_plan = self.dal.get_active_plan()
+        if not active_plan:
+            return "There is no active training plan in the database."
+
+        # Calculate the week number
+        days_since_start = (target_date - active_plan['start_date']).days
+        if days_since_start < 0:
+            return f"The active training plan starts on {active_plan['start_date'].isoformat()}."
+        
+        week_number = (days_since_start // 7) + 1
+        if week_number > active_plan['weeks']:
+            return "The current training plan has finished. Time to generate a new one!"
+
+        plan_week_data = self.dal.get_plan_week(active_plan['id'], week_number)
+        if not plan_week_data:
+            return f"Could not find workout data for Plan ID {active_plan['id']}, Week {week_number}."
+
+        return self.narrative_builder.build_weekly_plan(plan_week_data, week_number)
+
 
     def send_telegram_message(self, message: str) -> None:
-        # ... (this method remains the same)
-        telegram_sender.send_message(message)
+        """Sends a message using the Telegram sender."""
+        telegram_sender.send_telegram_message(message)
+
+
+    def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
+        """Builds and deploys a new multi-week training plan."""
+        # ... (this method is complete)
+        log_utils.log_message(f"Generating new {weeks}-week plan starting {start_date.isoformat()}", "INFO")
+        try:
+            builder = PlanBuilder()
+            plan_dict = builder.build_plan(weeks=weeks)
+            log_utils.log_message("Successfully built plan structure.", "INFO")
+            plan_id = self.dal.save_training_plan(plan=plan_dict, start_date=start_date)
+            log_utils.log_message(f"Successfully saved new plan with ID: {plan_id}", "INFO")
+            self.dal.refresh_plan_view()
+            return plan_id
+        except Exception as e:
+            log_utils.log_message(f"Failed to generate and deploy new plan: {e}", "ERROR")
+            return -1
 
     def run_daily_sync(self, days: int) -> Tuple[bool, List[str]]:
         """
