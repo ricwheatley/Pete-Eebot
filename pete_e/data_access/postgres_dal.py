@@ -247,43 +247,45 @@ class PostgresDal(DataAccessLayer):
     def save_training_plan(self, plan: dict, start_date: date) -> int:
         """
         Save a normalized training plan (plan → weeks → workouts).
-        Returns the plan_id.
+        Deactivates any existing active plans first.
+        Returns the new plan_id.
         """
         plan_id = None
         try:
             with get_conn() as conn, conn.cursor() as cur:
-                # Insert plan
+                # 1. Deactivate any active plans
+                cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+
+                # 2. Insert new plan as active
                 cur.execute(
                     """
                     INSERT INTO training_plans (start_date, weeks, is_active)
                     VALUES (%s, %s, true)
-                    ON CONFLICT (start_date) DO UPDATE SET weeks = EXCLUDED.weeks
                     RETURNING id;
                     """,
                     (start_date, len(plan.get("weeks", []))),
                 )
                 plan_id = cur.fetchone()[0]
 
-                # Insert weeks + workouts
+                # 3. Insert weeks + workouts
                 for week in plan.get("weeks", []):
                     week_number = week["week_number"]
                     cur.execute(
                         """
                         INSERT INTO training_plan_weeks (plan_id, week_number)
                         VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING
                         RETURNING id;
                         """,
                         (plan_id, week_number),
                     )
                     week_id = cur.fetchone()[0]
+
                     for workout in week.get("workouts", []):
                         cur.execute(
                             """
                             INSERT INTO training_plan_workouts
                                 (week_id, day_of_week, exercise_id, sets, reps, rir)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                            ON CONFLICT DO NOTHING;
+                            VALUES (%s, %s, %s, %s, %s, %s);
                             """,
                             (
                                 week_id,
@@ -294,10 +296,12 @@ class PostgresDal(DataAccessLayer):
                                 workout.get("rir"),
                             ),
                         )
+            self.refresh_views()
             return plan_id
         except Exception as e:
             log_utils.log_message(f"Error saving training plan for {start_date}: {e}", "ERROR")
             return plan_id
+
 
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         out: Dict[str, Any] = {"id": plan_id, "weeks": []}
@@ -318,6 +322,65 @@ class PostgresDal(DataAccessLayer):
         except Exception as e:
             log_utils.log_message(f"Error fetching training plan {plan_id}: {e}", "ERROR")
         return out
+    
+    def get_active_plan_and_week(self, today: date) -> Optional[Dict[str, Any]]:
+        """
+        Determine the active plan and current week based on today's date.
+        If the plan is expired, deactivate it.
+        """
+        self.deactivate_expired_plans(today)
+
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, start_date, weeks
+                    FROM training_plans
+                    WHERE is_active = true
+                    ORDER BY start_date DESC
+                    LIMIT 1;
+                    """
+                )
+                plan = cur.fetchone()
+                if not plan:
+                    return None
+
+                delta_days = (today - plan["start_date"]).days
+                week_number = delta_days // 7 + 1
+
+                if week_number > plan["weeks"]:
+                    # Plan expired → deactivate it and return None
+                    self.deactivate_expired_plans(today)
+                    return None
+
+                return {
+                    "plan_id": plan["id"],
+                    "start_date": plan["start_date"],
+                    "week_number": week_number,
+                }
+        except Exception as e:
+            log_utils.log_message(f"Error fetching active plan: {e}", "ERROR")
+            return None
+
+        
+    def deactivate_expired_plans(self, today: date) -> None:
+        """
+        Mark any active plans as inactive if they've run their course.
+        """
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE training_plans
+                    SET is_active = false
+                    WHERE is_active = true
+                    AND (start_date + (weeks * 7) * INTERVAL '1 day') < %s;
+                    """,
+                    (today,),
+                )
+        except Exception as e:
+            log_utils.log_message(f"Error deactivating expired plans: {e}", "ERROR")
+        
 
     # ---------------------------------------------------------------------
     # Muscle Volume Views
@@ -351,6 +414,30 @@ class PostgresDal(DataAccessLayer):
         except Exception as e:
             log_utils.log_message(f"Error fetching actual muscle volume: {e}", "ERROR")
             return []
+        
+    def refresh_plan_view(self) -> None:
+        """Refresh plan muscle volume view."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
+            log_utils.log_message("[PostgresDal] Refreshed plan_muscle_volume", "INFO")
+        except Exception as e:
+            log_utils.log_message(f"Error refreshing plan_muscle_volume: {e}", "ERROR")
+
+    def refresh_actual_view(self) -> None:
+        """Refresh actual muscle volume view."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
+            log_utils.log_message("[PostgresDal] Refreshed actual_muscle_volume", "INFO")
+        except Exception as e:
+            log_utils.log_message(f"Error refreshing actual_muscle_volume: {e}", "ERROR")
+
+    def refresh_views(self) -> None:
+        """Refresh both plan + actual views (full reset)."""
+        self.refresh_plan_view()
+        self.refresh_actual_view()
+
 
     # ---------------------------------------------------------------------
     # Validation logs
