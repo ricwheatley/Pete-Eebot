@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 from pathlib import Path
 from typing import Optional
 
+from datetime import date
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +32,11 @@ class Settings(BaseSettings):
     # We determine this by finding the parent directory of this config file.
     PROJECT_ROOT: Path = Path(__file__).parent.parent.resolve()
     ENVIRONMENT: str = "development"
+
+    # --- USER METRICS (from environment) ---
+    USER_DATE_OF_BIRTH: date
+    USER_HEIGHT_CM: int
+    USER_GOAL_WEIGHT_KG: float
 
     # --- API CREDENTIALS (from environment) ---
     TELEGRAM_TOKEN: str
@@ -120,6 +126,16 @@ class Settings(BaseSettings):
     @property
     def phrases_path(self) -> Path:
         return self.PROJECT_ROOT / "resources" / "phrases_tagged.json"
+    
+    @property
+    def apple_incoming_path(self) -> Path:
+        """Directory where Tailscale places incoming Apple Health zips."""
+        return self.PROJECT_ROOT / "apple-incoming"
+
+    @property
+    def apple_processed_path(self) -> Path:
+        """Directory to archive processed Apple Health zips."""
+        return self.PROJECT_ROOT / "apple-processed"
 
 # Create a single, importable instance of the settings
 settings = Settings()

@@ -69,6 +69,25 @@ class DataAccessLayer(ABC):
         pass
 
     # -------------------------------------------------------------------------
+    # Wger Catalog Upserts
+    # -------------------------------------------------------------------------
+    @abstractmethod
+    def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
+        pass
+
+    @abstractmethod
+    def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
+        pass
+
+    @abstractmethod
+    def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
+        pass
+
+    @abstractmethod
+    def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
+        pass
+
+    # -------------------------------------------------------------------------
     # Validation logs
     # -------------------------------------------------------------------------
     @abstractmethod

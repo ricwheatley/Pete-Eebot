@@ -1,61 +1,103 @@
-import subprocess
+"""
+Ingest and process Apple Health export data received via Tailscale.
+"""
+import os
 import shutil
+import subprocess
+import sys
+from datetime import datetime
 from pathlib import Path
-from datetime import date, timedelta
+from zipfile import ZipFile, is_zipfile
 
-from pete_e.core import apple_client
-from pete_e.core.sync import _get_dal
+# Use settings for configurable paths
+from pete_e.config import settings
 from pete_e.infra import log_utils
-import json
 
-DOWNLOADS = Path.home() / "Downloads"
-INCOMING = Path.home() / "pete-eebot" / "apple-incoming"
+# The new location for the processing function
+from pete_e.core.apple_client import process_apple_health_export
 
-def fetch_files():
-    # clear Downloads into incoming before getting new
-    for f in DOWNLOADS.glob("apple_*.*"):
-        shutil.move(str(f), INCOMING / f.name)
-    subprocess.run(["tailscale", "file", "get", str(DOWNLOADS)], check=False)
+def check_dependencies():
+    """Verify that the Tailscale CLI is installed."""
+    if not shutil.which("tailscale"):
+        log_utils.log_message(
+            "CRITICAL: `tailscale` command not found. Please install it and ensure it's in your PATH.",
+            "ERROR"
+        )
+        sys.exit(1)
 
-def ingest_file(path: Path):
-    dal = _get_dal()
+def ingest_and_process_apple_data() -> bool:
+    """
+    Orchestrates the process of receiving, unzipping, and processing Apple Health data.
+    - Checks for Tailscale CLI.
+    - Creates necessary directories if they don't exist.
+    - Fetches the latest zip file from Tailscale inbox.
+    - Processes the data and archives the zip.
+    """
+    log_utils.log_message("Starting Apple Health data ingestion...", "INFO")
+    check_dependencies()
+
+    # Ensure directories exist, using paths from config
+    incoming_dir = settings.apple_incoming_path
+    processed_dir = settings.apple_processed_path
+    incoming_dir.mkdir(exist_ok=True)
+    processed_dir.mkdir(exist_ok=True)
+
+    # --- Get the file from Tailscale ---
+    log_utils.log_message(f"Checking for incoming files in Tailscale inbox...", "INFO")
     try:
-        data = json.loads(path.read_text())
-        summary = apple_client.get_apple_summary(data)
-        day = summary.get("date") or date.today().isoformat()
-        day_dt = date.fromisoformat(day)
+        # This command will move the file from the Tailscale inbox to our incoming dir
+        subprocess.run(
+            ["tailscale", "file", "get", str(incoming_dir)],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+    except FileNotFoundError:
+        log_utils.log_message("No new files found in Tailscale inbox.", "INFO")
+        return True # Not an error, just nothing to do
+    except subprocess.CalledProcessError as e:
+        log_utils.log_message(
+            f"Error fetching file with Tailscale: {e.stderr.strip()}", "ERROR"
+        )
+        return False
 
-        # 1. Save / upsert Apple data
-        dal.save_daily_summary({"apple": summary, "withings": {}, "wger": {}}, day_dt)
-        log_utils.log_message(f"Ingested Apple file {path.name} for {day}", "INFO")
+    # --- Find the newest zip file ---
+    try:
+        zip_files = list(incoming_dir.glob("*.zip"))
+        if not zip_files:
+            log_utils.log_message("No zip files found in the incoming directory after fetch.", "INFO")
+            return True
 
-        # 2. Update strength volume headline for this day
-        try:
-            dal.update_strength_volume(day_dt)
-        except Exception as e:
-            log_utils.log_message(f"Failed to update strength volume for {day}: {e}", "ERROR")
-
-        # 3. Recalculate body age headline using 7-day window up to this day
-        try:
-            dal.calculate_and_save_body_age(day_dt - timedelta(days=6), day_dt, profile={"age": 40})
-        except Exception as e:
-            log_utils.log_message(f"Failed to update body age for {day}: {e}", "ERROR")
+        latest_zip = max(zip_files, key=lambda p: p.stat().st_mtime)
+        log_utils.log_message(f"Found new health data file: {latest_zip.name}", "INFO")
 
     except Exception as e:
-        log_utils.log_message(f"Failed to ingest {path.name}: {e}", "ERROR")
+        log_utils.log_message(f"Error finding latest zip file: {e}", "ERROR")
+        return False
 
-
-def process_downloads():
-    for file in DOWNLOADS.glob("apple_*.*"):
-        dest = INCOMING / file.name
+    # --- Process the zip file ---
+    if is_zipfile(latest_zip):
         try:
-            shutil.move(str(file), dest)
-            ingest_file(dest)
-            dest.unlink()  # delete after ingest
+            # Re-using the existing processing logic from apple_client
+            process_apple_health_export(str(latest_zip))
+
+            # --- Archive the processed file ---
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_name = f"{latest_zip.stem}_{timestamp}.zip"
+            shutil.move(latest_zip, processed_dir / archive_name)
+            log_utils.log_message(f"Successfully processed and archived to {archive_name}", "INFO")
+            return True
+
         except Exception as e:
-            log_utils.log_message(f"Error processing {file.name}: {e}", "ERROR")
+            log_utils.log_message(f"Failed to process Apple Health export '{latest_zip.name}': {e}", "ERROR")
+            # Optionally, move to a 'failed' directory instead of stopping
+            return False
+    else:
+        log_utils.log_message(f"File '{latest_zip.name}' is not a valid zip file.", "WARN")
+        return False
 
 if __name__ == "__main__":
-    INCOMING.mkdir(parents=True, exist_ok=True)
-    fetch_files()
-    process_downloads()
+    # This allows running the script directly for testing, but the goal is to call
+    # ingest_and_process_apple_data() from the main CLI.
+    success = ingest_and_process_apple_data()
+    sys.exit(0 if success else 1)

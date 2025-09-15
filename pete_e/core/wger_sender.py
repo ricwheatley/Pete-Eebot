@@ -5,7 +5,7 @@ Send validated training plans to Wger API.
 from datetime import date
 from pete_e.core.validation import validate_and_adjust_plan
 from pete_e.data_access.dal import DataAccessLayer
-from integrations.wger.client import WgerClient
+from pete_e.core.wger_client import WgerClient
 from pete_e.infra import log_utils
 
 
