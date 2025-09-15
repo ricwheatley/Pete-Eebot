@@ -1,102 +1,121 @@
 """
-Unified Command-line interface for Pete-Eebot.
+Main Command-Line Interface for the Pete-Eebot application.
 
-Supports:
-- Generating reports (daily, weekly, cycle) → Telegram
-- Building training plans → Postgres
-- Sending validated training plans → Wger
+This script provides a single entry point for all major operations,
+including running the daily data sync, ingesting new data, and sending
+notifications.
 """
+import sys
+from typing_extensions import Annotated
 
-import argparse
-from datetime import date
+import typer
 
-from pete_e.config import settings
-from pete_e.data_access.postgres_dal import PostgresDal
+# Import the core logic functions we want to expose as commands
+from pete_e.core.apple_ingest import ingest_and_process_apple_data
+from pete_e.core.sync import run_sync_with_retries
 from pete_e.core.orchestrator import Orchestrator
-from pete_e.core.plan_builder import build_block
-from pete_e.core.wger_sender import send_plan_week_to_wger
-from integrations.wger.client import WgerClient
-from pete_e.infra.telegram_sender import send_telegram_message
 from pete_e.infra import log_utils
+from datetime import datetime, date, timedelta
+
+# Create the Typer application object
+app = typer.Typer(
+    name="pete-e",
+    help="CLI for Pete-Eebot, your personal health and fitness orchestrator.",
+    add_completion=False,
+)
+
+@app.command()
+def sync(
+    days: Annotated[int, typer.Option(help="Number of past days to backfill.")] = 7,
+    retries: Annotated[int, typer.Option(help="Number of retries on failure.")] = 3,
+) -> None:
+    """
+    Run the daily data synchronization.
+
+    Fetches the latest data from all sources (Withings, Apple, Wger),
+    updates the database, and recalculates body age.
+    """
+    log_utils.log_message(f"Starting manual sync for the last {days} days.", "INFO")
+    success = run_sync_with_retries(days=days, retries=retries)
+    if success:
+        log_utils.log_message("Manual sync completed successfully.", "INFO")
+        raise typer.Exit(code=0)
+    else:
+        log_utils.log_message("Manual sync finished with errors.", "ERROR")
+        raise typer.Exit(code=1)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Pete-Eebot CLI")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+@app.command(name="ingest-apple")
+def ingest_apple() -> None:
+    """
+    Ingest and process Apple Health data from Tailscale.
 
-    # Reports
-    report_parser = subparsers.add_parser("report", help="Generate and send reports")
-    report_parser.add_argument("--type", choices=["daily", "weekly", "cycle"], required=True)
-    report_parser.add_argument("--start-date", type=str, default=None)
+    Checks the Tailscale inbox for new .zip files, processes them,
+    and archives them.
+    """
+    success = ingest_and_process_apple_data()
+    if not success:
+        log_utils.log_message("Apple Health ingestion failed.", "ERROR")
+        raise typer.Exit(code=1)
+    log_utils.log_message("Apple Health ingestion process finished.", "INFO")
 
-    # Plans
-    plan_parser = subparsers.add_parser("plan", help="Manage training plans")
-    plan_parser.add_argument("--build", action="store_true", help="Build and save a new training plan")
-    plan_parser.add_argument("--start-date", type=str, help="Start date for the plan (YYYY-MM-DD)")
-    plan_parser.add_argument("--send", action="store_true", help="Send a validated plan week to Wger")
-    plan_parser.add_argument("--plan-id", type=int, help="Plan ID in Postgres")
-    plan_parser.add_argument("--week", type=int, help="Week number of the plan")
+@app.command()
+def plan(
+    weeks: Annotated[int, typer.Option(help="The duration of the new plan in weeks.")] = 4,
+    start_date_str: Annotated[str, typer.Option("--start-date", help="Start date in YYYY-MM-DD format. Defaults to next Monday.")] = None,
+) -> None:
+    """
+    Generate and deploy a new training plan for the next block.
+    """
+    if start_date_str:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    else:
+        # Default to the next upcoming Monday
+        today = date.today()
+        start_date = today + timedelta(days=-today.weekday(), weeks=1)
 
-    args = parser.parse_args()
+    log_utils.log_message("Invoking plan generator...", "INFO")
+    orchestrator = Orchestrator()
+    plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
 
-    if not settings.DATABASE_URL:
-        raise RuntimeError("DATABASE_URL not configured for PostgresDal")
-    dal = PostgresDal()
+    if plan_id > 0:
+        log_utils.log_message(f"New plan (ID: {plan_id}) deployed successfully!", "INFO")
+        raise typer.Exit(code=0)
+    else:
+        log_utils.log_message("Failed to deploy new plan.", "ERROR")
+        raise typer.Exit(code=1)
+    
 
-    if args.command == "report":
-        orchestrator = Orchestrator(dal)
-        message = ""
+@app.command()
+def message(
+    send: Annotated[bool, typer.Option("--send", help="Send the generated message via Telegram.")] = False,
+    summary: Annotated[bool, typer.Option("--summary", help="Generate and send the daily summary.")] = False,
+    plan: Annotated[bool, typer.Option("--plan", help="Generate and send the weekly training plan.")] = False,
+) -> None:
+    """
+    Generate and optionally send messages (daily summary or weekly plan).
+    """
+    if not summary and not plan:
+        log_utils.log_message("Please specify a message type to generate: --summary or --plan", "WARN")
+        raise typer.Exit(code=1)
 
-        if args.type == "daily":
-            message = orchestrator.generate_daily_report(date.today())
-        elif args.type == "weekly":
-            message = orchestrator.generate_weekly_report(date.today())
-        elif args.type == "cycle":
-            start_date = date.fromisoformat(args.start_date) if args.start_date else None
-            message = orchestrator.generate_cycle_report(start_date)
+    orchestrator = Orchestrator()
+    if summary:
+        log_utils.log_message("Generating daily summary...", "INFO")
+        daily_summary = orchestrator.get_daily_summary()
+        print("--- Daily Summary ---")
+        print(daily_summary)
+        if send:
+            orchestrator.send_telegram_message(daily_summary)
 
-        if message:
-            send_telegram_message(
-                token=settings.TELEGRAM_TOKEN,
-                chat_id=settings.TELEGRAM_CHAT_ID,
-                message=message
-            )
-            log_utils.log_message("Report successfully sent to Telegram.", "INFO")
-        else:
-            log_utils.log_message("No message generated, nothing sent.", "WARN")
-
-    elif args.command == "plan":
-        if args.build:
-            start_date = date.fromisoformat(args.start_date) if args.start_date else date.today()
-            plan_id = build_block(dal, start_date)
-            log_utils.log_message(f"Training plan {plan_id} built starting {start_date}", "INFO")
-
-    elif args.send:
-        client = WgerClient()
-        if args.plan_id and args.week:
-            plan_id, week_number, start_date = args.plan_id, args.week, date.fromisoformat(args.start_date)
-        else:
-            plan_id, week_number, start_date = dal.get_active_plan_and_week()
-
-        ok = send_plan_week_to_wger(
-            dal,
-            plan_id=plan_id,
-            week_number=week_number,
-            current_start_date=start_date,
-            client=client,
-        )
-        if ok:
-            log_utils.log_message(f"Plan {plan_id} week {week_number} sent to Wger", "INFO")
-        else:
-            log_utils.log_message(f"Failed to send plan {plan_id} week {week_number} to Wger", "ERROR")
-
-    elif args.build:
-        start_date = date.fromisoformat(args.start_date) if args.start_date else date.today()
-        plan_id = build_block(dal, start_date)
-        dal.refresh_views()
-        log_utils.log_message(f"Training plan {plan_id} built, activated, and views refreshed (start {start_date})", "INFO")
-
+    if plan:
+        log_utils.log_message("Generating weekly plan...", "INFO")
+        weekly_plan = orchestrator.get_week_plan_summary()
+        print("--- Weekly Plan ---")
+        print(weekly_plan)
+        if send:
+            orchestrator.send_telegram_message(weekly_plan)
 
 
 if __name__ == "__main__":
-    main()
+    app()

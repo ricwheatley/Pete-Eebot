@@ -1,0 +1,30 @@
+[project]
+name = "pete_e"
+version = "1.0.0"
+description = "Personal health and fitness orchestrator."
+
+# These are the essential packages needed to RUN the application
+dependencies = [
+    "psycopg[binary,pool]",
+    "pydantic",
+    "pydantic-settings",
+    "requests",
+    "fastapi",
+    "uvicorn[standard]",
+    "typer[all]",
+    "Jinja2",
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+# These are packages for development, testing, and publishing.
+# Install with: pip install .[dev]
+dev = [
+    "pytest",
+    "rich",
+    "twine",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
