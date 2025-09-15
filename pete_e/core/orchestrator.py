@@ -77,7 +77,7 @@ class Orchestrator:
 
     def send_telegram_message(self, message: str) -> None:
         """Sends a message using the Telegram sender."""
-        telegram_sender.send_telegram_message(message)
+        telegram_sender.send_message(message)
 
 
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:

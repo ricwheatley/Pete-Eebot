@@ -69,6 +69,25 @@ class DataAccessLayer(ABC):
         pass
 
     # -------------------------------------------------------------------------
+    # Active plan and plan weeks
+    # ------------------------------------------------------------------------- 
+    @abstractmethod
+    def get_active_plan(self) -> Optional[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def refresh_plan_view(self) -> None:
+        pass
+
+    @abstractmethod
+    def refresh_actual_view(self) -> None:
+        pass
+
+    # -------------------------------------------------------------------------
     # Wger Catalog Upserts
     # -------------------------------------------------------------------------
     @abstractmethod
