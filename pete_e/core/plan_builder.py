@@ -1,58 +1,95 @@
-"""Lightweight training plan builder."""
+"""
+Training plan builder for Pete-Eebot.
+
+This version builds a structured multi-week plan based on recent metrics,
+and persists it into the normalized PostgreSQL schema via the DAL.
+"""
 
 from datetime import date, timedelta
-from statistics import mean
-from typing import Dict, List
+from typing import Dict, Any
 
 from pete_e.data_access.dal import DataAccessLayer
 from pete_e.config import settings
 
 
-def build_block(dal: DataAccessLayer, start_date: date) -> Dict[str, List[Dict]]:
+def build_block(dal: DataAccessLayer, start_date: date) -> int:
     """
-    Construct a simple 4-week training block.
+    Construct a simple 4-week training block and persist it to the database.
 
-    This placeholder implementation uses the DAL only to demonstrate
-    dependency injection and to allow future enhancements that leverage
-    historical data.
+    Uses historical metrics for adaptation (HR, sleep) to determine intensity.
+
+    Returns:
+        plan_id (int): The primary key of the saved training plan in Postgres.
     """
-    # Historical context for naive adaptation
-    lift_log = dal.load_lift_log()
-    recent_metrics = dal.get_historical_metrics(7)
 
-    rhrs = [m.get("apple", {}).get("heart_rate", {}).get("resting") for m in recent_metrics]
-    sleeps = [m.get("apple", {}).get("sleep", {}).get("asleep") for m in recent_metrics]
+    # Fetch context
+    recent_metrics = dal.get_historical_metrics(7)  # last 7 days
+    if not recent_metrics:
+        raise RuntimeError("No historical metrics available to seed plan building")
 
-    avg_rhr = mean([r for r in rhrs if r is not None]) if rhrs else None
-    avg_sleep = mean([s for s in sleeps if s is not None]) if sleeps else None
+    # Simplified adaptation logic
+    avg_rhr = sum([m.get("hr_resting") or 0 for m in recent_metrics if m.get("hr_resting")]) / max(
+        1, len([m for m in recent_metrics if m.get("hr_resting")])
+    )
+    avg_sleep = sum([m.get("sleep_asleep_minutes") or 0 for m in recent_metrics if m.get("sleep_asleep_minutes")]) / max(
+        1, len([m for m in recent_metrics if m.get("sleep_asleep_minutes")])
+    )
 
     recovery_good = (
-        bool(lift_log)
-        and avg_sleep is not None
-        and avg_sleep >= settings.RECOVERY_SLEEP_THRESHOLD_MINUTES
-        and avg_rhr is not None
+        avg_sleep >= settings.RECOVERY_SLEEP_THRESHOLD_MINUTES
         and avg_rhr <= settings.RECOVERY_RHR_THRESHOLD
     )
 
     heavy_days = ["Mon", "Thu"] if recovery_good else ["Tue", "Fri"]
 
+    # ---------------------------------------------------------------------
+    # Build plan structure in memory
+    # ---------------------------------------------------------------------
     weeks = []
-    for week_index in range(1, 5):
-        days = []
+    for week_index in range(1, 5):  # 4 weeks
+        week_days = []
         for day_offset in range(7):
-            d = start_date + timedelta(days=((week_index - 1) * 7 + day_offset))
-            day_name = d.strftime("%a")
-            entry = {"date": d.isoformat(), "week": week_index, "day": day_name, "sessions": []}
-            if day_name in ["Mon", "Tue", "Thu", "Fri"]:
-                intensity = "heavy" if day_name in heavy_days else "moderate"
-                entry["sessions"].append({"type": "weights", "intensity": intensity, "exercises": []})
-            elif day_name == "Wed":
-                entry["sessions"].append({"type": "hiit", "name": "Blaze", "duration_min": 45})
-            else:
-                entry["sessions"].append({"type": "rest"})
-            days.append(entry)
-        weeks.append({"week_index": week_index, "days": days})
+            d = start_date + timedelta(days=(week_index - 1) * 7 + day_offset)
+            dow = d.isoweekday()  # 1=Mon … 7=Sun
 
-    plan = {"start": start_date.isoformat(), "weeks": weeks}
-    dal.save_training_plan(plan, start_date)
-    return plan
+            day_entry: Dict[str, Any] = {
+                "day_of_week": dow,
+                "workouts": []
+            }
+
+            # crude example split
+            if d.strftime("%a") in heavy_days:
+                # chest-focused day, heavy load
+                day_entry["workouts"].append({
+                    "exercise_id": 192,  # e.g. Bench Press in Wger
+                    "sets": 5,
+                    "reps": 5,
+                    "rir": 2
+                })
+            elif d.strftime("%a") == "Wed":
+                # HIIT / cardio session
+                day_entry["workouts"].append({
+                    "exercise_id": 345,  # e.g. Burpees or another cardio-type
+                    "sets": 1,
+                    "reps": 1,
+                    "rir": None
+                })
+            else:
+                # rest day (no workouts)
+                pass
+
+            if day_entry["workouts"]:
+                week_days.append(day_entry)
+
+        weeks.append({"week_number": week_index, "workouts": week_days})
+
+    plan = {"weeks": weeks}
+
+    # ---------------------------------------------------------------------
+    # Save to DB
+    # ---------------------------------------------------------------------
+    plan_id = dal.save_training_plan(plan, start_date)
+    if not plan_id:
+        raise RuntimeError("Failed to persist training plan to database")
+
+    return plan_id

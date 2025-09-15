@@ -5,92 +5,72 @@ from datetime import date
 
 class DataAccessLayer(ABC):
     """
-    Abstract Base Class for a Data Access Layer.
-    Defines the contract for all data storage operations, ensuring that
-    the business logic can interact with any storage backend (JSON, DB, etc.)
-    through a consistent interface.
+    Abstract Base Class for Pete-Eebot's PostgreSQL Data Access Layer.
+    Defines clean, DB-native operations for all sources and derived data.
     """
 
+    # -------------------------------------------------------------------------
+    # Source saves
+    # -------------------------------------------------------------------------
     @abstractmethod
-    def load_lift_log(self) -> Dict[str, Any]:
-        """Loads the entire lift log."""
+    def save_withings_daily(self, day: date, weight_kg: float, body_fat_pct: float) -> None:
         pass
 
     @abstractmethod
-    def save_lift_log(self, log: Dict[str, Any]) -> None:
-        """Saves the entire lift log."""
+    def save_apple_daily(self, day: date, metrics: Dict[str, Any]) -> None:
+        """metrics dict should contain steps, exercise_minutes, calories, HR, sleep, etc."""
         pass
 
     @abstractmethod
-    def save_strength_log_entry(
-        self,
-        exercise_id: int,
-        log_date: date,
-        reps: int,
-        weight_kg: float,
-        rir: Optional[float] = None,
-    ) -> None:
-        """Persists a single strength training set."""
+    def save_wger_log(self, day: date, exercise_id: int, set_number: int,
+                      reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         pass
 
     @abstractmethod
-    def load_history(self) -> Dict[str, Any]:
-        """Loads the consolidated history file."""
+    def save_body_age_daily(self, day: date, metrics: Dict[str, Any]) -> None:
         pass
 
+    # -------------------------------------------------------------------------
+    # Summaries (read-only views)
+    # -------------------------------------------------------------------------
     @abstractmethod
-    def save_history(self, history: Dict[str, Any]) -> None:
-        """Saves the consolidated history file."""
-        pass
-
-    @abstractmethod
-    def save_daily_summary(self, summary: Dict[str, Any], day: date) -> None:
-        """Saves a single day's consolidated summary."""
-        pass
-        
-    @abstractmethod
-    def load_body_age(self) -> Dict[str, Any]:
-        """Loads the body age data file."""
+    def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         pass
 
     @abstractmethod
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
-        """Retrieves the last N days of historical metrics."""
-        pass
-
-    @abstractmethod
-    def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
-        """
-        Retrieves a consolidated summary for a specific day.
-
-        Args:
-            target_date: The date for which to retrieve the summary.
-
-        Returns:
-            A dictionary containing the day's data, or None if not found.
-        """
         pass
 
     @abstractmethod
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        """
-        Retrieves a range of historical daily summaries.
+        pass
 
-        Args:
-            start_date: The starting date of the range.
-            end_date: The ending date of the range.
-
-        Returns:
-            A list of daily summary dictionaries.
-        """
+    # -------------------------------------------------------------------------
+    # Training plans
+    # -------------------------------------------------------------------------
+    @abstractmethod
+    def save_training_plan(self, plan: dict, start_date: date) -> int:
+        """Insert plan, weeks, workouts. Return plan_id."""
         pass
 
     @abstractmethod
-    def save_training_plan(self, plan: dict, start_date: date) -> None:
-        """Persist the generated multi-week training plan."""
+    def get_plan(self, plan_id: int) -> Dict[str, Any]:
         pass
 
+    # -------------------------------------------------------------------------
+    # Muscle volume comparison
+    # -------------------------------------------------------------------------
+    @abstractmethod
+    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        pass
+
+    # -------------------------------------------------------------------------
+    # Validation logs
+    # -------------------------------------------------------------------------
     @abstractmethod
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
-        """Persist validation outcomes for audit/logging."""
         pass

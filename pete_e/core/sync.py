@@ -3,28 +3,29 @@ Daily sync orchestrator for Pete-Eebot.
 
 - Intended to be run from cron at 03:00 local time.
 - Backfills the last `days` calendar days on each run, so missed runs get filled.
-- Upserts daily summaries into Postgres.
-- Inserts strength logs from Wger per set.
-- Calculates body age per day from DB and persists.
+- Persists source metrics into normalized tables:
+  * Withings → withings_daily
+  * Apple → apple_daily
+  * Wger → wger_logs
+  * Body age → body_age_daily
+- `daily_summary` is a view and never written to directly.
 """
-
-from __future__ import annotations
 
 import sys
 import time
 from datetime import date, timedelta
-from typing import Dict, List, Tuple, cast
+from typing import List, Tuple, Dict
 
-# Centralised components
 from pete_e.config import settings
 from pete_e.infra import log_utils
 
-# Refactored clients and modules
+# Refactored clients
 from pete_e.core.withings_client import WithingsClient
 from integrations.wger.client import WgerClient
-from pete_e.core import apple_client, lift_log
+from pete_e.core import apple_client
+from pete_e.core import body_age
 
-# DAL contract and implementations
+# DAL contract + Postgres implementation
 from pete_e.data_access.dal import DataAccessLayer
 from pete_e.data_access.postgres_dal import PostgresDal
 
@@ -34,18 +35,7 @@ DEFAULT_RETRIES = 3
 DEFAULT_RETRY_DELAY_SECS = 60
 
 
-def _get_dal() -> DataAccessLayer:
-    """Return a Postgres DAL or raise if misconfigured."""
-    if not getattr(settings, "DATABASE_URL", None):
-        raise RuntimeError("[sync] DATABASE_URL not configured for PostgresDal")
-    try:
-        return PostgresDal()
-    except Exception as e:  # pragma: no cover - misconfiguration path
-        raise RuntimeError(f"[sync] Postgres DAL init failed: {e}") from e
-
-
 def _safe_get_withings_summary(client: WithingsClient, target_day: date) -> Dict:
-    """Fetch Withings summary for a specific day using days_back offset."""
     try:
         days_back = (date.today() - target_day).days
         return client.get_summary(days_back=days_back)
@@ -66,82 +56,23 @@ def _safe_get_apple_summary(target_iso: str) -> Dict:
         return {}
 
 
-def _safe_get_wger_logs(client: WgerClient, days: int):
+def _safe_get_wger_logs(client: WgerClient, days: int) -> Dict[str, List[Dict]]:
     try:
-        data = client.fetch_logs(days=days)
+        data = client.fetch_logs(days=days)  # NOTE: renamed from get_logs → fetch_logs
         if isinstance(data, list):
-            # Normalise to dict keyed by date
             out: Dict[str, List[Dict]] = {}
             for log in data:
                 d = log.get("date")
                 out.setdefault(d, []).append(log)
-            log_utils.log_message(f"[sync] Normalised {len(data)} Wger logs", "INFO")
             return out
         elif isinstance(data, dict):
             return data
         else:
-            log_utils.log_message(
-                f"[sync] Wger logs unexpected shape: {type(data)}", "WARN"
-            )
+            log_utils.log_message(f"[sync] Unexpected Wger log format: {type(data)}", "WARN")
             return {}
     except Exception as e:
         log_utils.log_message(f"[sync] Wger fetch failed: {e}", "ERROR")
         return {}
-
-
-def _upsert_daily_summary(dal: DataAccessLayer, the_day: date, withings: Dict, apple: Dict) -> None:
-    try:
-        dal.save_daily_summary({"withings": withings, "apple": apple}, the_day)
-        log_utils.log_message(
-            f"[sync] Upserted daily summary for {the_day.isoformat()}", "INFO"
-        )
-    except Exception as e:
-        log_utils.log_message(
-            f"[sync] Failed to save daily summary for {the_day.isoformat()}: {e}", "ERROR"
-        )
-
-
-def _insert_wger_logs_for_day(dal: DataAccessLayer, logs: List[Dict], the_day: date) -> None:
-    if not logs:
-        return
-    inserted = 0
-    for log in logs:
-        try:
-            lift_log.append_log_entry(
-                dal=dal,
-                exercise_id=log.get("exercise_id"),
-                weight=log.get("weight"),
-                reps=log.get("reps"),
-                sets=log.get("sets"),
-                rir=log.get("rir"),
-                log_date=the_day,
-            )
-            inserted += 1
-        except Exception as e:
-            log_utils.log_message(
-                f"[sync] Failed to save strength log for {the_day.isoformat()}: {e}. Payload={log}", "ERROR"
-            )
-    log_utils.log_message(
-        f"[sync] Inserted {inserted} Wger set logs for {the_day.isoformat()}", "INFO"
-    )
-    # Roll up strength volume into daily_summary
-    try:
-        dal.update_strength_volume(the_day)
-    except Exception as e:
-        log_utils.log_message(
-            f"[sync] Failed to update strength volume for {the_day.isoformat()}: {e}", "ERROR"
-        )
-
-
-def _calculate_and_save_body_age(dal: PostgresDal, the_day: date) -> None:
-    """Calculate body age from DB history and persist into both body_age_log and daily_summary."""
-    try:
-        window_start = the_day - timedelta(days=6)
-        dal.calculate_and_save_body_age(window_start, the_day, profile={"age": 40})
-    except Exception as e:
-        log_utils.log_message(
-            f"[sync] Body Age calculation failed for {the_day.isoformat()}: {e}", "ERROR"
-        )
 
 
 def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[bool, List[str]]:
@@ -155,7 +86,7 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
     withings_client = WithingsClient()
     wger_client = WgerClient()
 
-    # Fetch Wger logs once for the range
+    # Fetch Wger logs once
     wger_data = _safe_get_wger_logs(wger_client, days=days)
 
     failed_sources: List[str] = []
@@ -165,22 +96,90 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
         target_iso = target_day.isoformat()
         log_utils.log_message(f"[sync] Processing {target_iso}", "INFO")
 
+        # --- Withings ---
         withings_data = _safe_get_withings_summary(withings_client, target_day)
-        if not withings_data and "Withings" not in failed_sources:
+        if withings_data:
+            dal.save_withings_daily(
+                day=target_day,
+                weight_kg=withings_data.get("weight"),
+                body_fat_pct=withings_data.get("fat_percent"),
+            )
+        else:
             failed_sources.append("Withings")
 
+        # --- Apple ---
         apple_data = _safe_get_apple_summary(target_iso)
-        if not apple_data and "Apple" not in failed_sources:
+        if apple_data:
+            dal.save_apple_daily(target_day, apple_data)
+        else:
             failed_sources.append("Apple")
 
-        _upsert_daily_summary(dal, target_day, withings_data, apple_data)
-
+        # --- Wger ---
         day_logs = wger_data.get(target_iso, [])
-        if not wger_data and "Wger" not in failed_sources:
+        if day_logs:
+            for i, log in enumerate(day_logs, start=1):
+                dal.save_wger_log(
+                    day=target_day,
+                    exercise_id=log.get("exercise_id"),
+                    set_number=i,
+                    reps=log.get("reps"),
+                    weight_kg=log.get("weight"),
+                    rir=log.get("rir"),
+                )
+        else:
             failed_sources.append("Wger")
-        _insert_wger_logs_for_day(dal, day_logs, target_day)
 
-        _calculate_and_save_body_age(cast(PostgresDal, dal), target_day)
+        # --- Body age (recalculated from source data) ---
+        try:
+            # Collect history window
+            withings_history = []
+            apple_history = []
+
+            hist_data = dal.get_historical_data(
+                start_date=target_day - timedelta(days=6),
+                end_date=target_day,
+            )
+            for r in hist_data:
+                withings_history.append({
+                    "weight": r.get("weight_kg"),
+                    "fat_percent": r.get("body_fat_pct"),
+                })
+                apple_history.append({
+                    "steps": r.get("steps"),
+                    "exercise_minutes": r.get("exercise_minutes"),
+                    "calories_active": r.get("calories_active"),
+                    "calories_resting": r.get("calories_resting"),
+                    "stand_minutes": r.get("stand_minutes"),
+                    "distance_m": r.get("distance_m"),
+                    "hr_resting": r.get("hr_resting"),
+                    "hr_avg": r.get("hr_avg"),
+                    "hr_max": r.get("hr_max"),
+                    "hr_min": r.get("hr_min"),
+                    "sleep_total_minutes": r.get("sleep_total_minutes"),
+                    "sleep_asleep_minutes": r.get("sleep_asleep_minutes"),
+                    "sleep_rem_minutes": r.get("sleep_rem_minutes"),
+                    "sleep_deep_minutes": r.get("sleep_deep_minutes"),
+                    "sleep_core_minutes": r.get("sleep_core_minutes"),
+                    "sleep_awake_minutes": r.get("sleep_awake_minutes"),
+                })
+
+            result = body_age.calculate_body_age(
+                withings_history=withings_history,
+                apple_history=apple_history,
+                profile={"age": settings.USER_AGE},  # configurable
+            )
+            if result:
+                result["date"] = target_day.isoformat()
+                dal.save_body_age_daily(target_day, result)
+            else:
+                log_utils.log_message(
+                    f"[sync] No body age result for {target_iso}", "WARN"
+                )
+        except Exception as e:
+            log_utils.log_message(
+                f"[sync] Body age calculation failed for {target_iso}: {e}", "ERROR"
+            )
+            failed_sources.append("BodyAge")
 
     if failed_sources:
         log_utils.log_message(
@@ -199,7 +198,7 @@ def run_sync_with_retries(
     days: int = DEFAULT_BACKFILL_DAYS,
 ) -> bool:
     """Run the sync with simple retries."""
-    dal = dal or _get_dal()
+    dal = dal or PostgresDal()
     for attempt in range(1, max(1, retries) + 1):
         success, failed = run_sync(dal=dal, days=days)
         if success:
@@ -215,7 +214,6 @@ def run_sync_with_retries(
 
 
 def _main() -> int:
-    """CLI entry point so this module can be executed directly by cron."""
     days = getattr(settings, "SYNC_BACKFILL_DAYS", DEFAULT_BACKFILL_DAYS)
     retries = getattr(settings, "SYNC_RETRIES", DEFAULT_RETRIES)
     delay = getattr(settings, "SYNC_RETRY_DELAY_SECS", DEFAULT_RETRY_DELAY_SECS)
@@ -230,4 +228,4 @@ def _main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(_main())
+    sys.exit(_main())
