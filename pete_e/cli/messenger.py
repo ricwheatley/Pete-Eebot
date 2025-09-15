@@ -71,21 +71,31 @@ def main():
             plan_id = build_block(dal, start_date)
             log_utils.log_message(f"Training plan {plan_id} built starting {start_date}", "INFO")
 
-        elif args.send:
-            if not args.plan_id or not args.week:
-                raise RuntimeError("Must provide --plan-id and --week to send a plan week")
-            client = WgerClient()
-            ok = send_plan_week_to_wger(
-                dal,
-                plan_id=args.plan_id,
-                week_number=args.week,
-                current_start_date=date.fromisoformat(args.start_date) if args.start_date else date.today(),
-                client=client,
-            )
-            if ok:
-                log_utils.log_message(f"Plan {args.plan_id} week {args.week} sent to Wger", "INFO")
-            else:
-                log_utils.log_message(f"Failed to send plan {args.plan_id} week {args.week} to Wger", "ERROR")
+    elif args.send:
+        client = WgerClient()
+        if args.plan_id and args.week:
+            plan_id, week_number, start_date = args.plan_id, args.week, date.fromisoformat(args.start_date)
+        else:
+            plan_id, week_number, start_date = dal.get_active_plan_and_week()
+
+        ok = send_plan_week_to_wger(
+            dal,
+            plan_id=plan_id,
+            week_number=week_number,
+            current_start_date=start_date,
+            client=client,
+        )
+        if ok:
+            log_utils.log_message(f"Plan {plan_id} week {week_number} sent to Wger", "INFO")
+        else:
+            log_utils.log_message(f"Failed to send plan {plan_id} week {week_number} to Wger", "ERROR")
+
+    elif args.build:
+        start_date = date.fromisoformat(args.start_date) if args.start_date else date.today()
+        plan_id = build_block(dal, start_date)
+        dal.refresh_views()
+        log_utils.log_message(f"Training plan {plan_id} built, activated, and views refreshed (start {start_date})", "INFO")
+
 
 
 if __name__ == "__main__":

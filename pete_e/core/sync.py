@@ -115,19 +115,21 @@ def run_sync(dal: DataAccessLayer, days: int = DEFAULT_BACKFILL_DAYS) -> Tuple[b
             failed_sources.append("Apple")
 
         # --- Wger ---
-        day_logs = wger_data.get(target_iso, [])
-        if day_logs:
-            for i, log in enumerate(day_logs, start=1):
-                dal.save_wger_log(
-                    day=target_day,
-                    exercise_id=log.get("exercise_id"),
-                    set_number=i,
-                    reps=log.get("reps"),
-                    weight_kg=log.get("weight"),
-                    rir=log.get("rir"),
-                )
-        else:
-            failed_sources.append("Wger")
+            day_logs = wger_data.get(target_iso, [])
+            if day_logs:
+                for i, log in enumerate(day_logs, start=1):
+                    dal.save_wger_log(
+                        day=target_day,
+                        exercise_id=log.get("exercise_id"),
+                        set_number=i,
+                        reps=log.get("reps"),
+                        weight_kg=log.get("weight"),
+                        rir=log.get("rir"),
+                    )
+                # Refresh actual muscle volume after inserting logs
+                dal.refresh_actual_view()
+            else:
+                failed_sources.append("Wger")
 
         # --- Body age (recalculated from source data) ---
         try:
