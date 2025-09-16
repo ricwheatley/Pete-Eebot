@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from pete_e.core.phrase_picker import random_phrase as phrase_for
-from pete_e.core.narrative_utils import stitch_sentences
+from pete_e.core import narrative_utils
 from pete_e.config import settings
+from pete_e.infra.log_utils import log_message
 
 
 _DAY_NAMES = {
@@ -19,7 +20,7 @@ _DAY_NAMES = {
 }
 
 
-def compare_text(current, previous, unit="", context=""):
+def compare_text(current, previous, unit: str = "", context: str = "") -> str:
     """Return chatty comparative text instead of robotic % changes."""
     if previous is None or previous == 0:
         return f"{current}{unit} {context}".strip()
@@ -35,7 +36,11 @@ def compare_text(current, previous, unit="", context=""):
         return f"{current}{unit} {context}, down a bit from {previous}{unit}".strip()
 
 
-def build_daily_narrative(metrics: dict) -> str:
+# -------------------------------------------------------------------------
+# Daily / Weekly / Cycle summaries
+# -------------------------------------------------------------------------
+
+def build_daily_narrative(metrics: Dict[str, Any]) -> str:
     days = metrics.get("days", {})
     if not days:
         return "Morning mate 👋\n\nNo logs found for yesterday. Did you rest? 😴"
@@ -45,9 +50,13 @@ def build_daily_narrative(metrics: dict) -> str:
     today_data = days[yesterday]
     prev_data = days.get(all_dates[-2]) if len(all_dates) > 1 else {}
 
-    greeting = random.choice(["Morning mate 👋", "Morning Ric 🌞", "Hey Ric, ready for today?"])
+    greeting = random.choice([
+        "Morning mate 👋",
+        "Morning Ric 🌞",
+        "Hey Ric, ready for today?"
+    ])
 
-    insights = []
+    insights: List[str] = []
 
     # Strength
     if "strength" in today_data:
@@ -73,17 +82,17 @@ def build_daily_narrative(metrics: dict) -> str:
     weight = today_data.get("body", {}).get("weight_kg")
     prev_weight = prev_data.get("body", {}).get("weight_kg") if prev_data else None
     if weight:
-        insights.append(f"Weight came in at {compare_text(round(weight,1), round(prev_weight,1) if prev_weight else None, 'kg')}.")
+        insights.append(f"Weight came in at {compare_text(round(weight, 1), round(prev_weight, 1) if prev_weight else None, 'kg')}.")
 
     if not insights:
         return f"{greeting}\n\nNo major metrics logged yesterday."
 
     phrase = phrase_for(tags=["#Motivation"])
     sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
-    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    return f"{greeting}\n\n" + narrative_utils.stitch_sentences(insights, [phrase] + sprinkles)
 
 
-def build_weekly_narrative(metrics: dict) -> str:
+def build_weekly_narrative(metrics: Dict[str, Any]) -> str:
     days = metrics.get("days", {})
     if not days:
         return "Howdy Ric 🤠\n\nNo logs found for last week. Rest week?"
@@ -97,9 +106,13 @@ def build_weekly_narrative(metrics: dict) -> str:
     week_data = [days[d] for d in last_week if d in days]
     prev_data = [days[d] for d in prev_week if d in days]
 
-    greeting = random.choice(["Howdy Ric 🤠", "Ey up Ric 👋", "Another week down, mate!"])
+    greeting = random.choice([
+        "Howdy Ric 🤠",
+        "Ey up Ric 👋",
+        "Another week down, mate!"
+    ])
 
-    insights = []
+    insights: List[str] = []
 
     # Strength
     total_vol = sum(ex["volume_kg"] for day in week_data for ex in day.get("strength", []))
@@ -126,10 +139,10 @@ def build_weekly_narrative(metrics: dict) -> str:
 
     phrase = phrase_for(tags=["#Motivation"])
     sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
-    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    return f"{greeting}\n\n" + narrative_utils.stitch_sentences(insights, [phrase] + sprinkles)
 
 
-def build_cycle_narrative(metrics: dict) -> str:
+def build_cycle_narrative(metrics: Dict[str, Any]) -> str:
     days = metrics.get("days", {})
     if not days:
         return "Ey up Ric 👋\n\nNo logs found for last cycle."
@@ -139,9 +152,13 @@ def build_cycle_narrative(metrics: dict) -> str:
     cycle_data = [days[d] for d in all_dates[-cycle_days:]]
     prev_cycle = [days[d] for d in all_dates[-2 * cycle_days:-cycle_days]] if len(all_dates) > cycle_days else []
 
-    greeting = random.choice(["Ey up Ric 👋", "Cycle wrap-up time 🔄", "Alright Ric, here’s how the block went 💪"])
+    greeting = random.choice([
+        "Ey up Ric 👋",
+        "Cycle wrap-up time 🔄",
+        "Alright Ric, here’s how the block went 💪"
+    ])
 
-    insights = []
+    insights: List[str] = []
 
     # Strength
     total_vol = sum(ex["volume_kg"] for day in cycle_data for ex in day.get("strength", []))
@@ -168,30 +185,14 @@ def build_cycle_narrative(metrics: dict) -> str:
 
     phrase = phrase_for(tags=["#Motivation"])
     sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 3))]
-    return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+    return f"{greeting}\n\n" + narrative_utils.stitch_sentences(insights, [phrase] + sprinkles)
 
 
-def build_daily_summary(metrics: Dict[str, Any]) -> str:
-    """Convenience wrapper matching the orchestrator naming."""
-
-    return build_daily_narrative(metrics)
-
-
-def build_weekly_summary(metrics: Dict[str, Any]) -> str:
-    """Convenience wrapper matching the orchestrator naming."""
-
-    return build_weekly_narrative(metrics)
-
-
-def build_cycle_summary(metrics: Dict[str, Any]) -> str:
-    """Convenience wrapper matching the orchestrator naming."""
-
-    return build_cycle_narrative(metrics)
-
+# -------------------------------------------------------------------------
+# Plan summaries
+# -------------------------------------------------------------------------
 
 def build_weekly_plan_summary(plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
-    """Create a readable overview for a plan week."""
-
     if not plan_week_data:
         return f"Week {week_number} doesn't have any scheduled training sessions yet."
 
@@ -234,17 +235,38 @@ def build_weekly_plan_summary(plan_week_data: List[Dict[str, Any]], week_number:
     return "\n".join(summary_lines).strip()
 
 
-class NarrativeBuilder:
-    """Facade for producing narratives used by the orchestrator."""
+# -------------------------------------------------------------------------
+# Nudges & Facade
+# -------------------------------------------------------------------------
 
-    def build_daily_summary(self, metrics: Dict[str, Any]) -> str:
-        return build_daily_summary(metrics)
+def build_nudge(tag: str, sprinkles: List[str] | None = None, mode: str = "balanced") -> str:
+    """Build a cheeky nudge narrative based on a phrase tag."""
+    base_phrase = phrase_for(tags=[tag])
+    log_message(f"Pete nudge [{tag}] → {base_phrase}", "INFO")  # 👈 log which phrase was used
 
-    def build_weekly_summary(self, metrics: Dict[str, Any]) -> str:
-        return build_weekly_summary(metrics)
+    extra = sprinkles or []
+    return narrative_utils.stitch_sentences([base_phrase], extra, short_mode=False)
 
-    def build_cycle_summary(self, metrics: Dict[str, Any]) -> str:
-        return build_cycle_summary(metrics)
 
-    def build_weekly_plan(self, plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
+class PeteVoice:
+    """Facade for Pete’s narrative output."""
+
+    @staticmethod
+    def daily(metrics: Dict[str, Any]) -> str:
+        return build_daily_narrative(metrics)
+
+    @staticmethod
+    def weekly(metrics: Dict[str, Any]) -> str:
+        return build_weekly_narrative(metrics)
+
+    @staticmethod
+    def cycle(metrics: Dict[str, Any]) -> str:
+        return build_cycle_narrative(metrics)
+
+    @staticmethod
+    def plan(plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
         return build_weekly_plan_summary(plan_week_data, week_number)
+
+    @staticmethod
+    def nudge(tag: str, sprinkles: List[str] | None = None) -> str:
+        return build_nudge(tag, sprinkles)
