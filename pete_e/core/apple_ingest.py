@@ -53,11 +53,33 @@ def ingest_and_process_apple_data() -> bool:
             text=True
         )
     except FileNotFoundError:
-        log_utils.log_message("No new files found in Tailscale inbox.", "INFO")
-        return True # Not an error, just nothing to do
-    except subprocess.CalledProcessError as e:
         log_utils.log_message(
-            f"Error fetching file with Tailscale: {e.stderr.strip()}", "ERROR"
+            "`tailscale` command not found while attempting to fetch files."
+            " Please install the Tailscale CLI and ensure it is on your PATH.",
+            "ERROR",
+        )
+        return False
+    except subprocess.CalledProcessError as e:
+        stderr_output = e.stderr or ""
+        stdout_output = e.stdout or ""
+
+        if isinstance(stderr_output, bytes):
+            stderr_output = stderr_output.decode(errors="replace")
+        if isinstance(stdout_output, bytes):
+            stdout_output = stdout_output.decode(errors="replace")
+
+        combined_output = "\n".join(
+            part for part in (stdout_output.strip(), stderr_output.strip()) if part
+        )
+        error_text = combined_output or str(e)
+
+        if "no files" in error_text.lower():
+            log_utils.log_message("No new files found in Tailscale inbox.", "INFO")
+            return True  # Not an error, just nothing to do
+
+        log_utils.log_message(
+            f"Error fetching file with Tailscale: {error_text}",
+            "ERROR",
         )
         return False
 
