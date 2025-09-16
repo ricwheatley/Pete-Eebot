@@ -34,7 +34,7 @@ def get_history_for_exercise(
     Retrieves history for an exercise using the provided DAL.
     Includes set_number for clarity.
     """
-    log = dal.load_lift_log()
+    log = dal.load_lift_log(exercise_ids=[exercise_id])
     entries = log.get(str(exercise_id), [])
 
     # Ensure set_number is included if not already
