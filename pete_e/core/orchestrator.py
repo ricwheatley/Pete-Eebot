@@ -15,6 +15,7 @@ from pete_e.core import apple_client, body_age
 # Core Logic and Helpers
 from pete_e.core.narrative_builder import NarrativeBuilder
 from pete_e.core.plan_builder import build_block
+from pete_e.core import phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infra import log_utils, telegram_sender
 from pete_e.config import settings
@@ -32,10 +33,10 @@ class Orchestrator:
     def get_daily_summary(self, target_date: date = None) -> str:
         """
         Generates a human-readable summary for a given day.
-        Fetches the latest data from the DB and uses NarrativeBuilder to format it.
+        If Apple Health data is missing, sends a cheeky Telegram nudge.
         """
         if target_date is None:
-            target_date = date.today() - timedelta(days=1) # Default to yesterday
+            target_date = date.today() - timedelta(days=1)  # Default to yesterday
 
         log_utils.log_message(f"Generating daily summary for {target_date.isoformat()}", "INFO")
         summary_data = self.dal.get_daily_summary(target_date)
@@ -43,7 +44,17 @@ class Orchestrator:
         if not summary_data:
             return f"I have no data for {target_date.strftime('%A, %B %d')}. Something might have gone wrong with the daily sync."
 
-        return self.narrative_builder.build_daily_summary(summary_data)
+        # --- Cheeky Apple Health nudge ---
+        if summary_data.get("steps") is None and summary_data.get("hr_resting") is None:
+            nudge = phrase_picker.random_phrase(tags=["#AppleNudge"])
+            try:
+                self.send_telegram_message(nudge)
+                log_utils.log_message(f"Sent Apple Health nudge: {nudge}", "INFO")
+            except Exception as e:
+                log_utils.log_message(f"Failed to send Apple Health nudge: {e}", "WARN")
+
+                return self.narrative_builder.build_daily_summary(summary_data)
+
 
 
     def get_week_plan_summary(self, target_date: date = None) -> str:
