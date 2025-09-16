@@ -36,10 +36,6 @@ class DataAccessLayer(ABC):
         """Return lift log entries grouped by exercise id."""
         pass
 
-    @abstractmethod
-    def save_body_age_daily(self, day: date, metrics: Dict[str, Any]) -> None:
-        pass
-
     # -------------------------------------------------------------------------
     # Summaries (read-only views)
     # -------------------------------------------------------------------------
