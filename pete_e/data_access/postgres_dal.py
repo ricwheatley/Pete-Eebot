@@ -73,6 +73,7 @@ class PostgresDal(DataAccessLayer):
                 )
         except Exception as e:
             log_utils.log_message(f"Error saving Withings data for {day}: {e}", "ERROR")
+            raise
 
     # ---------------------------------------------------------------------
     # Apple
@@ -120,6 +121,7 @@ class PostgresDal(DataAccessLayer):
                 )
         except Exception as e:
             log_utils.log_message(f"Error saving Apple data for {day}: {e}", "ERROR")
+            raise
 
     # ---------------------------------------------------------------------
     # Wger Logs
@@ -143,6 +145,7 @@ class PostgresDal(DataAccessLayer):
                 )
         except Exception as e:
             log_utils.log_message(f"Error saving Wger log for {day}, exercise {exercise_id}: {e}", "ERROR")
+            raise
 
     def load_lift_log(self) -> Dict[str, Any]:
         """Compatibility: return all Wger logs grouped by exercise_id."""
@@ -155,6 +158,7 @@ class PostgresDal(DataAccessLayer):
                     out.setdefault(key, []).append(row)
         except Exception as e:
             log_utils.log_message(f"Error loading lift log: {e}", "ERROR")
+            raise
         return out
 
     # ---------------------------------------------------------------------
@@ -203,6 +207,7 @@ class PostgresDal(DataAccessLayer):
                 )
         except Exception as e:
             log_utils.log_message(f"Error saving body age data for {day}: {e}", "ERROR")
+            raise
 
 
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
@@ -212,7 +217,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchone()
         except Exception as e:
             log_utils.log_message(f"Error fetching daily summary for {target_date}: {e}", "ERROR")
-            return None
+            raise
 
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         try:
@@ -223,7 +228,7 @@ class PostgresDal(DataAccessLayer):
                 return list(reversed(cur.fetchall()))
         except Exception as e:
             log_utils.log_message(f"Error fetching historical metrics: {e}", "ERROR")
-            return []
+            raise
 
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         try:
@@ -239,7 +244,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchall()
         except Exception as e:
             log_utils.log_message(f"Error fetching historical data: {e}", "ERROR")
-            return []
+            raise
     
     # ---------------------------------------------------------------------
     # Training plans
@@ -285,7 +290,7 @@ class PostgresDal(DataAccessLayer):
                 return plan_id
         except Exception as e:
             log_utils.log_message(f"Error saving training plan: {e}", "ERROR")
-            return -1
+            raise
 
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         """Fetches a full training plan with weeks and workouts."""
@@ -308,7 +313,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchall()
         except Exception as e:
             log_utils.log_message(f"Error fetching plan muscle volume: {e}", "ERROR")
-            return []
+            raise
 
     def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         """Fetch actual muscle volume over a date range."""
@@ -321,7 +326,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchall()
         except Exception as e:
             log_utils.log_message(f"Error fetching actual muscle volume: {e}", "ERROR")
-            return []
+            raise
 
     # ---------------------------------------------------------------------
     # Training Plan Helpers and Views
@@ -335,7 +340,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchone()
         except Exception as e:
             log_utils.log_message(f"Error fetching active plan: {e}", "ERROR")
-            return None
+            raise
 
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         """Fetches all workouts for a specific week of a plan."""
@@ -355,7 +360,7 @@ class PostgresDal(DataAccessLayer):
                 return cur.fetchall()
         except Exception as e:
             log_utils.log_message(f"Error fetching plan week data: {e}", "ERROR")
-            return []
+            raise
     
     def refresh_plan_view(self) -> None:
         """Refreshes the materialized view for plan muscle volume."""
@@ -365,6 +370,7 @@ class PostgresDal(DataAccessLayer):
                 log_utils.log_message("Refreshed plan_muscle_volume view.", "INFO")
         except Exception as e:
             log_utils.log_message(f"Error refreshing plan_muscle_volume view: {e}", "ERROR")
+            raise
 
     def refresh_actual_view(self) -> None:
         """Refreshes the materialized view for actual muscle volume."""
@@ -374,6 +380,7 @@ class PostgresDal(DataAccessLayer):
                 log_utils.log_message("Refreshed actual_muscle_volume view.", "INFO")
         except Exception as e:
             log_utils.log_message(f"Error refreshing actual_muscle_volume view: {e}", "ERROR")
+            raise
 
     # ---------------------------------------------------------------------
     # Wger Catalog Upserts
