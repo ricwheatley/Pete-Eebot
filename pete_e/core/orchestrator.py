@@ -110,6 +110,16 @@ class Orchestrator:
         wger_client = WgerClient() # Assuming a WgerClient class exists
 
         failed_sources: List[str] = []
+        try:
+            wger_logs_by_date = wger_client.get_logs_by_date(days=days)
+        except Exception as e:
+            log_utils.log_message(
+                f"Failed to retrieve Wger logs for sync window ({days} days): {e}",
+                "ERROR",
+            )
+            failed_sources.append("Wger")
+            wger_logs_by_date = {}
+
         wger_logs_found = False
 
         for offset in range(days, 0, -1):
@@ -141,15 +151,17 @@ class Orchestrator:
 
             # --- Wger Workout Logs ---
             try:
-                # This assumes wger_client.fetch_logs returns a dict keyed by date string
-                day_logs = wger_client.fetch_logs(days=days).get(target_iso, [])
+                day_logs = wger_logs_by_date.get(target_iso, [])
                 if day_logs:
                     wger_logs_found = True
                     for i, log in enumerate(day_logs, start=1):
                         self.dal.save_wger_log(
-                            day=target_day, exercise_id=log.get("exercise_id"),
-                            set_number=i, reps=log.get("reps"),
-                            weight_kg=log.get("weight"), rir=log.get("rir"),
+                            day=target_day,
+                            exercise_id=log.get("exercise_id"),
+                            set_number=i,
+                            reps=log.get("reps"),
+                            weight_kg=log.get("weight"),
+                            rir=log.get("rir"),
                         )
             except Exception as e:
                 log_utils.log_message(f"Wger sync failed for {target_iso}: {e}", "ERROR")
