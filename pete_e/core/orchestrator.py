@@ -126,8 +126,13 @@ class Orchestrator:
             # --- Apple Health ---
             try:
                 apple_data = apple_client.get_apple_summary({"date": target_iso})
-                if apple_data:
+                if self._has_meaningful_apple_data(apple_data):
                     self.dal.save_apple_daily(target_day, apple_data)
+                elif apple_data:
+                    log_utils.log_message(
+                        f"Skipping Apple Health save for {target_iso}: no metrics returned.",
+                        "DEBUG",
+                    )
             except Exception as e:
                 log_utils.log_message(f"Apple Health sync failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("AppleHealth")
@@ -187,6 +192,28 @@ class Orchestrator:
             self.dal.save_body_age_daily(target_day, result)
         else:
             log_utils.log_message(f"No body age result for {target_day.isoformat()}", "WARN")
+
+    @staticmethod
+    def _has_meaningful_apple_data(apple_data: Dict[str, Any]) -> bool:
+        """Return True when the payload contains at least one non-null metric."""
+
+        def has_value(value: Any) -> bool:
+            if isinstance(value, dict):
+                return any(has_value(v) for v in value.values())
+            if isinstance(value, list):
+                return any(has_value(item) for item in value)
+            return value is not None
+
+        if not isinstance(apple_data, dict):
+            return False
+
+        for key, value in apple_data.items():
+            if key == "date":
+                continue
+            if has_value(value):
+                return True
+
+        return False
 
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
         """
