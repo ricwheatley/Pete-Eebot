@@ -4,8 +4,8 @@ FastAPI service to receive Apple Health summaries.
 from fastapi import FastAPI, HTTPException
 from datetime import datetime
 
-# Assuming DAL and close_pool are in this structure
-from pete_e.data_access.postgres_dal import PostgresDal, close_pool
+# Assuming DAL is in this structure
+from pete_e.data_access.postgres_dal import PostgresDal
 from pete_e.infra import log_utils
 
 app = FastAPI()
@@ -38,6 +38,4 @@ def receive_summary(payload: dict):
     except Exception as e:
         log_utils.log_message(f"Failed to process Apple payload: {e}", "ERROR")
         raise HTTPException(status_code=500, detail="Internal server error.")
-    finally:
-        # This block ensures the pool is closed even if an error occurs
-        close_pool()
+
