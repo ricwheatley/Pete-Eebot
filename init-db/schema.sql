@@ -134,21 +134,6 @@ CREATE INDEX idx_wger_logs_date ON wger_logs(date);
 CREATE INDEX idx_wger_logs_exercise_id ON wger_logs(exercise_id);
 COMMENT ON TABLE wger_logs IS 'Stores individual strength training sets logged via WGER.';
 
-CREATE TABLE body_age_daily (
-    date DATE PRIMARY KEY,
-    input_window_days INT,
-    crf NUMERIC(4,1),
-    body_comp NUMERIC(4,1),
-    activity NUMERIC(4,1),
-    recovery NUMERIC(4,1),
-    composite NUMERIC(4,1),
-    body_age_years NUMERIC(4,1),
-    body_age_delta_years NUMERIC(4,1),
-    used_vo2max_direct BOOLEAN,
-    cap_minus_10_applied BOOLEAN
-);
-CREATE INDEX idx_body_age_daily_date ON body_age_daily(date);
-COMMENT ON TABLE body_age_daily IS 'Stores daily body age calculations and subscores.';
 
 CREATE TABLE training_plans (
     id SERIAL PRIMARY KEY,
