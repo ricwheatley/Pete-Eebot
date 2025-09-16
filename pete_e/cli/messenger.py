@@ -13,6 +13,8 @@ import typer
 # Import the core logic functions we want to expose as commands
 from pete_e.core.apple_ingest import ingest_and_process_apple_data
 from pete_e.core.sync import run_sync_with_retries
+from pete_e.core import withings_oauth_helper
+from pete_e.core.withings_client import WithingsClient
 from pete_e.core.orchestrator import Orchestrator
 from pete_e.infra import log_utils
 from datetime import datetime, date, timedelta
@@ -115,6 +117,52 @@ def message(
         print(weekly_plan)
         if send:
             orchestrator.send_telegram_message(weekly_plan)
+
+@app.command("refresh-withings")
+def refresh_withings_tokens() -> None:
+    """
+    Force a Withings token refresh and save the new tokens to disk.
+    """
+    try:
+        client = WithingsClient()
+        tokens = client._refresh_access_token()  # returns body from API
+        typer.echo("✅ Withings tokens refreshed.")
+        typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
+        typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
+    except Exception as e:
+        log_utils.log_message(f"Failed to refresh Withings tokens: {e}", "ERROR")
+        raise typer.Exit(code=1)
+
+@app.command("withings-auth-url")
+def withings_auth_url() -> None:
+    """
+    Print the Withings authorization URL for first-time setup.
+    Open it in your browser, log in, and approve Pete-Eebot.
+    """
+    url = withings_oauth_helper.build_authorize_url()
+    typer.echo("👉 Visit this URL to authorize Pete-Eebot with Withings:")
+    typer.echo(url)
+
+
+@app.command("withings-exchange-code")
+def withings_exchange_code(code: str) -> None:
+    """
+    Exchange an authorization code (from Withings redirect) for tokens.
+    Saves tokens to .withings_tokens.json for future use.
+    """
+    try:
+        tokens = withings_oauth_helper.exchange_code_for_tokens(code)
+        # Save directly to .withings_tokens.json
+        client = WithingsClient()
+        client._save_tokens(tokens)
+
+        typer.echo("✅ Successfully exchanged code for tokens.")
+        typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
+        typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
+        typer.echo("\nTokens have been saved to .withings_tokens.json")
+    except Exception as e:
+        log_utils.log_message(f"Failed to exchange code: {e}", "ERROR")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,12 @@
 import os
 import requests
+import json
+from pathlib import Path
 from urllib.parse import urlencode
 
 from pete_e.config import settings
+
+TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
 
 AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"
 TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
@@ -31,7 +35,14 @@ def exchange_code_for_tokens(code: str):
     js = r.json()
     if js.get("status") != 0:
         raise RuntimeError(f"Token request failed: {js}")
-    return js["body"]
+
+    tokens = js["body"]
+
+    # Save to file
+    with open(TOKEN_FILE, "w") as f:
+        json.dump(tokens, f, indent=2)
+
+    return tokens
 
 if __name__ == "__main__":
     print("Step 1: Visit this URL in your browser and approve access:")
