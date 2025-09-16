@@ -184,7 +184,20 @@ class Orchestrator:
         )
 
         if result:
-            self.dal.save_body_age_daily(target_day, result)
+            # Flatten nested sections for database persistence
+            flattened: Dict[str, Any] = {
+                k: v for k, v in result.items() if k not in {"subscores", "assumptions"}
+            }
+
+            subscores = result.get("subscores") or {}
+            if isinstance(subscores, dict):
+                flattened.update(subscores)
+
+            assumptions = result.get("assumptions") or {}
+            if isinstance(assumptions, dict):
+                flattened.update(assumptions)
+
+            self.dal.save_body_age_daily(target_day, flattened)
         else:
             log_utils.log_message(f"No body age result for {target_day.isoformat()}", "WARN")
 
