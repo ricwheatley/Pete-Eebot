@@ -1,13 +1,13 @@
 """
-Withings API client for Pete-E
-Refactored from a procedural script to a class-based client.
-It uses a centralized configuration service for credentials.
+Withings API client for Pete-E.
+Now persists tokens in .withings_tokens.json so you don’t have to update .env manually.
 """
 
+import json
+from pathlib import Path
 import requests
 from datetime import datetime, timedelta, timezone
 
-# Import the centralized settings object
 from pete_e.config import settings
 from pete_e.infra.log_utils import log_message
 
@@ -15,15 +15,41 @@ from pete_e.infra.log_utils import log_message
 class WithingsClient:
     """A client to interact with the Withings API."""
 
+    TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
+
     def __init__(self):
-        """Initializes the client with credentials from the settings."""
+        """Initializes the client with credentials from settings or token file."""
         self.client_id = settings.WITHINGS_CLIENT_ID
         self.client_secret = settings.WITHINGS_CLIENT_SECRET
         self.redirect_uri = settings.WITHINGS_REDIRECT_URI
-        self.refresh_token = settings.WITHINGS_REFRESH_TOKEN
+
+        # Try to load existing tokens from file
         self.access_token = None
+        self.refresh_token = None
+
+        if self.TOKEN_FILE.exists():
+            try:
+                with open(self.TOKEN_FILE) as f:
+                    tokens = json.load(f)
+                self.refresh_token = tokens.get("refresh_token")
+                self.access_token = tokens.get("access_token")
+                log_message("Loaded Withings tokens from file.", "INFO")
+            except Exception as e:
+                log_message(f"Failed to load tokens from file: {e}", "WARN")
+
+        # Fallback to .env if no token file
+        if not self.refresh_token:
+            self.refresh_token = settings.WITHINGS_REFRESH_TOKEN
+            log_message("Using refresh token from .env", "INFO")
+
         self.token_url = "https://wbsapi.withings.net/v2/oauth2"
         self.measure_url = "https://wbsapi.withings.net/measure"
+
+    def _save_tokens(self, tokens: dict) -> None:
+        """Persist tokens to disk."""
+        with open(self.TOKEN_FILE, "w") as f:
+            json.dump(tokens, f, indent=2)
+        log_message("Saved Withings tokens to file.", "INFO")
 
     def _refresh_access_token(self):
         """Exchanges the refresh token for a new access token."""
@@ -40,15 +66,22 @@ class WithingsClient:
         js = r.json()
         if js.get("status") != 0:
             raise RuntimeError(f"Withings token refresh failed: {js}")
-        
-        self.access_token = js["body"]["access_token"]
+
+        body = js["body"]
+        self.access_token = body["access_token"]
+        self.refresh_token = body["refresh_token"]
+
+        # Save for next time
+        self._save_tokens(body)
         log_message("Successfully refreshed Withings access token.", "INFO")
+
+        return body
 
     def _fetch_measures(self, start: datetime, end: datetime) -> dict:
         """Fetches Withings measures for a given time window."""
         if not self.access_token:
             self._refresh_access_token()
-            
+
         params = {
             "action": "getmeas",
             "meastypes": "1,6,76,77",  # weight, fat %, muscle, water
