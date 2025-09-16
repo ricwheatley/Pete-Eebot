@@ -1,8 +1,22 @@
 import random
+from collections import defaultdict
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
 from pete_e.core.phrase_picker import random_phrase as phrase_for
 from pete_e.core.narrative_utils import stitch_sentences
 from pete_e.config import settings
+
+
+_DAY_NAMES = {
+    1: "Monday",
+    2: "Tuesday",
+    3: "Wednesday",
+    4: "Thursday",
+    5: "Friday",
+    6: "Saturday",
+    7: "Sunday",
+}
 
 
 def compare_text(current, previous, unit="", context=""):
@@ -155,3 +169,82 @@ def build_cycle_narrative(metrics: dict) -> str:
     phrase = phrase_for(tags=["#Motivation"])
     sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 3))]
     return f"{greeting}\n\n" + stitch_sentences(insights, [phrase] + sprinkles)
+
+
+def build_daily_summary(metrics: Dict[str, Any]) -> str:
+    """Convenience wrapper matching the orchestrator naming."""
+
+    return build_daily_narrative(metrics)
+
+
+def build_weekly_summary(metrics: Dict[str, Any]) -> str:
+    """Convenience wrapper matching the orchestrator naming."""
+
+    return build_weekly_narrative(metrics)
+
+
+def build_cycle_summary(metrics: Dict[str, Any]) -> str:
+    """Convenience wrapper matching the orchestrator naming."""
+
+    return build_cycle_narrative(metrics)
+
+
+def build_weekly_plan_summary(plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
+    """Create a readable overview for a plan week."""
+
+    if not plan_week_data:
+        return f"Week {week_number} doesn't have any scheduled training sessions yet."
+
+    plan_days: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
+    for entry in plan_week_data:
+        day_number = entry.get("day_of_week")
+        if not isinstance(day_number, int):
+            continue
+        plan_days[day_number].append(entry)
+
+    summary_lines: List[str] = [f"Week {week_number} training plan:", ""]
+
+    for day_number in range(1, 8):
+        day_name = _DAY_NAMES.get(day_number, f"Day {day_number}")
+        workouts = plan_days.get(day_number, [])
+
+        if not workouts:
+            summary_lines.append(f"{day_name}: Rest / recovery focus.")
+            continue
+
+        summary_lines.append(f"{day_name}:")
+        for workout in workouts:
+            exercise = workout.get("exercise_name") or f"Exercise {workout.get('exercise_id')}"
+            sets = workout.get("sets")
+            reps = workout.get("reps")
+            rir = workout.get("rir")
+
+            details: List[str] = []
+            if sets is not None and reps is not None:
+                details.append(f"{sets} x {reps}")
+            if rir is not None:
+                details.append(f"RIR {rir:g}")
+
+            detail_text = f" ({', '.join(details)})" if details else ""
+            summary_lines.append(f"  • {exercise}{detail_text}")
+
+    summary_lines.append("")
+    summary_lines.append(phrase_for(tags=["#Motivation"]))
+
+    return "\n".join(summary_lines).strip()
+
+
+class NarrativeBuilder:
+    """Facade for producing narratives used by the orchestrator."""
+
+    def build_daily_summary(self, metrics: Dict[str, Any]) -> str:
+        return build_daily_summary(metrics)
+
+    def build_weekly_summary(self, metrics: Dict[str, Any]) -> str:
+        return build_weekly_summary(metrics)
+
+    def build_cycle_summary(self, metrics: Dict[str, Any]) -> str:
+        return build_cycle_summary(metrics)
+
+    def build_weekly_plan(self, plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
+        return build_weekly_plan_summary(plan_week_data, week_number)
