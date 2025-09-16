@@ -127,10 +127,16 @@ class PostgresDal(DataAccessLayer):
     # Wger Logs
     # ---------------------------------------------------------------------
     def save_wger_log(
-        self, day: date, exercise_id: int, set_number: int,
-        reps: int, weight_kg: Optional[float], rir: Optional[float]
-    ) -> None:
+    self, day: date, exercise_id: int, set_number: int,
+    reps: int, weight_kg: Optional[float], rir: Optional[float]
+) -> None:
         try:
+            # normalise numeric fields
+            set_number_val = int(float(set_number)) if set_number is not None else None
+            reps_val = int(float(reps)) if reps is not None else None
+            weight_val = float(weight_kg) if weight_kg is not None else None
+            rir_val = float(rir) if rir is not None else None
+
             with get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
@@ -141,11 +147,14 @@ class PostgresDal(DataAccessLayer):
                         weight_kg = EXCLUDED.weight_kg,
                         rir = EXCLUDED.rir;
                     """,
-                    (day, exercise_id, set_number, reps, weight_kg, rir),
+                    (day, exercise_id, set_number_val, reps_val, weight_val, rir_val),
                 )
         except Exception as e:
-            log_utils.log_message(f"Error saving Wger log for {day}, exercise {exercise_id}: {e}", "ERROR")
+            log_utils.log_message(
+                f"Error saving Wger log for {day}, exercise {exercise_id}: {e}", "ERROR"
+            )
             raise
+
 
     def load_lift_log(
         self,
@@ -209,15 +218,28 @@ class PostgresDal(DataAccessLayer):
 
     def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
         sql = "SELECT sp_upsert_body_age(%s, %s);"
-        with self.pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(sql, (target_date, birth_date))
-            conn.commit()
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(sql, (target_date, birth_date))
+                conn.commit()
+        except Exception as e:
+            log_utils.log_message(
+                f"Error computing body age for {target_date}: {e}", "ERROR"
+            )
+            raise
+
 
     def compute_body_age_for_range(self, start_date: date, end_date: date, *, birth_date: date) -> None:
         sql = "SELECT sp_upsert_body_age_range(%s, %s, %s);"
-        with self.pool.connection() as conn, conn.cursor() as cur:
-            cur.execute(sql, (start_date, end_date, birth_date))
-            conn.commit()
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(sql, (start_date, end_date, birth_date))
+                conn.commit()
+        except Exception as e:
+            log_utils.log_message(
+                f"Error computing body age range {start_date} to {end_date}: {e}", "ERROR"
+            )
+            raise
 
 
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
