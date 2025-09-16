@@ -13,7 +13,15 @@ class DummyDal(DataAccessLayer):
         self._metrics_baseline = metrics_baseline
 
     # Lift log operations
-    def load_lift_log(self) -> Dict[str, Any]:
+    def load_lift_log(
+        self,
+        exercise_ids: List[int] | None = None,
+        start_date: datetime.date | None = None,
+        end_date: datetime.date | None = None,
+    ) -> Dict[str, Any]:
+        if exercise_ids:
+            keys = {str(e) for e in exercise_ids}
+            return {k: v for k, v in self._lift_history.items() if k in keys}
         return self._lift_history
 
     def save_lift_log(self, log: Dict[str, Any]) -> None:
