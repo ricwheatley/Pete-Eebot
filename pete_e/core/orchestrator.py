@@ -14,7 +14,7 @@ from pete_e.core import apple_client, body_age
 
 # Core Logic and Helpers
 from pete_e.core.narrative_builder import NarrativeBuilder
-from pete_e.core.plan_builder import PlanBuilder
+from pete_e.core.plan_builder import build_block
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infra import log_utils, telegram_sender
 from pete_e.config import settings
@@ -215,33 +215,29 @@ class Orchestrator:
         """
         Builds and deploys a new multi-week training plan.
 
-        This is the core planning function of the application, intended to be
-        run at the end of a training cycle.
-
-        Args:
-            start_date: The start date for the new plan.
-            weeks: The number of weeks the plan should last.
-
-        Returns:
-            The ID of the newly created plan.
+        This version delegates directly to build_block(), which currently
+        constructs and saves a fixed 4-week plan. The 'weeks' argument is
+        accepted for API compatibility but not yet used in build_block.
         """
-        log_utils.log_message(f"Generating new {weeks}-week plan starting {start_date.isoformat()}", "INFO")
+        log_utils.log_message(
+            f"Generating new {weeks}-week plan starting {start_date.isoformat()}",
+            "INFO"
+        )
 
         try:
-            # 1. Build the plan structure using PlanBuilder
-            builder = PlanBuilder()
-            plan_dict = builder.build_plan(weeks=weeks) # Assuming a method like this exists
-            log_utils.log_message("Successfully built plan structure.", "INFO")
+            # Build and persist the plan in one step
+            plan_id = build_block(self.dal, start_date)
+            log_utils.log_message(
+                f"Successfully saved new plan with ID: {plan_id}", "INFO"
+            )
 
-            # 2. Save the plan to the database via the DAL
-            plan_id = self.dal.save_training_plan(plan=plan_dict, start_date=start_date)
-            log_utils.log_message(f"Successfully saved new plan with ID: {plan_id}", "INFO")
-
-            # 3. Refresh the plan view to include the new data
+            # Refresh the plan view to include the new data
             self.dal.refresh_plan_view()
 
             return plan_id
 
         except Exception as e:
-            log_utils.log_message(f"Failed to generate and deploy new plan: {e}", "ERROR")
-            return -1 # Return a sentinel value indicating failure
+            log_utils.log_message(
+                f"Failed to generate and deploy new plan: {e}", "ERROR"
+            )
+            return -1  # Return a sentinel value indicating failure

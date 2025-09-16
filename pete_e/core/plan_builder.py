@@ -12,11 +12,16 @@ from pete_e.data_access.dal import DataAccessLayer
 from pete_e.config import settings
 
 
-def build_block(dal: DataAccessLayer, start_date: date) -> int:
+def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
     """
-    Construct a simple 4-week training block and persist it to the database.
+    Construct a training block and persist it to the database.
 
     Uses historical metrics for adaptation (HR, sleep) to determine intensity.
+
+    Args:
+        dal: DataAccessLayer instance for DB operations.
+        start_date: The start date of the training plan.
+        weeks: Number of weeks to include in the plan.
 
     Returns:
         plan_id (int): The primary key of the saved training plan in Postgres.
@@ -45,8 +50,8 @@ def build_block(dal: DataAccessLayer, start_date: date) -> int:
     # ---------------------------------------------------------------------
     # Build plan structure in memory
     # ---------------------------------------------------------------------
-    weeks = []
-    for week_index in range(1, 5):  # 4 weeks
+    weeks_out = []
+    for week_index in range(1, weeks + 1):
         week_days = []
         for day_offset in range(7):
             d = start_date + timedelta(days=(week_index - 1) * 7 + day_offset)
@@ -81,9 +86,9 @@ def build_block(dal: DataAccessLayer, start_date: date) -> int:
             if day_entry["workouts"]:
                 week_days.append(day_entry)
 
-        weeks.append({"week_number": week_index, "workouts": week_days})
+        weeks_out.append({"week_number": week_index, "workouts": week_days})
 
-    plan = {"weeks": weeks}
+    plan = {"weeks": weeks_out}
 
     # ---------------------------------------------------------------------
     # Save to DB
