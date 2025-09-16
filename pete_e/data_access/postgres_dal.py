@@ -147,13 +147,54 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error saving Wger log for {day}, exercise {exercise_id}: {e}", "ERROR")
             raise
 
-    def load_lift_log(self) -> Dict[str, Any]:
-        """Compatibility: return all Wger logs grouped by exercise_id."""
+    def load_lift_log(
+        self,
+        exercise_ids: Optional[List[int]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Return Wger logs grouped by exercise_id, optionally filtered."""
+
+        # If an explicit list of ids is provided but empty, return early to avoid
+        # issuing a broad query.
+        if exercise_ids is not None:
+            cleaned_ids = sorted({int(e) for e in exercise_ids if e is not None})
+            if not cleaned_ids:
+                return {}
+        else:
+            cleaned_ids = None
+
         out: Dict[str, List[Dict[str, Any]]] = {}
         try:
             with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT * FROM wger_logs ORDER BY date ASC, exercise_id ASC, set_number ASC;")
-                for row in cur.fetchall():
+                query = (
+                    "SELECT date, exercise_id, set_number, reps, weight_kg, rir "
+                    "FROM wger_logs"
+                )
+                conditions: List[str] = []
+                params: List[Any] = []
+
+                if cleaned_ids is not None:
+                    conditions.append("exercise_id = ANY(%s)")
+                    params.append(cleaned_ids)
+                if start_date is not None:
+                    conditions.append("date >= %s")
+                    params.append(start_date)
+                if end_date is not None:
+                    conditions.append("date <= %s")
+                    params.append(end_date)
+
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+
+                query += " ORDER BY date ASC, exercise_id ASC, set_number ASC"
+
+                if params:
+                    cur.execute(query, tuple(params))
+                else:
+                    cur.execute(query)
+
+                for row in cur:
                     key = str(row["exercise_id"])
                     out.setdefault(key, []).append(row)
         except Exception as e:
