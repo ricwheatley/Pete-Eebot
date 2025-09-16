@@ -27,6 +27,16 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def load_lift_log(
+        self,
+        exercise_ids: Optional[List[int]] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Return lift log entries grouped by exercise id."""
+        pass
+
+    @abstractmethod
     def save_body_age_daily(self, day: date, metrics: Dict[str, Any]) -> None:
         pass
 

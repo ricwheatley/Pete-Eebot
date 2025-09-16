@@ -19,7 +19,24 @@ def apply_progression(
     """Adjust weights based on lift log and recovery metrics."""
 
     if lift_history is None:
-        lift_history = dal.load_lift_log()
+        requested_ids: set[int] = set()
+        for day in week.get("days", []):
+            for session in day.get("sessions", []):
+                if session.get("type") != "weights":
+                    continue
+                for ex in session.get("exercises", []):
+                    ex_id = ex.get("id")
+                    if ex_id is None:
+                        continue
+                    try:
+                        requested_ids.add(int(ex_id))
+                    except (TypeError, ValueError):
+                        continue
+
+        if requested_ids:
+            lift_history = dal.load_lift_log(exercise_ids=list(requested_ids))
+        else:
+            lift_history = {}
 
     recent_metrics = dal.get_historical_metrics(7)
     baseline_metrics = dal.get_historical_metrics(settings.BASELINE_DAYS)
