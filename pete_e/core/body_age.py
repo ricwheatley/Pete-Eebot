@@ -12,7 +12,7 @@ def to_float(v: Any) -> Optional[float]:
         if v in (None, ""):
             return None
         return float(v)
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
