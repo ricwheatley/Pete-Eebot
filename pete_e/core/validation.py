@@ -1,100 +1,327 @@
-"""
-Validation logic for Pete-Eebot.
-Runs recovery-based checks using DB metrics and adjusts training plans in Postgres.
-"""
+# pete_e/core/validation.py
+from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import List
+from statistics import median, mean
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from pete_e.data_access.dal import DataAccessLayer
 from pete_e.config import settings
 from pete_e.infra import log_utils
 
 
-def validate_and_adjust_plan(
-    dal: DataAccessLayer,
-    plan_id: int,
-    week_number: int,
-    current_start_date: date,
-) -> List[str]:
-    """
-    Run validation checks against DB metrics and adjust the training plan in Postgres.
+# Windows are expressed in days to avoid calendar edge cases.
+# 30, 60, 90 and 180 approximate the prior 1, 2, 3 and 6 months.
+_BASELINE_WINDOWS_DAYS: List[int] = [30, 60, 90, 180]
+_MIN_DAYS_PER_WINDOW: int = 14  # require at least this many points to trust a window
+_LAST_N_DAYS_FOR_OBS: int = 7   # assess the most recent 7 days before the upcoming week
 
-    Args:
-        dal: Postgres DAL
-        plan_id: Training plan ID to validate
-        week_number: The plan week to validate
-        current_start_date: Start date of the plan (for logging context)
 
-    Returns:
-        List of adjustment notes applied.
-    """
+@dataclass(frozen=True)
+class WindowStats:
+    days: int
+    start: date
+    end: date
+    values: List[float]
+    median_value: float
+    mean_value: float
 
-    adjustments: List[str] = []
-    global_backoff = False
 
-    # -----------------------------------------------------------------
-    # 1. Fetch recent metrics
-    # -----------------------------------------------------------------
-    end_date = date.today()
-    start_date = end_date - timedelta(days=7)
+@dataclass(frozen=True)
+class BaselineResult:
+    value: Optional[float]
+    by_window: Dict[int, WindowStats]  # keyed by window length (days)
 
-    metrics = dal.get_historical_data(start_date, end_date)
 
-    avg_rhr = sum([m.get("hr_resting") or 0 for m in metrics if m.get("hr_resting")]) / max(
-        1, len([m for m in metrics if m.get("hr_resting")])
-    )
-    avg_sleep = sum([m.get("sleep_asleep_minutes") or 0 for m in metrics if m.get("sleep_asleep_minutes")]) / max(
-        1, len([m for m in metrics if m.get("sleep_asleep_minutes")])
-    )
-    avg_body_age_delta = sum([m.get("body_age_delta_years") or 0 for m in metrics if m.get("body_age_delta_years")]) / max(
-        1, len([m for m in metrics if m.get("body_age_delta_years")])
-    )
+@dataclass(frozen=True)
+class BackoffRecommendation:
+    needs_backoff: bool
+    severity: str  # "none", "mild", "moderate", "severe"
+    reasons: List[str]
+    set_multiplier: float
+    rir_increment: int
+    metrics: Dict[str, Any]  # observed and baseline metrics for transparency
 
-    # -----------------------------------------------------------------
-    # 2. Recovery checks
-    # -----------------------------------------------------------------
-    if avg_rhr > settings.RHR_BASELINE * (1 + settings.RHR_ALLOWED_INCREASE):
-        adjustments.append(f"Global back-off: ↑ RHR {avg_rhr:.1f} > baseline")
-        global_backoff = True
 
-    if avg_sleep < settings.SLEEP_BASELINE * (1 - settings.SLEEP_ALLOWED_DECREASE):
-        adjustments.append(f"Global back-off: ↓ sleep {avg_sleep:.0f}m < baseline")
-        global_backoff = True
-
-    if avg_body_age_delta > settings.BODY_AGE_ALLOWED_INCREASE:
-        adjustments.append(f"Global back-off: body age worsened {avg_body_age_delta:.1f}y")
-        global_backoff = True
-
-    # -----------------------------------------------------------------
-    # 3. Apply updates to DB
-    # -----------------------------------------------------------------
-    if global_backoff:
+def _collect_series(
+    rows: Iterable[Dict[str, Any]],
+    key: str,
+    treat_zero_as_missing: bool = False,
+) -> List[Tuple[date, float]]:
+    """Extract a (date, value) series from historical rows."""
+    out: List[Tuple[date, float]] = []
+    for r in rows:
+        d = r.get("date")
+        v = r.get(key)
+        if d is None:
+            continue
+        if v is None:
+            continue
+        if treat_zero_as_missing and isinstance(v, (int, float)) and v == 0:
+            continue
         try:
-            with dal._pool.connection() as conn, conn.cursor() as cur:  # direct pool use
-                cur.execute(
-                    """
-                    UPDATE training_plan_workouts
-                    SET sets = ROUND(sets * %s),
-                        rir = COALESCE(rir, 0) + 1
-                    WHERE week_id IN (
-                        SELECT id FROM training_plan_weeks
-                        WHERE plan_id = %s AND week_number = %s
-                    );
-                    """,
-                    (settings.GLOBAL_BACKOFF_FACTOR, plan_id, week_number),
-                )
-            log_utils.log_message(f"[validation] Applied global back-off to plan {plan_id}, week {week_number}", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"[validation] Failed to update plan {plan_id}: {e}", "ERROR")
+            out.append((d, float(v)))
+        except Exception:
+            continue
+    # sort by date ascending for predictable slicing
+    out.sort(key=lambda x: x[0])
+    return out
 
-    # -----------------------------------------------------------------
-    # 4. Log adjustments
-    # -----------------------------------------------------------------
-    if adjustments:
-        dal.save_validation_log(
-            f"validation_week{week_number}_{current_start_date.isoformat()}",
-            adjustments,
+
+def _slice_values_in_window(
+    series: List[Tuple[date, float]],
+    start: date,
+    end: date,
+) -> List[float]:
+    """Return values with start <= date <= end."""
+    vals: List[float] = [v for (d, v) in series if start <= d <= end]
+    return vals
+
+
+def _window_stats(
+    series: List[Tuple[date, float]], end: date, window_days: int
+) -> Optional[WindowStats]:
+    start = end - timedelta(days=window_days - 1)
+    vals = _slice_values_in_window(series, start, end)
+    if len(vals) < _MIN_DAYS_PER_WINDOW:
+        return None
+    return WindowStats(
+        days=len(vals),
+        start=start,
+        end=end,
+        values=vals,
+        median_value=median(vals),
+        mean_value=mean(vals),
+    )
+
+
+def _weighted_baseline(
+    stats_by_window: Dict[int, WindowStats],
+    weights: Dict[int, float],
+) -> Optional[float]:
+    """Combine medians across available windows using provided weights."""
+    # normalise to available windows
+    available = {w: stats_by_window[w].median_value for w in stats_by_window.keys()}
+    if not available:
+        return None
+    weight_sum = sum(weights.get(w, 0.0) for w in available.keys())
+    if weight_sum <= 0:
+        # fall back to simple median of medians
+        return median(list(available.values()))
+    return sum(available[w] * (weights.get(w, 0.0) / weight_sum) for w in available.keys())
+
+
+def _compute_baseline_for_metric(
+    rows: List[Dict[str, Any]],
+    key: str,
+    end: date,
+    treat_zero_as_missing: bool = False,
+) -> BaselineResult:
+    """
+    Build a dynamic baseline for a metric using rolling windows.
+    Uses medians per window, then a weighted blend favouring recency.
+    """
+    series = _collect_series(rows, key, treat_zero_as_missing=treat_zero_as_missing)
+    by_window: Dict[int, WindowStats] = {}
+    for w in _BASELINE_WINDOWS_DAYS:
+        ws = _window_stats(series, end, w)
+        if ws:
+            by_window[w] = ws
+
+    # favour recency, but include longer-term stability
+    weights = {30: 0.40, 60: 0.30, 90: 0.20, 180: 0.10}
+    baseline_value = _weighted_baseline(by_window, weights)
+    return BaselineResult(value=baseline_value, by_window=by_window)
+
+
+def _average_over_last_n_days(
+    rows: List[Dict[str, Any]],
+    key: str,
+    end: date,
+    days: int,
+    require_min_points: int = 4,
+    treat_zero_as_missing: bool = False,
+) -> Optional[float]:
+    """Average of last N days up to 'end'. Returns None if insufficient points."""
+    series = _collect_series(rows, key, treat_zero_as_missing=treat_zero_as_missing)
+    start = end - timedelta(days=days - 1)
+    vals = _slice_values_in_window(series, start, end)
+    if len(vals) < require_min_points:
+        return None
+    return mean(vals)
+
+
+def _severity_from_breach_ratio(ratio: float) -> Tuple[str, float, int]:
+    """
+    Map a breach ratio to severity and recommended adjustments.
+    ratio == 0 means within thresholds. 1.0 means exactly at threshold.
+    """
+    if ratio <= 0:
+        return "none", 1.00, 0
+    if 0 < ratio <= 1.0:
+        return "mild", 0.90, 1
+    if 1.0 < ratio <= 2.0:
+        return "moderate", 0.80, 2
+    return "severe", 0.70, 3
+
+
+def compute_dynamic_baselines(
+    dal: Any,
+    reference_end_date: date,
+) -> Dict[str, BaselineResult]:
+    """
+    Compute dynamic baselines for RHR and Sleep as of 'reference_end_date'.
+    Pull one 180-day history then reuse for each window computation.
+    """
+    start = reference_end_date - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
+    hist = dal.get_historical_data(start_date=start, end_date=reference_end_date)
+
+    # RHR: zeros should generally be treated as missing
+    rhr = _compute_baseline_for_metric(
+        hist, key="hr_resting", end=reference_end_date, treat_zero_as_missing=True
+    )
+    # Sleep is in minutes. Zeros are likely missing, treat as missing.
+    sleep = _compute_baseline_for_metric(
+        hist, key="sleep_total_minutes", end=reference_end_date, treat_zero_as_missing=True
+    )
+    return {"hr_resting": rhr, "sleep_total_minutes": sleep}
+
+
+def assess_recovery_and_backoff(
+    dal: Any,
+    week_start_date: date,
+) -> BackoffRecommendation:
+    """
+    Evaluate the prior week versus dynamic baselines and propose a global back-off.
+    Observation window is the last 7 complete days ending the day before 'week_start_date'.
+    """
+    obs_end = week_start_date - timedelta(days=1)
+    obs_start = obs_end - timedelta(days=_LAST_N_DAYS_FOR_OBS - 1)
+
+    # Pull just enough history for obs + baseline
+    base_start = obs_end - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
+    hist = dal.get_historical_data(start_date=base_start, end_date=obs_end)
+
+    avg_rhr_7d = _average_over_last_n_days(
+        hist, key="hr_resting", end=obs_end, days=_LAST_N_DAYS_FOR_OBS,
+        treat_zero_as_missing=True,
+    )
+    avg_sleep_7d = _average_over_last_n_days(
+        hist, key="sleep_total_minutes", end=obs_end, days=_LAST_N_DAYS_FOR_OBS,
+        treat_zero_as_missing=True,
+    )
+
+    baselines = compute_dynamic_baselines(dal, reference_end_date=obs_end)
+    rhr_base = baselines["hr_resting"].value
+    sleep_base = baselines["sleep_total_minutes"].value
+
+    reasons: List[str] = []
+    breach_ratios: List[float] = []
+
+    # Thresholds come from settings and remain percentage deltas
+    rhr_allowed_inc = float(getattr(settings, "RHR_ALLOWED_INCREASE", 0.05))
+    sleep_allowed_dec = float(getattr(settings, "SLEEP_ALLOWED_DECREASE", 0.10))
+
+    # RHR breach ratio
+    if avg_rhr_7d is not None and rhr_base:
+        rhr_excess = (avg_rhr_7d - rhr_base) / rhr_base
+        rhr_ratio = max(0.0, rhr_excess / rhr_allowed_inc) if rhr_allowed_inc > 0 else 0.0
+        if rhr_ratio > 0:
+            reasons.append(
+                f"Resting HR {avg_rhr_7d:.1f} exceeds baseline {rhr_base:.1f} by {rhr_excess*100:.1f}%"
+            )
+        breach_ratios.append(rhr_ratio)
+    else:
+        breach_ratios.append(0.0)
+
+    # Sleep breach ratio
+    if avg_sleep_7d is not None and sleep_base:
+        sleep_deficit = (sleep_base - avg_sleep_7d) / sleep_base
+        sleep_ratio = max(0.0, sleep_deficit / sleep_allowed_dec) if sleep_allowed_dec > 0 else 0.0
+        if sleep_ratio > 0:
+            reasons.append(
+                f"Sleep {avg_sleep_7d:.0f} min below baseline {sleep_base:.0f} min by {sleep_deficit*100:.1f}%"
+            )
+        breach_ratios.append(sleep_ratio)
+    else:
+        breach_ratios.append(0.0)
+
+    overall_ratio = max(breach_ratios) if breach_ratios else 0.0
+    severity, set_multiplier, rir_increment = _severity_from_breach_ratio(overall_ratio)
+
+    needs_backoff = severity != "none"
+
+    metrics = {
+        "obs_window": {"start": obs_start, "end": obs_end, "days": _LAST_N_DAYS_FOR_OBS},
+        "avg_rhr_7d": avg_rhr_7d,
+        "avg_sleep_7d": avg_sleep_7d,
+        "rhr_baseline": rhr_base,
+        "sleep_baseline": sleep_base,
+        "rhr_allowed_increase": rhr_allowed_inc,
+        "sleep_allowed_decrease": sleep_allowed_dec,
+        "severity_ratio": overall_ratio,
+        "baselines_detail": {
+            "rhr_by_window": {
+                w: {"start": s.start, "end": s.end, "days": s.days, "median": s.median_value}
+                for w, s in baselines["hr_resting"].by_window.items()
+            },
+            "sleep_by_window": {
+                w: {"start": s.start, "end": s.end, "days": s.days, "median": s.median_value}
+                for w, s in baselines["sleep_total_minutes"].by_window.items()
+            },
+        },
+    }
+
+    return BackoffRecommendation(
+        needs_backoff=needs_backoff,
+        severity=severity,
+        reasons=reasons,
+        set_multiplier=set_multiplier,
+        rir_increment=rir_increment,
+        metrics=metrics,
+    )
+
+
+def validate_and_adjust_plan(dal: Any, week_start_date: date) -> bool:
+    """
+    Backwards-compatible facade.
+    Returns True if no back-off is required or if adjustments were successfully applied.
+    Returns False only if an application error occurred.
+    """
+    rec = assess_recovery_and_backoff(dal, week_start_date)
+
+    if not rec.needs_backoff:
+        log_utils.log_message(
+            "Recovery within dynamic baselines - no global back-off applied.", "INFO"
         )
+        return True
 
-    return adjustments
+    # Log a concise summary with reasons
+    summary = (
+        f"Global back-off recommended, severity={rec.severity}, "
+        f"set_multiplier={rec.set_multiplier:.2f}, RIR+={rec.rir_increment}. "
+        f"Reasons: {', '.join(rec.reasons) or 'thresholds exceeded'}."
+    )
+    log_utils.log_message(summary, "WARNING")
+
+    # Try to apply via DAL, but do not hard-fail if the method is not present
+    try:
+        if hasattr(dal, "apply_plan_backoff"):
+            dal.apply_plan_backoff(
+                week_start_date,
+                set_multiplier=rec.set_multiplier,
+                rir_increment=rec.rir_increment,
+            )
+            log_utils.log_message("Applied global back-off to upcoming week.", "INFO")
+            return True
+        else:
+            log_utils.log_message(
+                "DAL has no 'apply_plan_backoff' - no DB changes performed. "
+                "Downstream components may apply this recommendation explicitly.",
+                "WARN",
+            )
+            # still a successful validation run
+            return True
+    except Exception as exc:  # pragma: no cover - DB failures are environment-specific
+        log_utils.log_message(f"Failed to apply back-off: {exc}", "ERROR")
+        return False
