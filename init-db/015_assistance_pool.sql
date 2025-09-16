@@ -25,7 +25,7 @@ INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES
 INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES
 (73, 83), (73, 81), (73, 923), (73, 154), (73, 475),
 (73, 194), (73, 197), (73, 538), (73, 537), (73, 445),
-(73, 498), (73, 386), (73, 538);
+(73, 498), (73, 386);
 
 -- Deadlift (main id = 184)
 INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES
