@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Dict, List, Optional
-from decimal import Decimal, ROUND_HALF_UP
 import json
 
 import psycopg
@@ -206,90 +205,19 @@ class PostgresDal(DataAccessLayer):
     # ---------------------------------------------------------------------
     # Body Age
     # ---------------------------------------------------------------------
-    @staticmethod
-    def _r1(x: Optional[Any]) -> Optional[Decimal]:
-        """
-        Round numeric input to one decimal place using HALF_UP.
-        Accepts int, float, Decimal, or strifiable numeric. Returns Decimal or None.
-        """
-        if x is None:
-            return None
-        try:
-            d = Decimal(str(x))
-        except Exception:
-            return None
-        return d.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
 
-    def save_body_age_daily(self, day: date, metrics: Dict[str, Any]) -> None:
-        """
-        Upsert a row in body_age_daily, computing the age delta from USER_DATE_OF_BIRTH
-        and the supplied body_age_years. Numeric values are rounded to 1 d.p. to match
-        NUMERIC(4,1) columns.
-        """
-        try:
-            # Body age years (may be None if calculation skipped upstream)
-            body_age_years_raw = metrics.get("body_age_years")
-            body_age_years = self._r1(body_age_years_raw)
 
-            # Compute actual age and delta on the DB side for consistency
-            body_age_delta_years = None
-            if body_age_years is not None:
-                actual_age_years = Decimal(str(calculate_age(settings.USER_DATE_OF_BIRTH, on_date=day)))
-                delta = body_age_years - actual_age_years
-                delta = delta.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-                # normalise -0.0 to 0.0 for neatness
-                if delta == Decimal("-0.0"):
-                    delta = Decimal("0.0")
-                body_age_delta_years = delta
+    def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
+        sql = "SELECT sp_upsert_body_age(%s, %s);"
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, (target_date, birth_date))
+            conn.commit()
 
-            # Prepare rounded payloads for all numeric fields
-            input_window_days = metrics.get("input_window_days")  # integer passthrough
-            crf = self._r1(metrics.get("crf"))
-            body_comp = self._r1(metrics.get("body_comp"))
-            activity = self._r1(metrics.get("activity"))
-            recovery = self._r1(metrics.get("recovery"))
-            composite = self._r1(metrics.get("composite"))
-
-            used_vo2max_direct = metrics.get("used_vo2max_direct")
-            cap_minus_10_applied = metrics.get("cap_minus_10_applied")
-
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO body_age_daily (
-                        date, input_window_days, crf, body_comp, activity, recovery,
-                        composite, body_age_years, body_age_delta_years,
-                        used_vo2max_direct, cap_minus_10_applied
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (date) DO UPDATE SET
-                        input_window_days    = EXCLUDED.input_window_days,
-                        crf                  = EXCLUDED.crf,
-                        body_comp            = EXCLUDED.body_comp,
-                        activity             = EXCLUDED.activity,
-                        recovery             = EXCLUDED.recovery,
-                        composite            = EXCLUDED.composite,
-                        body_age_years       = EXCLUDED.body_age_years,
-                        body_age_delta_years = EXCLUDED.body_age_delta_years,
-                        used_vo2max_direct   = EXCLUDED.used_vo2max_direct,
-                        cap_minus_10_applied = EXCLUDED.cap_minus_10_applied;
-                    """,
-                    (
-                        day,
-                        input_window_days,
-                        crf,
-                        body_comp,
-                        activity,
-                        recovery,
-                        composite,
-                        body_age_years,
-                        body_age_delta_years,
-                        used_vo2max_direct,
-                        cap_minus_10_applied,
-                    ),
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error saving body age data for {day}: {e}", "ERROR")
-            raise
+    def compute_body_age_for_range(self, start_date: date, end_date: date, *, birth_date: date) -> None:
+        sql = "SELECT sp_upsert_body_age_range(%s, %s, %s);"
+        with self.pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(sql, (start_date, end_date, birth_date))
+            conn.commit()
 
 
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
