@@ -7,10 +7,10 @@ from pete_e.data_access.dal import DataAccessLayer
 from pete_e.config import settings
 
 
-def _average(values: list[float]) -> float:
-    """Return the mean of a list, or 0 if empty."""
+def _average(values: list[float]) -> float | None:
+    """Return the mean of a list, or None if empty."""
 
-    return mean(values) if values else 0.0
+    return mean(values) if values else None
 
 
 def apply_progression(
@@ -38,7 +38,12 @@ def apply_progression(
     )
 
     recovery_good = True
-    if rhr_baseline and sleep_baseline:
+    if (
+        rhr_baseline is not None
+        and rhr_7 is not None
+        and sleep_baseline is not None
+        and sleep_7 is not None
+    ):
         if rhr_7 > rhr_baseline * (1 + settings.RHR_ALLOWED_INCREASE) or sleep_7 < sleep_baseline * settings.SLEEP_ALLOWED_DECREASE:
             recovery_good = False
 
