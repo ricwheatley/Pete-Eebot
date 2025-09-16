@@ -7,13 +7,13 @@ through a singleton `settings` object.
 """
 
 import os
-from urllib.parse import quote_plus
 from pathlib import Path
 from typing import Optional
 
 from datetime import date
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from psycopg.conninfo import make_conninfo
 
 
 class Settings(BaseSettings):
@@ -70,10 +70,12 @@ class Settings(BaseSettings):
         super().__init__(**values)
         db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
         if self.POSTGRES_USER and self.POSTGRES_PASSWORD and db_host and self.POSTGRES_DB:
-            user_enc = quote_plus(self.POSTGRES_USER)
-            pass_enc = quote_plus(self.POSTGRES_PASSWORD)
-            self.DATABASE_URL = (
-                f"postgresql://{user_enc}:{pass_enc}@{db_host}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            self.DATABASE_URL = make_conninfo(
+                user=self.POSTGRES_USER,
+                password=self.POSTGRES_PASSWORD,
+                host=db_host,
+                port=self.POSTGRES_PORT,
+                dbname=self.POSTGRES_DB,
             )
         else:
             self.DATABASE_URL = None
