@@ -27,5 +27,16 @@ def send_message(message: str) -> bool:
         log_utils.log_message("Successfully sent message to Telegram.", "INFO")
         return True
     except requests.RequestException as e:
-        log_utils.log_message(f"Failed to send message to Telegram: {e}", "ERROR")
+        error_details = str(e).strip()
+        if not error_details:
+            error_details = e.__class__.__name__
+
+        for sensitive_value in (token, chat_id):
+            if sensitive_value:
+                error_details = error_details.replace(sensitive_value, "[redacted]")
+
+        log_utils.log_message(
+            f"Failed to send message to Telegram: {error_details}",
+            "ERROR",
+        )
         return False
