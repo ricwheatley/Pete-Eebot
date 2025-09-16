@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     WITHINGS_REFRESH_TOKEN: str
     WGER_API_KEY: str
     WGER_API_URL: str = "https://wger.de/api/v2"
+    APPLE_WEBHOOK_TOKEN: Optional[str] = None
 
     # --- DATABASE (from environment) ---
     POSTGRES_USER: Optional[str] = None
