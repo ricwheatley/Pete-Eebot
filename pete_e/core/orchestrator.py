@@ -175,7 +175,7 @@ class Orchestrator:
         try:
             self.dal.compute_body_age_for_date(
                 target_day,
-                birth_date=settings.USER_BIRTH_DATE,
+                birth_date=settings.USER_DATE_OF_BIRTH,
             )
             log_utils.log_message(
                 f"Body age computed in SQL and upserted for {target_day.isoformat()}",
