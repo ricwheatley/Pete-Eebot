@@ -79,23 +79,6 @@ class Orchestrator:
         """Sends a message using the Telegram sender."""
         telegram_sender.send_message(message)
 
-
-    def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
-        """Builds and deploys a new multi-week training plan."""
-        # ... (this method is complete)
-        log_utils.log_message(f"Generating new {weeks}-week plan starting {start_date.isoformat()}", "INFO")
-        try:
-            builder = PlanBuilder()
-            plan_dict = builder.build_plan(weeks=weeks)
-            log_utils.log_message("Successfully built plan structure.", "INFO")
-            plan_id = self.dal.save_training_plan(plan=plan_dict, start_date=start_date)
-            log_utils.log_message(f"Successfully saved new plan with ID: {plan_id}", "INFO")
-            self.dal.refresh_plan_view()
-            return plan_id
-        except Exception as e:
-            log_utils.log_message(f"Failed to generate and deploy new plan: {e}", "ERROR")
-            return -1
-
     def run_daily_sync(self, days: int) -> Tuple[bool, List[str]]:
         """
         Orchestrates the daily data synchronization process.
