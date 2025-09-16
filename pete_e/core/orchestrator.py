@@ -1,6 +1,7 @@
 """
 Main orchestrator for Pete-Eebot's core logic.
 """
+from __future__ import annotations
 from datetime import date, timedelta
 from typing import Dict, Any, List, Tuple
 
@@ -171,14 +172,37 @@ class Orchestrator:
 
 
     def _recalculate_body_age(self, target_day: date) -> None:
-        """Helper to calculate and save body age for a specific day."""
+        """Calculate and persist body age for a specific day."""
         hist_data = self.dal.get_historical_data(
             start_date=target_day - timedelta(days=6),
             end_date=target_day,
         )
 
-        withings_history = [{"weight": r.get("weight_kg"), "fat_percent": r.get("body_fat_pct")} for r in hist_data]
-        apple_history = [{"steps": r.get("steps"), "exercise_minutes": r.get("exercise_minutes"), "calories_active": r.get("calories_active"), "calories_resting": r.get("calories_resting"), "stand_minutes": r.get("stand_minutes"), "distance_m": r.get("distance_m"), "hr_resting": r.get("hr_resting"), "hr_avg": r.get("hr_avg"), "hr_max": r.get("hr_max"), "hr_min": r.get("hr_min"), "sleep_total_minutes": r.get("sleep_total_minutes"), "sleep_asleep_minutes": r.get("sleep_asleep_minutes"), "sleep_rem_minutes": r.get("sleep_rem_minutes"), "sleep_deep_minutes": r.get("sleep_deep_minutes"), "sleep_core_minutes": r.get("sleep_core_minutes"), "sleep_awake_minutes": r.get("sleep_awake_minutes")} for r in hist_data]
+        withings_history = [
+            {"weight": r.get("weight_kg"), "fat_percent": r.get("body_fat_pct")}
+            for r in hist_data
+        ]
+        apple_history = [
+            {
+                "steps": r.get("steps"),
+                "exercise_minutes": r.get("exercise_minutes"),
+                "calories_active": r.get("calories_active"),
+                "calories_resting": r.get("calories_resting"),
+                "stand_minutes": r.get("stand_minutes"),
+                "distance_m": r.get("distance_m"),
+                "hr_resting": r.get("hr_resting"),
+                "hr_avg": r.get("hr_avg"),
+                "hr_max": r.get("hr_max"),
+                "hr_min": r.get("hr_min"),
+                "sleep_total_minutes": r.get("sleep_total_minutes"),
+                "sleep_asleep_minutes": r.get("sleep_asleep_minutes"),
+                "sleep_rem_minutes": r.get("sleep_rem_minutes"),
+                "sleep_deep_minutes": r.get("sleep_deep_minutes"),
+                "sleep_core_minutes": r.get("sleep_core_minutes"),
+                "sleep_awake_minutes": r.get("sleep_awake_minutes"),
+            }
+            for r in hist_data
+        ]
 
         user_age = calculate_age(settings.USER_DATE_OF_BIRTH, on_date=target_day)
 
@@ -188,23 +212,46 @@ class Orchestrator:
             profile={"age": user_age},
         )
 
-        if result:
-            # Flatten nested sections for database persistence
-            flattened: Dict[str, Any] = {
-                k: v for k, v in result.items() if k not in {"subscores", "assumptions"}
-            }
-
-            subscores = result.get("subscores") or {}
-            if isinstance(subscores, dict):
-                flattened.update(subscores)
-
-            assumptions = result.get("assumptions") or {}
-            if isinstance(assumptions, dict):
-                flattened.update(assumptions)
-
-            self.dal.save_body_age_daily(target_day, flattened)
-        else:
+        if not result:
             log_utils.log_message(f"No body age result for {target_day.isoformat()}", "WARN")
+            return
+
+        # Build a dict that matches the DB schema
+        flattened: Dict[str, Any] = {}
+
+        # 1) input window
+        if "input_window_days" in result:
+            flattened["input_window_days"] = result.get("input_window_days")
+
+        # 2) subscores -> top level
+        subs = result.get("subscores") or {}
+        if isinstance(subs, dict):
+            for k in ("crf", "body_comp", "activity", "recovery"):
+                if k in subs:
+                    flattened[k] = subs.get(k)
+
+        # 3) core scores
+        if "composite" in result:
+            flattened["composite"] = result.get("composite")
+        if "body_age_years" in result:
+            flattened["body_age_years"] = result.get("body_age_years")
+
+        # 4) delta mapping - calculator often returns 'age_delta_years'
+        if "body_age_delta_years" in result:
+            flattened["body_age_delta_years"] = result.get("body_age_delta_years")
+        elif "age_delta_years" in result:
+            flattened["body_age_delta_years"] = result.get("age_delta_years")
+
+        # 5) named assumptions promoted to columns, others ignored
+        assumptions = result.get("assumptions") or {}
+        if isinstance(assumptions, dict):
+            if "used_vo2max_direct" in assumptions:
+                flattened["used_vo2max_direct"] = assumptions.get("used_vo2max_direct")
+            if "cap_minus_10_applied" in assumptions:
+                flattened["cap_minus_10_applied"] = assumptions.get("cap_minus_10_applied")
+
+        # 6) final save - let DAL round and coerce types
+        self.dal.save_body_age_daily(target_day, flattened)
 
     @staticmethod
     def _has_meaningful_apple_data(apple_data: Dict[str, Any]) -> bool:
