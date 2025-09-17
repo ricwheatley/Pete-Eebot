@@ -66,17 +66,15 @@ class WgerClient:
         results = data.get("results", [])
         return results[0] if results else None  # :contentReference[oaicite:6]{index=6}
 
-    def create_routine(self, *, name: str, description: str, start: dt.date, end: dt.date) -> Dict[str, Any]:
+    def create_routine(self, *, name: str, description: Optional[str], start: dt.date, end: dt.date) -> Dict[str, Any]:
         payload = {
             "name": name,
-            "description": description,
+            "description": description or "Created by Pete-Eebot",
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "fit_in_week": False,
-            "is_template": False,
-            "is_public": False,
         }
-        return self.post("/api/v2/routine/", payload)  # :contentReference[oaicite:7]{index=7}
+        return self.post("/api/v2/routine/", payload)
+
 
     # Days
     def find_day(self, *, routine_id: int, order: int) -> Optional[Dict[str, Any]]:
