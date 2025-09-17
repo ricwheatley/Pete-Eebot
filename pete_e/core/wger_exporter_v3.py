@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import datetime as dt
 from typing import Any, Dict, List, Optional, Tuple
+from pete_e.data_access.plan_rw import log_wger_export
 
 import requests
 
@@ -285,4 +286,14 @@ def export_week_to_wger(week_payload: Dict[str, Any],
         created["days"].append(created_day)
         day_order += 1
 
-    return created
+        plan_id = week_payload.get("plan_id")
+        week_number = week_payload.get("week_number")
+        if plan_id and week_number:
+            try:
+                log_wger_export(plan_id, int(week_number), week_payload, routine, routine_id=routine_id)
+            except Exception as e:
+                # don’t blow up on logging errors, just emit to stderr
+                import sys
+                print(f"[warn] failed to log wger export: {e}", file=sys.stderr)
+
+        return created

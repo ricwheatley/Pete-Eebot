@@ -29,6 +29,8 @@ from pete_e.data_access.plan_rw import (
     upsert_training_max,
 )
 from pete_e.core.wger_exporter_v2 import export_week
+from pete_e.data_access.plan_rw import build_week_payload
+from pete_e.core.wger_exporter_v3 import export_week_to_wger
 
 
 TEST_PCTS = {
@@ -103,8 +105,14 @@ def schedule_test_week(start_monday: date) -> Tuple[int, int]:
             is_cardio=False
         )
 
-    # Export immediately so the week appears in Wger
-    export_week(plan_id, 1)
+    # Build a payload with plan_id and week_number
+    payload = build_week_payload(plan_id, 1)
+    week_start = start_monday
+    week_end = week_start + timedelta(days=6)
+
+    # Export and log
+    export_week_to_wger(payload, week_start=week_start, week_end=week_end)
+
     return plan_id, week_id
 
 
