@@ -162,6 +162,14 @@ class WgerClient:
         data = self.get("/api/v2/setting-weightunit/", params={"name": name})  # :contentReference[oaicite:16]{index=16}
         results = data.get("results", [])
         return results[0]["id"] if results else None
+    
+def routine_name_for_date(start: dt.date) -> str:
+    """
+    Generate a short routine name like 'Wk 22 September 25'.
+    Always <= 25 characters to satisfy Wger API.
+    """
+    return f"Wk {start.day} {start.strftime('%B')} {start.strftime('%y')}"
+
 
 
 def weekday_name(day_of_week: int) -> str:
@@ -196,7 +204,7 @@ def export_week_to_wger(week_payload: Dict[str, Any],
     # weight_unit_id = client.weight_unit_id("kg")  # we do not set weight configs yet
 
     week_end = week_end or (week_start + dt.timedelta(days=6))
-    routine_name = routine_name or f"Pete-Eebot Week of {week_start.isoformat()}"
+    routine_name = routine_name or routine_name_for_date(week_start)
     routine_desc = routine_desc or "Auto-scheduled by Pete-Eebot"
 
     # 1) Routine
