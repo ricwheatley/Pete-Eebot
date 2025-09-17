@@ -8,7 +8,7 @@ from pete_e.data_access.plan_rw import plan_week_rows, log_wger_export
 from pete_e.core.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 
 WGER_API_BASE = os.getenv("WGER_API_BASE", "https://wger.de/api/v2")
-WGER_API_TOKEN = os.getenv("WGER_API_TOKEN")  # personal token
+WGER_API_KEY = os.getenv("WGER_API_KEY")  # personal token
 
 MAIN_LIFTS = {SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID}
 TEST_PCTS = {85.0, 87.5, 90.0}
@@ -52,9 +52,9 @@ def export_week(plan_id: int, week_number: int) -> Dict[str, Any]:
     payload = _payload_for_week(rows)
 
     response_json: Optional[Dict[str, Any]] = None
-    if WGER_API_TOKEN:
+    if WGER_API_KEY:
         url = f"{WGER_API_BASE}/workout/"
-        headers = {"Authorization": f"Token {WGER_API_TOKEN}"}
+        headers = {"Authorization": f"Token {WGER_API_KEY}"}
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         try:
             response_json = response.json()
