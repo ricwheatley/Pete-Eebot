@@ -1,7 +1,7 @@
 # pete_e/data_access/plan_rw.py
 #
-# Psycopg 3 implementation of the minimal read/write helpers used by the
-# planner and exporter. No psycopg2 dependency.
+# Psycopg 3 data access helpers for planner, reviewer and exporter.
+# One place for DB reads/writes used by planner_v2, weekly_reviewer_v2 and wger_exporter_v2.
 #
 # Requirements:
 #   pip install "psycopg[binary]>=3.1,<4"
@@ -109,8 +109,35 @@ def plan_week_rows(plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         return list(cur.fetchall())
 
 
+def get_active_plan() -> Optional[Dict[str, Any]]:
+    sql = """
+    SELECT id, start_date, weeks, is_active, created_at
+    FROM training_plans
+    WHERE is_active = true
+    ORDER BY id DESC
+    LIMIT 1;
+    """
+    with conn_cursor() as (_, cur):
+        cur.execute(sql)
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_week_ids_for_plan(plan_id: int) -> Dict[int, int]:
+    """
+    Return mapping week_number -> week_id for a given plan.
+    """
+    sql = "SELECT id, week_number FROM training_plan_weeks WHERE plan_id = %s;"
+    out: Dict[int, int] = {}
+    with conn_cursor() as (_, cur):
+        cur.execute(sql, (plan_id,))
+        for r in cur.fetchall():
+            out[r["week_number"]] = r["id"]
+    return out
+
+
 # ---------------------------
-# Writes
+# Writes and adjustments
 # ---------------------------
 
 def create_block_and_plan(start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
@@ -205,6 +232,71 @@ def apply_plan_backoff(week_id: int, set_multiplier: float, rir_increment: float
     """
     with conn_cursor() as (_, cur):
         cur.execute(sql, (set_multiplier, rir_increment, rir_increment, week_id))
+        return cur.rowcount
+
+
+def adjust_sets_only(week_id: int, set_multiplier: float) -> int:
+    """
+    Adjust sets up or down with bounding, without touching RIR.
+    """
+    sql = """
+    UPDATE training_plan_workouts
+    SET sets = GREATEST(1, ROUND(sets * %s)::int)
+    WHERE week_id = %s AND is_cardio = false;
+    """
+    with conn_cursor() as (_, cur):
+        cur.execute(sql, (set_multiplier, week_id))
+        return cur.rowcount
+
+
+def adjust_rir(week_id: int, rir_delta: float) -> int:
+    """
+    Adjust RIR cue for all non-cardio rows. If RIR is NULL and rir_delta > 0, set it to rir_delta.
+    We avoid negative deltas when RIR is NULL to keep cues sensible.
+    """
+    sql = """
+    UPDATE training_plan_workouts
+    SET rir = CASE
+                WHEN rir IS NULL AND %s > 0 THEN %s
+                WHEN rir IS NULL AND %s <= 0 THEN NULL
+                ELSE rir + %s
+              END
+    WHERE week_id = %s AND is_cardio = false;
+    """
+    with conn_cursor() as (_, cur):
+        cur.execute(sql, (rir_delta, rir_delta, rir_delta, rir_delta, week_id))
+        return cur.rowcount
+
+
+def adjust_main_lifts_intensity(
+    week_id: int,
+    delta_percent_abs: float,
+    main_lift_ids: Tuple[int, int, int, int],
+    min_pct: float = 40.0,
+    max_pct: float = 95.0,
+) -> int:
+    """
+    Bounded absolute adjustment of percent_1rm for main lifts only.
+    Also scales target_weight_kg proportionally when present.
+    """
+    sql = """
+    UPDATE training_plan_workouts
+    SET
+      percent_1rm = LEAST(%s, GREATEST(%s, COALESCE(percent_1rm, 0) + %s)),
+      target_weight_kg = CASE
+        WHEN target_weight_kg IS NOT NULL AND percent_1rm IS NOT NULL AND percent_1rm <> 0
+        THEN ROUND((target_weight_kg * (COALESCE(percent_1rm, 0) + %s) / percent_1rm)::numeric, 1)
+        ELSE target_weight_kg
+      END
+    WHERE week_id = %s
+      AND is_cardio = false
+      AND exercise_id IN (%s, %s, %s, %s);
+    """
+    with conn_cursor() as (_, cur):
+        cur.execute(
+            sql,
+            (max_pct, min_pct, delta_percent_abs, delta_percent_abs, week_id, *main_lift_ids),
+        )
         return cur.rowcount
 
 
