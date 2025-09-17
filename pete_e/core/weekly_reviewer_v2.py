@@ -16,7 +16,7 @@
 #
 # Env:
 #   DATABASE_URL
-#   TELEGRAM_BOT_TOKEN (optional)
+#   TELEGRAM_TOKEN (optional)
 #   TELEGRAM_CHAT_ID   (optional)
 #   WGER_API_TOKEN (for real exports, optional; we still log payloads without it)
 #
@@ -274,7 +274,7 @@ def _adherence_decision(planned: Dict[int, float], actual: Dict[int, float], rec
 
 
 def _post_telegram(text: str):
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    token = os.getenv("TELEGRAM_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return
