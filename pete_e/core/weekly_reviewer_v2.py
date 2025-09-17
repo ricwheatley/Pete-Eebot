@@ -18,7 +18,7 @@
 #   DATABASE_URL
 #   TELEGRAM_TOKEN (optional)
 #   TELEGRAM_CHAT_ID   (optional)
-#   WGER_API_TOKEN (for real exports, optional; we still log payloads without it)
+#   WGER_API_KEY (for real exports, optional; we still log payloads without it)
 #
 
 import os
