@@ -1,7 +1,6 @@
 # pete_e/data_access/plan_rw.py
 #
-# Psycopg 3 data access helpers for planner, reviewer and exporter.
-# One place for DB reads/writes used by planner_v2, weekly_reviewer_v2 and wger_exporter_v2.
+# Psycopg 3 data access helpers for planner, reviewer, exporter and strength tests.
 #
 # Requirements:
 #   pip install "psycopg[binary]>=3.1,<4"
@@ -14,7 +13,7 @@ import os
 import json
 import hashlib
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import psycopg
@@ -27,10 +26,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 @contextmanager
 def conn_cursor():
-    """
-    Yields a (conn, cur) pair with dict rows and an implicit transaction.
-    Commits on success, rolls back on exception.
-    """
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
@@ -47,9 +42,6 @@ def conn_cursor():
 # ---------------------------
 
 def latest_training_max() -> Dict[str, Optional[float]]:
-    """
-    Return latest TM per lift_code, e.g. {'squat': 180.0, 'bench': 120.0, ...}
-    """
     sql = """
     SELECT DISTINCT ON (lift_code) lift_code, tm_kg
     FROM training_max
@@ -76,9 +68,6 @@ def assistance_pool_for(main_exercise_id: int) -> List[int]:
 
 
 def core_pool_ids() -> List[int]:
-    """
-    Return a list of exercise ids that hit Abs or Obliques as primary or secondary.
-    """
     sql = """
     WITH core_m AS (
       SELECT id FROM wger_muscle WHERE lower(name) IN ('abs','abdominals','obliques')
@@ -124,9 +113,6 @@ def get_active_plan() -> Optional[Dict[str, Any]]:
 
 
 def get_week_ids_for_plan(plan_id: int) -> Dict[int, int]:
-    """
-    Return mapping week_number -> week_id for a given plan.
-    """
     sql = "SELECT id, week_number FROM training_plan_weeks WHERE plan_id = %s;"
     out: Dict[int, int] = {}
     with conn_cursor() as (_, cur):
@@ -136,18 +122,39 @@ def get_week_ids_for_plan(plan_id: int) -> Dict[int, int]:
     return out
 
 
+def latest_test_week() -> Optional[Dict[str, Any]]:
+    """
+    Return most recent is_test=true week with its plan.
+    """
+    sql = """
+    SELECT tw.id AS week_id, tw.week_number, tw.is_test,
+           tp.id AS plan_id, tp.start_date, tp.weeks
+    FROM training_plan_weeks tw
+    JOIN training_plans tp ON tp.id = tw.plan_id
+    WHERE tw.is_test = true
+    ORDER BY tp.start_date DESC
+    LIMIT 1;
+    """
+    with conn_cursor() as (_, cur):
+        cur.execute(sql)
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def week_date_range(plan_start: date, week_number: int) -> Tuple[date, date]:
+    start = plan_start + timedelta(days=(week_number - 1) * 7)
+    end = start + timedelta(days=6)
+    return start, end
+
+
 # ---------------------------
 # Writes and adjustments
 # ---------------------------
 
 def create_block_and_plan(start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
-    """
-    Create a training_blocks row and a new active training_plan with weeks 1..weeks.
-    Returns (plan_id, [week_ids]).
-    """
     end_date = date.fromordinal(start_date.toordinal() + weeks * 7 - 1)
     with conn_cursor() as (_, cur):
-        # Insert block
+        # Insert block record
         cur.execute(
             """
             INSERT INTO training_blocks(start_date, end_date, block_index)
@@ -158,7 +165,7 @@ def create_block_and_plan(start_date: date, weeks: int = 4) -> Tuple[int, List[i
         )
         _block_id = cur.fetchone()["id"]
 
-        # Deactivate previous active and create new active plan
+        # Deactivate previous, create active plan
         cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
         cur.execute(
             """
@@ -170,7 +177,7 @@ def create_block_and_plan(start_date: date, weeks: int = 4) -> Tuple[int, List[i
         )
         plan_id = cur.fetchone()["id"]
 
-        # Create week rows
+        # Create weeks 1..N
         week_ids: List[int] = []
         for w in range(1, weeks + 1):
             cur.execute(
@@ -178,8 +185,29 @@ def create_block_and_plan(start_date: date, weeks: int = 4) -> Tuple[int, List[i
                 (plan_id, w),
             )
             week_ids.append(cur.fetchone()["id"])
-
         return plan_id, week_ids
+
+
+def create_test_week_plan(start_date: date) -> Tuple[int, int]:
+    """
+    Create a single-week plan flagged as test week, and make it active.
+    Does NOT create a training_blocks row.
+    """
+    with conn_cursor() as (_, cur):
+        # Deactivate previous, create active 1-week plan
+        cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+        cur.execute(
+            "INSERT INTO training_plans(start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
+            (start_date, 1),
+        )
+        plan_id = cur.fetchone()["id"]
+
+        cur.execute(
+            "INSERT INTO training_plan_weeks(plan_id, week_number, is_test) VALUES (%s, %s, true) RETURNING id;",
+            (plan_id, 1),
+        )
+        week_id = cur.fetchone()["id"]
+        return plan_id, week_id
 
 
 def insert_workout(
@@ -219,10 +247,6 @@ def insert_workout(
 
 
 def apply_plan_backoff(week_id: int, set_multiplier: float, rir_increment: float) -> int:
-    """
-    Reduce sets and increase RIR cue for the given week, bounded by min 1 set.
-    Returns the number of rows updated.
-    """
     sql = """
     UPDATE training_plan_workouts
     SET
@@ -236,9 +260,6 @@ def apply_plan_backoff(week_id: int, set_multiplier: float, rir_increment: float
 
 
 def adjust_sets_only(week_id: int, set_multiplier: float) -> int:
-    """
-    Adjust sets up or down with bounding, without touching RIR.
-    """
     sql = """
     UPDATE training_plan_workouts
     SET sets = GREATEST(1, ROUND(sets * %s)::int)
@@ -250,10 +271,6 @@ def adjust_sets_only(week_id: int, set_multiplier: float) -> int:
 
 
 def adjust_rir(week_id: int, rir_delta: float) -> int:
-    """
-    Adjust RIR cue for all non-cardio rows. If RIR is NULL and rir_delta > 0, set it to rir_delta.
-    We avoid negative deltas when RIR is NULL to keep cues sensible.
-    """
     sql = """
     UPDATE training_plan_workouts
     SET rir = CASE
@@ -275,10 +292,6 @@ def adjust_main_lifts_intensity(
     min_pct: float = 40.0,
     max_pct: float = 95.0,
 ) -> int:
-    """
-    Bounded absolute adjustment of percent_1rm for main lifts only.
-    Also scales target_weight_kg proportionally when present.
-    """
     sql = """
     UPDATE training_plan_workouts
     SET
@@ -303,9 +316,6 @@ def adjust_main_lifts_intensity(
 def log_wger_export(
     plan_id: int, week_number: int, payload: Dict[str, Any], response: Optional[Dict[str, Any]]
 ) -> None:
-    """
-    Persist the payload and response with an idempotency checksum.
-    """
     body = json.dumps(payload, sort_keys=True)
     checksum = hashlib.sha1(f"{plan_id}:{week_number}:{body}".encode("utf-8")).hexdigest()
     with conn_cursor() as (_, cur):
@@ -316,4 +326,38 @@ def log_wger_export(
             ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;
             """,
             (plan_id, week_number, Json(payload), Json(response or {}), checksum),
+        )
+
+
+def insert_strength_test_result(
+    plan_id: int,
+    week_number: int,
+    lift_code: str,
+    test_date: date,
+    test_reps: int,
+    test_weight_kg: float,
+    e1rm_kg: float,
+    tm_kg: float,
+) -> None:
+    with conn_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO strength_test_result
+                (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (plan_id, week_number, lift_code) DO NOTHING;
+            """,
+            (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg),
+        )
+
+
+def upsert_training_max(lift_code: str, tm_kg: float, measured_at: date, source: str = "AMRAP_EPLEY") -> None:
+    with conn_cursor() as (_, cur):
+        cur.execute(
+            """
+            INSERT INTO training_max (lift_code, tm_kg, source, measured_at)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT DO NOTHING;
+            """,
+            (lift_code, tm_kg, source, measured_at),
         )
