@@ -314,19 +314,28 @@ def adjust_main_lifts_intensity(
 
 
 def log_wger_export(
-    plan_id: int, week_number: int, payload: Dict[str, Any], response: Optional[Dict[str, Any]]
+    plan_id: int,
+    week_number: int,
+    payload: Dict[str, Any],
+    response: Optional[Dict[str, Any]],
+    routine_id: Optional[int] = None,
 ) -> None:
+    """
+    Persist the payload, response, and routine_id (if known) with an idempotency checksum.
+    """
     body = json.dumps(payload, sort_keys=True)
     checksum = hashlib.sha1(f"{plan_id}:{week_number}:{body}".encode("utf-8")).hexdigest()
+
     with conn_cursor() as (_, cur):
         cur.execute(
             """
-            INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum, routine_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;
             """,
-            (plan_id, week_number, Json(payload), Json(response or {}), checksum),
+            (plan_id, week_number, Json(payload), Json(response or {}), checksum, routine_id),
         )
+
 
 
 def insert_strength_test_result(
@@ -361,3 +370,42 @@ def upsert_training_max(lift_code: str, tm_kg: float, measured_at: date, source:
             """,
             (lift_code, tm_kg, source, measured_at),
         )
+
+def build_week_payload(plan_id: int, week_number: int) -> Dict[str, Any]:
+    """
+    Build a payload for Wger export with plan_id, week_number and days[].
+
+    Shape:
+    {
+      "plan_id": 123,
+      "week_number": 1,
+      "days": [
+        {"day_of_week": 1, "exercises": [
+            {"exercise": 73, "sets": 4, "reps": 8, "comment": "70.0% 1RM, RIR 2"}
+        ]},
+        ...
+      ]
+    }
+    """
+    rows: List[Dict[str, Any]] = plan_week_rows(plan_id, week_number)
+
+    days: Dict[int, list] = {}
+    for r in rows:
+        comment = (
+            f"{r['percent_1rm'] or ''}% 1RM, RIR {r['rir']}"
+            if r.get("percent_1rm") else f"RIR {r.get('rir')}"
+        )
+        ex = {
+            "exercise": r["exercise_id"],
+            "sets": r["sets"],
+            "reps": r["reps"],
+            "comment": comment,
+        }
+        days.setdefault(r["day_of_week"], []).append(ex)
+
+    return {
+        "plan_id": plan_id,
+        "week_number": week_number,
+        "days": [{"day_of_week": d, "exercises": exs} for d, exs in sorted(days.items())],
+    }
+

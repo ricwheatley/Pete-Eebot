@@ -40,6 +40,8 @@ from pete_e.data_access.plan_rw import (
 )
 from pete_e.core.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 from pete_e.core.wger_exporter_v2 import export_week
+from pete_e.core.wger_exporter_v3 import export_week_to_wger
+from pete_e.data_access.plan_rw import build_week_payload
 
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)
@@ -351,7 +353,10 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
         adjust_main_lifts_intensity(upcoming_week_id, decision.intensity_delta_abs, MAIN_LIFTS)
 
     # Export to Wger
-    export_res = export_week(inputs.plan_id, inputs.upcoming_week_no)
+    week_payload = build_week_payload(inputs.plan_id, inputs.upcoming_week_no)
+    export_res = export_week_to_wger(
+        week_payload, week_start=inputs.last_week_end + timedelta(days=1)
+    )
 
     # Telegram summary
     summary_lines = [
