@@ -111,6 +111,11 @@ def stub_clients(monkeypatch):
     monkeypatch.setattr(orchestrator_module, "WithingsClient", DummyWithingsClient)
     monkeypatch.setattr(orchestrator_module, "WgerClient", DummyWgerClient)
     monkeypatch.setattr(Orchestrator, "_recalculate_body_age", lambda self, target_day: None)
+    monkeypatch.setattr(
+        orchestrator_module,
+        "run_apple_health_ingest",
+        lambda: types.SimpleNamespace(sources=[], workouts=0, daily_points=0),
+    )
 
 
 def test_run_daily_sync_handles_absent_apple_data():
