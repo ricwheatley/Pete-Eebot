@@ -1,0 +1,1 @@
+# (Functional) Initializes config package (imports Settings instance)

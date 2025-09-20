@@ -1,0 +1,1 @@
+# (Placeholder) Initializes domain package

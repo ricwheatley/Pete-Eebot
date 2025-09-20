@@ -1,0 +1,49 @@
+# (Functional) Strength log utilities (append/get lift entries via DataAccess)
+
+from datetime import date
+from typing import Any, Dict, List
+
+# Import the DataAccessLayer contract, not a specific implementation
+from pete_e.domain.data_access import DataAccessLayer
+
+
+def append_log_entry(
+    dal: DataAccessLayer,
+    exercise_id: int,
+    weight: float,
+    reps: int,
+    sets: int,
+    rir: int | None = None,
+    log_date: str | None = None,
+) -> None:
+    """Persist a strength training entry using the DAL."""
+    log_dt = date.fromisoformat(log_date) if log_date else date.today()
+    for set_number in range(1, sets + 1):
+        dal.save_strength_log_entry(
+            exercise_id=exercise_id,
+            log_date=log_dt,
+            set_number=set_number,
+            reps=reps,
+            weight_kg=weight,
+            rir=rir,
+        )
+
+
+def get_history_for_exercise(
+    dal: DataAccessLayer, exercise_id: int, last_n: int | None = None
+) -> List[Dict[str, Any]]:
+    """
+    Retrieves history for an exercise using the provided DAL.
+    Includes set_number for clarity.
+    """
+    log = dal.load_lift_log(exercise_ids=[exercise_id])
+    entries = log.get(str(exercise_id), [])
+
+    # Ensure set_number is included if not already
+    for idx, entry in enumerate(entries, start=1):
+        if "set_number" not in entry:
+            entry["set_number"] = idx
+
+    if last_n:
+        return entries[-last_n:]
+    return entries

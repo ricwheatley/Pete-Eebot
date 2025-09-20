@@ -1,3 +1,5 @@
+# (Functional) Domain utility (e.g. calculate age)
+ 
 from datetime import date
 from typing import Optional
 

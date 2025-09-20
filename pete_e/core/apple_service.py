@@ -7,8 +7,8 @@ from fastapi import FastAPI, HTTPException, Header, status
 
 # Assuming DAL is in this structure
 from pete_e.config import settings
-from pete_e.data_access.postgres_dal import PostgresDal
-from pete_e.infra import log_utils
+from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure import log_utils
 
 app = FastAPI()
 

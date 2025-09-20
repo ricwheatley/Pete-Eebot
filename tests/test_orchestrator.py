@@ -63,8 +63,8 @@ if "pete_e.core.narrative_builder" not in sys.modules:
     sys.modules["pete_e.core.narrative_builder"] = narrative_builder_stub
 
 
-from pete_e.core import orchestrator as orchestrator_module
-from pete_e.core.orchestrator import Orchestrator
+from pete_e.application import orchestrator as orchestrator_module
+from pete_e.application.orchestrator import Orchestrator
 
 
 class DummyDal:

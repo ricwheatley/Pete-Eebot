@@ -7,7 +7,7 @@ from statistics import median, mean
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from pete_e.config import settings
-from pete_e.infra import log_utils
+from pete_e.infrastructure import log_utils
 
 
 # Windows are expressed in days to avoid calendar edge cases.
