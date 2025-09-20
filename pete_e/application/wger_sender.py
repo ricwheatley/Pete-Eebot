@@ -37,7 +37,7 @@ def send_plan_week_to_wger(
     Validate plan → adjust DB → wrangle into Wger JSON → POST to Wger.
     """
     # 1. Validate + adjust
-    adjustments = validate_and_adjust_plan(dal, plan_id, week_number, current_start_date)
+    adjustments = validate_and_adjust_plan(dal, current_start_date)
 
     # 2. Fetch updated plan week
     plan = dal.get_plan(plan_id)
@@ -53,9 +53,10 @@ def send_plan_week_to_wger(
     # 4. Send to Wger
     try:
         response = client.post_plan(payload)
+        adjustment_text = ", ".join(adjustments) if adjustments else "none"
         log_utils.log_message(
             f"[send_wger] Sent plan {plan_id} week {week_number} to Wger. "
-            f"Adjustments: {adjustments}. Response: {response}",
+            f"Adjustments: {adjustment_text}. Response: {response}",
             "INFO"
         )
         return True
