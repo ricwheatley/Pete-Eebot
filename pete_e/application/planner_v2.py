@@ -1,4 +1,4 @@
-# pete_e/core/planner_v2.py
+# pete_e/application/planner_v2.py
 
 import math
 import random
@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta, time
 from typing import Dict, List, Optional, Tuple
 
-from pete_e.core.schedule_rules import (
+from pete_e.domain.schedule_rules import (
     BLAZE_ID, BLAZE_TIMES, MAIN_LIFT_BY_DOW, WEEK_PCTS,
     weight_slot_for_day, SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID,
     ASSISTANCE_1, ASSISTANCE_2, CORE_SCHEME

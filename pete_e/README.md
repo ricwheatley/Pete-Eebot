@@ -1,11 +1,13 @@
 # Pete-A Orchestrator
 
-This directory houses Pete-E's core logic as the personal trainer (orchestrator) that coordinates activities acpross all external integrations - Wger, Withings, Apple, Telegram, etc.
+This directory houses Pete-E's orchestration logic as the personal trainer that coordinates activities across all external integrations – Wger, Withings, Apple, Telegram, etc.
 
-This folder is the parent for core modules like cycle scheduling, progression, and narrative building.
+The package is organised into application, domain, and infrastructure layers to separate orchestration from pure business rules.
 
 Subfolders:
+  - application/
   - cli/
-  - core/
-      - narratives/
-  - infra/
+  - config/
+  - domain/
+  - infrastructure/
+  - resources/

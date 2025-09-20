@@ -1,4 +1,4 @@
-# pete_e/core/validation.py
+# pete_e/domain/validation.py
 from __future__ import annotations
 
 from dataclasses import dataclass

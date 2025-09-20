@@ -1,4 +1,4 @@
-# pete_e/core/schedule_rules.py
+# pete_e/domain/schedule_rules.py
 
 from datetime import time
 

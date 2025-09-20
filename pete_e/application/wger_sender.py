@@ -1,9 +1,8 @@
-"""
-Send validated training plans to Wger API.
-"""
+"""Send validated training plans to the Wger API."""
 
 from datetime import date
-from pete_e.core.validation import validate_and_adjust_plan
+
+from pete_e.domain.validation import validate_and_adjust_plan
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils

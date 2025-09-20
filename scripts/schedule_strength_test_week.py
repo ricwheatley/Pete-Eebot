@@ -6,7 +6,8 @@
 
 import argparse
 from datetime import datetime, date
-from pete_e.core.strength_test_v1 import schedule_test_week
+
+from pete_e.application.strength_test_v1 import schedule_test_week
 
 def main():
     p = argparse.ArgumentParser()
