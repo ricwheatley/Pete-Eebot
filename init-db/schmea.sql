@@ -144,11 +144,12 @@ COMMENT ON TABLE withings_daily IS 'Stores daily body metrics from Withings. Sou
 CREATE TABLE "DailyMetric" (
     metric_id INT NOT NULL REFERENCES "MetricType"(metric_id),
     device_id INT NOT NULL REFERENCES "Device"(device_id),
-    date DATE NOT NULL,
+    date TIMESTAMPTZ NOT NULL,
     value DOUBLE PRECISION NOT NULL,
     PRIMARY KEY (metric_id, device_id, date)
 );
-COMMENT ON TABLE "DailyMetric" IS 'Stores single-value daily metrics from Apple Health in a tall/narrow format.';
+
+-- The indexes should also be updated
 CREATE INDEX idx_dailymetric_date ON "DailyMetric"(date);
 CREATE INDEX idx_dailymetric_metric_date ON "DailyMetric"(metric_id, date);
 

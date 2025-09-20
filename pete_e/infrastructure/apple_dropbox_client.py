@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 import dropbox
 from dropbox.exceptions import AuthError
 from dropbox.files import FileMetadata, ListFolderResult
+from pete_e.config.config import settings
 
 # British English comments and docstrings.
 
@@ -18,12 +19,12 @@ class AppleDropboxClient:
 
     def __init__(self):
         """Initialises the client and authenticates with Dropbox."""
-        token = os.environ.get("DROPBOX_TOKEN")
-        if not token:
-            raise ValueError("DROPBOX_TOKEN environment variable is not set.")
 
-        health_path = os.environ.get("DROPBOX_HEALTH_METRICS_DIR", "").strip()
-        workouts_path = os.environ.get("DROPBOX_WORKOUTS_DIR", "").strip()
+        if not all([settings.DROPBOX_APP_KEY, settings.DROPBOX_APP_SECRET, settings.DROPBOX_REFRESH_TOKEN]):
+            raise ValueError("Dropbox app key, secret, and refresh token must be set in config.")
+
+        health_path = settings.DROPBOX_HEALTH_METRICS_DIR.strip()
+        workouts_path = settings.DROPBOX_WORKOUTS_DIR.strip()
 
         if not health_path:
             raise ValueError("DROPBOX_HEALTH_METRICS_DIR environment variable is not set.")
@@ -34,12 +35,16 @@ class AppleDropboxClient:
         self.workouts_path = workouts_path if workouts_path.startswith('/') else f"/{workouts_path}"
 
         try:
-            self.dbx = dropbox.Dropbox(token)
+            self.dbx = dropbox.Dropbox(
+                app_key=settings.DROPBOX_APP_KEY,
+                app_secret=settings.DROPBOX_APP_SECRET,
+                oauth2_refresh_token=settings.DROPBOX_REFRESH_TOKEN
+            )
             self.dbx.users_get_current_account()
             logging.info("Successfully connected to Dropbox.")
-        except AuthError:
-            logging.error("Dropbox authentication failed. The token is invalid or expired.")
-            raise ValueError("Invalid DROPBOX_TOKEN.")
+        except AuthError as e:
+            logging.error(f"Dropbox authentication failed: {e}")
+            raise ValueError("Invalid Dropbox credentials or refresh token.")
 
     def _get_all_files(self, folder_path: str) -> List[FileMetadata]:
         """Handles Dropbox API pagination to fetch all files from the specified folder."""

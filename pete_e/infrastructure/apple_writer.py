@@ -174,13 +174,13 @@ class AppleHealthWriter:
         self._prepare_data_for_bulk_upsert(parsed_data)
 
         daily_metrics_data = [
-            {
-                "metric_id": self._metric_type_cache[p.metric_name],
-                "device_id": self._device_cache[p.device_name],
-                "date": p.date.date(),
-                "value": p.value,
-            }
-            for p in parsed_data["daily_metric_points"]
+          {
+              "metric_id": self._metric_type_cache[p.metric_name],
+              "device_id": self._device_cache[p.device_name],
+              "date": p.date, 
+              "value": p.value,
+          }
+          for p in parsed_data["daily_metric_points"]
         ]
         self._execute_many_upsert("DailyMetric", ["metric_id", "device_id", "date"], ["value"], daily_metrics_data)
 

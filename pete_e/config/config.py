@@ -47,9 +47,11 @@ class Settings(BaseSettings):
     WGER_BASE_URL: str = "https://wger.de/api/v2"
     
     # --- DROPBOX (from environment) ---
-    DROPBOX_TOKEN: SecretStr
     DROPBOX_HEALTH_METRICS_DIR: str
     DROPBOX_WORKOUTS_DIR: str
+    DROPBOX_APP_KEY: str
+    DROPBOX_APP_SECRET: str
+    DROPBOX_REFRESH_TOKEN: str
     
     APPLE_WEBHOOK_TOKEN: SecretStr
     GH_SECRETS_TOKEN: SecretStr
