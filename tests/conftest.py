@@ -20,7 +20,6 @@ def pytest_configure():
         "DROPBOX_APP_KEY": "dummy",
         "DROPBOX_APP_SECRET": "dummy",
         "DROPBOX_REFRESH_TOKEN": "dummy",
-        "APPLE_WEBHOOK_TOKEN": "dummy",
         "GH_SECRETS_TOKEN": "dummy",
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": "postgres",
