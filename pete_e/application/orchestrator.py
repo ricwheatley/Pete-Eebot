@@ -54,7 +54,7 @@ class Orchestrator:
             except Exception as e:
                 log_utils.log_message(f"Failed to send Apple Health nudge: {e}", "WARN")
 
-                return self.narrative_builder.build_daily_summary(summary_data)
+        return self.narrative_builder.build_daily_summary(summary_data)
 
 
 

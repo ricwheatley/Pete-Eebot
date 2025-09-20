@@ -282,21 +282,31 @@ def assess_recovery_and_backoff(
     )
 
 
-def validate_and_adjust_plan(dal: Any, week_start_date: date) -> bool:
-    """
-    Backwards-compatible facade.
-    Returns True if no back-off is required or if adjustments were successfully applied.
-    Returns False only if an application error occurred.
+def validate_and_adjust_plan(dal: Any, week_start_date: date) -> List[str]:
+    """Assess recovery ahead of the upcoming week and apply a back-off if needed.
+
+    Returns a list describing any adjustments that were recommended/applied. An
+    empty list indicates no global back-off was required.
     """
     rec = assess_recovery_and_backoff(dal, week_start_date)
+
+    adjustments: List[str] = []
 
     if not rec.needs_backoff:
         log_utils.log_message(
             "Recovery within dynamic baselines - no global back-off applied.", "INFO"
         )
-        return True
+        return adjustments
 
-    # Log a concise summary with reasons
+    adjustments.extend(
+        [
+            f"severity={rec.severity}",
+            f"set_multiplier={rec.set_multiplier:.2f}",
+            f"rir_increment={rec.rir_increment}",
+        ]
+    )
+    adjustments.extend(rec.reasons)
+
     summary = (
         f"Global back-off recommended, severity={rec.severity}, "
         f"set_multiplier={rec.set_multiplier:.2f}, RIR+={rec.rir_increment}. "
@@ -304,7 +314,6 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> bool:
     )
     log_utils.log_message(summary, "WARNING")
 
-    # Try to apply via DAL, but do not hard-fail if the method is not present
     try:
         if hasattr(dal, "apply_plan_backoff"):
             dal.apply_plan_backoff(
@@ -313,15 +322,14 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> bool:
                 rir_increment=rec.rir_increment,
             )
             log_utils.log_message("Applied global back-off to upcoming week.", "INFO")
-            return True
         else:
             log_utils.log_message(
                 "DAL has no 'apply_plan_backoff' - no DB changes performed. "
                 "Downstream components may apply this recommendation explicitly.",
                 "WARN",
             )
-            # still a successful validation run
-            return True
     except Exception as exc:  # pragma: no cover - DB failures are environment-specific
         log_utils.log_message(f"Failed to apply back-off: {exc}", "ERROR")
-        return False
+        adjustments.append(f"apply_failed: {exc}")
+
+    return adjustments
