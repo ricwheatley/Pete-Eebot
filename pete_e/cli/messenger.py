@@ -13,7 +13,7 @@ from typing_extensions import Annotated
 import typer
 
 # Import the core logic functions we want to expose as commands
-from pete_e.application.apple_ingest import ingest_and_process_apple_data
+from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
@@ -66,16 +66,26 @@ def withings_sync(
 @app.command(name="ingest-apple")
 def ingest_apple() -> None:
     """
-    Ingest and process Apple Health data from Tailscale.
+    Ingest Apple Health data delivered via Dropbox.
 
-    Checks the Tailscale inbox for new .zip files, processes them,
-    and archives them.
+    Downloads new HealthAutoExport files from Dropbox, parses them, and
+    persists the resulting metrics to the database.
     """
-    success = ingest_and_process_apple_data()
-    if not success:
-        log_utils.log_message("Apple Health ingestion failed.", "ERROR")
+    try:
+        report = run_apple_health_ingest()
+    except Exception as exc:  # pragma: no cover - defensive guardrail
+        log_utils.log_message(f"Apple Health Dropbox ingestion failed: {exc}", "ERROR")
         raise typer.Exit(code=1)
-    log_utils.log_message("Apple Health ingestion process finished.", "INFO")
+
+    processed_files = len(report.sources)
+    log_utils.log_message(
+        (
+            "Apple Health Dropbox ingestion finished. "
+            f"Processed {processed_files} file(s), "
+            f"{report.workouts} workouts, and {report.daily_points} metric points."
+        ),
+        "INFO",
+    )
 
 @app.command()
 def plan(

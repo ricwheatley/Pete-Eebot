@@ -30,6 +30,15 @@ class DummyDal(DataAccessLayer):
     def save_strength_log_entry(self, exercise_id: int, log_date: datetime.date, reps: int, weight_kg: float, rir: float | None = None) -> None:
         pass
 
+    def save_withings_daily(self, day: datetime.date, weight_kg: float, body_fat_pct: float) -> None:
+        pass
+
+    def save_apple_daily(self, day: datetime.date, metrics: Dict[str, Any]) -> None:
+        pass
+
+    def save_wger_log(self, day: datetime.date, exercise_id: int, set_number: int, reps: int, weight_kg: float | None, rir: float | None) -> None:
+        pass
+
     # History operations
     def load_history(self) -> Dict[str, Any]:
         return {}
@@ -61,6 +70,39 @@ class DummyDal(DataAccessLayer):
         pass
 
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        pass
+
+    def get_plan(self, plan_id: int) -> Dict[str, Any]:
+        return {}
+
+    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        return []
+
+    def get_actual_muscle_volume(self, start_date: datetime.date, end_date: datetime.date) -> List[Dict[str, Any]]:
+        return []
+
+    def get_active_plan(self) -> Dict[str, Any] | None:
+        return None
+
+    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        return []
+
+    def refresh_plan_view(self) -> None:
+        pass
+
+    def refresh_actual_view(self) -> None:
+        pass
+
+    def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
+        pass
+
+    def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
+        pass
+
+    def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
+        pass
+
+    def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
         pass
 
 

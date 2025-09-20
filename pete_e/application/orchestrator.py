@@ -3,14 +3,14 @@ Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
 from datetime import date, timedelta
-from typing import Dict, Any, List, Tuple
+from typing import List, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.infrastructure import apple_client, telegram_sender
+from pete_e.infrastructure import telegram_sender
 
 # Core Logic and Helpers
 from pete_e.domain.narrative_builder import NarrativeBuilder
@@ -135,20 +135,6 @@ class Orchestrator:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("Withings")
 
-            # --- Apple Health ---
-            try:
-                apple_data = apple_client.get_apple_summary({"date": target_iso})
-                if self._has_meaningful_apple_data(apple_data):
-                    self.dal.save_apple_daily(target_day, apple_data)
-                elif apple_data:
-                    log_utils.log_message(
-                        f"Skipping Apple Health save for {target_iso}: no metrics returned.",
-                        "DEBUG",
-                    )
-            except Exception as e:
-                log_utils.log_message(f"Apple Health sync failed for {target_iso}: {e}", "ERROR")
-                failed_sources.append("AppleHealth")
-
             # --- Wger Workout Logs ---
             try:
                 day_logs = wger_logs_by_date.get(target_iso, [])
@@ -234,28 +220,6 @@ class Orchestrator:
             )
             # Optionally re-raise in development
             # raise
-
-    @staticmethod
-    def _has_meaningful_apple_data(apple_data: Dict[str, Any]) -> bool:
-        """Return True when the payload contains at least one non-null metric."""
-
-        def has_value(value: Any) -> bool:
-            if isinstance(value, dict):
-                return any(has_value(v) for v in value.values())
-            if isinstance(value, list):
-                return any(has_value(item) for item in value)
-            return value is not None
-
-        if not isinstance(apple_data, dict):
-            return False
-
-        for key, value in apple_data.items():
-            if key == "date":
-                continue
-            if has_value(value):
-                return True
-
-        return False
 
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
         """
