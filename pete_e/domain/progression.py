@@ -41,18 +41,13 @@ def apply_progression(
     recent_metrics = dal.get_historical_metrics(7)
     baseline_metrics = dal.get_historical_metrics(settings.BASELINE_DAYS)
 
-    rhr_7 = _average(
-        [m.get("apple", {}).get("heart_rate", {}).get("resting") for m in recent_metrics if m.get("apple", {}).get("heart_rate", {}).get("resting") is not None]
-    )
-    sleep_7 = _average(
-        [m.get("apple", {}).get("sleep", {}).get("asleep") for m in recent_metrics if m.get("apple", {}).get("sleep", {}).get("asleep") is not None]
-    )
-    rhr_baseline = _average(
-        [m.get("apple", {}).get("heart_rate", {}).get("resting") for m in baseline_metrics if m.get("apple", {}).get("heart_rate", {}).get("resting") is not None]
-    )
-    sleep_baseline = _average(
-        [m.get("apple", {}).get("sleep", {}).get("asleep") for m in baseline_metrics if m.get("apple", {}).get("sleep", {}).get("asleep") is not None]
-    )
+    def _metric_values(metrics: list[dict], key: str) -> list[float]:
+        return [m.get(key) for m in metrics if m.get(key) is not None]
+
+    rhr_7 = _average(_metric_values(recent_metrics, "hr_resting"))
+    sleep_7 = _average(_metric_values(recent_metrics, "sleep_asleep_minutes"))
+    rhr_baseline = _average(_metric_values(baseline_metrics, "hr_resting"))
+    sleep_baseline = _average(_metric_values(baseline_metrics, "sleep_asleep_minutes"))
 
     recovery_good = True
     if (
@@ -63,6 +58,11 @@ def apply_progression(
     ):
         if rhr_7 > rhr_baseline * (1 + settings.RHR_ALLOWED_INCREASE) or sleep_7 < sleep_baseline * settings.SLEEP_ALLOWED_DECREASE:
             recovery_good = False
+
+    # The richer Apple Health exports also include heart rate variability (HRV)
+    # and detailed sleep stages. In future iterations, these could augment the
+    # simple recovery flag above – e.g. flag poor recovery when HRV trends down
+    # or when deep/REM sleep proportions fall below expectations.
 
     adjustments: list[str] = []
 
