@@ -53,7 +53,6 @@ class Settings(BaseSettings):
     DROPBOX_APP_SECRET: str
     DROPBOX_REFRESH_TOKEN: str
     
-    APPLE_WEBHOOK_TOKEN: SecretStr
     GH_SECRETS_TOKEN: SecretStr
 
     # --- DATABASE CONNECTION (from environment) ---
