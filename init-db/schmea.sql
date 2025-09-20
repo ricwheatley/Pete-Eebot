@@ -526,6 +526,10 @@ BEGIN
     SELECT avg(ds.body_fat_pct)::double precision, avg(ds.steps)::double precision, avg(ds.exercise_minutes)::double precision, avg(ds.hr_resting)::double precision, avg(ds.sleep_asleep_minutes)::double precision
     INTO v_bodyfat_avg, v_steps_avg, v_ex_min_avg, v_rhr_avg, v_sleep_asleep_avg FROM daily_summary ds WHERE ds.date BETWEEN v_start AND p_target_date;
     v_chrono_years := EXTRACT(EPOCH FROM (p_target_date::timestamp - p_birth_date::timestamp)) / 31557600.0;
+    -- TODO: consider projecting Apple Health's direct VO₂ max metric
+    -- (MetricType.name = 'vo2_max') into ``daily_summary`` and, when available,
+    -- bypassing the proxy formula below.  ``used_vo2max_direct`` tracks whether
+    -- such a value was applied.
     IF v_rhr_avg IS NOT NULL THEN v_vo2 := 38 - 0.15 * (v_chrono_years - 40) - 0.15 * (COALESCE(v_rhr_avg, 60) - 60) + 0.01 * COALESCE(v_ex_min_avg, 0);
     ELSE v_vo2 := 35; END IF;
     v_crf := GREATEST(0.0, LEAST(100.0, ((v_vo2 - 20.0) / 40.0) * 100.0));
@@ -536,6 +540,9 @@ BEGIN
     v_activity := 0.6 * v_steps_score + 0.4 * v_ex_score;
     v_sleep_score := CASE WHEN v_sleep_asleep_avg IS NULL THEN 50.0 ELSE GREATEST(0.0, LEAST(100.0, 100.0 - (ABS(v_sleep_asleep_avg - 450.0) / 150.0) * 60.0)) END;
     v_rhr_score := CASE WHEN v_rhr_avg IS NULL THEN 50.0 WHEN v_rhr_avg <= 55.0 THEN 90.0 WHEN v_rhr_avg <= 60.0 THEN 80.0 WHEN v_rhr_avg <= 70.0 THEN 60.0 WHEN v_rhr_avg <= 80.0 THEN 40.0 ELSE 20.0 END;
+    -- TODO: Heart Rate Variability (HRV) could adjust ``v_rhr_score`` once the
+    -- metric is sourced from Apple Health.  E.g. scale the recovery score down
+    -- if the nightly HRV trend indicates fatigue.
     v_recovery := 0.66 * v_sleep_score + 0.34 * v_rhr_score;
     v_composite := 0.40 * v_crf + 0.25 * v_body_comp + 0.20 * v_activity + 0.15 * v_recovery;
     v_body_age := v_chrono_years - 0.2 * (v_composite - 50.0);
