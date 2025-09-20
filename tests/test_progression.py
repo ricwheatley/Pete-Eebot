@@ -108,7 +108,7 @@ class DummyDal(DataAccessLayer):
 
 def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     return [
-        {"apple": {"heart_rate": {"resting": rhr}, "sleep": {"asleep": sleep}}}
+        {"hr_resting": rhr, "sleep_asleep_minutes": sleep}
         for _ in range(days)
     ]
 
