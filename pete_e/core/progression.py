@@ -3,7 +3,7 @@
 from statistics import mean
 from typing import Tuple
 
-from pete_e.data_access.dal import DataAccessLayer
+from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
 
 

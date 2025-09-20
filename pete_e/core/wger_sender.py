@@ -4,9 +4,9 @@ Send validated training plans to Wger API.
 
 from datetime import date
 from pete_e.core.validation import validate_and_adjust_plan
-from pete_e.data_access.dal import DataAccessLayer
-from pete_e.core.wger_client import WgerClient
-from pete_e.infra import log_utils
+from pete_e.domain.data_access import DataAccessLayer
+from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure import log_utils
 
 
 def wrangle_week_for_wger(week: dict) -> dict:

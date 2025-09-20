@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch, MagicMock
 
 # Assuming your DAL is in this structure
-from pete_e.data_access.postgres_dal import PostgresDal
+from pete_e.infrastructure.postgres_dal import PostgresDal
 
 class TestPostgresDal(unittest.TestCase):
 

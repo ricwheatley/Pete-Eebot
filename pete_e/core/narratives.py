@@ -1,4 +1,4 @@
-from .narrative_builder import (
+from ..domain.narrative_builder import (
     NarrativeBuilder,
     build_cycle_narrative,
     build_cycle_summary,

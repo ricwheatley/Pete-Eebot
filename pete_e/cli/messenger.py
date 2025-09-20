@@ -1,3 +1,5 @@
+# (Functional) **Command-line interface** (Typer app) exposing main features.
+
 """
 Main Command-Line Interface for the Pete-Eebot application.
 
@@ -11,12 +13,12 @@ from typing_extensions import Annotated
 import typer
 
 # Import the core logic functions we want to expose as commands
-from pete_e.core.apple_ingest import ingest_and_process_apple_data
-from pete_e.core.sync import run_sync_with_retries
-from pete_e.core import withings_oauth_helper
-from pete_e.core.withings_client import WithingsClient
-from pete_e.core.orchestrator import Orchestrator
-from pete_e.infra import log_utils
+from pete_e.application.apple_ingest import ingest_and_process_apple_data
+from pete_e.application.sync import run_sync_with_retries
+from pete_e.infrastructure import withings_oauth_helper
+from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.application.orchestrator import Orchestrator
+from pete_e.infrastructure import log_utils
 from datetime import datetime, date, timedelta
 
 # Create the Typer application object

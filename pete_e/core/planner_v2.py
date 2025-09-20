@@ -11,7 +11,7 @@ from pete_e.core.schedule_rules import (
     weight_slot_for_day, SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID,
     ASSISTANCE_1, ASSISTANCE_2, CORE_SCHEME
 )
-from pete_e.data_access.plan_rw import (
+from pete_e.infrastructure.plan_rw import (
     latest_training_max,
     assistance_pool_for,
     core_pool_ids,

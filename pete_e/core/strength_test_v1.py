@@ -19,7 +19,7 @@ from pete_e.core.schedule_rules import (
     BLAZE_ID, BLAZE_TIMES, weight_slot_for_day,
     SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 )
-from pete_e.data_access.plan_rw import (
+from pete_e.infrastructure.plan_rw import (
     latest_training_max,
     create_test_week_plan,
     insert_workout,
@@ -28,9 +28,9 @@ from pete_e.data_access.plan_rw import (
     insert_strength_test_result,
     upsert_training_max,
 )
-from pete_e.core.wger_exporter_v2 import export_week
-from pete_e.data_access.plan_rw import build_week_payload
-from pete_e.core.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter_v2 import export_week
+from pete_e.infrastructure.plan_rw import build_week_payload
+from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 
 
 TEST_PCTS = {
@@ -129,7 +129,7 @@ def evaluate_test_week_and_update_tms() -> Optional[Dict[str, str]]:
     Find the latest test week, compute e1RM per main lift from Wger logs over the
     week window, store strength_test_result rows, and upsert training_max per lift.
     """
-    from pete_e.data_access.plan_rw import conn_cursor
+    from pete_e.infrastructure.plan_rw import conn_cursor
     tw = latest_test_week()
     if not tw:
         return None

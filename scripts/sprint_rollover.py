@@ -1,7 +1,7 @@
 import datetime
-from pete_e.core.orchestrator import Orchestrator
-from pete_e.core.narrative_builder import PeteVoice
-from pete_e.infra import log_utils
+from pete_e.application.orchestrator import Orchestrator
+from pete_e.domain.narrative_builder import PeteVoice
+from pete_e.infrastructure import log_utils
 
 def is_4th_sunday(today=None) -> bool:
     today = today or datetime.date.today()

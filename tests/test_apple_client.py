@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Tuple
 from zipfile import ZipFile
 
-from pete_e.core.apple_client import process_apple_health_export
+from pete_e.infrastructure.apple_client import process_apple_health_export
 
 
 class StubDal:

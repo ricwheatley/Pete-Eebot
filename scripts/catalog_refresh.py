@@ -11,7 +11,7 @@ import requests
 
 # NOTE: Adjust this import path if your project structure is different.
 # This path assumes a 'pete_e' source root.
-from pete_e.data_access.postgres_dal import PostgresDal, close_pool
+from pete_e.infrastructure.postgres_dal import PostgresDal, close_pool
 
 BASE = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
 

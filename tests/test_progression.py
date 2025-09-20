@@ -2,7 +2,7 @@ import datetime
 from typing import Any, Dict, List
 
 from pete_e.core.progression import apply_progression
-from pete_e.data_access.dal import DataAccessLayer
+from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
 
 
