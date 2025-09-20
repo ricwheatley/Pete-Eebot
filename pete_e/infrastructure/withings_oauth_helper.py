@@ -4,9 +4,15 @@ import os
 import requests
 import json
 from pathlib import Path
+
+from pydantic import SecretStr
 from urllib.parse import urlencode
 
 from pete_e.config import settings
+def _unwrap_secret(value):
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
 
 TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
 
@@ -28,7 +34,7 @@ def exchange_code_for_tokens(code: str):
         "action": "requesttoken",
         "grant_type": "authorization_code",
         "client_id": settings.WITHINGS_CLIENT_ID,
-        "client_secret": settings.WITHINGS_CLIENT_SECRET,
+        "client_secret": _unwrap_secret(settings.WITHINGS_CLIENT_SECRET),
         "code": code,
         "redirect_uri": settings.WITHINGS_REDIRECT_URI,
     }
@@ -56,3 +62,4 @@ if __name__ == "__main__":
     print(f"Access token:  {tokens['access_token']}")
     print(f"Refresh token: {tokens['refresh_token']}")
     print("\n👉 Paste the refresh token into your .env as WITHINGS_REFRESH_TOKEN")
+

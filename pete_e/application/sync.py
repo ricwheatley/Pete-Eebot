@@ -5,7 +5,7 @@ This script acts as a simple entry point for the synchronization process,
 which is orchestrated by the Orchestrator class. It's intended to be
 run from the main CLI.
 """
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional, Tuple
 
 from tenacity import (
     RetryCallState,
@@ -31,22 +31,17 @@ class SyncAttemptFailedError(RuntimeError):
         self.failed_sources = list(failed_sources or [])
 
 
-def run_sync_with_retries(
-    days: int,
-    retries: int = DEFAULT_RETRIES,
-    delay: int = DEFAULT_RETRY_DELAY_SECS,
+def _run_with_retry(
+    execute: Callable[[], Tuple[bool, Iterable[str]]],
+    max_attempts: int,
+    base_delay: int,
+    label: str,
 ) -> bool:
-    """Run the sync via the Orchestrator with a configurable retry strategy."""
-
-    orchestrator = Orchestrator()
-    max_attempts = max(1, retries)
-    base_delay = max(1, delay)
-
     def _sync_once() -> bool:
-        success, failed_sources = orchestrator.run_daily_sync(days=days)
+        success, failures = execute()
         if success:
             return True
-        raise SyncAttemptFailedError(failed_sources)
+        raise SyncAttemptFailedError(failures)
 
     def _before_sleep(retry_state: RetryCallState) -> None:
         wait_time = getattr(retry_state.next_action, "sleep", base_delay)
@@ -60,7 +55,7 @@ def run_sync_with_retries(
 
         log_utils.log_message(
             (
-                f"Sync attempt {retry_state.attempt_number}/{max_attempts} "
+                f"{label} attempt {retry_state.attempt_number}/{max_attempts} "
                 f"had {reason}. Retrying in {wait_time_str}s..."
             ),
             "WARN",
@@ -83,7 +78,7 @@ def run_sync_with_retries(
         return True
     except RetryError as exc:
         last_exception = exc.last_attempt.exception()
-        message = f"All {max_attempts} sync attempts finished with failures."
+        message = f"All {max_attempts} {label} attempts finished with failures."
 
         if isinstance(last_exception, SyncAttemptFailedError):
             if last_exception.failed_sources:
@@ -93,3 +88,41 @@ def run_sync_with_retries(
 
         log_utils.log_message(message, "ERROR")
         return False
+
+
+def run_sync_with_retries(
+    days: int,
+    retries: int = DEFAULT_RETRIES,
+    delay: int = DEFAULT_RETRY_DELAY_SECS,
+) -> bool:
+    """Run the full multi-source sync via the Orchestrator with retries."""
+
+    orchestrator = Orchestrator()
+    max_attempts = max(1, retries)
+    base_delay = max(1, delay)
+
+    return _run_with_retry(
+        execute=lambda: orchestrator.run_daily_sync(days=days),
+        max_attempts=max_attempts,
+        base_delay=base_delay,
+        label="Sync",
+    )
+
+
+def run_withings_only_with_retries(
+    days: int,
+    retries: int = DEFAULT_RETRIES,
+    delay: int = DEFAULT_RETRY_DELAY_SECS,
+) -> bool:
+    """Run the Withings-only sync with the same retry semantics as the full sync."""
+
+    orchestrator = Orchestrator()
+    max_attempts = max(1, retries)
+    base_delay = max(1, delay)
+
+    return _run_with_retry(
+        execute=lambda: orchestrator.run_withings_only_sync(days=days),
+        max_attempts=max_attempts,
+        base_delay=base_delay,
+        label="Withings-only sync",
+    )

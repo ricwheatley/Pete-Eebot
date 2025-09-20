@@ -14,7 +14,7 @@ import typer
 
 # Import the core logic functions we want to expose as commands
 from pete_e.application.apple_ingest import ingest_and_process_apple_data
-from pete_e.application.sync import run_sync_with_retries
+from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.application.orchestrator import Orchestrator
@@ -49,6 +49,20 @@ def sync(
         raise typer.Exit(code=1)
 
 
+
+@app.command(name="withings-sync")
+def withings_sync(
+    days: Annotated[int, typer.Option(help="Number of past days to backfill.")] = 7,
+    retries: Annotated[int, typer.Option(help="Number of retries on failure.")] = 3,
+) -> None:
+    """Run only the Withings portion of the sync pipeline."""
+    log_utils.log_message(f"Starting Withings-only sync for the last {days} days.", "INFO")
+    success = run_withings_only_with_retries(days=days, retries=retries)
+    if success:
+        log_utils.log_message("Withings-only sync completed successfully.", "INFO")
+        raise typer.Exit(code=0)
+    log_utils.log_message("Withings-only sync finished with errors.", "ERROR")
+    raise typer.Exit(code=1)
 @app.command(name="ingest-apple")
 def ingest_apple() -> None:
     """

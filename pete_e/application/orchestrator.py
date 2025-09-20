@@ -182,6 +182,41 @@ class Orchestrator:
         return not failed_sources, sorted(list(set(failed_sources)))
 
 
+    def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str]]:
+        """Fetch Withings data for the requested window and update dependent calculations."""
+        days = max(1, days)
+        today = date.today()
+        log_utils.log_message(f"Withings-only sync starting for last {days} days.", "INFO")
+
+        withings_client = WithingsClient()
+        failures: List[str] = []
+
+        for offset in range(days, 0, -1):
+            target_day = today - timedelta(days=offset)
+            target_iso = target_day.isoformat()
+            log_utils.log_message(f"Syncing Withings data for {target_iso}", "INFO")
+
+            try:
+                withings_data = withings_client.get_summary(days_back=offset)
+                if withings_data:
+                    self.dal.save_withings_daily(
+                        day=target_day,
+                        weight_kg=withings_data.get("weight"),
+                        body_fat_pct=withings_data.get("fat_percent"),
+                    )
+            except Exception as exc:
+                log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
+                failures.append(f"Withings:{target_iso}")
+                continue
+
+            try:
+                self._recalculate_body_age(target_day)
+            except Exception as exc:
+                log_utils.log_message(f"Body Age calculation failed for {target_iso}: {exc}", "ERROR")
+                failures.append(f"BodyAge:{target_iso}")
+
+        return not failures, failures
+
     def _recalculate_body_age(self, target_day: date) -> None:
         try:
             self.dal.compute_body_age_for_date(
