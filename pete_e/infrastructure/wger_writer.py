@@ -21,9 +21,6 @@ class WgerWriter:
         cols = list(data[0].keys())
         placeholders = sql.SQL(",").join(sql.Placeholder() * len(cols))
 
-        # FIX: Conditionally build the correct ON CONFLICT action.
-        # If update_keys is empty, use DO NOTHING to prevent a syntax error.
-        # Otherwise, build the DO UPDATE SET clause.
         if update_keys:
             conflict_action = sql.SQL("DO UPDATE SET {update_clause}").format(
                 update_clause=sql.SQL(",").join(
