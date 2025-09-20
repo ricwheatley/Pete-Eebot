@@ -19,6 +19,7 @@ from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.config import settings
+from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 
 class Orchestrator:
     """
@@ -105,6 +106,26 @@ class Orchestrator:
         wger_client = WgerClient() # Assuming a WgerClient class exists
 
         failed_sources: List[str] = []
+
+        try:
+            apple_report = run_apple_health_ingest()
+        except Exception as exc:
+            log_utils.log_message(
+                f"Apple Health Dropbox ingest failed before sync window: {exc}",
+                "ERROR",
+            )
+            failed_sources.append("AppleDropbox")
+        else:
+            processed_files = len(apple_report.sources)
+            log_utils.log_message(
+                (
+                    "Apple Health Dropbox ingest finished. "
+                    f"Processed {processed_files} file(s), "
+                    f"{apple_report.workouts} workouts, "
+                    f"and {apple_report.daily_points} metric points."
+                ),
+                "INFO",
+            )
         try:
             wger_logs_by_date = wger_client.get_logs_by_date(days=days)
         except Exception as e:
