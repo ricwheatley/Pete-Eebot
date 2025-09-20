@@ -272,3 +272,31 @@ class PeteVoice:
     @staticmethod
     def nudge(tag: str, sprinkles: List[str] | None = None) -> str:
         return build_nudge(tag, sprinkles)
+
+class NarrativeBuilder:
+    """Compatibility wrapper around the narrative helper functions."""
+
+    def build_daily_summary(self, summary_data: Dict[str, Any]) -> str:
+        if not summary_data:
+            return "I could not find any data for that day."
+
+        title = summary_data.get("date") or "Daily Summary"
+        sections = []
+
+        def add_metric(label: str, value: Any, suffix: str = "") -> None:
+            if value is None:
+                return
+            sections.append(f"{label}: {value}{suffix}")
+
+        add_metric("Weight", summary_data.get("weight_kg"), " kg")
+        add_metric("Body fat", summary_data.get("body_fat_pct"), "%")
+        add_metric("Resting HR", summary_data.get("hr_resting"), " bpm")
+        add_metric("Steps", summary_data.get("steps"))
+        add_metric("Active calories", summary_data.get("calories_active"))
+        add_metric("Sleep", summary_data.get("sleep_asleep_minutes"), " min")
+
+        body = sections or ["No detailed metrics were recorded."]
+        return f"{title}\n" + "\n".join(body)
+
+    def build_weekly_plan(self, plan_week_data: List[Dict[str, Any]], week_number: int) -> str:
+        return build_weekly_plan_summary(plan_week_data, week_number)
