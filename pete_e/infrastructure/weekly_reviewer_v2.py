@@ -1,4 +1,4 @@
-# pete_e/core/weekly_reviewer_v2.py
+# pete_e/infrastructure/weekly_reviewer_v2.py
 #
 # Weekly reviewer that:
 #  - refreshes MVs (optional),
@@ -38,7 +38,7 @@ from pete_e.infrastructure.plan_rw import (
     adjust_rir,
     adjust_main_lifts_intensity,
 )
-from pete_e.core.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
+from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 from pete_e.infrastructure.wger_exporter_v2 import export_week
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 from pete_e.infrastructure.plan_rw import build_week_payload
