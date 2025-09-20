@@ -7,13 +7,16 @@ from pete_e.infrastructure.postgres_dal import PostgresDal
 
 class TestPostgresDal(unittest.TestCase):
 
-    @patch('pete_e.data_access.postgres_dal.get_conn')
+    @patch('pete_e.infrastructure.postgres_dal.get_conn')
     def test_save_withings_daily(self, mock_get_conn):
         """Test that save_withings_daily executes the correct SQL."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cur
+        mock_conn.__enter__.return_value = mock_conn
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = mock_cur
+        mock_conn.cursor.return_value = cursor_cm
 
         dal = PostgresDal()
         test_date = date(2025, 1, 15)
@@ -30,13 +33,16 @@ class TestPostgresDal(unittest.TestCase):
         self.assertEqual(data_tuple, (test_date, 75.5, 22.1))
 
 
-    @patch('pete_e.data_access.postgres_dal.get_conn')
+    @patch('pete_e.infrastructure.postgres_dal.get_conn')
     def test_get_historical_data(self, mock_get_conn):
         """Test that get_historical_data queries the daily_summary view."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_get_conn.return_value = mock_conn
-        mock_conn.cursor.return_value = mock_cur
+        mock_conn.__enter__.return_value = mock_conn
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = mock_cur
+        mock_conn.cursor.return_value = cursor_cm
         mock_cur.fetchall.return_value = [{"date": "2025-01-15", "steps": 5000}]
 
         dal = PostgresDal()
