@@ -33,36 +33,6 @@ if "pete_e.data_access.postgres_dal" not in sys.modules:
     postgres_stub.PostgresDal = _PostgresDalStub
     postgres_stub.close_pool = lambda: None
     sys.modules["pete_e.data_access.postgres_dal"] = postgres_stub
-
-
-if "pete_e.core.plan_builder" not in sys.modules:
-    plan_builder_stub = types.ModuleType("pete_e.core.plan_builder")
-
-    class _PlanBuilderStub:
-        def __init__(self, *args, **kwargs):  # pragma: no cover - default init
-            pass
-
-    plan_builder_stub.PlanBuilder = _PlanBuilderStub
-    sys.modules["pete_e.core.plan_builder"] = plan_builder_stub
-
-
-if "pete_e.core.narrative_builder" not in sys.modules:
-    narrative_builder_stub = types.ModuleType("pete_e.core.narrative_builder")
-
-    class _NarrativeBuilderStub:
-        def __init__(self, *args, **kwargs):  # pragma: no cover - default init
-            pass
-
-        def build_daily_summary(self, data):  # pragma: no cover - basic stub
-            return ""
-
-        def build_weekly_plan(self, plan_data, week_number):  # pragma: no cover - basic stub
-            return ""
-
-    narrative_builder_stub.NarrativeBuilder = _NarrativeBuilderStub
-    sys.modules["pete_e.core.narrative_builder"] = narrative_builder_stub
-
-
 from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
 
