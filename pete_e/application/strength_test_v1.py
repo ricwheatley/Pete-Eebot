@@ -1,4 +1,4 @@
-# pete_e/core/strength_test_v1.py
+# pete_e/application/strength_test_v1.py
 #
 # Create a 1-week AMRAP test plan and evaluate it to update Training Maxes.
 #
@@ -15,7 +15,7 @@ import math
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from pete_e.core.schedule_rules import (
+from pete_e.domain.schedule_rules import (
     BLAZE_ID, BLAZE_TIMES, weight_slot_for_day,
     SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 )

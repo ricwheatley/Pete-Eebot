@@ -6,7 +6,7 @@ import datetime as dt
 import json
 from typing import Any, Dict, List
 
-from pete_e.core.planner_v2 import build_block
+from pete_e.application.planner_v2 import build_block
 from pete_e.infrastructure.plan_rw import build_week_payload
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 

@@ -39,7 +39,7 @@ if "pete_e.infra.log_utils" not in sys.modules:
     sys.modules["pete_e.infra.log_utils"] = lu
 
 # Import after stubbing
-from pete_e.core.validation import (
+from pete_e.domain.validation import (
     assess_recovery_and_backoff,
     compute_dynamic_baselines,
 )
