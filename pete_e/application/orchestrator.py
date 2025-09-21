@@ -170,6 +170,29 @@ class CycleRolloverResult:
     message: str | None = None
 
 
+@dataclass(frozen=True)
+class DailyAutomationResult:
+    """Summary of the automated daily flow outcome."""
+
+    ingest_success: bool
+    failed_sources: List[str]
+    source_statuses: Dict[str, str]
+    summary_target: date
+    summary_sent: bool
+    summary_attempted: bool
+
+
+@dataclass(frozen=True)
+class WeeklyAutomationResult:
+    """Wraps weekly calibration and any rollover attempt."""
+
+    calibration: WeeklyCalibrationResult
+    rollover: CycleRolloverResult | None
+    rollover_triggered: bool
+    reference_date: date
+
+
+
 def _next_monday(reference: date) -> date:
     """Return the next Monday strictly after the reference date."""
 
@@ -637,6 +660,140 @@ class Orchestrator:
                 )
 
         return success, unique_failures, source_statuses
+
+
+    def run_end_to_end_day(
+        self,
+        *,
+        days: int = 1,
+        summary_date: date | None = None,
+    ) -> DailyAutomationResult:
+        """Run the daily ingestion flow and ensure a summary is sent."""
+
+        days = max(1, int(days))
+        success, failures, statuses = self.run_daily_sync(days)
+        summary_target = summary_date or (date.today() - timedelta(days=1))
+        failures_list = list(failures)
+        status_map = dict(statuses)
+        summary_attempted = False
+
+        already_sent = self.summary_dispatch_ledger.was_sent(summary_target)
+        summary_sent = already_sent
+
+        if not success:
+            log_utils.log_message(
+                "End-to-end daily flow skipping summary because ingest failed.",
+                "WARN",
+            )
+        elif days != 1:
+            log_utils.log_message(
+                "End-to-end daily flow ran for multiple days; summary dispatch deferred.",
+                "INFO",
+            )
+        elif failures_list:
+            log_utils.log_message(
+                "End-to-end daily flow saw source failures; summary will not be resent.",
+                "WARN",
+            )
+        elif already_sent:
+            summary_sent = True
+        else:
+            try:
+                summary_attempted = True
+                summary_sent = bool(
+                    self._auto_send_daily_summary(target_date=summary_target)
+                )
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                summary_sent = False
+                log_utils.log_message(
+                    f"End-to-end daily summary send failed for {summary_target.isoformat()}: {exc}",
+                    "ERROR",
+                )
+
+        return DailyAutomationResult(
+            ingest_success=success,
+            failed_sources=failures_list,
+            source_statuses=status_map,
+            summary_target=summary_target,
+            summary_sent=summary_sent,
+            summary_attempted=summary_attempted,
+        )
+
+    def _should_run_cycle_rollover(
+        self,
+        reference_date: date,
+        calibration: WeeklyCalibrationResult,
+    ) -> bool:
+        """Determine whether the weekly flow should trigger a cycle rollover."""
+
+        if getattr(settings, "AUTO_CYCLE_ROLLOVER_ENABLED", True) is False:
+            return False
+
+        if reference_date.isoweekday() != 7:
+            return False
+
+        interval_raw = getattr(settings, "CYCLE_ROLLOVER_INTERVAL_WEEKS", 4)
+        try:
+            interval = int(interval_raw)
+        except (TypeError, ValueError):
+            interval = 4
+        if interval <= 0:
+            interval = 4
+
+        week_index = reference_date.isocalendar()[1]
+        if week_index % interval != 0:
+            return False
+
+        return calibration.plan_id is not None
+
+    def run_end_to_end_week(
+        self,
+        *,
+        reference_date: date | None = None,
+        force_rollover: bool = False,
+        rollover_weeks: int = 4,
+    ) -> WeeklyAutomationResult:
+        """Run weekly calibration and, when required, perform cycle rollover."""
+
+        reference = reference_date or date.today()
+        weeks = max(1, int(rollover_weeks or 1))
+
+        calibration_result = self.run_weekly_calibration(reference_date=reference)
+
+        try:
+            rollover_due = self._should_run_cycle_rollover(
+                reference, calibration_result
+            )
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to evaluate cycle rollover predicate: {exc}",
+                "ERROR",
+            )
+            rollover_due = False
+
+        should_rollover = force_rollover or rollover_due
+        rollover_result: CycleRolloverResult | None = None
+        rollover_triggered = False
+
+        if should_rollover:
+            rollover_triggered = True
+            try:
+                rollover_result = self.run_cycle_rollover(
+                    reference_date=reference,
+                    weeks=weeks,
+                )
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Weekly end-to-end rollover failed for {reference.isoformat()}: {exc}",
+                    "ERROR",
+                )
+
+        return WeeklyAutomationResult(
+            calibration=calibration_result,
+            rollover=rollover_result,
+            rollover_triggered=rollover_triggered,
+            reference_date=reference,
+        )
 
 
     def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
