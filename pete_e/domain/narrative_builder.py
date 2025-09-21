@@ -182,6 +182,12 @@ def _format_resting_hr(value: Any) -> str | None:
         return None
     return f"Resting HR: {val} bpm"
 
+def _format_hrv(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"HRV: {val:.0f} ms"
+
 def _format_steps(value: Any) -> str | None:
     val = _to_int(value)
     if val is None or val <= 0:
@@ -214,6 +220,7 @@ _DAILY_METRIC_BUILDERS = {
     "muscle_pct": _format_muscle_pct,
     "water_pct": _format_water_pct,
     "hr_resting": _format_resting_hr,
+    "hrv_sdnn_ms": _format_hrv,
     "steps": _format_steps,
     "calories_active": _format_active_calories,
     "sleep_asleep_minutes": _format_sleep_minutes,
@@ -225,6 +232,7 @@ _DAILY_METRIC_ORDER = [
     "muscle_pct",
     "water_pct",
     "hr_resting",
+    "hrv_sdnn_ms",
     "steps",
     "calories_active",
     "sleep_asleep_minutes",

@@ -380,7 +380,9 @@ WITH apple_metrics AS (
     SUM(dm.value) FILTER (WHERE mt.name = 'basal_energy_burned') * 0.239006     AS calories_resting,
     SUM(dm.value) FILTER (WHERE mt.name = 'apple_stand_time')                   AS stand_minutes,
     SUM(dm.value) FILTER (WHERE mt.name = 'distance_walking_running')           AS distance_m,
-    AVG(dm.value) FILTER (WHERE mt.name = 'resting_heart_rate')                 AS hr_resting
+    AVG(dm.value) FILTER (WHERE mt.name = 'resting_heart_rate')                 AS hr_resting,
+    AVG(dm.value) FILTER (WHERE mt.name = 'hrv_sdnn_ms')                        AS hrv_sdnn_ms,
+    AVG(dm.value) FILTER (WHERE mt.name = 'vo2_max')                            AS vo2_max
   FROM "DailyMetric" dm
   JOIN "MetricType" mt ON dm.metric_id = mt.metric_id
   GROUP BY dm.date
@@ -424,6 +426,8 @@ SELECT
   am.stand_minutes,
   am.distance_m,
   am.hr_resting,
+  am.hrv_sdnn_ms,
+  am.vo2_max,
   dhr.hr_avg,
   dhr.hr_max,
   dhr.hr_min,
@@ -445,7 +449,7 @@ LEFT JOIN body_age_daily b USING (date)
 LEFT JOIN wger_logs gl USING (date)
 GROUP BY
   d.date, w.weight_kg, w.body_fat_pct, w.muscle_pct, w.water_pct,
-  am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m, am.hr_resting,
+  am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m, am.hr_resting, am.hrv_sdnn_ms, am.vo2_max,
   dhr.hr_avg, dhr.hr_max, dhr.hr_min,
   dss.total_sleep_hrs, dss.core_hrs, dss.deep_hrs, dss.rem_hrs, dss.awake_hrs,
   b.body_age_years, b.age_delta_years;

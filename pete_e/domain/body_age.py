@@ -236,6 +236,14 @@ def calculate_body_age(
         )
     )
 
+    vo2_direct = avg_from(
+        (
+            lambda r: r.get("vo2_max"),
+            lambda r: r.get("vo2_ml_kg_min"),
+            lambda r: r.get("cardio_vo2_max"),
+        )
+    )
+
     # Determine chronological age using the most recent date and the birth date
     # if available.  This mirrors the behaviour of ``sp_upsert_body_age`` and
     # falls back to a provided ``age`` value for backwards compatibility.
@@ -264,7 +272,10 @@ def calculate_body_age(
     # present we should scale the direct VO₂ max reading instead of the proxy
     # formula below and set ``used_vo2max_direct`` accordingly.
 
-    if rhr is not None:
+    if vo2_direct is not None:
+        vo2 = vo2_direct
+        used_vo2max_direct = True
+    elif rhr is not None:
         vo2 = 38 - 0.15 * (chrono_age - 40) - 0.15 * ((rhr or 60) - 60) + 0.01 * (exmin or 0)
     if vo2 is None:
         vo2 = 35
