@@ -7,7 +7,10 @@ Now persists tokens in .withings_tokens.json so you don’t have to update .env 
 
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
 import requests
 from datetime import datetime, timedelta, timezone
 
@@ -25,6 +28,24 @@ def _unwrap_secret(value):
 
 RATE_LIMIT_STATUS = 429
 MAX_RATE_LIMIT_RETRIES = 3
+
+
+@dataclass
+class WithingsTokenState:
+    requires_reauth: bool
+    reason: Optional[str] = None
+    last_refresh_utc: Optional[datetime] = None
+    last_error_status: Optional[int] = None
+    last_http_status: Optional[int] = None
+
+
+class WithingsReauthRequired(RuntimeError):
+    """Raised when the Withings refresh token is no longer valid."""
+
+    def __init__(self, message: str, *, status: Optional[int] = None, http_status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
+        self.http_status = http_status
 
 
 class WithingsClient:
@@ -59,12 +80,17 @@ class WithingsClient:
 
         self.token_url = "https://wbsapi.withings.net/v2/oauth2"
         self.measure_url = "https://wbsapi.withings.net/measure"
+        self._token_state = WithingsTokenState(requires_reauth=False)
 
     def _save_tokens(self, tokens: dict) -> None:
         """Persist tokens to disk."""
         with open(self.TOKEN_FILE, "w") as f:
             json.dump(tokens, f, indent=2)
         log_message("Saved Withings tokens to file.", "INFO")
+
+    def get_token_state(self) -> WithingsTokenState:
+        """Returns the current understanding of the refresh token state."""
+        return self._token_state
 
     def _refresh_access_token(self):
         """Exchanges the refresh token for a new access token."""
@@ -77,7 +103,7 @@ class WithingsClient:
             "refresh_token": _unwrap_secret(self.refresh_token),
         }
         backoff = 30
-        last_response = None
+        last_response: Optional[requests.Response] = None
 
         for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 1):
             try:
@@ -89,6 +115,7 @@ class WithingsClient:
             if response.status_code == RATE_LIMIT_STATUS:
                 if attempt == MAX_RATE_LIMIT_RETRIES:
                     log_message("Withings token refresh hit rate limit repeatedly; giving up.", "ERROR")
+                    self._handle_refresh_failure(response)
                     response.raise_for_status()
 
                 retry_after = response.headers.get("Retry-After")
@@ -116,27 +143,125 @@ class WithingsClient:
                 last_response = response
                 continue
 
-            response.raise_for_status()
+            if response.status_code >= 400:
+                self._handle_refresh_failure(response)
+                response.raise_for_status()
+
             last_response = response
             break
         else:
             if last_response is not None:
+                self._handle_refresh_failure(last_response)
                 last_response.raise_for_status()
             raise RuntimeError("Withings token refresh failed after retries.")
 
-        js = last_response.json()
-        if js.get("status") != 0:
-            raise RuntimeError(f"Withings token refresh failed: {js}")
+        payload = self._parse_json(last_response, context="token refresh")
 
-        body = js["body"]
-        self.access_token = body["access_token"]
-        self.refresh_token = body["refresh_token"]
+        if payload.get("status") != 0:
+            self._handle_refresh_failure(last_response, payload)
+            raise RuntimeError(f"Withings token refresh failed: {payload}")
 
-        # Save for next time
+        body = payload.get("body", {})
+        self.access_token = body.get("access_token")
+        self.refresh_token = body.get("refresh_token")
+
+        if not self.access_token or not self.refresh_token:
+            raise RuntimeError("Withings token refresh returned incomplete credentials.")
+
         self._save_tokens(body)
+        now_utc = datetime.now(timezone.utc)
+        self._token_state = WithingsTokenState(
+            requires_reauth=False,
+            reason=None,
+            last_refresh_utc=now_utc,
+            last_error_status=None,
+            last_http_status=None,
+        )
         log_message("Successfully refreshed Withings access token.", "INFO")
 
         return body
+
+    def _parse_json(self, response: requests.Response, *, context: str) -> dict:
+        """Safely parses a JSON response, raising a runtime error if parsing fails."""
+        try:
+            return response.json()
+        except ValueError as exc:
+            log_message(f"Failed to parse Withings {context} response as JSON: {exc}", "ERROR")
+            raise RuntimeError(f"Invalid JSON response from Withings during {context}.") from exc
+
+    def _handle_refresh_failure(self, response: requests.Response, payload: Optional[dict] = None) -> None:
+        """Updates token state and raises if the failure requires a manual reauthorisation."""
+        if payload is None:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = None
+
+        reason_parts = []
+        status_code: Optional[int] = None
+
+        if payload:
+            status_code = payload.get("status") if isinstance(payload.get("status"), int) else status_code
+            for key in ("error_description", "error", "message"):
+                value = payload.get(key)
+                if value:
+                    reason_parts.append(str(value))
+            body = payload.get("body")
+            if isinstance(body, dict):
+                body_message = body.get("message") or body.get("error")
+                if body_message:
+                    reason_parts.append(str(body_message))
+
+        reason = " ".join(reason_parts).strip() or f"HTTP {response.status_code}"
+
+        if self._needs_reauth(reason, payload):
+            self._token_state = WithingsTokenState(
+                requires_reauth=True,
+                reason=reason,
+                last_refresh_utc=self._token_state.last_refresh_utc,
+                last_error_status=status_code,
+                last_http_status=response.status_code,
+            )
+            raise WithingsReauthRequired(
+                reason,
+                status=status_code,
+                http_status=response.status_code,
+            )
+
+        self._token_state = WithingsTokenState(
+            requires_reauth=False,
+            reason=None,
+            last_refresh_utc=self._token_state.last_refresh_utc,
+            last_error_status=status_code,
+            last_http_status=response.status_code,
+        )
+
+    def _needs_reauth(self, reason: str, payload: Optional[dict]) -> bool:
+        """Heuristically determines whether the refresh token is irrecoverable."""
+        reason_lower = (reason or "").lower()
+        if payload:
+            status_val = payload.get("status")
+            if isinstance(status_val, int) and status_val in {101, 106, 256, 264, 284, 285, 286, 300, 343, 601}:
+                return True
+
+            error_val = str(payload.get("error") or "").lower()
+            if error_val in {"invalid_grant", "invalid_request", "invalid_token"}:
+                return True
+
+            body = payload.get("body")
+            if isinstance(body, dict):
+                body_msg = str(body.get("message") or body.get("error") or "").lower()
+                if "invalid" in body_msg and "token" in body_msg:
+                    return True
+                if "refresh token" in body_msg and ("expired" in body_msg or "revoked" in body_msg):
+                    return True
+
+        if "invalid" in reason_lower and "token" in reason_lower:
+            return True
+        if "refresh token" in reason_lower and ("expired" in reason_lower or "revoked" in reason_lower):
+            return True
+        return False
+
 
     def _fetch_measures(self, start: datetime, end: datetime) -> dict:
         """Fetches Withings measures for a given time window."""

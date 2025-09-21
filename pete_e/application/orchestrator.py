@@ -2,13 +2,13 @@
 Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.postgres_dal import PostgresDal
-from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.infrastructure.withings_client import WithingsClient, WithingsReauthRequired
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import telegram_sender
 
@@ -19,7 +19,11 @@ from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.config import settings
-from pete_e.application.apple_dropbox_ingest import AppleIngestError, run_apple_health_ingest
+from pete_e.application.apple_dropbox_ingest import (
+    AppleIngestError,
+    get_last_successful_import_timestamp,
+    run_apple_health_ingest,
+)
 
 DAILY_SYNC_SOURCES = (
     "AppleDropbox",
@@ -115,6 +119,7 @@ class Orchestrator:
 
         withings_client = WithingsClient()
         wger_client = WgerClient() # Assuming a WgerClient class exists
+        withings_reauth_alert_sent = False
 
         failed_sources: List[str] = []
         source_statuses: Dict[str, str] = {name: "ok" for name in DAILY_SYNC_SOURCES}
@@ -150,6 +155,40 @@ class Orchestrator:
                 "INFO",
             )
 
+            try:
+                last_import_ts = get_last_successful_import_timestamp()
+            except AppleIngestError as checkpoint_error:
+                log_utils.log_message(
+                    f"Unable to determine last Apple import timestamp: {checkpoint_error}",
+                    "WARN",
+                )
+            else:
+                max_stale_days = getattr(settings, "APPLE_MAX_STALE_DAYS", 3)
+                try:
+                    max_stale_days = int(max_stale_days)
+                except (TypeError, ValueError):
+                    max_stale_days = 3
+
+                if max_stale_days >= 0:
+                    if last_import_ts is None:
+                        alert_messages.append(
+                            "Apple Health Dropbox ingest has never completed. Please re-authorise Dropbox access."
+                        )
+                    else:
+                        now_utc = datetime.now(timezone.utc)
+                        age = now_utc - last_import_ts
+                        if age >= timedelta(days=max_stale_days):
+                            days_stale = int(age.total_seconds() // 86400)
+                            if age.total_seconds() % 86400:
+                                days_stale += 1
+                            days_stale = max(days_stale, max_stale_days)
+                            alert_messages.append(
+                                (
+                                    f"Apple Health Dropbox has received no new files for {days_stale} day(s). "
+                                    "Confirm the automation or run a manual Dropbox import."
+                                )
+                            )
+
         try:
             wger_logs_by_date = wger_client.get_logs_by_date(days=days)
         except Exception as e:
@@ -177,10 +216,38 @@ class Orchestrator:
                         weight_kg=withings_data.get("weight"),
                         body_fat_pct=withings_data.get("fat_percent"),
                     )
+            except WithingsReauthRequired as exc:
+                log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
+                failed_sources.append("Withings")
+                source_statuses["Withings"] = "failed"
+
+                if getattr(settings, "WITHINGS_ALERT_REAUTH", True) and not withings_reauth_alert_sent:
+                    token_state = getattr(withings_client, "get_token_state", lambda: None)()
+                    reason_text = getattr(token_state, "reason", None) if token_state else None
+                    reason_text = reason_text or str(exc)
+                    alert_messages.append(
+                        (
+                            "Withings refresh token is invalid and needs reauthorisation: "
+                            f"{reason_text}. Please run the Withings reauthorisation workflow."
+                        )
+                    )
+                    withings_reauth_alert_sent = True
             except Exception as e:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("Withings")
                 source_statuses["Withings"] = "failed"
+
+                if getattr(settings, "WITHINGS_ALERT_REAUTH", True) and not withings_reauth_alert_sent:
+                    token_state = getattr(withings_client, "get_token_state", lambda: None)()
+                    if token_state and getattr(token_state, "requires_reauth", False):
+                        reason_text = getattr(token_state, "reason", None) or str(e)
+                        alert_messages.append(
+                            (
+                                "Withings refresh token is invalid and needs reauthorisation: "
+                                f"{reason_text}. Please run the Withings reauthorisation workflow."
+                            )
+                        )
+                        withings_reauth_alert_sent = True
 
             # --- Wger Workout Logs ---
             try:
