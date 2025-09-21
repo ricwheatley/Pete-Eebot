@@ -64,6 +64,64 @@ class ValidationDecision:
     recommendation: BackoffRecommendation
 
 
+@dataclass(frozen=True)
+class MuscleBalanceReport:
+    balanced: bool
+    totals_by_group: Dict[str, float]
+    imbalance_ratio: float
+    missing_groups: List[str]
+    tolerance: float
+
+
+def ensure_muscle_balance(
+    plan: Dict[str, Any],
+    tolerance: float = 0.25,
+    required_groups: Optional[Iterable[str]] = None,
+) -> MuscleBalanceReport:
+    if tolerance < 0:
+        raise ValueError('tolerance must be non-negative')
+    groups = tuple(required_groups) if required_groups is not None else ('upper_push', 'upper_pull', 'lower')
+    totals: Dict[str, float] = {}
+    for week in plan.get('weeks', []):
+        workouts = week.get('workouts', [])
+        for workout in workouts:
+            if not isinstance(workout, dict):
+                continue
+            group = workout.get('muscle_group')
+            sets_value = workout.get('sets')
+            if group is None:
+                continue
+            try:
+                sets_float = float(sets_value)
+            except (TypeError, ValueError):
+                continue
+            totals[group] = totals.get(group, 0.0) + sets_float
+
+    for group in groups:
+        totals.setdefault(group, 0.0)
+
+    missing = [group for group in groups if totals[group] <= 0]
+
+    active = [totals[group] for group in groups if totals[group] > 0]
+    if len(active) < len(groups):
+        imbalance_ratio = float('inf')
+    else:
+        min_volume = min(active)
+        max_volume = max(active)
+        imbalance_ratio = max_volume / min_volume if min_volume > 0 else float('inf')
+
+    balanced = not missing and imbalance_ratio <= (1 + tolerance)
+    return MuscleBalanceReport(
+        balanced=balanced,
+        totals_by_group=dict(totals),
+        imbalance_ratio=imbalance_ratio,
+        missing_groups=missing,
+        tolerance=tolerance,
+    )
+
+
+
+
 _READINESS_STATE_BY_SEVERITY: Dict[str, str] = {
     "none": "ready",
     "mild": "lagging",
