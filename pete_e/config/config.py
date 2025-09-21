@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     PROGRESSION_DECREMENT: float = 0.05
     RHR_ALLOWED_INCREASE: float = 0.10
     SLEEP_ALLOWED_DECREASE: float = 0.85
+    HRV_ALLOWED_DECREASE: float = 0.12
     BODY_AGE_ALLOWED_INCREASE: float = 2.0
     GLOBAL_BACKOFF_FACTOR: float = 0.90
 
@@ -81,6 +82,8 @@ class Settings(BaseSettings):
     # --- PLAN BUILDER RECOVERY THRESHOLDS ---
     RECOVERY_SLEEP_THRESHOLD_MINUTES: int = 420
     RECOVERY_RHR_THRESHOLD: int = 60
+    VO2_HIGH_THRESHOLD: float = 48.0
+    VO2_LOW_THRESHOLD: float = 36.0
 
     def __init__(self, **values):
         """Dynamically constructs the DATABASE_URL after initial validation."""

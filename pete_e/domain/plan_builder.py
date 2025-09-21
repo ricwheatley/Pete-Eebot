@@ -16,6 +16,13 @@ INTENSITY_SETTINGS: Dict[str, Dict[str, Any]] = {
     "deload": {"set_multiplier": 0.60, "rir_adjust": 1, "rep_bias": "high"},
 }
 
+_VO2_METRIC_KEYS: Tuple[str, ...] = (
+    "vo2_max",
+    "vo2_ml_kg_min",
+    "cardio_fitness_score",
+    "cardio_vo2_max",
+)
+
 
 @dataclass(frozen=True)
 class SessionSlot:
@@ -132,6 +139,47 @@ def _mean_metric(rows: List[Dict[str, Any]], key: str) -> Optional[float]:
     return sum(values) / len(values)
 
 
+def _vo2_average(metrics: List[Dict[str, Any]]) -> Optional[float]:
+    for key in _VO2_METRIC_KEYS:
+        values: List[float] = []
+        for row in metrics:
+            value = row.get(key)
+            if value is None:
+                continue
+            try:
+                values.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        if values:
+            return sum(values) / len(values)
+    return None
+
+
+def _resolve_conditioning_scale(
+    metrics: List[Dict[str, Any]],
+    prefer_light: bool,
+) -> Tuple[float, Optional[float]]:
+    vo2_avg = _vo2_average(metrics)
+    high_threshold = float(getattr(settings, "VO2_HIGH_THRESHOLD", 48.0))
+    low_threshold = float(getattr(settings, "VO2_LOW_THRESHOLD", 36.0))
+    moderate_threshold = max(low_threshold, high_threshold - 3.0)
+
+    scale = 1.0
+    if vo2_avg is not None:
+        if vo2_avg >= high_threshold:
+            scale = 1.6
+        elif vo2_avg >= moderate_threshold:
+            scale = 1.3
+        elif vo2_avg <= low_threshold:
+            scale = 0.8
+
+    if prefer_light:
+        scale = min(scale, 1.0)
+
+    scale = max(0.6, min(2.0, scale))
+    return scale, vo2_avg
+
+
 def _prefer_lighter_weeks(metrics: List[Dict[str, Any]]) -> bool:
     avg_sleep = _mean_metric(metrics, "sleep_asleep_minutes")
     avg_rhr = _mean_metric(metrics, "hr_resting")
@@ -228,6 +276,7 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
 
     prefer_light = _prefer_lighter_weeks(recent_metrics)
     pool_offsets = _initial_pool_offsets(start_date)
+    conditioning_scale, vo2_average = _resolve_conditioning_scale(recent_metrics, prefer_light)
 
     weeks_out: List[Dict[str, Any]] = []
     for week_index, intensity in enumerate(INTENSITY_SEQUENCE, start=1):
@@ -246,7 +295,7 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
                 if slot.slot == "auxiliary":
                     slot_multiplier *= 0.9
                 elif slot.slot == "conditioning":
-                    slot_multiplier = 1.0
+                    slot_multiplier = conditioning_scale
 
                 sets = _scaled_sets(slot, slot_multiplier)
                 slot_bias = rep_bias
@@ -277,9 +326,16 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
             }
         )
 
+    metadata: Dict[str, Any] = {
+        "prefer_light": prefer_light,
+        "conditioning_scale": conditioning_scale,
+    }
+    if vo2_average is not None:
+        metadata["vo2_average"] = vo2_average
+
     plan = {
         "weeks": weeks_out,
-        "metadata": {"prefer_light": prefer_light},
+        "metadata": metadata,
     }
 
     balance_report = ensure_muscle_balance(plan)

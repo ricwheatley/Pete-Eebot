@@ -17,6 +17,13 @@ from pete_e.infrastructure import log_utils
 _BASELINE_WINDOWS_DAYS: List[int] = [30, 60, 90, 180]
 _MIN_DAYS_PER_WINDOW: int = 14  # require at least this many points to trust a window
 _LAST_N_DAYS_FOR_OBS: int = 7   # assess the most recent 7 days before the upcoming week
+_HRV_METRIC_KEYS: Tuple[str, ...] = (
+    "hrv_sdnn_ms",
+    "hrv_rmssd_ms",
+    "hrv_daily_ms",
+    "heart_rate_variability",
+    "hrv",
+)
 
 
 @dataclass(frozen=True)
@@ -430,6 +437,21 @@ def _collect_series(
     return out
 
 
+def _detect_metric_key(rows: Iterable[Dict[str, Any]], candidates: Tuple[str, ...]) -> Optional[str]:
+    """Return the first metric key present in rows from the candidate list."""
+    for row in rows:
+        for key in candidates:
+            value = row.get(key) if isinstance(row, dict) else None
+            if value is None:
+                continue
+            try:
+                float(value)
+            except (TypeError, ValueError):
+                continue
+            return key
+    return None
+
+
 def _slice_values_in_window(
     series: List[Tuple[date, float]],
     start: date,
@@ -530,9 +552,11 @@ def _severity_from_breach_ratio(ratio: float) -> Tuple[str, float, int]:
 def compute_dynamic_baselines(
     dal: Any,
     reference_end_date: date,
+    *,
+    hrv_key: Optional[str] = None,
 ) -> Dict[str, BaselineResult]:
     """
-    Compute dynamic baselines for RHR and Sleep as of 'reference_end_date'.
+    Compute dynamic baselines for RHR, Sleep, and (optionally) HRV as of 'reference_end_date'.
     Pull one 180-day history then reuse for each window computation.
     """
     start = reference_end_date - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
@@ -546,7 +570,19 @@ def compute_dynamic_baselines(
     sleep = _compute_baseline_for_metric(
         hist, key="sleep_total_minutes", end=reference_end_date, treat_zero_as_missing=True
     )
-    return {"hr_resting": rhr, "sleep_total_minutes": sleep}
+
+    resolved_hrv_key = hrv_key or _detect_metric_key(hist, _HRV_METRIC_KEYS)
+    if resolved_hrv_key:
+        hrv = _compute_baseline_for_metric(
+            hist,
+            key=resolved_hrv_key,
+            end=reference_end_date,
+            treat_zero_as_missing=True,
+        )
+    else:
+        hrv = BaselineResult(value=None, by_window={})
+
+    return {"hr_resting": rhr, "sleep_total_minutes": sleep, "hrv": hrv}
 
 
 def assess_recovery_and_backoff(
@@ -564,18 +600,37 @@ def assess_recovery_and_backoff(
     base_start = obs_end - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
     hist = dal.get_historical_data(start_date=base_start, end_date=obs_end)
 
+    hrv_metric_key = _detect_metric_key(hist, _HRV_METRIC_KEYS)
+
     avg_rhr_7d = _average_over_last_n_days(
-        hist, key="hr_resting", end=obs_end, days=_LAST_N_DAYS_FOR_OBS,
+        hist,
+        key="hr_resting",
+        end=obs_end,
+        days=_LAST_N_DAYS_FOR_OBS,
         treat_zero_as_missing=True,
     )
     avg_sleep_7d = _average_over_last_n_days(
-        hist, key="sleep_total_minutes", end=obs_end, days=_LAST_N_DAYS_FOR_OBS,
+        hist,
+        key="sleep_total_minutes",
+        end=obs_end,
+        days=_LAST_N_DAYS_FOR_OBS,
         treat_zero_as_missing=True,
     )
+    avg_hrv_7d = None
+    if hrv_metric_key:
+        avg_hrv_7d = _average_over_last_n_days(
+            hist,
+            key=hrv_metric_key,
+            end=obs_end,
+            days=_LAST_N_DAYS_FOR_OBS,
+            treat_zero_as_missing=True,
+        )
 
-    baselines = compute_dynamic_baselines(dal, reference_end_date=obs_end)
+    baselines = compute_dynamic_baselines(dal, reference_end_date=obs_end, hrv_key=hrv_metric_key)
     rhr_base = baselines["hr_resting"].value
     sleep_base = baselines["sleep_total_minutes"].value
+    hrv_baseline_result = baselines.get("hrv")
+    hrv_base = hrv_baseline_result.value if hrv_baseline_result else None
 
     reasons: List[str] = []
     breach_ratios: List[float] = []
@@ -583,9 +638,10 @@ def assess_recovery_and_backoff(
     # Thresholds come from settings and remain percentage deltas
     rhr_allowed_inc = float(getattr(settings, "RHR_ALLOWED_INCREASE", 0.05))
     sleep_allowed_dec = float(getattr(settings, "SLEEP_ALLOWED_DECREASE", 0.10))
+    hrv_allowed_dec = float(getattr(settings, "HRV_ALLOWED_DECREASE", 0.12))
 
     # RHR breach ratio
-    if avg_rhr_7d is not None and rhr_base:
+    if avg_rhr_7d is not None and rhr_base and rhr_base > 0:
         rhr_excess = (avg_rhr_7d - rhr_base) / rhr_base
         rhr_ratio = max(0.0, rhr_excess / rhr_allowed_inc) if rhr_allowed_inc > 0 else 0.0
         if rhr_ratio > 0:
@@ -597,7 +653,7 @@ def assess_recovery_and_backoff(
         breach_ratios.append(0.0)
 
     # Sleep breach ratio
-    if avg_sleep_7d is not None and sleep_base:
+    if avg_sleep_7d is not None and sleep_base and sleep_base > 0:
         sleep_deficit = (sleep_base - avg_sleep_7d) / sleep_base
         sleep_ratio = max(0.0, sleep_deficit / sleep_allowed_dec) if sleep_allowed_dec > 0 else 0.0
         if sleep_ratio > 0:
@@ -605,6 +661,22 @@ def assess_recovery_and_backoff(
                 f"Sleep {avg_sleep_7d:.0f} min below baseline {sleep_base:.0f} min by {sleep_deficit*100:.1f}%"
             )
         breach_ratios.append(sleep_ratio)
+    else:
+        breach_ratios.append(0.0)
+
+    hrv_ratio = 0.0
+    hrv_drop_pct: Optional[float] = None
+    if avg_hrv_7d is not None and hrv_base and hrv_base > 0:
+        hrv_drop_pct = (hrv_base - avg_hrv_7d) / hrv_base
+        if hrv_allowed_dec > 0:
+            hrv_ratio = max(0.0, hrv_drop_pct / hrv_allowed_dec)
+        else:
+            hrv_ratio = max(0.0, hrv_drop_pct)
+        if hrv_ratio > 0:
+            reasons.append(
+                f"HRV {avg_hrv_7d:.1f} ms below baseline {hrv_base:.1f} ms by {hrv_drop_pct*100:.1f}%"
+            )
+        breach_ratios.append(hrv_ratio)
     else:
         breach_ratios.append(0.0)
 
@@ -617,11 +689,17 @@ def assess_recovery_and_backoff(
         "obs_window": {"start": obs_start, "end": obs_end, "days": _LAST_N_DAYS_FOR_OBS},
         "avg_rhr_7d": avg_rhr_7d,
         "avg_sleep_7d": avg_sleep_7d,
+        "avg_hrv_7d": avg_hrv_7d,
         "rhr_baseline": rhr_base,
         "sleep_baseline": sleep_base,
+        "hrv_baseline": hrv_base,
         "rhr_allowed_increase": rhr_allowed_inc,
         "sleep_allowed_decrease": sleep_allowed_dec,
+        "hrv_allowed_decrease": hrv_allowed_dec,
         "severity_ratio": overall_ratio,
+        "hrv_severity_ratio": hrv_ratio,
+        "hrv_metric_key": hrv_metric_key,
+        "hrv_drop_ratio": hrv_drop_pct,
         "baselines_detail": {
             "rhr_by_window": {
                 w: {"start": s.start, "end": s.end, "days": s.days, "median": s.median_value}
@@ -631,6 +709,14 @@ def assess_recovery_and_backoff(
                 w: {"start": s.start, "end": s.end, "days": s.days, "median": s.median_value}
                 for w, s in baselines["sleep_total_minutes"].by_window.items()
             },
+            "hrv_by_window": (
+                {
+                    w: {"start": s.start, "end": s.end, "days": s.days, "median": s.median_value}
+                    for w, s in hrv_baseline_result.by_window.items()
+                }
+                if hrv_baseline_result and hrv_baseline_result.by_window
+                else {}
+            ),
         },
     }
 
