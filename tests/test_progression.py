@@ -87,6 +87,9 @@ class DummyDal(DataAccessLayer):
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         return []
 
+    def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
+        pass
+
     def refresh_plan_view(self) -> None:
         pass
 
@@ -230,3 +233,5 @@ def test_no_rir_uses_weight_and_recovery():
     weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
     assert weight == 105.0
     assert any("no RIR" in n for n in notes)
+
+

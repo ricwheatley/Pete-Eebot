@@ -88,6 +88,10 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
+        pass
+
+    @abstractmethod
     def refresh_plan_view(self) -> None:
         pass
 

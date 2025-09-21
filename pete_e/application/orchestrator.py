@@ -2,8 +2,9 @@
 Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
@@ -15,6 +16,8 @@ from pete_e.infrastructure import telegram_sender
 # Core Logic and Helpers
 from pete_e.domain.narrative_builder import NarrativeBuilder
 from pete_e.domain.plan_builder import build_block
+from pete_e.domain.progression import PlanProgressionDecision, calibrate_plan_week
+from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
 from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
@@ -35,6 +38,42 @@ WITHINGS_ONLY_SOURCES = (
     "Withings",
     "BodyAge",
 )
+
+@dataclass(frozen=True)
+class WeeklyCalibrationResult:
+    """Aggregate outcome of the weekly calibration workflow."""
+
+    plan_id: int | None
+    week_number: int | None
+    week_start: date
+    progression: PlanProgressionDecision | None
+    validation: ValidationDecision | None
+    message: str
+
+
+def _next_monday(reference: date) -> date:
+    """Return the next Monday strictly after the reference date."""
+
+    delta = (7 - reference.weekday()) % 7
+    if delta == 0:
+        delta = 7
+    return reference + timedelta(days=delta)
+
+
+def _ensure_date(value) -> date | None:
+    """Best effort conversion of DB date/datetime/iso strings to date."""
+
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
 
 class Orchestrator:
     """
@@ -106,6 +145,134 @@ class Orchestrator:
     def send_telegram_message(self, message: str) -> None:
         """Sends a message using the Telegram sender."""
         telegram_sender.send_message(message)
+
+    def run_weekly_calibration(
+        self,
+        reference_date: date | None = None,
+    ) -> WeeklyCalibrationResult:
+        """Calibrate the upcoming training week using progression and recovery signals."""
+
+        today = reference_date or date.today()
+        week_start = _next_monday(today)
+
+        active_plan = self.dal.get_active_plan()
+        if not active_plan:
+            message = "No active training plan found; weekly calibration skipped."
+            log_utils.log_message(message, "WARN")
+            return WeeklyCalibrationResult(
+                plan_id=None,
+                week_number=None,
+                week_start=week_start,
+                progression=None,
+                validation=None,
+                message=message,
+            )
+
+        plan_id = active_plan.get("id")
+        if plan_id is None:
+            message = "Active plan record lacks an id; weekly calibration skipped."
+            log_utils.log_message(message, "ERROR")
+            return WeeklyCalibrationResult(
+                plan_id=None,
+                week_number=None,
+                week_start=week_start,
+                progression=None,
+                validation=None,
+                message=message,
+            )
+
+        plan_start = _ensure_date(active_plan.get("start_date"))
+        if plan_start is None:
+            message = "Active plan is missing a valid start_date; weekly calibration skipped."
+            log_utils.log_message(message, "ERROR")
+            return WeeklyCalibrationResult(
+                plan_id=plan_id,
+                week_number=None,
+                week_start=week_start,
+                progression=None,
+                validation=None,
+                message=message,
+            )
+
+        weeks_total_raw = active_plan.get("weeks")
+        try:
+            weeks_total: Optional[int] = int(weeks_total_raw) if weeks_total_raw is not None else None
+        except (TypeError, ValueError):
+            weeks_total = None
+
+        days_since_start = (week_start - plan_start).days
+        week_number = 1 if days_since_start < 0 else (days_since_start // 7) + 1
+        if weeks_total is not None and week_number > weeks_total:
+            message = (
+                f"Upcoming week {week_number} exceeds plan length ({weeks_total}); calibration skipped."
+            )
+            log_utils.log_message(message, "WARN")
+            return WeeklyCalibrationResult(
+                plan_id=plan_id,
+                week_number=week_number,
+                week_start=week_start,
+                progression=None,
+                validation=None,
+                message=message,
+            )
+
+        progression_decision = calibrate_plan_week(
+            self.dal,
+            plan_id=plan_id,
+            week_number=week_number,
+            persist=True,
+        )
+        if progression_decision.updates and not progression_decision.persisted:
+            log_utils.log_message(
+                "Progression recommended updates but DAL did not persist them.",
+                "WARN",
+            )
+
+        validation_decision = validate_and_adjust_plan(self.dal, week_start)
+
+        log_payload: List[str] = [
+            f"plan_id={plan_id}",
+            f"week={week_number}",
+            f"week_start={week_start.isoformat()}",
+        ]
+        log_payload.extend(progression_decision.notes)
+        log_payload.extend(validation_decision.log_entries)
+
+        if hasattr(self.dal, "save_validation_log"):
+            try:
+                self.dal.save_validation_log("weekly_calibration", log_payload)
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to persist weekly calibration log: {exc}",
+                    "WARN",
+                )
+
+        updates_count = len(progression_decision.updates)
+        if updates_count:
+            note_preview = progression_decision.notes[0] if progression_decision.notes else ""
+            if len(note_preview) > 90:
+                note_preview = note_preview[:87] + "..."
+            progression_summary = (
+                f"{updates_count} load update(s) applied. " + note_preview
+            ).strip()
+        else:
+            progression_summary = "No load adjustments required."
+
+        message = (
+            f"Week {week_number} starting {week_start.isoformat()} recalibrated: "
+            f"{progression_summary} {validation_decision.explanation}"
+        ).strip()
+
+        log_utils.log_message(f"Weekly calibration summary: {message}", "INFO")
+
+        return WeeklyCalibrationResult(
+            plan_id=plan_id,
+            week_number=week_number,
+            week_start=week_start,
+            progression=progression_decision,
+            validation=validation_decision,
+            message=message,
+        )
 
     def run_daily_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
         """
