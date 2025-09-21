@@ -43,6 +43,16 @@ class BackoffRecommendation:
     metrics: Dict[str, Any]  # observed and baseline metrics for transparency
 
 @dataclass(frozen=True)
+class ReadinessSummary:
+    state: str
+    headline: str
+    tip: Optional[str]
+    severity: str
+    breach_ratio: float
+    reasons: List[str]
+
+
+@dataclass(frozen=True)
 class ValidationDecision:
     """Outcome of plan validation ahead of Wger export or calibration."""
 
@@ -50,7 +60,59 @@ class ValidationDecision:
     applied: bool
     explanation: str
     log_entries: List[str]
+    readiness: ReadinessSummary
     recommendation: BackoffRecommendation
+
+
+_READINESS_STATE_BY_SEVERITY: Dict[str, str] = {
+    "none": "ready",
+    "mild": "lagging",
+    "moderate": "low",
+    "severe": "critical",
+}
+
+
+def _build_readiness_tip(reasons: List[str], severity: str) -> Optional[str]:
+    for reason in reasons:
+        note = reason.lower()
+        if "sleep" in note:
+            return "Prioritise sleep tonight and keep sessions easy."
+        if "resting" in note and "hr" in note:
+            return "Stay aerobic-only today and add breathing work."
+    if severity == "mild":
+        return "Dial effort back a touch and stack light recovery habits."
+    if severity == "moderate":
+        return "Keep intensity low and give yourself extra warm-up and cool-down."
+    if severity == "severe":
+        return "Swap intense work for pure recovery until metrics rebound."
+    return None
+
+
+def _build_readiness_summary(rec: BackoffRecommendation) -> ReadinessSummary:
+    severity = rec.severity or "none"
+    state = _READINESS_STATE_BY_SEVERITY.get(severity, "ready")
+    metrics = rec.metrics if isinstance(rec.metrics, dict) else {}
+    ratio_raw = metrics.get("severity_ratio", 0.0)
+    try:
+        breach_ratio = float(ratio_raw)
+    except (TypeError, ValueError):
+        breach_ratio = 0.0
+    reasons = list(rec.reasons)
+    if not rec.needs_backoff:
+        headline = "Recovery steady"
+        tip = None
+        state = "ready"
+    else:
+        headline = f"Recovery dip detected ({severity})"
+        tip = _build_readiness_tip(reasons, severity)
+    return ReadinessSummary(
+        state=state,
+        headline=headline,
+        tip=tip,
+        severity=severity,
+        breach_ratio=breach_ratio,
+        reasons=reasons,
+    )
 
 
 
@@ -293,6 +355,12 @@ def assess_recovery_and_backoff(
     )
 
 
+def summarise_readiness(dal: Any, week_start_date: date) -> ReadinessSummary:
+    """Return a non-destructive readiness summary for the supplied window."""
+    rec = assess_recovery_and_backoff(dal, week_start_date)
+    return _build_readiness_summary(rec)
+
+
 def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecision:
     """Assess recovery ahead of the upcoming week and optionally apply a back-off.
 
@@ -300,6 +368,7 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
     if it was applied, and the reasoning captured for downstream logging.
     """
     rec = assess_recovery_and_backoff(dal, week_start_date)
+    readiness = _build_readiness_summary(rec)
 
     if not rec.needs_backoff:
         explanation = (
@@ -311,6 +380,7 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
             applied=False,
             explanation=explanation,
             log_entries=[],
+            readiness=readiness,
             recommendation=rec,
         )
 
@@ -320,6 +390,8 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
         f"rir_increment={rec.rir_increment}",
         *rec.reasons,
     ]
+    if readiness.tip:
+        log_entries.append(f"readiness_tip={readiness.tip}")
 
     explanation = (
         f"Global back-off recommended, severity={rec.severity}, "
@@ -354,5 +426,6 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
         applied=applied,
         explanation=explanation,
         log_entries=log_entries,
+        readiness=readiness,
         recommendation=rec,
     )

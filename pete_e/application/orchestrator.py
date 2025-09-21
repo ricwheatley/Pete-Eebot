@@ -19,7 +19,11 @@ from pete_e.infrastructure import telegram_sender
 from pete_e.domain.narrative_builder import NarrativeBuilder, PeteVoice
 from pete_e.domain.plan_builder import build_block
 from pete_e.domain.progression import PlanProgressionDecision, calibrate_plan_week
-from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
+from pete_e.domain.validation import (
+    ValidationDecision,
+    validate_and_adjust_plan,
+    summarise_readiness,
+)
 from pete_e.application import wger_sender
 from pete_e.cli import messenger as messenger_cli
 from pete_e.domain import body_age, phrase_picker
@@ -241,10 +245,29 @@ class Orchestrator:
             target_date = date.today() - timedelta(days=1)  # Default to yesterday
 
         log_utils.log_message(f"Generating daily summary for {target_date.isoformat()}", "INFO")
-        summary_data = self.dal.get_daily_summary(target_date)
+        summary_raw = self.dal.get_daily_summary(target_date)
 
-        if not summary_data:
+        if not summary_raw:
             return f"I have no data for {target_date.strftime('%A, %B %d')}. Something might have gone wrong with the daily sync."
+
+        summary_data = dict(summary_raw)
+
+        if not summary_data.get("readiness_state"):
+            try:
+                readiness_snapshot = summarise_readiness(
+                    self.dal, target_date + timedelta(days=1)
+                )
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Failed to compute readiness snapshot for {target_date.isoformat()}: {exc}",
+                    "WARN",
+                )
+            else:
+                if readiness_snapshot.state != "ready":
+                    summary_data["readiness_state"] = readiness_snapshot.state
+                    summary_data["readiness_headline"] = readiness_snapshot.headline
+                    if readiness_snapshot.tip:
+                        summary_data["readiness_tip"] = readiness_snapshot.tip
 
         # --- Cheeky Apple Health nudge ---
         if summary_data.get("steps") is None and summary_data.get("hr_resting") is None:
@@ -411,6 +434,24 @@ class Orchestrator:
             )
 
         validation_decision = validate_and_adjust_plan(self.dal, week_start)
+
+        readiness = validation_decision.readiness
+        if validation_decision.needs_backoff:
+            alert_parts = [f"Readiness alert: {readiness.headline}"]
+            if readiness.reasons:
+                alert_parts.append(f"Reasons: {', '.join(readiness.reasons)}")
+            if readiness.tip:
+                alert_parts.append(f"Tip: {readiness.tip}")
+            alert_message = " ".join(alert_parts)
+            try:
+                sent = bool(telegram_sender.send_alert(alert_message))
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(f"Failed to send readiness alert: {exc}", "WARN")
+            else:
+                if sent:
+                    log_utils.log_message("Dispatched readiness alert for weekly back-off.", "INFO")
+                else:
+                    log_utils.log_message("Readiness alert send returned False; Telegram suppressed.", "WARN")
 
         log_payload: List[str] = [
             f"plan_id={plan_id}",
