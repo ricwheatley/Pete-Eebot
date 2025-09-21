@@ -2,8 +2,10 @@
 Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
+import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # DAL and Clients
@@ -19,6 +21,7 @@ from pete_e.domain.plan_builder import build_block
 from pete_e.domain.progression import PlanProgressionDecision, calibrate_plan_week
 from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
 from pete_e.application import wger_sender
+from pete_e.cli import messenger as messenger_cli
 from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
@@ -39,6 +42,110 @@ WITHINGS_ONLY_SOURCES = (
     "Withings",
     "BodyAge",
 )
+
+
+class DailySummaryDispatchLedger:
+    """Tracks which dates have had their daily summary dispatched."""
+
+    def __init__(
+        self,
+        *,
+        store_path: Path | None = None,
+        retention_days: int = 14,
+    ) -> None:
+        self.retention_days = max(1, int(retention_days))
+        if store_path is None:
+            base_dir = settings.log_path.parent
+            self.path = base_dir / "daily_summary_dispatch.json"
+        else:
+            store_path = Path(store_path)
+            if store_path.is_dir():
+                self.path = store_path / "daily_summary_dispatch.json"
+            else:
+                self.path = store_path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._cache: Dict[str, Dict[str, str]] | None = None
+
+    def _load(self) -> Dict[str, Dict[str, str]]:
+        if self._cache is not None:
+            return self._cache
+        try:
+            raw = self.path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            data: Dict[str, Dict[str, str]] = {}
+        else:
+            raw = raw.strip()
+            if not raw:
+                data = {}
+            else:
+                try:
+                    loaded = json.loads(raw)
+                except json.JSONDecodeError:
+                    log_utils.log_message(
+                        "Daily summary dispatch ledger was corrupt; resetting.",
+                        "WARN",
+                    )
+                    data = {}
+                else:
+                    if isinstance(loaded, dict):
+                        data = {}
+                        for key, value in loaded.items():
+                            if isinstance(key, str) and isinstance(value, dict):
+                                data[key] = {
+                                    str(sub_key): ("" if sub_val is None else str(sub_val))
+                                    for sub_key, sub_val in value.items()
+                                }
+                    else:
+                        data = {}
+        self._cache = data
+        return data
+
+    def _persist(self, data: Dict[str, Dict[str, str]]) -> None:
+        self.path.write_text(
+            json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self._cache = data
+
+    def _prune_expired(self, data: Dict[str, Dict[str, str]], reference_date: date) -> bool:
+        cutoff = reference_date - timedelta(days=self.retention_days)
+        removed = False
+        for key in list(data.keys()):
+            try:
+                entry_date = date.fromisoformat(key)
+            except ValueError:
+                data.pop(key, None)
+                removed = True
+                continue
+            if entry_date < cutoff:
+                data.pop(key, None)
+                removed = True
+        return removed
+
+    def was_sent(self, target_date: date) -> bool:
+        data = self._load()
+        if self._prune_expired(data, target_date):
+            self._persist(data)
+        iso_value = target_date.isoformat()
+        entry = data.get(iso_value)
+        if not entry:
+            return False
+        sent_at = entry.get("sent_at")
+        return bool(sent_at)
+
+    def mark_sent(self, target_date: date, summary: str) -> None:
+        data = self._load()
+        if self._prune_expired(data, target_date):
+            pass
+        preview = (summary or "").strip()
+        if len(preview) > 180:
+            preview = f"{preview[:177]}..."
+        data[target_date.isoformat()] = {
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+            "summary_preview": preview,
+        }
+        self._persist(data)
+
 
 @dataclass(frozen=True)
 class WeeklyCalibrationResult:
@@ -93,9 +200,14 @@ class Orchestrator:
     of the application.
     """
 
-    def __init__(self, dal: DataAccessLayer = None):
+    def __init__(
+        self,
+        dal: DataAccessLayer = None,
+        summary_dispatch_ledger: DailySummaryDispatchLedger | None = None,
+    ) -> None:
         self.dal = dal or PostgresDal()
         self.narrative_builder = NarrativeBuilder()
+        self.summary_dispatch_ledger = summary_dispatch_ledger or DailySummaryDispatchLedger()
 
     def get_daily_summary(self, target_date: date = None) -> str:
         """
@@ -154,9 +266,44 @@ class Orchestrator:
         return self.narrative_builder.build_weekly_plan(plan_week_data, week_number)
 
 
-    def send_telegram_message(self, message: str) -> None:
+    def send_telegram_message(self, message: str) -> bool:
         """Sends a message using the Telegram sender."""
-        telegram_sender.send_message(message)
+        return telegram_sender.send_message(message)
+
+    def _auto_send_daily_summary(self, *, target_date: date) -> bool:
+        """Generate and send the daily summary for the target date with idempotency."""
+        if self.summary_dispatch_ledger.was_sent(target_date):
+            log_utils.log_message(
+                f"Skipping auto summary send for {target_date.isoformat()}; already sent.",
+                "INFO",
+            )
+            return False
+
+        try:
+            summary_text = messenger_cli.send_daily_summary(
+                orchestrator=self,
+                target_date=target_date,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Auto daily summary send failed for {target_date.isoformat()}: {exc}",
+                "ERROR",
+            )
+            return False
+
+        if not summary_text or not str(summary_text).strip():
+            log_utils.log_message(
+                f"Auto daily summary skipped for {target_date.isoformat()}: summary empty.",
+                "WARN",
+            )
+            return False
+
+        self.summary_dispatch_ledger.mark_sent(target_date, str(summary_text))
+        log_utils.log_message(
+            f"Auto daily summary sent for {target_date.isoformat()}",
+            "INFO",
+        )
+        return True
 
     def run_weekly_calibration(
         self,
@@ -467,6 +614,18 @@ class Orchestrator:
                 "Daily sync failed for all sources: " + ', '.join(unique_failures)
             )
 
+        success = not unique_failures
+
+        if success and days == 1 and not alert_messages:
+            summary_target = today - timedelta(days=1)
+            try:
+                self._auto_send_daily_summary(target_date=summary_target)
+            except Exception as auto_exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Auto summary dispatch raised an unexpected error for {summary_target.isoformat()}: {auto_exc}",
+                    "ERROR",
+                )
+
         if alert_messages:
             alert_text = "\n".join(alert_messages)
             try:
@@ -477,7 +636,7 @@ class Orchestrator:
                     "ERROR",
                 )
 
-        return not unique_failures, unique_failures, source_statuses
+        return success, unique_failures, source_statuses
 
 
     def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:

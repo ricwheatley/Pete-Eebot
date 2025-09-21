@@ -24,6 +24,10 @@ if "pete_e.config" not in sys.modules:
     config_stub.settings = _SettingsStub()
     sys.modules["pete_e.config"] = config_stub
 
+    config_config_stub = types.ModuleType("pete_e.config.config")
+    config_config_stub.settings = config_stub.settings
+    sys.modules["pete_e.config.config"] = config_config_stub
+
 if "pete_e.data_access.postgres_dal" not in sys.modules:
     postgres_stub = types.ModuleType("pete_e.data_access.postgres_dal")
 
@@ -34,8 +38,10 @@ if "pete_e.data_access.postgres_dal" not in sys.modules:
     postgres_stub.PostgresDal = _PostgresDalStub
     postgres_stub.close_pool = lambda: None
     sys.modules["pete_e.data_access.postgres_dal"] = postgres_stub
+
 from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
+from pete_e.cli import messenger as messenger_module
 
 
 class DummyDal:
@@ -75,6 +81,17 @@ class DummyWgerClient:
         return self.next_logs
 
 
+class MemorySummaryLedger:
+    def __init__(self):
+        self.sent = {}
+
+    def was_sent(self, target_date):
+        return target_date in self.sent
+
+    def mark_sent(self, target_date, summary):
+        self.sent[target_date] = summary
+
+
 @pytest.fixture(autouse=True)
 def stub_clients(monkeypatch):
     DummyWithingsClient.next_summary = None
@@ -87,6 +104,28 @@ def stub_clients(monkeypatch):
         "run_apple_health_ingest",
         lambda: types.SimpleNamespace(sources=[], workouts=0, daily_points=0),
     )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "DailySummaryDispatchLedger",
+        MemorySummaryLedger,
+    )
+
+
+@pytest.fixture(autouse=True)
+def summary_spy(monkeypatch):
+    calls = []
+
+    def fake_send_daily_summary(*, orchestrator, target_date=None):
+        calls.append({"orchestrator": orchestrator, "target_date": target_date})
+        return "stub-summary"
+
+    monkeypatch.setattr(
+        messenger_module,
+        "send_daily_summary",
+        fake_send_daily_summary,
+        raising=False,
+    )
+    return calls
 
 
 def test_run_daily_sync_handles_absent_apple_data():
@@ -97,10 +136,10 @@ def test_run_daily_sync_handles_absent_apple_data():
 
     assert success
     assert failures == []
-    assert statuses['AppleDropbox'] == 'ok'
-    assert statuses['Withings'] == 'ok'
-    assert statuses['Wger'] == 'ok'
-    assert statuses['BodyAge'] == 'ok'
+    assert statuses["AppleDropbox"] == "ok"
+    assert statuses["Withings"] == "ok"
+    assert statuses["Wger"] == "ok"
+    assert statuses["BodyAge"] == "ok"
     assert dummy_dal.apple_calls == []
 
 
@@ -121,10 +160,10 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
 
     assert success
     assert failures == []
-    assert statuses['AppleDropbox'] == 'ok'
-    assert statuses['Withings'] == 'ok'
-    assert statuses['Wger'] == 'ok'
-    assert statuses['BodyAge'] == 'ok'
+    assert statuses["AppleDropbox"] == "ok"
+    assert statuses["Withings"] == "ok"
+    assert statuses["Wger"] == "ok"
+    assert statuses["BodyAge"] == "ok"
     assert dummy_dal.withings_calls == [(target_day, 82.5, 19.2)]
     assert dummy_dal.wger_logs == [
         (target_day, 7, 1, 10, 45.0, 2),
@@ -132,7 +171,8 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
     ]
     assert dummy_dal.refreshed is True
 
-def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch):
+
+def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch, summary_spy):
     alerts = []
 
     def fake_alert(message):
@@ -141,30 +181,60 @@ def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch):
 
     monkeypatch.setattr(
         orchestrator_module.telegram_sender,
-        'send_alert',
+        "send_alert",
         fake_alert,
         raising=False,
     )
 
     def fail_ingest():
-        raise RuntimeError('apple ingest exploded')
+        raise RuntimeError("apple ingest exploded")
 
-    monkeypatch.setattr(orchestrator_module, 'run_apple_health_ingest', fail_ingest)
+    monkeypatch.setattr(orchestrator_module, "run_apple_health_ingest", fail_ingest)
 
     dummy_dal = DummyDal()
-    orch = Orchestrator(dal=dummy_dal)
+    ledger = MemorySummaryLedger()
+    orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
 
     success, failures, statuses = orch.run_daily_sync(days=1)
 
     assert not success
-    assert statuses['AppleDropbox'] == 'failed'
-    assert 'AppleDropbox' in failures
+    assert statuses["AppleDropbox"] == "failed"
+    assert "AppleDropbox" in failures
     assert len(alerts) == 1
     assert isinstance(alerts[0], str)
+    assert len(summary_spy) == 0
+    assert ledger.sent == {}
 
-    token = os.environ.get('TELEGRAM_TOKEN')
-    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    token = os.environ.get("TELEGRAM_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     for secret in (token, chat_id):
         if secret:
             assert secret not in alerts[0]
 
+
+def test_run_daily_sync_sends_summary_after_success(summary_spy):
+    dummy_dal = DummyDal()
+    ledger = MemorySummaryLedger()
+    orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
+
+    success, failures, statuses = orch.run_daily_sync(days=1)
+
+    assert success
+    assert failures == []
+    target = date.today() - timedelta(days=1)
+    assert len(summary_spy) == 1
+    assert summary_spy[0]["target_date"] == target
+    assert ledger.was_sent(target)
+
+
+def test_run_daily_sync_summary_idempotent(summary_spy):
+    dummy_dal = DummyDal()
+    ledger = MemorySummaryLedger()
+    orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
+
+    success1, _, _ = orch.run_daily_sync(days=1)
+    success2, _, _ = orch.run_daily_sync(days=1)
+
+    assert success1
+    assert success2
+    assert len(summary_spy) == 1

@@ -1,4 +1,4 @@
-﻿# (Functional) **Command-line interface** (Typer app) exposing main features.
+# (Functional) **Command-line interface** (Typer app) exposing main features.
 
 """
 Main Command-Line Interface for the Pete-Eebot application.
@@ -7,20 +7,63 @@ This script provides a single entry point for all major operations,
 including running the daily data sync, ingesting new data, and sending
 notifications.
 """
-import sys
+from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
+
 from typing_extensions import Annotated
 
 import typer
 
-# Import the core logic functions we want to expose as commands
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
+from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
-from pete_e.application.orchestrator import Orchestrator
-from pete_e.infrastructure import log_utils
-from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
-from datetime import datetime, date, timedelta
+
+if TYPE_CHECKING:  # pragma: no cover - import for type checking only
+    from pete_e.application.orchestrator import Orchestrator as OrchestratorType
+else:  # pragma: no cover - runtime fallback
+    OrchestratorType = object
+
+
+def _build_orchestrator() -> "OrchestratorType":
+    """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
+    from pete_e.application.orchestrator import Orchestrator as _Orchestrator
+
+    return _Orchestrator()
+
+
+def build_daily_summary(
+    *,
+    orchestrator: "OrchestratorType | None" = None,
+    target_date: date | None = None,
+) -> str:
+    """Generate the daily summary narrative for the requested date."""
+    orch = orchestrator or _build_orchestrator()
+    return orch.get_daily_summary(target_date=target_date)
+
+
+def send_daily_summary(
+    *,
+    orchestrator: "OrchestratorType | None" = None,
+    target_date: date | None = None,
+    summary_text: str | None = None,
+) -> str:
+    """Send the daily summary via Telegram and return the content that was sent."""
+    orch = orchestrator or _build_orchestrator()
+    summary_value = summary_text if summary_text is not None else orch.get_daily_summary(target_date=target_date)
+    summary_str = "" if summary_value is None else str(summary_value)
+
+    if not summary_str.strip():
+        return summary_str
+
+    sent = orch.send_telegram_message(summary_str)
+    if not sent:
+        raise RuntimeError("Telegram send for daily summary failed.")
+
+    return summary_str
+
 
 # Create the Typer application object
 app = typer.Typer(
@@ -28,6 +71,7 @@ app = typer.Typer(
     help="CLI for Pete-Eebot, your personal health and fitness orchestrator.",
     add_completion=False,
 )
+
 
 @app.command()
 def sync(
@@ -49,7 +93,6 @@ def sync(
     raise typer.Exit(code=1)
 
 
-
 @app.command(name="withings-sync")
 def withings_sync(
     days: Annotated[int, typer.Option(help="Number of past days to backfill.")] = 7,
@@ -64,6 +107,7 @@ def withings_sync(
     typer.echo("Withings-only sync finished with errors. Check logs/pete_history.log for details.")
     raise typer.Exit(code=1)
 
+
 @app.command()
 def status(
     timeout: Annotated[float, typer.Option('--timeout', help='Override per-dependency timeout in seconds.')] = DEFAULT_TIMEOUT_SECONDS,
@@ -73,6 +117,7 @@ def status(
     typer.echo(render_results(results))
     exit_code = 0 if all(result.ok for result in results) else 1
     raise typer.Exit(code=exit_code)
+
 
 @app.command(name="ingest-apple")
 def ingest_apple() -> None:
@@ -98,6 +143,7 @@ def ingest_apple() -> None:
         "INFO",
     )
 
+
 @app.command()
 def plan(
     weeks: Annotated[int, typer.Option(help="The duration of the new plan in weeks.")] = 4,
@@ -109,21 +155,19 @@ def plan(
     if start_date_str:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     else:
-        # Default to the next upcoming Monday
         today = date.today()
         start_date = today + timedelta(days=-today.weekday(), weeks=1)
 
     log_utils.log_message("Invoking plan generator...", "INFO")
-    orchestrator = Orchestrator()
+    orchestrator = _build_orchestrator()
     plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
 
     if plan_id > 0:
         log_utils.log_message(f"New plan (ID: {plan_id}) deployed successfully!", "INFO")
         raise typer.Exit(code=0)
-    else:
-        log_utils.log_message("Failed to deploy new plan.", "ERROR")
-        raise typer.Exit(code=1)
-    
+    log_utils.log_message("Failed to deploy new plan.", "ERROR")
+    raise typer.Exit(code=1)
+
 
 @app.command()
 def message(
@@ -138,14 +182,19 @@ def message(
         log_utils.log_message("Please specify a message type to generate: --summary or --plan", "WARN")
         raise typer.Exit(code=1)
 
-    orchestrator = Orchestrator()
+    orchestrator = _build_orchestrator()
+
     if summary:
         log_utils.log_message("Generating daily summary...", "INFO")
-        daily_summary = orchestrator.get_daily_summary()
+        daily_summary = build_daily_summary(orchestrator=orchestrator)
         print("--- Daily Summary ---")
         print(daily_summary)
         if send:
-            orchestrator.send_telegram_message(daily_summary)
+            try:
+                send_daily_summary(orchestrator=orchestrator, summary_text=daily_summary)
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(f"Failed to send daily summary via Telegram: {exc}", "ERROR")
+                raise typer.Exit(code=1)
 
     if plan:
         log_utils.log_message("Generating weekly plan...", "INFO")
@@ -153,7 +202,10 @@ def message(
         print("--- Weekly Plan ---")
         print(weekly_plan)
         if send:
-            orchestrator.send_telegram_message(weekly_plan)
+            if not orchestrator.send_telegram_message(weekly_plan):
+                log_utils.log_message("Failed to send weekly plan via Telegram.", "ERROR")
+                raise typer.Exit(code=1)
+
 
 @app.command("refresh-withings")
 def refresh_withings_tokens() -> None:
@@ -163,12 +215,13 @@ def refresh_withings_tokens() -> None:
     try:
         client = WithingsClient()
         tokens = client._refresh_access_token()  # returns body from API
-        typer.echo("âœ… Withings tokens refreshed.")
+        typer.echo("[OK] Withings tokens refreshed.")
         typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
         typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
     except Exception as e:
         log_utils.log_message(f"Failed to refresh Withings tokens: {e}", "ERROR")
         raise typer.Exit(code=1)
+
 
 @app.command("withings-auth-url")
 def withings_auth_url() -> None:
@@ -177,7 +230,7 @@ def withings_auth_url() -> None:
     Open it in your browser, log in, and approve Pete-Eebot.
     """
     url = withings_oauth_helper.build_authorize_url()
-    typer.echo("ðŸ‘‰ Visit this URL to authorize Pete-Eebot with Withings:")
+    typer.echo("-> Visit this URL to authorize Pete-Eebot with Withings:")
     typer.echo(url)
 
 
@@ -189,11 +242,10 @@ def withings_exchange_code(code: str) -> None:
     """
     try:
         tokens = withings_oauth_helper.exchange_code_for_tokens(code)
-        # Save directly to .withings_tokens.json
         client = WithingsClient()
         client._save_tokens(tokens)
 
-        typer.echo("âœ… Successfully exchanged code for tokens.")
+        typer.echo("[OK] Successfully exchanged code for tokens.")
         typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
         typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
         typer.echo("\nTokens have been saved to .withings_tokens.json")
