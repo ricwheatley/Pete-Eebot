@@ -224,5 +224,7 @@ def test_daily_summary_includes_readiness_tip_when_flagged(monkeypatch, plan_row
     orch = Orchestrator(dal=dal)
     summary_text = orch.get_daily_summary(target_date=target_day)
 
-    assert "readiness" in summary_text.lower()
+    lowered = summary_text.lower()
+    assert "coach's call" in lowered
+    assert "lagging" in lowered
     assert "early night" in summary_text.lower()

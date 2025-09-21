@@ -1,8 +1,9 @@
-from datetime import date as real_date
+﻿from datetime import date as real_date
 
 from typer.testing import CliRunner
 
 from pete_e.cli import messenger
+from pete_e.domain import narrative_builder
 
 
 class StubDal:
@@ -58,6 +59,19 @@ class FixedDate(real_date):
         return cls(2024, 9, 4)
 
 
+class _DeterministicRandom:
+    def choice(self, seq):
+        if not seq:
+            raise ValueError("choice sequence was empty")
+        return seq[0]
+
+    def randint(self, a, b):
+        return a
+
+    def random(self):
+        return 0.0
+
+
 runner = CliRunner()
 
 
@@ -65,24 +79,29 @@ def _setup(monkeypatch):
     start = FixedDate(2024, 9, 2)
     dal = StubDal(start)
     orch = StubOrchestrator(dal)
+    deterministic = _DeterministicRandom()
+    monkeypatch.setattr(narrative_builder, "random", deterministic)
+    monkeypatch.setattr(narrative_builder, "phrase_for", lambda **_: "Remember to hydrate.")
     monkeypatch.setattr(messenger, "_build_orchestrator", lambda: orch)
-    monkeypatch.setattr(messenger, "random_phrase", lambda **_: "Remember to hydrate.")
     monkeypatch.setattr(messenger, "date", FixedDate)
     return orch
 
 
 def test_weekly_plan_cli_formats_overview(monkeypatch):
     orch = _setup(monkeypatch)
+    expected = messenger.build_weekly_plan_overview(orchestrator=orch, target_date=FixedDate.today())
 
     result = runner.invoke(messenger.app, ["message", "--plan"], catch_exceptions=False)
 
     assert result.exit_code == 0
     output = result.stdout.strip()
-    assert "Week 1 training plan (2024-09-02 - 2024-09-08):" in output
-    assert "Key workouts:" in output
-    assert "- Monday: Squat (3 x 5; RIR 2); Bench Press (3 x 8; RIR 1)" in output
-    assert "- Wednesday: Tempo Run" in output
-    assert "Tip: Remember to hydrate." in output
+    assert expected in output
+    assert "Yo Ric! Coach Pete's weekly huddle incoming" in output
+    assert "*Week 1 Game Plan · 2024-09-02 → 2024-09-08*" in output
+    assert "- Monday: Squat (3 x 5 · RIR 2) | Bench Press (3 x 8 · RIR 1)" in output
+    assert "- Rest windows: Tuesday, Thursday, Friday, Saturday, Sunday - keep them mobile." in output
+    assert "Coach's call: Week 1 is all about momentum - lock it in." in output
+    assert "Remember to hydrate." in output
     assert orch.sent_message is None
 
 
@@ -94,5 +113,3 @@ def test_weekly_plan_cli_send_uses_formatted_overview(monkeypatch):
 
     assert result.exit_code == 0
     assert orch.sent_message == expected
-
-
