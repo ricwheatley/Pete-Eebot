@@ -26,6 +26,24 @@ _HRV_METRIC_KEYS: Tuple[str, ...] = (
 )
 
 
+_EXPECTED_PLAN_WEEKS: int = 4
+_EXPECTED_TRAINING_DAYS: Tuple[int, ...] = (1, 2, 4, 5)
+_DAY_NAME_BY_NUMBER: Dict[int, str] = {
+    1: 'Monday',
+    2: 'Tuesday',
+    3: 'Wednesday',
+    4: 'Thursday',
+    5: 'Friday',
+    6: 'Saturday',
+    7: 'Sunday',
+}
+
+
+def _format_day_list(days: Iterable[int]) -> str:
+    ordered = sorted(days)
+    names = [_DAY_NAME_BY_NUMBER.get(day, str(day)) for day in ordered]
+    return ', '.join(names)
+
 @dataclass(frozen=True)
 class WindowStats:
     days: int
@@ -358,6 +376,102 @@ def ensure_muscle_balance(
     )
 
 
+
+def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[date] = None) -> None:
+    """Validate overall plan structure before persistence or export."""
+
+    weeks = plan.get('weeks')
+    errors: List[str] = []
+
+    if not isinstance(weeks, list) or not weeks:
+        errors.append('plan must contain 4 weeks but none found')
+        raise ValueError('Plan structure validation failed: ' + '; '.join(errors))
+
+    week_count = len(weeks)
+    if week_count != _EXPECTED_PLAN_WEEKS:
+        errors.append(f'plan must contain {_EXPECTED_PLAN_WEEKS} weeks, found {week_count}')
+
+    canonical_start = _ensure_date(block_start_date)
+    if canonical_start is None and weeks:
+        canonical_start = _ensure_date(weeks[0].get('start_date'))
+    if canonical_start is None:
+        errors.append('unable to determine canonical start date for plan')
+
+    expected_days = set(_EXPECTED_TRAINING_DAYS)
+
+    for idx, week in enumerate(weeks, start=1):
+        prefix = f'week {idx}'
+        week_number = week.get('week_number')
+        if week_number != idx:
+            errors.append(f'{prefix}: expected week_number {idx}, found {week_number}')
+
+        week_start = _ensure_date(week.get('start_date'))
+        if week_start is None:
+            errors.append(f'{prefix}: missing or invalid start_date')
+        elif canonical_start is not None:
+            expected = canonical_start + timedelta(days=(idx - 1) * 7)
+            if week_start != expected:
+                errors.append(
+                    f"{prefix}: start_date {week_start.isoformat()} does not match expected {expected.isoformat()}"
+                )
+
+        workouts = week.get('workouts')
+        if not isinstance(workouts, list) or not workouts:
+            errors.append(f'{prefix}: no workouts defined')
+            continue
+
+        training_days: set[int] = set()
+        main_days: Dict[int, int] = {}
+        invalid_day_flagged = False
+
+        for workout in workouts:
+            if not isinstance(workout, dict):
+                continue
+            day_raw = workout.get('day_of_week')
+            try:
+                day = int(day_raw)
+            except (TypeError, ValueError):
+                if not invalid_day_flagged:
+                    errors.append(f'{prefix}: encountered invalid day_of_week value {day_raw!r}')
+                    invalid_day_flagged = True
+                continue
+
+            slot_raw = workout.get('slot')
+            slot = str(slot_raw).lower() if slot_raw is not None else ''
+            if slot == 'conditioning':
+                continue
+
+            training_days.add(day)
+            if slot == 'main':
+                main_days[day] = main_days.get(day, 0) + 1
+
+        missing_days = sorted(expected_days - training_days)
+        if missing_days:
+            errors.append(
+                f"{prefix}: missing training days ({_format_day_list(missing_days)}); expected Monday/Tuesday/Thursday/Friday pattern"
+            )
+        extra_days = sorted(training_days - expected_days)
+        if extra_days:
+            errors.append(
+                f"{prefix}: unexpected training days ({_format_day_list(extra_days)}); expected Monday/Tuesday/Thursday/Friday pattern"
+            )
+
+        for day in sorted(training_days & expected_days):
+            if main_days.get(day, 0) == 0:
+                errors.append(
+                    f"{prefix}: {_DAY_NAME_BY_NUMBER.get(day, str(day))} session missing main lift slot"
+                )
+
+    balance = ensure_muscle_balance(plan)
+    if not balance.balanced:
+        missing_groups = ', '.join(balance.missing_groups) if balance.missing_groups else 'none'
+        errors.append(
+            'plan failed muscle balance check: '
+            + f'missing={missing_groups}; ratio={balance.imbalance_ratio:.2f}'
+        )
+
+    if errors:
+        raise ValueError('Plan structure validation failed: ' + '; '.join(errors))
 
 
 _READINESS_STATE_BY_SEVERITY: Dict[str, str] = {
@@ -848,3 +962,4 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
         readiness=readiness,
         recommendation=rec,
     )
+

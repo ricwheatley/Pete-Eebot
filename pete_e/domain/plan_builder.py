@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pete_e.config import settings
 from pete_e.domain.data_access import DataAccessLayer
-from pete_e.domain.validation import ensure_muscle_balance
+from pete_e.domain.validation import ensure_muscle_balance, validate_plan_structure
 
 INTENSITY_SEQUENCE: Tuple[str, ...] = ("light", "medium", "heavy", "deload")
 INTENSITY_SETTINGS: Dict[str, Dict[str, Any]] = {
@@ -93,35 +93,43 @@ SESSION_BLUEPRINT: Tuple[Dict[str, Any], ...] = (
         "slots": (
             SessionSlot("push_compound", "main", 4, 6, 8, 2, min_sets=2),
             SessionSlot("push_accessory", "secondary", 3, 10, 12, 2),
+            SessionSlot("pull_accessory", "support", 2, 10, 12, 2),
             SessionSlot("core", "auxiliary", 3, 12, 15, 3),
         ),
     },
     {
-        "day_of_week": 3,
+        "day_of_week": 2,
         "focus": "lower",
         "slots": (
             SessionSlot("lower_compound", "main", 4, 6, 9, 2, min_sets=2),
             SessionSlot("lower_accessory", "secondary", 3, 8, 12, 2),
+            SessionSlot("push_accessory", "support", 2, 10, 12, 2),
             SessionSlot("core", "auxiliary", 3, 10, 15, 3),
         ),
     },
     {
-        "day_of_week": 5,
+        "day_of_week": 4,
         "focus": "upper_pull",
         "slots": (
             SessionSlot("pull_compound", "main", 4, 6, 8, 2, min_sets=2),
             SessionSlot("pull_accessory", "secondary", 3, 8, 12, 2),
+            SessionSlot("lower_accessory", "support", 2, 8, 12, 2),
             SessionSlot("core", "auxiliary", 3, 12, 15, 3),
         ),
     },
     {
-        "day_of_week": 6,
-        "focus": "conditioning",
+        "day_of_week": 5,
+        "focus": "posterior_chain",
         "slots": (
+            SessionSlot("lower_compound", "main", 3, 6, 8, 2, min_sets=2),
+            SessionSlot("pull_accessory", "secondary", 3, 8, 12, 2),
+            SessionSlot("push_accessory", "support", 2, 10, 12, 2),
+            SessionSlot("core", "auxiliary", 3, 10, 15, 3),
             SessionSlot("conditioning", "conditioning", 1, 1, 1, None, min_sets=1),
         ),
     },
 )
+
 
 
 def _mean_metric(rows: List[Dict[str, Any]], key: str) -> Optional[float]:
@@ -338,6 +346,8 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
         "metadata": metadata,
     }
 
+    validate_plan_structure(plan, start_date)
+
     balance_report = ensure_muscle_balance(plan)
     if not balance_report.balanced:
         raise RuntimeError(
@@ -351,3 +361,4 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
         raise RuntimeError("Failed to persist training plan to database")
 
     return plan_id
+
