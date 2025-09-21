@@ -92,10 +92,14 @@ def test_run_daily_sync_handles_absent_apple_data():
     dummy_dal = DummyDal()
     orch = Orchestrator(dal=dummy_dal)
 
-    success, failures = orch.run_daily_sync(days=1)
+    success, failures, statuses = orch.run_daily_sync(days=1)
 
     assert success
     assert failures == []
+    assert statuses['AppleDropbox'] == 'ok'
+    assert statuses['Withings'] == 'ok'
+    assert statuses['Wger'] == 'ok'
+    assert statuses['BodyAge'] == 'ok'
     assert dummy_dal.apple_calls == []
 
 
@@ -112,10 +116,14 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
     dummy_dal = DummyDal()
     orch = Orchestrator(dal=dummy_dal)
 
-    success, failures = orch.run_daily_sync(days=1)
+    success, failures, statuses = orch.run_daily_sync(days=1)
 
     assert success
     assert failures == []
+    assert statuses['AppleDropbox'] == 'ok'
+    assert statuses['Withings'] == 'ok'
+    assert statuses['Wger'] == 'ok'
+    assert statuses['BodyAge'] == 'ok'
     assert dummy_dal.withings_calls == [(target_day, 82.5, 19.2)]
     assert dummy_dal.wger_logs == [
         (target_day, 7, 1, 10, 45.0, 2),

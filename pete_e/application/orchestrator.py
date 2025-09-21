@@ -3,7 +3,7 @@ Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
 from datetime import date, timedelta
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
@@ -20,6 +20,17 @@ from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.config import settings
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+
+DAILY_SYNC_SOURCES = (
+    "AppleDropbox",
+    "Withings",
+    "Wger",
+    "BodyAge",
+)
+WITHINGS_ONLY_SOURCES = (
+    "Withings",
+    "BodyAge",
+)
 
 class Orchestrator:
     """
@@ -92,7 +103,7 @@ class Orchestrator:
         """Sends a message using the Telegram sender."""
         telegram_sender.send_message(message)
 
-    def run_daily_sync(self, days: int) -> Tuple[bool, List[str]]:
+    def run_daily_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
         """
         Orchestrates the daily data synchronization process.
 
@@ -106,6 +117,7 @@ class Orchestrator:
         wger_client = WgerClient() # Assuming a WgerClient class exists
 
         failed_sources: List[str] = []
+        source_statuses: Dict[str, str] = {name: "ok" for name in DAILY_SYNC_SOURCES}
 
         try:
             apple_report = run_apple_health_ingest()
@@ -115,6 +127,7 @@ class Orchestrator:
                 "ERROR",
             )
             failed_sources.append("AppleDropbox")
+            source_statuses["AppleDropbox"] = "failed"
         else:
             processed_files = len(apple_report.sources)
             log_utils.log_message(
@@ -134,6 +147,7 @@ class Orchestrator:
                 "ERROR",
             )
             failed_sources.append("Wger")
+            source_statuses["Wger"] = "failed"
             wger_logs_by_date = {}
 
         wger_logs_found = False
@@ -155,6 +169,7 @@ class Orchestrator:
             except Exception as e:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("Withings")
+                source_statuses["Withings"] = "failed"
 
             # --- Wger Workout Logs ---
             try:
@@ -173,6 +188,7 @@ class Orchestrator:
             except Exception as e:
                 log_utils.log_message(f"Wger sync failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("Wger")
+                source_statuses["Wger"] = "failed"
 
             # --- Body Age Recalculation ---
             try:
@@ -180,16 +196,18 @@ class Orchestrator:
             except Exception as e:
                 log_utils.log_message(f"Body Age calculation failed for {target_iso}: {e}", "ERROR")
                 failed_sources.append("BodyAge")
+                source_statuses["BodyAge"] = "failed"
 
 
         if wger_logs_found:
             log_utils.log_message("Refreshing actual muscle volume view...", "INFO")
             self.dal.refresh_actual_view()
 
-        return not failed_sources, sorted(list(set(failed_sources)))
+        unique_failures = sorted(set(failed_sources))
+        return not unique_failures, unique_failures, source_statuses
 
 
-    def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str]]:
+    def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
         """Fetch Withings data for the requested window and update dependent calculations."""
         days = max(1, days)
         today = date.today()
@@ -197,6 +215,7 @@ class Orchestrator:
 
         withings_client = WithingsClient()
         failures: List[str] = []
+        source_statuses: Dict[str, str] = {name: "ok" for name in WITHINGS_ONLY_SOURCES}
 
         for offset in range(days, 0, -1):
             target_day = today - timedelta(days=offset)
@@ -214,6 +233,7 @@ class Orchestrator:
             except Exception as exc:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
                 failures.append(f"Withings:{target_iso}")
+                source_statuses["Withings"] = "failed"
                 continue
 
             try:
@@ -221,8 +241,9 @@ class Orchestrator:
             except Exception as exc:
                 log_utils.log_message(f"Body Age calculation failed for {target_iso}: {exc}", "ERROR")
                 failures.append(f"BodyAge:{target_iso}")
+                source_statuses["BodyAge"] = "failed"
 
-        return not failures, failures
+        return not failures, failures, source_statuses
 
     def _recalculate_body_age(self, target_day: date) -> None:
         try:

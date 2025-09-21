@@ -40,13 +40,12 @@ def sync(
     updates the database, and recalculates body age.
     """
     log_utils.log_message(f"Starting manual sync for the last {days} days.", "INFO")
-    success = run_sync_with_retries(days=days, retries=retries)
-    if success:
-        log_utils.log_message("Manual sync completed successfully.", "INFO")
+    result = run_sync_with_retries(days=days, retries=retries)
+    if result.success:
+        typer.echo("Manual sync completed. Summary written to logs/pete_history.log.")
         raise typer.Exit(code=0)
-    else:
-        log_utils.log_message("Manual sync finished with errors.", "ERROR")
-        raise typer.Exit(code=1)
+    typer.echo("Manual sync finished with errors. Check logs/pete_history.log for details.")
+    raise typer.Exit(code=1)
 
 
 
@@ -57,11 +56,11 @@ def withings_sync(
 ) -> None:
     """Run only the Withings portion of the sync pipeline."""
     log_utils.log_message(f"Starting Withings-only sync for the last {days} days.", "INFO")
-    success = run_withings_only_with_retries(days=days, retries=retries)
-    if success:
-        log_utils.log_message("Withings-only sync completed successfully.", "INFO")
+    result = run_withings_only_with_retries(days=days, retries=retries)
+    if result.success:
+        typer.echo("Withings-only sync completed. Summary written to logs/pete_history.log.")
         raise typer.Exit(code=0)
-    log_utils.log_message("Withings-only sync finished with errors.", "ERROR")
+    typer.echo("Withings-only sync finished with errors. Check logs/pete_history.log for details.")
     raise typer.Exit(code=1)
 @app.command(name="ingest-apple")
 def ingest_apple() -> None:
