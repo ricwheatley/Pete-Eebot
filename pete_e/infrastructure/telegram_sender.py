@@ -42,3 +42,25 @@ def send_message(message: str) -> bool:
             "ERROR",
         )
         return False
+
+
+def _scrub_sensitive(text: str) -> str:
+    """Redacts known Telegram credentials from the outgoing message."""
+    sanitized = text or ''
+    for attr in ("TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"):
+        secret = getattr(settings, attr, None)
+        if secret:
+            sanitized = sanitized.replace(secret, "[redacted]")
+    return sanitized
+
+
+def send_alert(message: str) -> bool:
+    """Sends a high-priority alert via Telegram, redacting secrets first."""
+    if not message:
+        log_utils.log_message("Skipping Telegram alert because the message was empty.", "WARN")
+        return False
+
+    sanitized = _scrub_sensitive(message.strip())
+    alert_text = f"[ALERT] {sanitized}"
+    return send_message(alert_text)
+
