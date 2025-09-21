@@ -64,7 +64,7 @@ The project ships a Typer application under the `pete-e` entry point. Common com
 * `pete-e plan --weeks 4` – generates and deploys the next training plan block.
 * `pete-e message --summary` / `--plan` – renders summaries and optionally pushes them to Telegram with `--send`.
 
-Logs for each command are appended to `logs/pete_history.log`, making it easy to audit Dropbox downloads and downstream calculations.
+Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.
 
 ---
 
