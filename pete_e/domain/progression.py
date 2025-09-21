@@ -1,7 +1,9 @@
 """Adaptive weight progression logic using the Data Access Layer."""
 
+from dataclasses import dataclass
+
 from statistics import mean
-from typing import Tuple
+from typing import Any, Dict, List, Tuple
 
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
@@ -129,3 +131,136 @@ def apply_progression(
                     )
 
     return week, adjustments
+
+
+@dataclass(frozen=True)
+class WorkoutProgression:
+    """Represents a single workout adjustment applied during calibration."""
+
+    workout_id: int
+    exercise_id: int | None
+    name: str
+    before: float | None
+    after: float | None
+
+
+@dataclass(frozen=True)
+class PlanProgressionDecision:
+    """Outcome of running progression for a specific plan week."""
+
+    notes: List[str]
+    updates: List[WorkoutProgression]
+    persisted: bool
+
+
+def _as_float(value: Any) -> float | None:
+    """Best-effort conversion to float, preserving None."""
+
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[dict, Dict[int, dict]]:
+    """Convert raw plan rows into the structure expected by apply_progression."""
+
+    days: Dict[int, dict] = {}
+    workout_map: Dict[int, dict] = {}
+
+    for row in rows:
+        workout_id = row.get("id")
+        if workout_id is None:
+            continue
+        if row.get("is_cardio"):
+            continue
+
+        day_number = row.get("day_of_week")
+        if not isinstance(day_number, int):
+            continue
+
+        day_entry = days.setdefault(day_number, {"day_of_week": day_number, "sessions": []})
+        session = next((s for s in day_entry["sessions"] if s.get("type") == "weights"), None)
+        if session is None:
+            session = {"type": "weights", "exercises": []}
+            day_entry["sessions"].append(session)
+
+        exercise = {
+            "id": row.get("exercise_id"),
+            "name": row.get("exercise_name") or f"Exercise #{row.get('exercise_id')}"
+        }
+        weight_target = row.get("target_weight_kg")
+        if weight_target is not None:
+            converted = _as_float(weight_target)
+            if converted is not None:
+                exercise["weight_target"] = converted
+        for key in ("sets", "reps", "rir"):
+            if row.get(key) is not None:
+                exercise[key] = row.get(key)
+
+        session["exercises"].append(exercise)
+        workout_map[int(workout_id)] = exercise
+
+    week = {"days": [days[idx] for idx in sorted(days.keys())]}
+    return week, workout_map
+
+
+def calibrate_plan_week(
+    dal: DataAccessLayer,
+    plan_id: int,
+    week_number: int,
+    persist: bool = True,
+) -> PlanProgressionDecision:
+    """Run progression for the specified plan week and optionally persist updates."""
+
+    rows = dal.get_plan_week(plan_id, week_number)
+    if not rows:
+        return PlanProgressionDecision(notes=[], updates=[], persisted=False)
+
+    week_structure, workout_map = _normalise_plan_week(rows)
+    if not week_structure["days"]:
+        return PlanProgressionDecision(notes=[], updates=[], persisted=False)
+
+    _, notes = apply_progression(dal, week_structure)
+
+    updates: List[WorkoutProgression] = []
+    for row in rows:
+        workout_id = row.get("id")
+        if workout_id is None:
+            continue
+        exercise = workout_map.get(int(workout_id))
+        if not exercise:
+            continue
+
+        before = _as_float(row.get("target_weight_kg"))
+        after = _as_float(exercise.get("weight_target"))
+        if before is None and after is None:
+            continue
+        if before is not None and after is not None and abs(after - before) < 1e-6:
+            continue
+
+        updates.append(
+            WorkoutProgression(
+                workout_id=int(workout_id),
+                exercise_id=row.get("exercise_id"),
+                name=exercise.get("name", f"Exercise #{row.get('exercise_id')}") or "Exercise",
+                before=before,
+                after=after,
+            )
+        )
+
+    persisted = False
+    if persist and updates:
+        update_fn = getattr(dal, "update_workout_targets", None)
+        if callable(update_fn):
+            payload = [
+                {"workout_id": item.workout_id, "target_weight_kg": item.after}
+                for item in updates
+            ]
+            update_fn(payload)
+            persisted = True
+
+    return PlanProgressionDecision(notes=notes, updates=updates, persisted=persisted)
+

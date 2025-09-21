@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from pete_e.domain.validation import validate_and_adjust_plan
+from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
@@ -37,7 +37,7 @@ def send_plan_week_to_wger(
     Validate plan → adjust DB → wrangle into Wger JSON → POST to Wger.
     """
     # 1. Validate + adjust
-    adjustments = validate_and_adjust_plan(dal, current_start_date)
+    decision: ValidationDecision = validate_and_adjust_plan(dal, current_start_date)
 
     # 2. Fetch updated plan week
     plan = dal.get_plan(plan_id)
@@ -53,10 +53,10 @@ def send_plan_week_to_wger(
     # 4. Send to Wger
     try:
         response = client.post_plan(payload)
-        adjustment_text = ", ".join(adjustments) if adjustments else "none"
+        adjustment_text = ", ".join(decision.log_entries) if decision.log_entries else "none"
         log_utils.log_message(
             f"[send_wger] Sent plan {plan_id} week {week_number} to Wger. "
-            f"Adjustments: {adjustment_text}. Response: {response}",
+            f"Adjustments: {adjustment_text}. Recovery: {decision.explanation}. Response: {response}",
             "INFO"
         )
         return True

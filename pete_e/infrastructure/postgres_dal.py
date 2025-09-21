@@ -396,6 +396,31 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error fetching plan week data: {e}", "ERROR")
             raise
     
+    def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
+        """Bulk update target weights for specific workout rows."""
+        if not updates:
+            return
+
+        payload = []
+        for item in updates:
+            workout_id = item.get("workout_id")
+            if workout_id is None:
+                continue
+            payload.append((item.get("target_weight_kg"), workout_id))
+
+        if not payload:
+            return
+
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.executemany(
+                    "UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s",
+                    payload,
+                )
+        except Exception as e:
+            log_utils.log_message(f"Error updating workout targets: {e}", "ERROR")
+            raise
+
     def refresh_plan_view(self) -> None:
         """Refreshes the materialized view for plan muscle volume."""
         try:

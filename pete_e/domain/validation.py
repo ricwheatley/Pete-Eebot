@@ -42,6 +42,17 @@ class BackoffRecommendation:
     rir_increment: int
     metrics: Dict[str, Any]  # observed and baseline metrics for transparency
 
+@dataclass(frozen=True)
+class ValidationDecision:
+    """Outcome of plan validation ahead of Wger export or calibration."""
+
+    needs_backoff: bool
+    applied: bool
+    explanation: str
+    log_entries: List[str]
+    recommendation: BackoffRecommendation
+
+
 
 def _collect_series(
     rows: Iterable[Dict[str, Any]],
@@ -282,54 +293,66 @@ def assess_recovery_and_backoff(
     )
 
 
-def validate_and_adjust_plan(dal: Any, week_start_date: date) -> List[str]:
-    """Assess recovery ahead of the upcoming week and apply a back-off if needed.
+def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecision:
+    """Assess recovery ahead of the upcoming week and optionally apply a back-off.
 
-    Returns a list describing any adjustments that were recommended/applied. An
-    empty list indicates no global back-off was required.
+    Returns a structured decision detailing whether recovery warranted a back-off,
+    if it was applied, and the reasoning captured for downstream logging.
     """
     rec = assess_recovery_and_backoff(dal, week_start_date)
 
-    adjustments: List[str] = []
-
     if not rec.needs_backoff:
-        log_utils.log_message(
-            "Recovery within dynamic baselines - no global back-off applied.", "INFO"
+        explanation = (
+            "Recovery within dynamic baselines - no global back-off applied."
         )
-        return adjustments
+        log_utils.log_message(explanation, "INFO")
+        return ValidationDecision(
+            needs_backoff=False,
+            applied=False,
+            explanation=explanation,
+            log_entries=[],
+            recommendation=rec,
+        )
 
-    adjustments.extend(
-        [
-            f"severity={rec.severity}",
-            f"set_multiplier={rec.set_multiplier:.2f}",
-            f"rir_increment={rec.rir_increment}",
-        ]
-    )
-    adjustments.extend(rec.reasons)
+    log_entries: List[str] = [
+        f"severity={rec.severity}",
+        f"set_multiplier={rec.set_multiplier:.2f}",
+        f"rir_increment={rec.rir_increment}",
+        *rec.reasons,
+    ]
 
-    summary = (
+    explanation = (
         f"Global back-off recommended, severity={rec.severity}, "
         f"set_multiplier={rec.set_multiplier:.2f}, RIR+={rec.rir_increment}. "
         f"Reasons: {', '.join(rec.reasons) or 'thresholds exceeded'}."
     )
-    log_utils.log_message(summary, "WARNING")
+    log_utils.log_message(explanation, "WARNING")
 
-    try:
-        if hasattr(dal, "apply_plan_backoff"):
+    applied = False
+    if hasattr(dal, "apply_plan_backoff"):
+        try:
             dal.apply_plan_backoff(
                 week_start_date,
                 set_multiplier=rec.set_multiplier,
                 rir_increment=rec.rir_increment,
             )
             log_utils.log_message("Applied global back-off to upcoming week.", "INFO")
-        else:
-            log_utils.log_message(
-                "DAL has no 'apply_plan_backoff' - no DB changes performed. "
-                "Downstream components may apply this recommendation explicitly.",
-                "WARN",
-            )
-    except Exception as exc:  # pragma: no cover - DB failures are environment-specific
-        log_utils.log_message(f"Failed to apply back-off: {exc}", "ERROR")
-        adjustments.append(f"apply_failed: {exc}")
+            applied = True
+        except Exception as exc:  # pragma: no cover - DB failures are environment-specific
+            log_utils.log_message(f"Failed to apply back-off: {exc}", "ERROR")
+            log_entries.append(f"apply_failed: {exc}")
+    else:
+        log_utils.log_message(
+            "DAL has no 'apply_plan_backoff' - no DB changes performed. "
+            "Downstream components may apply this recommendation explicitly.",
+            "WARN",
+        )
+        log_entries.append("dal_missing_backoff")
 
-    return adjustments
+    return ValidationDecision(
+        needs_backoff=True,
+        applied=applied,
+        explanation=explanation,
+        log_entries=log_entries,
+        recommendation=rec,
+    )
