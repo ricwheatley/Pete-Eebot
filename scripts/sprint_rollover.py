@@ -1,6 +1,5 @@
 import datetime
 from pete_e.application.orchestrator import Orchestrator
-from pete_e.domain.narrative_builder import PeteVoice
 from pete_e.infrastructure import log_utils
 
 def is_4th_sunday(today=None) -> bool:
@@ -10,15 +9,15 @@ def is_4th_sunday(today=None) -> bool:
 
 def main():
     orch = Orchestrator()
-    if is_4th_sunday():
-        # TODO: hook into plan generation logic
-        plan_id = orch.generate_and_deploy_next_plan(start_date=datetime.date.today() + datetime.timedelta(days=1), weeks=4)
-        if plan_id > 0:
-            msg = PeteVoice.nudge("#SprintComplete", ["I’ve reviewed the cycle, created the new block, and posted Week 1 to Wger"])
-            orch.send_telegram_message(msg)
-            log_utils.log_message(f"Sprint rollover complete, plan {plan_id} deployed.", "INFO")
+    today = datetime.date.today()
+    if is_4th_sunday(today):
+        result = orch.run_cycle_rollover(reference_date=today, weeks=4)
+        if result.exported:
+            log_utils.log_message("Sprint rollover complete, week 1 exported to Wger.", "INFO")
+        elif result.plan_id:
+            log_utils.log_message("Sprint rollover detected existing plan/export; nothing to do.", "INFO")
         else:
-            log_utils.log_message("Sprint rollover failed to generate plan.", "ERROR")
+            log_utils.log_message("Sprint rollover failed to prepare next cycle.", "ERROR")
     else:
         log_utils.log_message("Not a sprint rollover Sunday, exiting.", "INFO")
 

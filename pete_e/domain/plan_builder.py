@@ -29,6 +29,15 @@ def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
         plan_id (int): The primary key of the saved training plan in Postgres.
     """
 
+    existing_lookup = getattr(dal, "find_plan_by_start_date", None)
+    if callable(existing_lookup):
+        try:
+            existing = existing_lookup(start_date)
+        except Exception:
+            existing = None
+        if isinstance(existing, dict) and existing.get("id") is not None:
+            return int(existing["id"])
+
     # Fetch context
     recent_metrics = dal.get_historical_metrics(7)  # last 7 days
     if not recent_metrics:

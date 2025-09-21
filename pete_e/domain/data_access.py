@@ -65,6 +65,10 @@ class DataAccessLayer(ABC):
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         pass
 
+    @abstractmethod
+    def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
+        pass
+
     # -------------------------------------------------------------------------
     # Muscle volume comparison
     # -------------------------------------------------------------------------
@@ -123,4 +127,19 @@ class DataAccessLayer(ABC):
     # -------------------------------------------------------------------------
     @abstractmethod
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        pass
+
+    @abstractmethod
+    def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+        pass
+
+    @abstractmethod
+    def record_wger_export(
+        self,
+        plan_id: int,
+        week_number: int,
+        payload: Dict[str, Any],
+        response: Optional[Dict[str, Any]] = None,
+        routine_id: Optional[int] = None,
+    ) -> None:
         pass
