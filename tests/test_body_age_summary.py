@@ -99,6 +99,7 @@ def test_weekly_narrative_includes_body_age_trend(monkeypatch):
     monkeypatch.setattr(narrative_builder.random, "choice", lambda seq: seq[0])
     monkeypatch.setattr(narrative_builder.random, "randint", lambda a, b: a)
     monkeypatch.setattr(narrative_builder, "phrase_for", lambda tags: "Keep it up!")
+    monkeypatch.setattr(narrative_builder.narrative_utils.random, "random", lambda: 0.99)
 
     days: dict[str, dict] = {}
     for offset in range(1, 8):

@@ -8,7 +8,7 @@ including running the daily data sync, ingesting new data, and sending
 notifications.
 """
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, List
 
 from typing_extensions import Annotated
 
@@ -47,6 +47,67 @@ def _format_body_age_line(trend) -> str | None:
     if delta is None:
         return f"{line} (7d delta n/a)"
     return f"{line} (7d delta {delta:+.1f}y)"
+
+
+def _coerce_summary_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_body_comp_line(dal: Any, target_date: date) -> str | None:
+    if dal is None or not hasattr(dal, "get_historical_metrics"):
+        return None
+    try:
+        rows = dal.get_historical_metrics(14)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log_utils.log_message(f"Failed to load body composition history: {exc}", "WARN")
+        return None
+
+    window_start = target_date - timedelta(days=13)
+    current_start = target_date - timedelta(days=6)
+
+    samples: List[tuple[date, float]] = []
+    for row in rows:
+        row_date = _coerce_summary_date(row.get("date"))
+        if row_date is None or row_date > target_date or row_date < window_start:
+            continue
+        muscle_value = row.get("muscle_pct")
+        try:
+            muscle_pct = float(muscle_value) if muscle_value is not None else None
+        except (TypeError, ValueError):
+            muscle_pct = None
+        if muscle_pct is not None:
+            samples.append((row_date, muscle_pct))
+
+    if not samples:
+        return None
+
+    samples.sort(key=lambda item: item[0])
+    current_values = [value for sample_date, value in samples if current_start <= sample_date <= target_date]
+    previous_values = [value for sample_date, value in samples if window_start <= sample_date < current_start]
+
+    if len(current_values) < 3:
+        return None
+
+    avg_current = round(sum(current_values) / len(current_values), 1)
+
+    if len(previous_values) >= 3:
+        avg_previous = round(sum(previous_values) / len(previous_values), 1)
+        diff = round(avg_current - avg_previous, 1)
+        if abs(diff) >= 0.5:
+            direction = "up" if diff > 0 else "down"
+            return f"Muscle trend: {avg_current:.1f}% avg this week ({direction} {abs(diff):.1f}% vs prior)."
+        return f"Muscle trend: {avg_current:.1f}% avg this week (steady vs prior)."
+
+    return f"Muscle trend: {avg_current:.1f}% avg this week."
 
 
 def _append_line(base: str | None, addition: str) -> str:
@@ -88,6 +149,10 @@ def build_daily_summary(
     body_age_line = _format_body_age_line(trend)
     if body_age_line:
         summary_text = _append_line(summary_text, body_age_line)
+
+    comp_line = _format_body_comp_line(getattr(orch, "dal", None), target)
+    if comp_line:
+        summary_text = _append_line(summary_text, comp_line)
 
     return summary_text
 

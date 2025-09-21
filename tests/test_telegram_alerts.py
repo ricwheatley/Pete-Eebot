@@ -11,8 +11,8 @@ class RecordingDal:
         self.withings = []
         self.wger = []
 
-    def save_withings_daily(self, day, weight_kg, body_fat_pct):
-        self.withings.append((day, weight_kg, body_fat_pct))
+    def save_withings_daily(self, day, weight_kg, body_fat_pct, muscle_pct, water_pct):
+        self.withings.append((day, weight_kg, body_fat_pct, muscle_pct, water_pct))
 
     def save_wger_log(self, day, exercise_id, set_number, reps, weight_kg, rir):
         self.wger.append((day, exercise_id, set_number, reps, weight_kg, rir))
@@ -29,7 +29,7 @@ class FlakyWithingsClient:
         self.calls += 1
         if self.calls == 1:
             raise RuntimeError('withings outage')
-        return {'weight': 83.4, 'fat_percent': 19.8}
+        return {'weight': 83.4, 'fat_percent': 19.8, 'muscle_percent': 41.0, 'water_percent': 54.4}
 
 
 class ExplodingWgerClient:

@@ -136,7 +136,9 @@ COMMENT ON TABLE "WorkoutType" IS 'Lookup table for workout activity types (e.g.
 CREATE TABLE withings_daily (
     date DATE PRIMARY KEY,
     weight_kg NUMERIC(5,2),
-    body_fat_pct NUMERIC(4,2)
+    body_fat_pct NUMERIC(4,2),
+    muscle_pct NUMERIC(4,2),
+    water_pct NUMERIC(4,2)
 );
 COMMENT ON TABLE withings_daily IS 'Stores daily body metrics from Withings. Source of truth for weight/bodyfat.';
 
@@ -413,6 +415,8 @@ SELECT
   d.date,
   w.weight_kg,
   w.body_fat_pct,
+  w.muscle_pct,
+  w.water_pct,
   am.steps,
   am.exercise_minutes,
   am.calories_active,
@@ -440,7 +444,7 @@ LEFT JOIN dss_pick dss USING (date)
 LEFT JOIN body_age_daily b USING (date)
 LEFT JOIN wger_logs gl USING (date)
 GROUP BY
-  d.date, w.weight_kg, w.body_fat_pct,
+  d.date, w.weight_kg, w.body_fat_pct, w.muscle_pct, w.water_pct,
   am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m, am.hr_resting,
   dhr.hr_avg, dhr.hr_max, dhr.hr_min,
   dss.total_sleep_hrs, dss.core_hrs, dss.deep_hrs, dss.rem_hrs, dss.awake_hrs,

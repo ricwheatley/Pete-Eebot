@@ -11,7 +11,7 @@ class StubDal:
     def __init__(self):
         self.refreshed = False
 
-    def save_withings_daily(self, day, weight_kg, body_fat_pct):
+    def save_withings_daily(self, day, weight_kg, body_fat_pct, muscle_pct, water_pct):
         return None
 
     def save_wger_log(self, day, exercise_id, set_number, reps, weight_kg, rir):

@@ -52,8 +52,8 @@ class DummyDal:
         self.refreshed = False
 
     # Withings -------------------------------------------------------------
-    def save_withings_daily(self, day, weight_kg, body_fat_pct):
-        self.withings_calls.append((day, weight_kg, body_fat_pct))
+    def save_withings_daily(self, day, weight_kg, body_fat_pct, muscle_pct, water_pct):
+        self.withings_calls.append((day, weight_kg, body_fat_pct, muscle_pct, water_pct))
 
     # Apple ----------------------------------------------------------------
     def save_apple_daily(self, day, metrics):  # pragma: no cover - legacy compatibility
@@ -145,7 +145,7 @@ def test_run_daily_sync_handles_absent_apple_data():
 
 def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
     target_day = date.today() - timedelta(days=1)
-    DummyWithingsClient.next_summary = {"weight": 82.5, "fat_percent": 19.2}
+    DummyWithingsClient.next_summary = {"weight": 82.5, "fat_percent": 19.2, "muscle_percent": 41.7, "water_percent": 55.5}
     DummyWgerClient.next_logs = {
         target_day.isoformat(): [
             {"exercise_id": 7, "reps": 10, "weight": 45.0, "rir": 2},
@@ -164,7 +164,7 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
     assert statuses["Withings"] == "ok"
     assert statuses["Wger"] == "ok"
     assert statuses["BodyAge"] == "ok"
-    assert dummy_dal.withings_calls == [(target_day, 82.5, 19.2)]
+    assert dummy_dal.withings_calls == [(target_day, 82.5, 19.2, 41.7, 55.5)]
     assert dummy_dal.wger_logs == [
         (target_day, 7, 1, 10, 45.0, 2),
         (target_day, 7, 2, 8, 47.5, 1),

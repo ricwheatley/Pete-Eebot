@@ -20,17 +20,19 @@ class TestPostgresDal(unittest.TestCase):
 
         dal = PostgresDal()
         test_date = date(2025, 1, 15)
-        dal.save_withings_daily(test_date, 75.5, 22.1)
+        dal.save_withings_daily(test_date, 75.5, 22.1, 41.5, 55.0)
 
         self.assertTrue(mock_cur.execute.called)
         # Check that the SQL statement contains the key parts
         sql_call = mock_cur.execute.call_args[0][0]
         self.assertIn("INSERT INTO withings_daily", sql_call)
         self.assertIn("ON CONFLICT (date) DO UPDATE", sql_call)
+        self.assertIn("muscle_pct", sql_call)
+        self.assertIn("water_pct", sql_call)
         
         # Check that the correct data was passed
         data_tuple = mock_cur.execute.call_args[0][1]
-        self.assertEqual(data_tuple, (test_date, 75.5, 22.1))
+        self.assertEqual(data_tuple, (test_date, 75.5, 22.1, 41.5, 55.0))
 
 
     @patch('pete_e.infrastructure.postgres_dal.get_conn')

@@ -30,7 +30,7 @@ class DummyDal(DataAccessLayer):
     def save_strength_log_entry(self, exercise_id: int, log_date: datetime.date, reps: int, weight_kg: float, rir: float | None = None) -> None:
         pass
 
-    def save_withings_daily(self, day: datetime.date, weight_kg: float, body_fat_pct: float) -> None:
+    def save_withings_daily(self, day: datetime.date, weight_kg: float, body_fat_pct: float, muscle_pct: float | None, water_pct: float | None) -> None:
         pass
 
     def save_apple_daily(self, day: datetime.date, metrics: Dict[str, Any]) -> None:

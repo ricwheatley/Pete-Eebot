@@ -163,6 +163,19 @@ def _format_body_fat(value: Any) -> str | None:
         return None
     return f"Body fat: {val:.1f}%"
 
+def _format_muscle_pct(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None:
+        return None
+    return f"Muscle: {val:.1f}%"
+
+
+def _format_water_pct(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None:
+        return None
+    return f"Hydration: {val:.1f}%"
+
 def _format_resting_hr(value: Any) -> str | None:
     val = _to_int(value)
     if val is None:
@@ -198,6 +211,8 @@ def _format_sleep_minutes(value: Any) -> str | None:
 _DAILY_METRIC_BUILDERS = {
     "weight_kg": _format_weight,
     "body_fat_pct": _format_body_fat,
+    "muscle_pct": _format_muscle_pct,
+    "water_pct": _format_water_pct,
     "hr_resting": _format_resting_hr,
     "steps": _format_steps,
     "calories_active": _format_active_calories,
@@ -207,6 +222,8 @@ _DAILY_METRIC_BUILDERS = {
 _DAILY_METRIC_ORDER = [
     "weight_kg",
     "body_fat_pct",
+    "muscle_pct",
+    "water_pct",
     "hr_resting",
     "steps",
     "calories_active",
@@ -425,21 +442,50 @@ def build_weekly_narrative(metrics: Dict[str, Any]) -> str:
         insights.append(f"Average sleep was {compare_text(avg_sleep, prev_avg, 'h', 'per night')}.")
 
 
-    # Body Age
-    def _extract_body_age(day: Dict[str, Any]) -> Optional[float]:
+    # Body composition
+    def _extract_body_metric(day: Dict[str, Any], field: str) -> Optional[float]:
         body_section = day.get("body")
         if isinstance(body_section, dict):
-            value = body_section.get("body_age_years")
+            value = body_section.get(field)
         else:
             value = None
         if value is None:
-            value = day.get("body_age_years")
+            value = day.get(field)
         if value is None:
             return None
         try:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    def _extract_body_age(day: Dict[str, Any]) -> Optional[float]:
+        return _extract_body_metric(day, "body_age_years")
+
+    muscle_week: List[float] = []
+    for day in week_data:
+        value = _extract_body_metric(day, "muscle_pct")
+        if value is not None:
+            muscle_week.append(value)
+
+    muscle_prev: List[float] = []
+    if prev_data:
+        for day in prev_data:
+            value = _extract_body_metric(day, "muscle_pct")
+            if value is not None:
+                muscle_prev.append(value)
+
+    if muscle_week:
+        avg_muscle = round(sum(muscle_week) / len(muscle_week), 1)
+        avg_muscle_prev = round(sum(muscle_prev) / len(muscle_prev), 1) if muscle_prev else None
+        if avg_muscle_prev is None:
+            insights.append(f"Muscle composition averaged {avg_muscle:.1f}% this week.")
+        else:
+            diff = round(avg_muscle - avg_muscle_prev, 1)
+            if abs(diff) >= 0.5:
+                direction = "up" if diff > 0 else "down"
+                insights.append(
+                    f"Muscle composition averaged {avg_muscle:.1f}% this week, {direction} {abs(diff):.1f}% from last week."
+                )
 
     body_age_week: List[float] = []
     for day in week_data:

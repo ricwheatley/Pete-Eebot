@@ -913,6 +913,8 @@ class Orchestrator:
                         day=target_day,
                         weight_kg=withings_data.get("weight"),
                         body_fat_pct=withings_data.get("fat_percent"),
+                        muscle_pct=withings_data.get("muscle_percent"),
+                        water_pct=withings_data.get("water_percent"),
                     )
             except WithingsReauthRequired as exc:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
@@ -1176,6 +1178,8 @@ class Orchestrator:
                         day=target_day,
                         weight_kg=withings_data.get("weight"),
                         body_fat_pct=withings_data.get("fat_percent"),
+                        muscle_pct=withings_data.get("muscle_percent"),
+                        water_pct=withings_data.get("water_percent"),
                     )
             except Exception as exc:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
