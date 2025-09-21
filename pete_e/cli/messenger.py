@@ -1,4 +1,4 @@
-# (Functional) **Command-line interface** (Typer app) exposing main features.
+﻿# (Functional) **Command-line interface** (Typer app) exposing main features.
 
 """
 Main Command-Line Interface for the Pete-Eebot application.
@@ -19,6 +19,7 @@ from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.infrastructure import log_utils
+from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from datetime import datetime, date, timedelta
 
 # Create the Typer application object
@@ -62,6 +63,17 @@ def withings_sync(
         raise typer.Exit(code=0)
     typer.echo("Withings-only sync finished with errors. Check logs/pete_history.log for details.")
     raise typer.Exit(code=1)
+
+@app.command()
+def status(
+    timeout: Annotated[float, typer.Option('--timeout', help='Override per-dependency timeout in seconds.')] = DEFAULT_TIMEOUT_SECONDS,
+) -> None:
+    """Quick health check for database, Dropbox, and Withings integrations."""
+    results = run_status_checks(timeout=timeout)
+    typer.echo(render_results(results))
+    exit_code = 0 if all(result.ok for result in results) else 1
+    raise typer.Exit(code=exit_code)
+
 @app.command(name="ingest-apple")
 def ingest_apple() -> None:
     """
@@ -151,7 +163,7 @@ def refresh_withings_tokens() -> None:
     try:
         client = WithingsClient()
         tokens = client._refresh_access_token()  # returns body from API
-        typer.echo("✅ Withings tokens refreshed.")
+        typer.echo("âœ… Withings tokens refreshed.")
         typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
         typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
     except Exception as e:
@@ -165,7 +177,7 @@ def withings_auth_url() -> None:
     Open it in your browser, log in, and approve Pete-Eebot.
     """
     url = withings_oauth_helper.build_authorize_url()
-    typer.echo("👉 Visit this URL to authorize Pete-Eebot with Withings:")
+    typer.echo("ðŸ‘‰ Visit this URL to authorize Pete-Eebot with Withings:")
     typer.echo(url)
 
 
@@ -181,7 +193,7 @@ def withings_exchange_code(code: str) -> None:
         client = WithingsClient()
         client._save_tokens(tokens)
 
-        typer.echo("✅ Successfully exchanged code for tokens.")
+        typer.echo("âœ… Successfully exchanged code for tokens.")
         typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
         typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
         typer.echo("\nTokens have been saved to .withings_tokens.json")
@@ -192,3 +204,5 @@ def withings_exchange_code(code: str) -> None:
 
 if __name__ == "__main__":
     app()
+
+
