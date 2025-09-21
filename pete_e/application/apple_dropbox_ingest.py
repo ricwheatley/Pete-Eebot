@@ -4,9 +4,9 @@ import io
 import json
 import logging
 import zipfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 from pete_e.infrastructure.database import get_conn
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
@@ -28,6 +28,28 @@ class ImportReport:
     sleep_days: int
 
 
+@dataclass(eq=False)
+class AppleIngestError(Exception):
+    """Raised when the Apple Dropbox ingest encounters a recoverable failure."""
+
+    stage: str
+    reason: str
+    file_path: Optional[str] = None
+
+    def __post_init__(self) -> None:  # pragma: no cover - simple data plumbing
+        super().__init__(self._compose_message())
+
+    def _compose_message(self) -> str:
+        parts = [self.stage, self.reason]
+        message = " - ".join(part for part in parts if part)
+        if self.file_path:
+            message = f"{message} [{self.file_path}]"
+        return message
+
+    def __str__(self) -> str:  # pragma: no cover - defers to _compose_message
+        return self._compose_message()
+
+
 def _normalise_device_name(name: str) -> str:
     """Normalises fancy apostrophes and non-breaking spaces from Apple sources."""
     return name.replace("\u2019", "'").replace("\xa0", " ").strip()
@@ -38,7 +60,6 @@ def _get_json_from_content(path: str, content_bytes: bytes) -> Optional[Dict]:
     Extracts JSON data from the given content, handling both raw JSON and zipped JSON files.
     """
     try:
-        # FIX: Check the file extension to determine how to process the content.
         if path.lower().endswith(".zip"):
             logging.info(f"Extracting JSON from zip file: {path}")
             with io.BytesIO(content_bytes) as bio:
@@ -64,74 +85,101 @@ def run_apple_health_ingest() -> ImportReport:
     """
     Orchestrates importing all new Apple Health data from Dropbox since the last run.
     """
-    
-    client = AppleDropboxClient()
-    parser = AppleHealthParser()
 
-    all_processed_files = []
+    try:
+        client = AppleDropboxClient()
+        parser = AppleHealthParser()
+    except Exception as exc:  # pragma: no cover - defensive
+        raise AppleIngestError(stage="initialise", reason=str(exc)) from exc
+
+    all_processed_files: List[str] = []
     total_workouts = 0
     total_daily_points = 0
-    
-    # Use a single database connection for the entire operation
-    with get_conn() as conn:
-        writer = AppleHealthWriter(conn)
 
-        # 1. Get the timestamp of the last successful import.
-        # Default to a very old date if this is the first ever run.
-        last_import_time = writer.get_last_import_timestamp() or datetime(1970, 1, 1, tzinfo=timezone.utc)
-        
-        # 2. Find all new files from Dropbox since that time.
-        new_health_files = client.find_new_export_files(client.health_metrics_path, last_import_time)
-        new_workout_files = client.find_new_export_files(client.workouts_path, last_import_time)
-        
-        # Combine and sort all files by their modification time to ensure chronological processing.
-        all_new_files = sorted(new_health_files + new_workout_files, key=lambda item: item[0])
+    try:
+        conn_ctx = get_conn()
+    except Exception as exc:  # pragma: no cover - defensive
+        raise AppleIngestError(stage="connection", reason=str(exc)) from exc
 
-        if not all_new_files:
-            logging.info("No new files to import.")
-            return ImportReport(sources=[], workouts=0, daily_points=0, hr_days=0, sleep_days=0)
+    try:
+        with conn_ctx as conn:
+            try:
+                writer = AppleHealthWriter(conn)
+            except Exception as exc:  # pragma: no cover - defensive
+                raise AppleIngestError(stage="initialise_writer", reason=str(exc)) from exc
 
-        logging.info(f"Found {len(all_new_files)} new file(s) to process.")
+            try:
+                last_import_time = writer.get_last_import_timestamp() or datetime(1970, 1, 1, tzinfo=timezone.utc)
+            except Exception as exc:
+                raise AppleIngestError(stage="checkpoint", reason=str(exc)) from exc
 
-        # 3. Process each new file one by one.
-        for file_modified_time, file_path in all_new_files:
-            logging.info(f"Processing file: {file_path} (modified: {file_modified_time})")
-            
-            content = client.download_as_bytes(file_path)
-            json_data = _get_json_from_content(file_path, content)
+            try:
+                new_health_files = client.find_new_export_files(client.health_metrics_path, last_import_time)
+                new_workout_files = client.find_new_export_files(client.workouts_path, last_import_time)
+            except Exception as exc:
+                raise AppleIngestError(stage="discover_exports", reason=str(exc)) from exc
 
-            if not json_data:
-                logging.warning(f"Skipping file {file_path} as no JSON data could be extracted.")
-                continue
+            all_new_files = sorted(new_health_files + new_workout_files, key=lambda item: item[0])
 
-            # In this new model, each file is self-contained.
-            # We assume a file has either 'metrics' or 'workouts', but not both.
-            root = {"data": {
-                "metrics": json_data.get("data", {}).get("metrics", []),
-                "workouts": json_data.get("data", {}).get("workouts", []),
-            }}
+            if not all_new_files:
+                logging.info("No new files to import.")
+                return ImportReport(sources=[], workouts=0, daily_points=0, hr_days=0, sleep_days=0)
 
-            parsed = parser.parse(root)
-            writer.upsert_all(parsed) # This writes the data for the current file
-            
-            all_processed_files.append(file_path)
-            total_workouts += len(parsed.get("workout_headers", []))
-            total_daily_points += len(parsed.get("daily_metric_points", []))
+            logging.info(f"Found {len(all_new_files)} new file(s) to process.")
 
-        # 4. After all files are processed successfully, save the new checkpoint.
-        latest_file_timestamp = all_new_files[-1][0]
-        writer.save_last_import_timestamp(latest_file_timestamp)
-        
-        # Finally, commit the entire transaction.
-        conn.commit()
-        logging.info("Database transaction committed successfully.")
+            for file_modified_time, file_path in all_new_files:
+                logging.info(f"Processing file: {file_path} (modified: {file_modified_time})")
 
-    # A simple report based on the looped processing.
+                try:
+                    content = client.download_as_bytes(file_path)
+                except Exception as exc:
+                    raise AppleIngestError(stage="download", reason=str(exc), file_path=file_path) from exc
+
+                json_data = _get_json_from_content(file_path, content)
+
+                if not json_data:
+                    logging.warning(f"Skipping file {file_path} as no JSON data could be extracted.")
+                    continue
+
+                root = {"data": {
+                    "metrics": json_data.get("data", {}).get("metrics", []),
+                    "workouts": json_data.get("data", {}).get("workouts", []),
+                }}
+
+                try:
+                    parsed = parser.parse(root)
+                except Exception as exc:
+                    raise AppleIngestError(stage="parse", reason=str(exc), file_path=file_path) from exc
+
+                try:
+                    writer.upsert_all(parsed)
+                except Exception as exc:
+                    raise AppleIngestError(stage="write", reason=str(exc), file_path=file_path) from exc
+
+                all_processed_files.append(file_path)
+                total_workouts += len(parsed.get("workout_headers", []))
+                total_daily_points += len(parsed.get("daily_metric_points", []))
+
+            latest_file_timestamp = all_new_files[-1][0]
+            try:
+                writer.save_last_import_timestamp(latest_file_timestamp)
+            except Exception as exc:
+                raise AppleIngestError(stage="checkpoint", reason=str(exc)) from exc
+
+            try:
+                conn.commit()
+            except Exception as exc:
+                raise AppleIngestError(stage="commit", reason=str(exc)) from exc
+    except AppleIngestError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise AppleIngestError(stage="unexpected", reason=str(exc)) from exc
+
     report = ImportReport(
         sources=all_processed_files,
         workouts=total_workouts,
         daily_points=total_daily_points,
-        hr_days=0, # Note: a full report would require querying the DB post-import
+        hr_days=0,
         sleep_days=0,
     )
     return report

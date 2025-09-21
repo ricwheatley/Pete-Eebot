@@ -2,6 +2,7 @@ from datetime import date, timedelta
 import sys
 import types
 from pathlib import Path
+import os
 
 import pytest
 
@@ -130,3 +131,40 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
         (target_day, 7, 2, 8, 47.5, 1),
     ]
     assert dummy_dal.refreshed is True
+
+def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch):
+    alerts = []
+
+    def fake_alert(message):
+        alerts.append(message)
+        return True
+
+    monkeypatch.setattr(
+        orchestrator_module.telegram_sender,
+        'send_alert',
+        fake_alert,
+        raising=False,
+    )
+
+    def fail_ingest():
+        raise RuntimeError('apple ingest exploded')
+
+    monkeypatch.setattr(orchestrator_module, 'run_apple_health_ingest', fail_ingest)
+
+    dummy_dal = DummyDal()
+    orch = Orchestrator(dal=dummy_dal)
+
+    success, failures, statuses = orch.run_daily_sync(days=1)
+
+    assert not success
+    assert statuses['AppleDropbox'] == 'failed'
+    assert 'AppleDropbox' in failures
+    assert len(alerts) == 1
+    assert isinstance(alerts[0], str)
+
+    token = os.environ.get('TELEGRAM_TOKEN')
+    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+    for secret in (token, chat_id):
+        if secret:
+            assert secret not in alerts[0]
+

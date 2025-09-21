@@ -19,7 +19,7 @@ from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.config import settings
-from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.apple_dropbox_ingest import AppleIngestError, run_apple_health_ingest
 
 DAILY_SYNC_SOURCES = (
     "AppleDropbox",
@@ -118,9 +118,18 @@ class Orchestrator:
 
         failed_sources: List[str] = []
         source_statuses: Dict[str, str] = {name: "ok" for name in DAILY_SYNC_SOURCES}
+        alert_messages: List[str] = []
 
         try:
             apple_report = run_apple_health_ingest()
+        except AppleIngestError as exc:
+            log_utils.log_message(
+                f"Apple Health Dropbox ingest failed before sync window: {exc}",
+                "ERROR",
+            )
+            failed_sources.append("AppleDropbox")
+            source_statuses["AppleDropbox"] = "failed"
+            alert_messages.append(f"Apple Health ingest failed: {exc}")
         except Exception as exc:
             log_utils.log_message(
                 f"Apple Health Dropbox ingest failed before sync window: {exc}",
@@ -128,6 +137,7 @@ class Orchestrator:
             )
             failed_sources.append("AppleDropbox")
             source_statuses["AppleDropbox"] = "failed"
+            alert_messages.append(f"Apple Health ingest failed: {exc}")
         else:
             processed_files = len(apple_report.sources)
             log_utils.log_message(
@@ -139,6 +149,7 @@ class Orchestrator:
                 ),
                 "INFO",
             )
+
         try:
             wger_logs_by_date = wger_client.get_logs_by_date(days=days)
         except Exception as e:
@@ -204,6 +215,22 @@ class Orchestrator:
             self.dal.refresh_actual_view()
 
         unique_failures = sorted(set(failed_sources))
+
+        if len(unique_failures) == len(DAILY_SYNC_SOURCES):
+            alert_messages.append(
+                "Daily sync failed for all sources: " + ', '.join(unique_failures)
+            )
+
+        if alert_messages:
+            alert_text = "\n".join(alert_messages)
+            try:
+                telegram_sender.send_alert(alert_text)
+            except Exception as alert_exc:
+                log_utils.log_message(
+                    f"Failed to send Telegram alert: {alert_exc}",
+                    "ERROR",
+                )
+
         return not unique_failures, unique_failures, source_statuses
 
 
