@@ -12,7 +12,8 @@ iteration of the function expected.  The helper therefore accepts either
 structure.
 """
 
-from datetime import date, datetime
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 
@@ -47,6 +48,96 @@ def _to_date(value: Any) -> Optional[date]:
         except ValueError:
             return None
     return None
+
+@dataclass(frozen=True)
+class BodyAgeTrend:
+    """Latest body age reading with a seven-day trend."""
+    sample_date: Optional[date]
+    value: Optional[float]
+    delta: Optional[float]
+
+
+def _extract_body_age_value(row: Dict[str, Any]) -> Optional[float]:
+    """Pull a body age value from a summary row."""
+    value = row.get("body_age_years")
+    if value is None:
+        body_section = row.get("body")
+        if isinstance(body_section, dict):
+            value = body_section.get("body_age_years")
+    return to_float(value)
+
+
+def get_body_age_trend(dal: Any, target_date: Optional[date] = None) -> BodyAgeTrend:
+    """Return the latest body age reading and its delta versus seven days prior."""
+    if target_date is None:
+        target_date = date.today() - timedelta(days=1)
+
+    if dal is None:
+        return BodyAgeTrend(sample_date=None, value=None, delta=None)
+
+    start = target_date - timedelta(days=7)
+    rows: List[Dict[str, Any]] = []
+
+    get_range = getattr(dal, "get_historical_data", None)
+    if callable(get_range):
+        try:
+            fetched = get_range(start, target_date)
+        except Exception:
+            rows = []
+        else:
+            if fetched is None:
+                rows = []
+            elif isinstance(fetched, list):
+                rows = fetched
+            else:
+                rows = list(fetched)
+    else:
+        get_metrics = getattr(dal, "get_historical_metrics", None)
+        if callable(get_metrics):
+            try:
+                fetched = get_metrics(8)
+            except Exception:
+                rows = []
+            else:
+                if fetched is None:
+                    rows = []
+                elif isinstance(fetched, list):
+                    rows = fetched
+                else:
+                    rows = list(fetched)
+
+    points = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_date = _to_date(row.get("date"))
+        if row_date is None:
+            continue
+        if row_date < start or row_date > target_date:
+            continue
+        value = _extract_body_age_value(row)
+        if value is None:
+            continue
+        points.append((row_date, float(value)))
+
+    if not points:
+        return BodyAgeTrend(sample_date=None, value=None, delta=None)
+
+    points.sort(key=lambda item: item[0])
+    relevant = [item for item in points if item[0] <= target_date]
+    if not relevant:
+        return BodyAgeTrend(sample_date=None, value=None, delta=None)
+
+    latest_date, latest_raw = relevant[-1]
+    week_date = target_date - timedelta(days=7)
+    week_raw = next((val for day, val in points if day == week_date), None)
+
+    value_out = round(latest_raw, 1)
+    delta_out = round(latest_raw - week_raw, 1) if week_raw is not None else None
+
+    return BodyAgeTrend(sample_date=latest_date, value=value_out, delta=delta_out)
+
+
 
 
 def calculate_body_age(

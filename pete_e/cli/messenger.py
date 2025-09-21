@@ -16,6 +16,7 @@ import typer
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.domain import body_age
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -34,6 +35,32 @@ def _build_orchestrator() -> "OrchestratorType":
     return _Orchestrator()
 
 
+def _format_body_age_line(trend) -> str | None:
+    if trend is None:
+        return None
+    value = getattr(trend, "value", None)
+    delta = getattr(trend, "delta", None)
+    if value is None:
+        return "Body Age: n/a"
+    line = f"Body Age: {value:.1f}y"
+    if delta is None:
+        return f"{line} (7d delta n/a)"
+    return f"{line} (7d delta {delta:+.1f}y)"
+
+
+def _append_line(base: str | None, addition: str) -> str:
+    base_text = "" if base is None else str(base)
+    if not addition:
+        return base_text
+    if not base_text:
+        return addition
+    if not base_text.endswith("\n"):
+        base_text = f"{base_text}\n"
+    return f"{base_text}{addition}"
+
+
+
+
 def build_daily_summary(
     *,
     orchestrator: "OrchestratorType | None" = None,
@@ -41,7 +68,16 @@ def build_daily_summary(
 ) -> str:
     """Generate the daily summary narrative for the requested date."""
     orch = orchestrator or _build_orchestrator()
-    return orch.get_daily_summary(target_date=target_date)
+    summary_value = orch.get_daily_summary(target_date=target_date)
+    summary_text = "" if summary_value is None else str(summary_value)
+
+    target = target_date or (date.today() - timedelta(days=1))
+    trend = body_age.get_body_age_trend(getattr(orch, "dal", None), target_date=target)
+    body_age_line = _format_body_age_line(trend)
+    if body_age_line:
+        summary_text = _append_line(summary_text, body_age_line)
+
+    return summary_text
 
 
 def send_daily_summary(
@@ -52,7 +88,10 @@ def send_daily_summary(
 ) -> str:
     """Send the daily summary via Telegram and return the content that was sent."""
     orch = orchestrator or _build_orchestrator()
-    summary_value = summary_text if summary_text is not None else orch.get_daily_summary(target_date=target_date)
+    if summary_text is None:
+        summary_value = build_daily_summary(orchestrator=orch, target_date=target_date)
+    else:
+        summary_value = summary_text
     summary_str = "" if summary_value is None else str(summary_value)
 
     if not summary_str.strip():
