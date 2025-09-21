@@ -1,4 +1,4 @@
-# pete_e/infrastructure/apple_dropbox_client.py
+﻿# pete_e/infrastructure/apple_dropbox_client.py
 
 import logging
 import os
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 import dropbox
-from dropbox.exceptions import AuthError
+from dropbox.exceptions import AuthError, DropboxException
 from dropbox.files import FileMetadata, ListFolderResult
 from pete_e.config.config import settings
 
@@ -17,7 +17,7 @@ from pete_e.config.config import settings
 class AppleDropboxClient:
     """A robust client for finding and downloading HealthAutoExport files from Dropbox."""
 
-    def __init__(self):
+    def __init__(self, request_timeout: float = 30.0):
         """Initialises the client and authenticates with Dropbox."""
 
         if not all([settings.DROPBOX_APP_KEY, settings.DROPBOX_APP_SECRET, settings.DROPBOX_REFRESH_TOKEN]):
@@ -34,13 +34,21 @@ class AppleDropboxClient:
         self.health_metrics_path = health_path if health_path.startswith('/') else f"/{health_path}"
         self.workouts_path = workouts_path if workouts_path.startswith('/') else f"/{workouts_path}"
 
+        self._request_timeout = request_timeout
+        self._account_display_name: Optional[str] = None
+
         try:
             self.dbx = dropbox.Dropbox(
                 app_key=settings.DROPBOX_APP_KEY,
                 app_secret=settings.DROPBOX_APP_SECRET,
-                oauth2_refresh_token=settings.DROPBOX_REFRESH_TOKEN
+                oauth2_refresh_token=settings.DROPBOX_REFRESH_TOKEN,
+                timeout=self._request_timeout,
             )
-            self.dbx.users_get_current_account()
+            account = self.dbx.users_get_current_account()
+            name = getattr(getattr(account, "name", None), "display_name", None)
+            if not name:
+                name = getattr(account, "email", None)
+            self._account_display_name = name
             logging.info("Successfully connected to Dropbox.")
         except AuthError as e:
             logging.error(f"Dropbox authentication failed: {e}")
@@ -101,6 +109,19 @@ class AppleDropboxClient:
             logging.error(f"Failed to download {dropbox_path}: {e}")
             raise IOError(f"Could not download file from Dropbox: {e}") from e
         
+    def ping(self) -> str:
+        """Returns a brief identifier for the authorised Dropbox account."""
+        if self._account_display_name:
+            return self._account_display_name
+        try:
+            account = self.dbx.users_get_current_account()
+        except DropboxException as e:
+            logging.error(f"Dropbox ping failed: {e}")
+            raise IOError(f"Dropbox ping failed: {e}") from e
+        name = getattr(getattr(account, "name", None), "display_name", None) or getattr(account, "email", None) or account.account_id
+        self._account_display_name = name
+        return name
+
     def find_new_files_since(self, folder_path: str, since_datetime: datetime) -> List[Tuple[datetime, str]]:
         """Finds all export files in a folder modified after a given datetime."""
         logging.info(f"Searching for new files since {since_datetime} in '{folder_path}'")
@@ -116,4 +137,9 @@ class AppleDropboxClient:
         # Sort files by modification date to process them in the correct order
         new_files.sort(key=lambda item: item[0])
         return new_files
+
+
+
+
+
 

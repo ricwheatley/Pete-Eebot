@@ -1,4 +1,4 @@
-# Pete Eebot
+﻿# Pete Eebot
 
 Pete-Eebot is a personal health and fitness orchestrator. The application ingests data from connected services, persists it in Postgres, analyses daily readiness, and prepares weekly training plans and summaries that can be reviewed or pushed to Telegram.
 
@@ -25,19 +25,19 @@ Pete-Eebot is a personal health and fitness orchestrator. The application ingest
 
 ```
 .
-├── pete_e/                 # Python package containing the active application code
-│   ├── application/        # Orchestration flows (sync, Dropbox ingest, plan generation)
-│   ├── cli/                # Typer-powered command line interface
-│   ├── config/             # Environment-driven settings
-│   ├── domain/             # Business rules (progression, plans, narratives, analytics)
-│   ├── infrastructure/     # DAL, API clients, and integrations
-│   └── resources/          # Static assets used by the application
-├── scripts/                # One-off helpers for maintenance and reviews
-├── tests/                  # Pytest suite for ingestion, orchestration, and validation logic
-├── docs/                   # Design notes and analytical documentation
-├── deprecated/             # Legacy FastAPI/Tailscale implementation retained for reference
-├── docker-compose.yml      # Local Postgres bootstrap for development
-└── init-db/                # SQL migrations used by the active schema
+â”œâ”€â”€ pete_e/                 # Python package containing the active application code
+â”‚   â”œâ”€â”€ application/        # Orchestration flows (sync, Dropbox ingest, plan generation)
+â”‚   â”œâ”€â”€ cli/                # Typer-powered command line interface
+â”‚   â”œâ”€â”€ config/             # Environment-driven settings
+â”‚   â”œâ”€â”€ domain/             # Business rules (progression, plans, narratives, analytics)
+â”‚   â”œâ”€â”€ infrastructure/     # DAL, API clients, and integrations
+â”‚   â””â”€â”€ resources/          # Static assets used by the application
+â”œâ”€â”€ scripts/                # One-off helpers for maintenance and reviews
+â”œâ”€â”€ tests/                  # Pytest suite for ingestion, orchestration, and validation logic
+â”œâ”€â”€ docs/                   # Design notes and analytical documentation
+â”œâ”€â”€ deprecated/             # Legacy FastAPI/Tailscale implementation retained for reference
+â”œâ”€â”€ docker-compose.yml      # Local Postgres bootstrap for development
+â””â”€â”€ init-db/                # SQL migrations used by the active schema
 ```
 
 ---
@@ -58,12 +58,23 @@ The settings layer exposes derived paths such as `logs/pete_history.log`. When r
 
 The project ships a Typer application under the `pete-e` entry point. Common commands:
 
-* `pete-e refresh-withings` – force-refreshes the Withings OAuth tokens and prints the truncated values.
-* `pete-e ingest-apple` – downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
-* `pete-e sync --days 7` – runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
-* `pete-e withings-sync` – executes the Withings-only branch of the pipeline.
-* `pete-e plan --weeks 4` – generates and deploys the next training plan block.
-* `pete-e message --summary` / `--plan` – renders summaries and optionally pushes them to Telegram with `--send`.
+* `pete-e refresh-withings` â€“ force-refreshes the Withings OAuth tokens and prints the truncated values.
+* `pete-e ingest-apple` â€“ downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
+* `pete-e sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
+* `pete-e withings-sync` â€“ executes the Withings-only branch of the pipeline.
+* `pete-e status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
+* `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block.
+* `pete-e message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
+
+
+Example:
+
+```
+$ pete-e status
+DB       OK   9ms
+Dropbox  OK   demo@account
+Withings OK   scale reachable
+```
 
 Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.
 
@@ -91,3 +102,5 @@ The tests provide in-memory doubles for the DAL and Dropbox client, ensuring the
 ## Legacy Code
 
 The `deprecated/` directory contains the retired FastAPI webhook and the original Tailscale-based Apple ingestion flow. It is kept for historical reference only; new development should rely on the active package in `pete_e/`.
+
+

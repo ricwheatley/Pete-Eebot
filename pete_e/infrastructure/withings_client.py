@@ -1,8 +1,8 @@
-# (Functional) Withings API client – interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `.withings_tokens.json`)
+﻿# (Functional) Withings API client â€“ interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `.withings_tokens.json`)
 
 """
 Withings API client for Pete-E.
-Now persists tokens in .withings_tokens.json so you don’t have to update .env manually.
+Now persists tokens in .withings_tokens.json so you donâ€™t have to update .env manually.
 """
 
 import json
@@ -53,11 +53,12 @@ class WithingsClient:
 
     TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
 
-    def __init__(self):
+    def __init__(self, request_timeout: float = 30.0):
         """Initializes the client with credentials from settings or token file."""
         self.client_id = settings.WITHINGS_CLIENT_ID
         self.client_secret = _unwrap_secret(settings.WITHINGS_CLIENT_SECRET)
         self.redirect_uri = settings.WITHINGS_REDIRECT_URI
+        self._request_timeout = request_timeout
 
         # Try to load existing tokens from file
         self.access_token = None
@@ -80,6 +81,7 @@ class WithingsClient:
 
         self.token_url = "https://wbsapi.withings.net/v2/oauth2"
         self.measure_url = "https://wbsapi.withings.net/measure"
+        self.user_url = "https://wbsapi.withings.net/v2/user"
         self._token_state = WithingsTokenState(requires_reauth=False)
 
     def _save_tokens(self, tokens: dict) -> None:
@@ -91,6 +93,83 @@ class WithingsClient:
     def get_token_state(self) -> WithingsTokenState:
         """Returns the current understanding of the refresh token state."""
         return self._token_state
+    
+    def ping(self) -> str:
+        """Performs a lightweight Withings API call to confirm connectivity (user.metrics scope)."""
+        if not self.access_token:
+            self._refresh_access_token()
+
+        def _reason(data: dict) -> str:
+            body = data.get("body") if isinstance(data.get("body"), dict) else {}
+            return str(
+                data.get("error")
+                or data.get("message")
+                or body.get("message")
+                or body.get("error")
+                or data.get("status")
+            )
+
+        try:
+            response = requests.post(
+                self.measure_url,
+                headers={"Authorization": f"Bearer {self.access_token}"},
+                data={"action": "getmeas", "meastype": 1, "category": 1, "limit": 1},
+                timeout=self._request_timeout,
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            payload = None
+            try:
+                payload = exc.response.json()
+            except Exception:
+                payload = None
+            reason = _reason(payload or {})
+            if payload and self._needs_reauth(reason, payload):
+                self._token_state = WithingsTokenState(
+                    requires_reauth=True,
+                    reason=reason,
+                    last_refresh_utc=self._token_state.last_refresh_utc,
+                    last_error_status=payload.get("status") if isinstance(payload.get("status"), int) else None,
+                    last_http_status=exc.response.status_code if exc.response else None,
+                )
+                raise WithingsReauthRequired(
+                    reason,
+                    status=payload.get("status") if isinstance(payload.get("status"), int) else None,
+                    http_status=exc.response.status_code if exc.response else None,
+                )
+            raise RuntimeError(f"Withings ping failed: {reason or exc}") from exc
+        except requests.RequestException as exc:
+            log_message(f"Withings ping request failed: {exc}", "ERROR")
+            raise RuntimeError(f"Withings ping request failed: {exc}") from exc
+
+        payload = self._parse_json(response, context="ping")
+        status = payload.get("status")
+        if status == 0:
+            self._token_state = WithingsTokenState(
+                requires_reauth=False,
+                reason=None,
+                last_refresh_utc=self._token_state.last_refresh_utc,
+                last_error_status=None,
+                last_http_status=response.status_code,
+            )
+            return "metrics reachable"
+
+        reason = _reason(payload)
+        if self._needs_reauth(reason, payload):
+            self._token_state = WithingsTokenState(
+                requires_reauth=True,
+                reason=reason,
+                last_refresh_utc=self._token_state.last_refresh_utc,
+                last_error_status=status if isinstance(status, int) else None,
+                last_http_status=response.status_code,
+            )
+            raise WithingsReauthRequired(
+                reason,
+                status=status if isinstance(status, int) else None,
+                http_status=response.status_code,
+            )
+
+        raise RuntimeError(f"Withings ping failed: {reason}")
 
     def _refresh_access_token(self):
         """Exchanges the refresh token for a new access token."""
@@ -107,7 +186,7 @@ class WithingsClient:
 
         for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 1):
             try:
-                response = requests.post(self.token_url, data=data, timeout=30)
+                response = requests.post(self.token_url, data=data, timeout=self._request_timeout)
             except requests.RequestException as exc:
                 log_message(f"Withings token refresh request failed: {exc}", "ERROR")
                 raise
@@ -284,7 +363,7 @@ class WithingsClient:
                     self.measure_url,
                     headers={"Authorization": f"Bearer {self.access_token}"},
                     params=params,
-                    timeout=30,
+                    timeout=self._request_timeout,
                 )
             except requests.RequestException as exc:
                 log_message(f"Withings measures request failed: {exc}", "ERROR")
@@ -368,6 +447,14 @@ class WithingsClient:
             "INFO",
         )
         return row
+
+
+
+
+
+
+
+
 
 
 
