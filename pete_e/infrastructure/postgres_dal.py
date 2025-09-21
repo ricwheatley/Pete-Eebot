@@ -15,9 +15,12 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Dict, List, Optional
 import json
+import hashlib
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import json
+import hashlib
 from psycopg_pool import ConnectionPool
 
 from pete_e.config import settings
@@ -333,6 +336,20 @@ class PostgresDal(DataAccessLayer):
         log_utils.log_message(f"Placeholder: Fetching plan {plan_id}", "INFO")
         return {}
 
+    def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
+        """Return the most recent plan starting on the provided date if it exists."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "SELECT id, start_date, weeks FROM training_plans WHERE start_date = %s ORDER BY id DESC LIMIT 1;",
+                    (start_date,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            log_utils.log_message(f"Error fetching plan for start {start_date}: {e}", "ERROR")
+            raise
+
     # ---------------------------------------------------------------------
     # Muscle volume comparison
     # ---------------------------------------------------------------------
@@ -556,3 +573,46 @@ class PostgresDal(DataAccessLayer):
 
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         log_utils.log_message(f"[VALIDATION] {tag}: {adjustments}", "INFO")
+
+    def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM wger_export_log WHERE plan_id = %s AND week_number = %s LIMIT 1;",
+                    (plan_id, week_number),
+                )
+                return cur.fetchone() is not None
+        except Exception as e:
+            log_utils.log_message(
+                f"Error checking wger export status for plan {plan_id} week {week_number}: {e}",
+                "ERROR",
+            )
+            raise
+
+    def record_wger_export(
+        self,
+        plan_id: int,
+        week_number: int,
+        payload: Dict[str, Any],
+        response: Optional[Dict[str, Any]] = None,
+        routine_id: Optional[int] = None,
+    ) -> None:
+        checksum_source = json.dumps(payload, sort_keys=True).encode("utf-8")
+        checksum = hashlib.sha1(checksum_source).hexdigest()
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum, routine_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;
+                    """,
+                    (plan_id, week_number, Json(payload), Json(response or {}), checksum, routine_id),
+                )
+                conn.commit()
+        except Exception as e:
+            log_utils.log_message(
+                f"Error recording wger export for plan {plan_id} week {week_number}: {e}",
+                "ERROR",
+            )
+            raise

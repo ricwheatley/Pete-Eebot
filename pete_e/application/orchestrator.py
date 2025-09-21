@@ -14,10 +14,11 @@ from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import telegram_sender
 
 # Core Logic and Helpers
-from pete_e.domain.narrative_builder import NarrativeBuilder
+from pete_e.domain.narrative_builder import NarrativeBuilder, PeteVoice
 from pete_e.domain.plan_builder import build_block
 from pete_e.domain.progression import PlanProgressionDecision, calibrate_plan_week
 from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
+from pete_e.application import wger_sender
 from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
@@ -49,6 +50,17 @@ class WeeklyCalibrationResult:
     progression: PlanProgressionDecision | None
     validation: ValidationDecision | None
     message: str
+
+
+@dataclass(frozen=True)
+class CycleRolloverResult:
+    """Outcome of the automated cycle rollover pipeline."""
+
+    plan_id: int | None
+    created: bool
+    exported: bool
+    start_date: date
+    message: str | None = None
 
 
 def _next_monday(reference: date) -> date:
@@ -554,3 +566,124 @@ class Orchestrator:
                 f"Failed to generate and deploy new plan: {e}", "ERROR"
             )
             return -1  # Return a sentinel value indicating failure
+
+    def run_cycle_rollover(
+        self,
+        *,
+        reference_date: date | None = None,
+        weeks: int = 4,
+    ) -> CycleRolloverResult:
+        """Generate the next training cycle and export week one to Wger."""
+
+        today = reference_date or date.today()
+        next_start = _next_monday(today)
+        log_utils.log_message(
+            f"Cycle rollover triggered for {next_start.isoformat()}",
+            "INFO",
+        )
+
+        plan_id: int | None = None
+        created = False
+
+        finder = getattr(self.dal, "find_plan_by_start_date", None)
+        existing_plan = None
+        if callable(finder):
+            try:
+                existing_plan = finder(next_start)
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to query existing plan for {next_start.isoformat()}: {exc}",
+                    "ERROR",
+                )
+
+        if isinstance(existing_plan, dict) and existing_plan.get("id") is not None:
+            plan_id = int(existing_plan["id"])
+            log_utils.log_message(
+                f"Reusing existing plan {plan_id} starting {next_start.isoformat()}",
+                "INFO",
+            )
+        else:
+            plan_id = self.generate_and_deploy_next_plan(start_date=next_start, weeks=weeks)
+            created = plan_id > 0
+            if not created:
+                message = f"Cycle rollover failed to generate plan for {next_start.isoformat()}."
+                log_utils.log_message(message, "ERROR")
+                return CycleRolloverResult(
+                    plan_id=None,
+                    created=False,
+                    exported=False,
+                    start_date=next_start,
+                    message=message,
+                )
+
+        if plan_id is None or plan_id <= 0:
+            message = f"Cycle rollover received invalid plan id {plan_id}; aborting export."
+            log_utils.log_message(message, "ERROR")
+            return CycleRolloverResult(
+                plan_id=None,
+                created=created,
+                exported=False,
+                start_date=next_start,
+                message=message,
+            )
+
+        try:
+            push_result = wger_sender.push_week(
+                self.dal,
+                plan_id,
+                week=1,
+                start_date=next_start,
+            )
+        except Exception as exc:
+            log_utils.log_message(
+                f"Cycle rollover export failed for plan {plan_id}: {exc}",
+                "ERROR",
+            )
+            return CycleRolloverResult(
+                plan_id=plan_id,
+                created=created,
+                exported=False,
+                start_date=next_start,
+                message=str(exc),
+            )
+
+        exported = False
+        message: str | None = None
+
+        if isinstance(push_result, dict):
+            status = push_result.get("status")
+            if status == "exported":
+                exported = True
+            elif status == "skipped":
+                log_utils.log_message(
+                    f"Week 1 for plan {plan_id} already exported; skipping Wger push.",
+                    "INFO",
+                )
+            else:
+                log_utils.log_message(
+                    f"Unexpected rollover push result for plan {plan_id}: {push_result}",
+                    "WARN",
+                )
+        else:
+            exported = bool(push_result)
+
+        if exported:
+            message = PeteVoice.nudge(
+                "#SprintComplete",
+                ["I've reviewed the cycle, created the new block, and posted Week 1 to Wger"],
+            )
+            try:
+                self.send_telegram_message(message)
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to send cycle rollover Telegram nudge: {exc}",
+                    "WARN",
+                )
+
+        return CycleRolloverResult(
+            plan_id=plan_id,
+            created=created,
+            exported=exported,
+            start_date=next_start,
+            message=message,
+        )
