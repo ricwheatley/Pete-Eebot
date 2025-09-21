@@ -110,6 +110,62 @@ def _format_body_comp_line(dal: Any, target_date: date) -> str | None:
     return f"Muscle trend: {avg_current:.1f}% avg this week."
 
 
+def _format_hrv_line(dal: Any, target_date: date) -> str | None:
+    if dal is None or not hasattr(dal, "get_historical_metrics"):
+        return None
+    try:
+        rows = dal.get_historical_metrics(14)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log_utils.log_message(f"Failed to load HRV history: {exc}", "WARN")
+        return None
+
+    window_start = target_date - timedelta(days=6)
+    samples: List[tuple[date, float]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        row_date = _coerce_summary_date(row.get("date"))
+        if row_date is None or row_date < window_start or row_date > target_date:
+            continue
+        hrv_value: float | None = None
+        for key in _HRV_METRIC_KEYS:
+            raw_value = row.get(key)
+            if raw_value is None:
+                continue
+            try:
+                hrv_value = float(raw_value)
+            except (TypeError, ValueError):
+                hrv_value = None
+            if hrv_value is not None:
+                break
+        if hrv_value is not None and hrv_value > 0:
+            samples.append((row_date, hrv_value))
+
+    if not samples:
+        return None
+
+    samples.sort(key=lambda item: item[0])
+    current_date = target_date
+    current_value = next((value for sample_date, value in samples if sample_date == target_date), None)
+    if current_value is None:
+        current_date, current_value = samples[-1]
+
+    previous_values = [value for sample_date, value in samples if sample_date < current_date]
+    avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
+
+    arrow = "→"
+    if avg_previous is not None:
+        delta = current_value - avg_previous
+        if delta >= 2.0:
+            arrow = "↗"
+        elif delta <= -2.0:
+            arrow = "↘"
+
+    line = f"HRV: {current_value:.0f} ms {arrow}"
+    if avg_previous is not None:
+        line += f" (7d avg {avg_previous:.0f} ms)"
+    return line
+
 def _append_line(base: str | None, addition: str) -> str:
     base_text = "" if base is None else str(base)
     if not addition:
@@ -119,6 +175,8 @@ def _append_line(base: str | None, addition: str) -> str:
     if not base_text.endswith("\n"):
         base_text = f"{base_text}\n"
     return f"{base_text}{addition}"
+
+_HRV_METRIC_KEYS = ("hrv_sdnn_ms", "hrv_rmssd_ms", "hrv_daily_ms", "hrv")
 
 _DAY_NAMES = {
     1: "Monday",
@@ -153,6 +211,10 @@ def build_daily_summary(
     comp_line = _format_body_comp_line(getattr(orch, "dal", None), target)
     if comp_line:
         summary_text = _append_line(summary_text, comp_line)
+
+    hrv_line = _format_hrv_line(getattr(orch, "dal", None), target)
+    if hrv_line:
+        summary_text = _append_line(summary_text, hrv_line)
 
     return summary_text
 
@@ -458,9 +520,3 @@ app.command()(telegram_command)
 
 if __name__ == "__main__":
     app()
-
-
-
-
-
-

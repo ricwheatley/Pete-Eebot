@@ -13,6 +13,15 @@ ISO_WITH_TZ = "%Y-%m-%d %H:%M:%S %z"
 
 CANONICAL_METRIC_NAME = {
     "walking_running_distance": "distance_walking_running",
+    "heart_rate_variability": "hrv_sdnn_ms",
+    "heart_rate_variability_sdnn": "hrv_sdnn_ms",
+    "heart_rate_variability_sdnn_ms": "hrv_sdnn_ms",
+    "hrv_sdnn": "hrv_sdnn_ms",
+    "hrv_sdnn_ms": "hrv_sdnn_ms",
+    "vo2max": "vo2_max",
+    "vo2_max": "vo2_max",
+    "vo2_ml_kg_min": "vo2_max",
+    "cardio_vo2_max": "vo2_max",
 }
 SKIP_METRICS = {
     "weight_body_mass",
@@ -474,3 +483,4 @@ class AppleHealthParser:
             "workout_hr": workout_hr, "workout_steps": workout_steps,
             "workout_energy": workout_energy, "workout_hr_recovery": workout_hr_recovery,
         }
+
