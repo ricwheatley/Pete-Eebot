@@ -80,6 +80,15 @@ Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete
 
 ---
 
+## End-to-End Automation Flows
+
+* `run_end_to_end_day(days=1, summary_date=None)` - executes the multi-source daily ingest via the orchestrator and ensures the previous day's Telegram summary is dispatched exactly once. The helper returns a `DailyAutomationResult` with per-source statuses and whether a summary was attempted, making it safe for cron jobs and CLI wrappers to inspect outcomes without reimplementing business logic.
+* `run_end_to_end_week(reference_date=None, force_rollover=False, rollover_weeks=4)` - recalibrates the upcoming training week and, when the cadence predicate passes (default: every 4th Sunday), triggers the cycle rollover/export pipeline. The behaviour can be tuned with `AUTO_CYCLE_ROLLOVER_ENABLED` and `CYCLE_ROLLOVER_INTERVAL_WEEKS`, and `force_rollover` provides an explicit override for maintenance scripts. The returned `WeeklyAutomationResult` includes both the calibration summary and any rollover attempt.
+
+These entry points allow CLI commands, Airflow jobs, or simple cron tasks to call a single orchestrator method instead of chaining bespoke scripts.
+
+---
+
 ## Reliability Checks & Recovery
 
 - **Apple Dropbox stagnation:** The orchestrator logs and sends a Telegram alert when no new Apple Health exports have been processed for the configured `APPLE_MAX_STALE_DAYS` window (default three days). Increase the value if weekend gaps are expected.
