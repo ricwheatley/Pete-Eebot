@@ -63,18 +63,27 @@ class PostgresDal(DataAccessLayer):
     # ---------------------------------------------------------------------
     # Withings
     # ---------------------------------------------------------------------
-    def save_withings_daily(self, day: date, weight_kg: float, body_fat_pct: float) -> None:
+    def save_withings_daily(
+        self,
+        day: date,
+        weight_kg: Optional[float],
+        body_fat_pct: Optional[float],
+        muscle_pct: Optional[float],
+        water_pct: Optional[float],
+    ) -> None:
         try:
             with get_conn() as conn, conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO withings_daily (date, weight_kg, body_fat_pct)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO withings_daily (date, weight_kg, body_fat_pct, muscle_pct, water_pct)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (date) DO UPDATE SET
                         weight_kg = EXCLUDED.weight_kg,
-                        body_fat_pct = EXCLUDED.body_fat_pct;
+                        body_fat_pct = EXCLUDED.body_fat_pct,
+                        muscle_pct = EXCLUDED.muscle_pct,
+                        water_pct = EXCLUDED.water_pct;
                     """,
-                    (day, weight_kg, body_fat_pct),
+                    (day, weight_kg, body_fat_pct, muscle_pct, water_pct),
                 )
         except Exception as e:
             log_utils.log_message(f"Error saving Withings data for {day}: {e}", "ERROR")

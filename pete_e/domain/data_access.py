@@ -15,7 +15,14 @@ class DataAccessLayer(ABC):
     # Source saves
     # -------------------------------------------------------------------------
     @abstractmethod
-    def save_withings_daily(self, day: date, weight_kg: float, body_fat_pct: float) -> None:
+    def save_withings_daily(
+        self,
+        day: date,
+        weight_kg: Optional[float],
+        body_fat_pct: Optional[float],
+        muscle_pct: Optional[float],
+        water_pct: Optional[float],
+    ) -> None:
         pass
 
     @abstractmethod

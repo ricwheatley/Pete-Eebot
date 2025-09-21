@@ -437,10 +437,19 @@ class WithingsClient:
                     return m["value"] * (10 ** m.get("unit", 0))
             return None
 
-        row["weight"] = round(val(1), 2) if val(1) is not None else None
-        row["fat_percent"] = round(val(6), 2) if val(6) is not None else None
-        row["muscle_mass"] = round(val(76), 2) if val(76) is not None else None
-        row["water_percent"] = round(val(77), 2) if val(77) is not None else None
+        weight_value = val(1)
+        fat_value = val(6)
+        muscle_value = val(76)
+        water_value = val(77)
+
+        row["weight"] = round(weight_value, 2) if weight_value is not None else None
+        row["fat_percent"] = round(fat_value, 2) if fat_value is not None else None
+        row["muscle_mass"] = round(muscle_value, 2) if muscle_value is not None else None
+        if muscle_value is not None and weight_value not in (None, 0):
+            row["muscle_percent"] = round((muscle_value / weight_value) * 100, 2)
+        else:
+            row["muscle_percent"] = None
+        row["water_percent"] = round(water_value, 2) if water_value is not None else None
 
         log_message(
             f"Successfully fetched Withings summary for {target_date.isoformat()}.",
