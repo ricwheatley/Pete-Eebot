@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
-
+from pete_e.infrastructure import log_utils
 
 def _average(values: list[float]) -> float | None:
     """Return the mean of a list, or None if empty."""
@@ -63,7 +63,7 @@ def apply_progression(
 
     # The richer Apple Health exports also include heart rate variability (HRV)
     # and detailed sleep stages. In future iterations, these could augment the
-    # simple recovery flag above – e.g. flag poor recovery when HRV trends down
+    # simple recovery flag above - e.g. flag poor recovery when HRV trends down
     # or when deep/REM sleep proportions fall below expectations.
 
     adjustments: list[str] = []
@@ -78,8 +78,11 @@ def apply_progression(
 
                 entries = lift_history.get(ex_id, [])
                 if not entries:
+                    detail_no_history = (
+                        f"no RIR, recovery {'good' if recovery_good else 'poor'}"
+                    )
                     adjustments.append(
-                        f"{name}: no history, kept at {ex.get('weight_target', 0)}kg"
+                        f"{name}: no history, kept at {ex.get('weight_target', 0)}kg ({detail_no_history})"
                     )
                     continue
 
@@ -88,8 +91,11 @@ def apply_progression(
                 rirs = [e.get("rir") for e in last_entries if e.get("rir") is not None]
 
                 if not weights:
+                    detail_no_weight = (
+                        f"no RIR, recovery {'good' if recovery_good else 'poor'}"
+                    )
                     adjustments.append(
-                        f"{name}: no valid weight data, kept at {ex.get('weight_target', 0)}kg"
+                        f"{name}: no valid weight data, kept at {ex.get('weight_target', 0)}kg ({detail_no_weight})"
                     )
                     continue
 
@@ -262,5 +268,16 @@ def calibrate_plan_week(
             update_fn(payload)
             persisted = True
 
+            refresh_fn = getattr(dal, "refresh_plan_view", None)
+            if callable(refresh_fn):
+                try:
+                    refresh_fn()
+                except Exception as exc:  # pragma: no cover - defensive guardrail
+                    log_utils.log_message(
+                        f"Failed to refresh plan view after progression updates: {exc}",
+                        "WARN",
+                    )
+
     return PlanProgressionDecision(notes=notes, updates=updates, persisted=persisted)
+
 
