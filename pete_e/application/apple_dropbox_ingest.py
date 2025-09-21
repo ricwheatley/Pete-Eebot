@@ -185,6 +185,36 @@ def run_apple_health_ingest() -> ImportReport:
     return report
 
 
+
+def get_last_successful_import_timestamp() -> Optional[datetime]:
+    """Fetches the timestamp of the latest completed Apple Health import."""
+    try:
+        conn_ctx = get_conn()
+    except Exception as exc:  # pragma: no cover - defensive
+        raise AppleIngestError(stage="connection", reason=str(exc)) from exc
+
+    try:
+        with conn_ctx as conn:
+            try:
+                writer = AppleHealthWriter(conn)
+            except Exception as exc:  # pragma: no cover - defensive
+                raise AppleIngestError(stage="initialise_writer", reason=str(exc)) from exc
+
+            try:
+                last_import = writer.get_last_import_timestamp()
+            except Exception as exc:
+                raise AppleIngestError(stage="checkpoint", reason=str(exc)) from exc
+    except AppleIngestError:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise AppleIngestError(stage="unexpected", reason=str(exc)) from exc
+
+    if last_import and last_import.tzinfo is None:
+        last_import = last_import.replace(tzinfo=timezone.utc)
+
+    return last_import
+
+
 if __name__ == "__main__":
     """Simple CLI runner for convenience."""
     try:

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     
     GH_SECRETS_TOKEN: SecretStr
 
+    # --- SANITY CHECK ALERTS ---
+    APPLE_MAX_STALE_DAYS: int = 3
+    WITHINGS_ALERT_REAUTH: bool = True
+
     # --- DATABASE CONNECTION (from environment) ---
     POSTGRES_USER: str
     POSTGRES_PASSWORD: SecretStr

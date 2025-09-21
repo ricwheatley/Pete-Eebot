@@ -21,6 +21,8 @@ def pytest_configure():
         "DROPBOX_APP_SECRET": "dummy",
         "DROPBOX_REFRESH_TOKEN": "dummy",
         "GH_SECRETS_TOKEN": "dummy",
+        "APPLE_MAX_STALE_DAYS": "3",
+        "WITHINGS_ALERT_REAUTH": "true",
         "POSTGRES_USER": "postgres",
         "POSTGRES_PASSWORD": "postgres",
         "POSTGRES_HOST": "localhost",

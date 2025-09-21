@@ -47,7 +47,8 @@ Pete-Eebot is a personal health and fitness orchestrator. The application ingest
 1. Copy `.env.sample` to `.env` and populate the secrets.
 2. Provide Dropbox credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`) and the folder paths produced by Health Auto Export (`DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`).
 3. Fill in the remaining Withings, Telegram, wger, and Postgres values. The configuration module will construct `DATABASE_URL` automatically on load.
-4. Run `pip install .[dev]` (or use your preferred virtual environment manager) to install the package and its development dependencies.
+4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
+5. Run `pip install .[dev]` (or use your preferred virtual environment manager) to install the package and its development dependencies.
 
 The settings layer exposes derived paths such as `logs/pete_history.log`. When running locally the log directory is created automatically.
 
@@ -65,6 +66,13 @@ The project ships a Typer application under the `pete-e` entry point. Common com
 * `pete-e message --summary` / `--plan` – renders summaries and optionally pushes them to Telegram with `--send`.
 
 Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.
+
+---
+
+## Reliability Checks & Recovery
+
+- **Apple Dropbox stagnation:** The orchestrator logs and sends a Telegram alert when no new Apple Health exports have been processed for the configured `APPLE_MAX_STALE_DAYS` window (default three days). Increase the value if weekend gaps are expected.
+- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete-e withings-auth-url`, approving the app in the browser, then calling `pete-e withings-exchange-code <code>` followed by `pete-e refresh-withings` to confirm the new tokens are persisted.
 
 ---
 
