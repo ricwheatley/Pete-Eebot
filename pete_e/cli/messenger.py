@@ -1,4 +1,4 @@
-# (Functional) **Command-line interface** (Typer app) exposing main features.
+﻿# (Functional) **Command-line interface** (Typer app) exposing main features.
 
 """
 Main Command-Line Interface for the Pete-Eebot application.
@@ -21,6 +21,7 @@ from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_statu
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.cli.telegram import telegram as telegram_command
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from pete_e.application.orchestrator import Orchestrator as OrchestratorType
@@ -293,7 +294,10 @@ def withings_exchange_code(code: str) -> None:
         raise typer.Exit(code=1)
 
 
+app.command()(telegram_command)
+
 if __name__ == "__main__":
     app()
+
 
 
