@@ -285,9 +285,28 @@ def build_weekly_plan_summary(plan_week_data: List[Dict[str, Any]], week_number:
 # Nudges & Facade
 # -------------------------------------------------------------------------
 
+_CUSTOM_NUDGE_PHRASES = {
+    "#WithingsCheck": [
+        "Scale's been quiet for a few days - fancy a Withings check-in?",
+        "No Withings weigh-ins lately; hop on the scale and keep me posted.",
+    ],
+    "#HighStrainRest": [
+        "You've been redlining lately; schedule a softer day so the gains stick.",
+        "That strain streak is huge. Let's bank it with some extra recovery.",
+    ],
+    "#PersonalBest": [
+        "New PB unlocked! Celebrate it and keep the form sharp.",
+        "Personal bests raining down! Absolute scenes.",
+    ],
+}
+
 def build_nudge(tag: str, sprinkles: List[str] | None = None, mode: str = "balanced") -> str:
     """Build a cheeky nudge narrative based on a phrase tag."""
-    base_phrase = phrase_for(tags=[tag])
+    library = _CUSTOM_NUDGE_PHRASES.get(tag)
+    if library:
+        base_phrase = random.choice(library)
+    else:
+        base_phrase = phrase_for(tags=[tag])
     log_message(f"Pete nudge [{tag}] → {base_phrase}", "INFO")  # 👈 log which phrase was used
 
     extra = sprinkles or []
