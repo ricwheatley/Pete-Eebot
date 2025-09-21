@@ -1,4 +1,4 @@
-﻿# (Functional) **Command-line interface** (Typer app) exposing main features.
+# (Functional) **Command-line interface** (Typer app) exposing main features.
 
 """
 Main Command-Line Interface for the Pete-Eebot application.
@@ -17,6 +17,7 @@ import typer
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age
+from pete_e.domain.phrase_picker import random_phrase
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -58,6 +59,17 @@ def _append_line(base: str | None, addition: str) -> str:
     if not base_text.endswith("\n"):
         base_text = f"{base_text}\n"
     return f"{base_text}{addition}"
+
+_DAY_NAMES = {
+    1: "Monday",
+    2: "Tuesday",
+    3: "Wednesday",
+    4: "Thursday",
+    5: "Friday",
+    6: "Saturday",
+    7: "Sunday",
+}
+
 
 
 
@@ -104,6 +116,137 @@ def send_daily_summary(
 
     return summary_str
 
+
+
+def build_weekly_plan_overview(
+    *,
+    orchestrator: "OrchestratorType | None" = None,
+    target_date: date | None = None,
+) -> str:
+    """Build a weekly plan overview with key workouts and a motivational tip."""
+    orch = orchestrator or _build_orchestrator()
+    target = target_date or date.today()
+
+    dal = getattr(orch, "dal", None)
+    if dal is None or not hasattr(dal, "get_active_plan") or not hasattr(dal, "get_plan_week"):
+        return "Training plan data source is not available."
+
+    try:
+        active_plan = dal.get_active_plan()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log_utils.log_message(f"Failed to load active plan: {exc}", "ERROR")
+        return "Failed to load the active training plan."
+
+    if not active_plan:
+        return "There is no active training plan in the database."
+
+    start_value = active_plan.get("start_date")
+    if isinstance(start_value, datetime):
+        start_date = start_value.date()
+    elif isinstance(start_value, date):
+        start_date = start_value
+    elif isinstance(start_value, str):
+        try:
+            start_date = date.fromisoformat(start_value)
+        except ValueError:
+            log_utils.log_message("Active plan start date could not be parsed.", "ERROR")
+            return "The active training plan has an invalid start date."
+    else:
+        return "The active training plan has an invalid start date."
+
+    days_since_start = (target - start_date).days
+    if days_since_start < 0:
+        return f"The active training plan starts on {start_date.isoformat()}."
+
+    try:
+        total_weeks = int(active_plan.get("weeks") or 0)
+    except (TypeError, ValueError):
+        total_weeks = 0
+    if total_weeks <= 0:
+        return "The active training plan is missing its duration."
+
+    week_number = (days_since_start // 7) + 1
+    if week_number > total_weeks:
+        return "The current training plan has finished. Time to generate a new one!"
+
+    plan_id = active_plan.get("id")
+    if plan_id is None:
+        return "The active training plan is missing its identifier."
+
+    try:
+        plan_week_rows = dal.get_plan_week(plan_id, week_number)
+    except Exception as exc:
+        log_utils.log_message(f"Failed to load plan week data: {exc}", "ERROR")
+        return f"Could not retrieve workouts for Plan ID {plan_id}, Week {week_number}."
+
+    if not plan_week_rows:
+        return f"Could not find workout data for Plan ID {plan_id}, Week {week_number}."
+
+    week_start = start_date + timedelta(days=(week_number - 1) * 7)
+    week_end = week_start + timedelta(days=6)
+
+    workouts_by_day: dict[int, list[str]] = {day: [] for day in range(1, 8)}
+
+    def _format_number(raw: object) -> str:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return str(raw)
+        if value.is_integer():
+            return str(int(value))
+        return f"{value:g}"
+
+    for row in plan_week_rows:
+        day_number = row.get("day_of_week")
+        try:
+            day_index = int(day_number)
+        except (TypeError, ValueError):
+            continue
+        if day_index not in workouts_by_day:
+            continue
+
+        exercise_name = row.get("exercise_name") or f"Exercise {row.get('exercise_id')}"
+        sets = row.get("sets")
+        reps = row.get("reps")
+        rir = row.get("rir")
+        weight = row.get("target_weight_kg") or row.get("weight_kg")
+
+        details: list[str] = []
+        if sets is not None and reps is not None:
+            details.append(f"{_format_number(sets)} x {_format_number(reps)}")
+        if weight is not None:
+            details.append(f"{_format_number(weight)} kg")
+        if rir is not None:
+            details.append(f"RIR {_format_number(rir)}")
+
+        detail_text = f" ({'; '.join(details)})" if details else ""
+        workouts_by_day[day_index].append(f"{exercise_name}{detail_text}")
+
+    key_lines: list[str] = []
+    for day_idx in range(1, 8):
+        day_label = _DAY_NAMES.get(day_idx, f"Day {day_idx}")
+        items = workouts_by_day.get(day_idx, [])
+        if items:
+            key_lines.append(f"{day_label}: {'; '.join(items)}")
+        else:
+            key_lines.append(f"{day_label}: Rest / recovery focus.")
+
+    try:
+        tip = random_phrase(tags=["#Motivation"])
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log_utils.log_message(f"Falling back to default motivation tip: {exc}", "WARN")
+        tip = "Stay consistent and keep the effort honest."
+
+    message_lines = [
+        f"Week {week_number} training plan ({week_start.isoformat()} - {week_end.isoformat()}):",
+        "",
+        "Key workouts:",
+    ]
+    message_lines.extend(f"- {line}" for line in key_lines)
+    message_lines.append("")
+    message_lines.append(f"Tip: {tip}")
+
+    return "\n".join(message_lines).strip()
 
 # Create the Typer application object
 app = typer.Typer(
@@ -237,11 +380,14 @@ def message(
                 raise typer.Exit(code=1)
 
     if plan:
-        log_utils.log_message("Generating weekly plan...", "INFO")
-        weekly_plan = orchestrator.get_week_plan_summary()
+        log_utils.log_message("Generating weekly plan overview...", "INFO")
+        weekly_plan = build_weekly_plan_overview(orchestrator=orchestrator)
         print("--- Weekly Plan ---")
         print(weekly_plan)
         if send:
+            if not weekly_plan.strip():
+                log_utils.log_message("Weekly plan overview was empty; aborting Telegram send.", "WARN")
+                raise typer.Exit(code=1)
             if not orchestrator.send_telegram_message(weekly_plan):
                 log_utils.log_message("Failed to send weekly plan via Telegram.", "ERROR")
                 raise typer.Exit(code=1)
@@ -298,6 +444,9 @@ app.command()(telegram_command)
 
 if __name__ == "__main__":
     app()
+
+
+
 
 
 

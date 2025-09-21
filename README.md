@@ -66,6 +66,18 @@ The project ships a Typer application under the `pete-e` entry point. Common com
 * `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block.
 * `pete-e message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
 
+### Scheduled Messaging
+
+Add the proactive messages to cron (or your scheduler of choice) so the summaries arrive without manual intervention:
+
+```
+5 7 * * * pete-e sync --days 1 && pete-e message --summary --send
+0 8 * * 1 pete-e message --plan --send
+```
+
+The daily path chains a sync before messaging and respects the dispatch ledger, so repeated runs in the same morning will no-op instead of double-sending. If the orchestrator automations are also sending summaries, keep just one of them active to avoid dupe suppression. The weekly plan command now renders the upcoming week header, the key workouts per day, and a closing tip before handing it to Telegram.
+
+
 
 Example:
 
