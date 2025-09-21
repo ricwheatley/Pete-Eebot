@@ -1,8 +1,10 @@
 # pete_e/domain/validation.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, timedelta
+import copy
+
+from dataclasses import dataclass, replace
+from datetime import date, datetime, timedelta
 from statistics import median, mean
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -72,6 +74,235 @@ class MuscleBalanceReport:
     missing_groups: List[str]
     tolerance: float
 
+
+def _ensure_date(value: Any) -> Optional[date]:
+    '''Best effort conversion to date.'''
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _resolve_plan_context(dal: Any, week_start_date: date) -> Optional[Tuple[int, date]]:
+    get_active_plan = getattr(dal, 'get_active_plan', None)
+    plan: Optional[Dict[str, Any]] = None
+    if callable(get_active_plan):
+        try:
+            plan = get_active_plan()
+        except Exception:
+            plan = None
+    if plan:
+        plan_id = plan.get('id')
+        start_date = _ensure_date(plan.get('start_date'))
+        if plan_id is not None and start_date is not None:
+            return int(plan_id), start_date
+
+    find_by_start = getattr(dal, 'find_plan_by_start_date', None)
+    if callable(find_by_start):
+        try:
+            plan = find_by_start(week_start_date)
+        except Exception:
+            plan = None
+        if plan:
+            plan_id = plan.get('id')
+            start_date = _ensure_date(plan.get('start_date')) or week_start_date
+            if plan_id is not None and start_date is not None:
+                return int(plan_id), start_date
+    return None
+
+
+def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict[str, Any]]:
+    '''Return planned vs actual muscle volume coverage for the prior week.'''
+    context = _resolve_plan_context(dal, week_start_date)
+    if not context:
+        return None
+    plan_id, plan_start = context
+
+    days_since_start = (week_start_date - plan_start).days
+    if days_since_start < 0:
+        return None
+    week_number = (days_since_start // 7) + 1
+    prev_week_number = week_number - 1
+    if prev_week_number <= 0:
+        return None
+
+    get_planned = getattr(dal, 'get_plan_muscle_volume', None)
+    get_actual = getattr(dal, 'get_actual_muscle_volume', None)
+    if not callable(get_planned) or not callable(get_actual):
+        return None
+
+    try:
+        planned_rows = get_planned(plan_id, prev_week_number) or []
+    except Exception:
+        return None
+
+    if not planned_rows:
+        return None
+
+    prev_week_start = week_start_date - timedelta(days=7)
+    prev_week_end = week_start_date - timedelta(days=1)
+
+    try:
+        actual_rows = get_actual(prev_week_start, prev_week_end) or []
+    except Exception:
+        actual_rows = []
+
+    planned_by_muscle: Dict[int, float] = {}
+    for row in planned_rows:
+        muscle_id = row.get('muscle_id')
+        if muscle_id is None:
+            continue
+        try:
+            planned_val = float(row.get('target_volume_kg', 0.0))
+        except (TypeError, ValueError):
+            continue
+        if planned_val <= 0:
+            continue
+        planned_by_muscle[int(muscle_id)] = planned_val
+
+    if not planned_by_muscle:
+        return None
+
+    actual_by_muscle: Dict[int, float] = {}
+    for row in actual_rows:
+        muscle_id = row.get('muscle_id')
+        if muscle_id is None:
+            continue
+        try:
+            actual_val = float(row.get('actual_volume_kg', 0.0))
+        except (TypeError, ValueError):
+            continue
+        key = int(muscle_id)
+        actual_by_muscle[key] = actual_by_muscle.get(key, 0.0) + actual_val
+
+    total_planned = sum(planned_by_muscle.values())
+    total_actual = sum(actual_by_muscle.get(mid, 0.0) for mid in planned_by_muscle.keys())
+    ratio = (total_actual / total_planned) if total_planned > 0 else 0.0
+
+    muscles: List[Dict[str, float]] = []
+    for mid in sorted(planned_by_muscle.keys()):
+        planned_val = planned_by_muscle[mid]
+        actual_val = actual_by_muscle.get(mid, 0.0)
+        muscle_ratio = (actual_val / planned_val) if planned_val > 0 else 0.0
+        muscles.append(
+            {
+                'muscle_id': mid,
+                'planned': planned_val,
+                'actual': actual_val,
+                'ratio': muscle_ratio,
+            }
+        )
+
+    low_muscles = [m for m in muscles if m['planned'] > 0 and m['ratio'] < 0.70]
+    high_muscles = [m for m in muscles if m['planned'] > 0 and m['ratio'] > 1.10]
+
+    return {
+        'plan_id': plan_id,
+        'week_number': prev_week_number,
+        'week_start': prev_week_start,
+        'week_end': prev_week_end,
+        'planned_total': total_planned,
+        'actual_total': total_actual,
+        'ratio': ratio,
+        'muscles': muscles,
+        'low_muscles': low_muscles,
+        'high_muscles': high_muscles,
+        'available': True,
+    }
+
+
+def _evaluate_adherence_adjustment(
+    dal: Any,
+    week_start_date: date,
+    recovery: BackoffRecommendation,
+) -> Dict[str, Any]:
+    base_result: Dict[str, Any] = {
+        'direction': 'maintain',
+        'set_multiplier': 1.0,
+        'rir_adjust': 0,
+        'reasons': [],
+        'log_entries': [],
+        'metrics': {'available': False},
+    }
+    snapshot = collect_adherence_snapshot(dal, week_start_date)
+    if not snapshot:
+        return base_result
+
+    ratio = snapshot.get('ratio', 0.0) or 0.0
+    low_muscles = snapshot.get('low_muscles', [])
+    high_muscles = snapshot.get('high_muscles', [])
+
+    reasons = [
+        (
+            f"Adherence ratio {ratio:.2f} (actual {snapshot.get('actual_total', 0.0):.1f}kg"
+            f" vs planned {snapshot.get('planned_total', 0.0):.1f}kg)"
+        )
+    ]
+    log_entries = [
+        f'adherence_ratio={ratio:.2f}',
+        f'adherence_low_groups={len(low_muscles)}',
+        f'adherence_high_groups={len(high_muscles)}',
+    ]
+
+    direction = 'maintain'
+    multiplier = 1.0
+    rir_adjust = 0
+    gated = False
+
+    if ratio < 0.70 or len(low_muscles) >= 2:
+        direction = 'reduce'
+        multiplier = 0.90
+        if low_muscles:
+            low_desc = ', '.join(f"{m['muscle_id']}({m['ratio']:.2f})" for m in low_muscles[:4])
+            reasons.append(f'Low adherence muscles: {low_desc}')
+        log_entries.append('adherence_direction=reduce')
+    elif ratio > 1.10:
+        log_entries.append('adherence_requested=increase')
+        if recovery.needs_backoff:
+            gated = True
+            reasons.append(f'Increase gated by recovery severity={recovery.severity}')
+            log_entries.append('adherence_applied=maintain')
+            log_entries.append('adherence_gated_by=recovery')
+        else:
+            direction = 'increase'
+            multiplier = 1.05
+            if high_muscles:
+                high_desc = ', '.join(f"{m['muscle_id']}({m['ratio']:.2f})" for m in high_muscles[:4])
+                reasons.append(f'High adherence muscles: {high_desc}')
+            log_entries.append('adherence_direction=increase')
+    else:
+        log_entries.append('adherence_direction=maintain')
+
+    metrics = dict(snapshot)
+    metrics.update(
+        {
+            'requested_direction': (
+                'increase' if ratio > 1.10 else 'reduce' if ratio < 0.70 or len(low_muscles) >= 2 else 'maintain'
+            ),
+            'applied_direction': direction,
+            'multiplier': multiplier,
+            'rir_adjust': rir_adjust,
+            'gated_by_recovery': gated,
+        }
+    )
+
+    base_result.update(
+        {
+            'direction': direction,
+            'set_multiplier': multiplier,
+            'rir_adjust': rir_adjust,
+            'reasons': reasons,
+            'log_entries': log_entries,
+            'metrics': metrics,
+        }
+    )
+    return base_result
 
 def ensure_muscle_balance(
     plan: Dict[str, Any],
@@ -420,67 +651,111 @@ def summarise_readiness(dal: Any, week_start_date: date) -> ReadinessSummary:
 
 
 def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecision:
-    """Assess recovery ahead of the upcoming week and optionally apply a back-off.
+    """Assess recovery ahead of the upcoming week and optionally apply plan adjustments."""
 
-    Returns a structured decision detailing whether recovery warranted a back-off,
-    if it was applied, and the reasoning captured for downstream logging.
-    """
     rec = assess_recovery_and_backoff(dal, week_start_date)
     readiness = _build_readiness_summary(rec)
 
-    if not rec.needs_backoff:
-        explanation = (
-            "Recovery within dynamic baselines - no global back-off applied."
-        )
-        log_utils.log_message(explanation, "INFO")
+    adherence = _evaluate_adherence_adjustment(dal, week_start_date, rec)
+
+    final_multiplier = rec.set_multiplier * adherence.get('set_multiplier', 1.0)
+    final_multiplier = max(0.60, min(1.20, final_multiplier))
+    final_rir_increment = rec.rir_increment + adherence.get('rir_adjust', 0)
+
+    combined_reasons = list(rec.reasons)
+    combined_reasons.extend(adherence.get('reasons', []))
+
+    metrics = copy.deepcopy(rec.metrics) if isinstance(rec.metrics, dict) else {}
+    metrics['adherence'] = adherence.get('metrics', {'available': False})
+
+    rec = replace(
+        rec,
+        set_multiplier=final_multiplier,
+        rir_increment=final_rir_increment,
+        reasons=combined_reasons,
+        metrics=metrics,
+    )
+
+    adherence_log_entries = adherence.get('log_entries', [])
+    set_delta = abs(final_multiplier - 1.0)
+    rir_delta = final_rir_increment != 0
+    should_apply = rec.needs_backoff or set_delta >= 0.01 or rir_delta
+
+    if not should_apply:
+        explanation = "Recovery within dynamic baselines - no global back-off applied."
+        if adherence.get('direction') != 'maintain' and adherence.get('reasons'):
+            notes = '; '.join(adherence['reasons'])
+            explanation = f"Recovery within dynamic baselines - no plan change applied. Notes: {notes}"
+        log_utils.log_message(explanation, 'INFO')
+        log_entries = list(adherence_log_entries)
         return ValidationDecision(
-            needs_backoff=False,
+            needs_backoff=rec.needs_backoff,
             applied=False,
             explanation=explanation,
-            log_entries=[],
+            log_entries=log_entries,
             readiness=readiness,
             recommendation=rec,
         )
 
     log_entries: List[str] = [
         f"severity={rec.severity}",
-        f"set_multiplier={rec.set_multiplier:.2f}",
-        f"rir_increment={rec.rir_increment}",
-        *rec.reasons,
+        f"set_multiplier={final_multiplier:.2f}",
+        f"rir_increment={final_rir_increment}",
+        *combined_reasons,
+        *adherence_log_entries,
     ]
     if readiness.tip:
         log_entries.append(f"readiness_tip={readiness.tip}")
 
-    explanation = (
-        f"Global back-off recommended, severity={rec.severity}, "
-        f"set_multiplier={rec.set_multiplier:.2f}, RIR+={rec.rir_increment}. "
-        f"Reasons: {', '.join(rec.reasons) or 'thresholds exceeded'}."
-    )
-    log_utils.log_message(explanation, "WARNING")
+    if rec.needs_backoff:
+        reason_text = ', '.join(combined_reasons) or 'thresholds exceeded'
+        explanation = (
+            f"Global back-off recommended, severity={rec.severity}, "
+            f"set_multiplier={final_multiplier:.2f}, RIR+={final_rir_increment}. "
+            f"Reasons: {reason_text}."
+        )
+        log_level = 'WARNING'
+    else:
+        if adherence.get('direction') == 'reduce':
+            explanation = (
+                f"Adherence below target; scaling sets by {final_multiplier:.2f} with recovery steady."
+            )
+        elif adherence.get('direction') == 'increase':
+            explanation = (
+                f"High adherence with strong recovery; scaling sets by {final_multiplier:.2f}."
+            )
+        else:
+            explanation = 'Applying plan adjustment with recovery steady.'
+        if combined_reasons:
+            explanation += f" Reasons: {', '.join(combined_reasons)}."
+        log_level = 'INFO'
+
+    log_utils.log_message(explanation, log_level)
 
     applied = False
-    if hasattr(dal, "apply_plan_backoff"):
+    apply_fn = getattr(dal, 'apply_plan_backoff', None)
+    if callable(apply_fn):
         try:
-            dal.apply_plan_backoff(
+            apply_fn(
                 week_start_date,
-                set_multiplier=rec.set_multiplier,
-                rir_increment=rec.rir_increment,
+                set_multiplier=final_multiplier,
+                rir_increment=final_rir_increment,
             )
-            log_utils.log_message("Applied global back-off to upcoming week.", "INFO")
+            log_utils.log_message('Applied plan adjustment to upcoming week.', 'INFO')
             applied = True
         except Exception as exc:  # pragma: no cover - DB failures are environment-specific
-            log_utils.log_message(f"Failed to apply back-off: {exc}", "ERROR")
-            log_entries.append(f"apply_failed: {exc}")
+            log_utils.log_message(f'Failed to apply back-off: {exc}', 'ERROR')
+            log_entries.append(f'apply_failed: {exc}')
     else:
         log_utils.log_message(
             "DAL has no 'apply_plan_backoff' - no DB changes performed. "
-            "Downstream components may apply this recommendation explicitly.",
-            "WARN",
+            'Downstream components may apply this recommendation explicitly.',
+            'WARN',
         )
-        log_entries.append("dal_missing_backoff")
+        log_entries.append('dal_missing_backoff')
 
     return ValidationDecision(
-        needs_backoff=True,
+        needs_backoff=rec.needs_backoff,
         applied=applied,
         explanation=explanation,
         log_entries=log_entries,

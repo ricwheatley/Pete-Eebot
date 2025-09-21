@@ -5,7 +5,11 @@ import hashlib
 import json
 from typing import Any, Dict
 
-from pete_e.domain.validation import ValidationDecision, validate_and_adjust_plan
+from pete_e.domain.validation import (
+    ValidationDecision,
+    collect_adherence_snapshot,
+    validate_and_adjust_plan,
+)
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.plan_rw import build_week_payload
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
@@ -43,6 +47,18 @@ def send_plan_week_to_wger(
     """
     # 1. Validate + adjust
     decision: ValidationDecision = validate_and_adjust_plan(dal, current_start_date)
+    adherence_snapshot = collect_adherence_snapshot(dal, current_start_date)
+    adherence_summary = ""
+    if adherence_snapshot:
+        try:
+            ratio = float(adherence_snapshot.get("ratio", 0.0))
+            actual_total = float(adherence_snapshot.get("actual_total", 0.0))
+            planned_total = float(adherence_snapshot.get("planned_total", 0.0))
+            adherence_summary = (
+                f" Adherence ratio {ratio:.2f} (actual {actual_total:.1f}kg vs planned {planned_total:.1f}kg)."
+            )
+        except (TypeError, ValueError):
+            adherence_summary = ""
 
     # 2. Fetch updated plan week
     plan = dal.get_plan(plan_id)
@@ -61,7 +77,7 @@ def send_plan_week_to_wger(
         adjustment_text = ", ".join(decision.log_entries) if decision.log_entries else "none"
         log_utils.log_message(
             f"[send_wger] Sent plan {plan_id} week {week_number} to Wger. "
-            f"Adjustments: {adjustment_text}. Recovery: {decision.explanation}. Response: {response}",
+            f"Adjustments: {adjustment_text}. Recovery: {decision.explanation}.{adherence_summary} Response: {response}",
             "INFO"
         )
         return True
