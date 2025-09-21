@@ -8,7 +8,7 @@ run from the main CLI.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
 
 from tenacity import (
     RetryCallState,
@@ -19,12 +19,20 @@ from tenacity import (
     wait_random,
 )
 
-from pete_e.application.orchestrator import Orchestrator
 from pete_e.infrastructure import log_utils
+
+if TYPE_CHECKING:
+    from pete_e.application.orchestrator import Orchestrator as OrchestratorType
+else:
+    Orchestrator = None  # type: ignore
 
 DEFAULT_RETRIES = 3
 DEFAULT_RETRY_DELAY_SECS = 60
 
+
+SUMMARY_FAILURE_NOTES = {
+    "Withings": "Withings data unavailable {window}",
+}
 
 @dataclass
 class SyncResult:
@@ -44,10 +52,25 @@ class SyncResult:
         else:
             statuses_fragment = "sources=unreported"
         verdict = "success" if self.success else "failed"
-        return (
+        lines = [
             f"Sync summary: run={self.label} | days={days} | attempts={self.attempts} | "
             f"result={verdict} | {statuses_fragment}"
-        )
+        ]
+        lines.extend(self._build_source_notes(days=days))
+        return "\n".join(lines)
+
+    def _build_source_notes(self, *, days: int) -> List[str]:
+        if not self.source_statuses:
+            return []
+        window = "today" if days == 1 else f"across last {days} days"
+        notes: List[str] = []
+        for name, status in sorted(self.source_statuses.items()):
+            if status != "failed":
+                continue
+            template = SUMMARY_FAILURE_NOTES.get(name)
+            if template:
+                notes.append(template.format(window=window))
+        return notes
 
     def log_level(self) -> str:
         return "INFO" if self.success else "ERROR"
@@ -64,6 +87,15 @@ class SyncAttemptFailedError(RuntimeError):
         super().__init__("Sync attempt failed.")
         self.failed_sources = list(failed_sources or [])
         self.source_statuses = dict(source_statuses or {})
+
+
+def _build_orchestrator():
+    global Orchestrator
+    if callable(Orchestrator):  # patched in tests
+        return Orchestrator()  # type: ignore[misc]
+    from pete_e.application.orchestrator import Orchestrator as _Orchestrator
+    Orchestrator = _Orchestrator  # type: ignore
+    return _Orchestrator()
 
 
 def _build_failure_message(
@@ -195,7 +227,7 @@ def run_sync_with_retries(
 ) -> SyncResult:
     """Run the full multi-source sync via the Orchestrator with retries."""
 
-    orchestrator = Orchestrator()
+    orchestrator = _build_orchestrator()
     max_attempts = max(1, retries)
     base_delay = max(1, delay)
 
@@ -217,7 +249,7 @@ def run_withings_only_with_retries(
 ) -> SyncResult:
     """Run the Withings-only sync with the same retry semantics as the full sync."""
 
-    orchestrator = Orchestrator()
+    orchestrator = _build_orchestrator()
     max_attempts = max(1, retries)
     base_delay = max(1, delay)
 
