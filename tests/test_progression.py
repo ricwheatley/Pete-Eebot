@@ -108,6 +108,16 @@ class DummyDal(DataAccessLayer):
     def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
         pass
 
+    def find_plan_by_start_date(self, start_date: datetime.date):
+        return None
+
+    def record_wger_export(self, plan_id: int, week: int, exported_at: datetime.datetime | None = None) -> None:
+        pass
+
+    def was_week_exported(self, plan_id: int, week: int) -> bool:
+        return False
+
+
 
 def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     return [

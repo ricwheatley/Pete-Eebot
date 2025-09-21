@@ -17,7 +17,6 @@ import typer
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age
-from pete_e.domain.phrase_picker import random_phrase
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -183,70 +182,17 @@ def build_weekly_plan_overview(
         return f"Could not find workout data for Plan ID {plan_id}, Week {week_number}."
 
     week_start = start_date + timedelta(days=(week_number - 1) * 7)
-    week_end = week_start + timedelta(days=6)
+    builder = getattr(orch, "narrative_builder", None)
+    if builder is None:
+        from pete_e.domain.narrative_builder import NarrativeBuilder  # local import to avoid cycles
 
-    workouts_by_day: dict[int, list[str]] = {day: [] for day in range(1, 8)}
+        builder = NarrativeBuilder()
 
-    def _format_number(raw: object) -> str:
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            return str(raw)
-        if value.is_integer():
-            return str(int(value))
-        return f"{value:g}"
-
-    for row in plan_week_rows:
-        day_number = row.get("day_of_week")
-        try:
-            day_index = int(day_number)
-        except (TypeError, ValueError):
-            continue
-        if day_index not in workouts_by_day:
-            continue
-
-        exercise_name = row.get("exercise_name") or f"Exercise {row.get('exercise_id')}"
-        sets = row.get("sets")
-        reps = row.get("reps")
-        rir = row.get("rir")
-        weight = row.get("target_weight_kg") or row.get("weight_kg")
-
-        details: list[str] = []
-        if sets is not None and reps is not None:
-            details.append(f"{_format_number(sets)} x {_format_number(reps)}")
-        if weight is not None:
-            details.append(f"{_format_number(weight)} kg")
-        if rir is not None:
-            details.append(f"RIR {_format_number(rir)}")
-
-        detail_text = f" ({'; '.join(details)})" if details else ""
-        workouts_by_day[day_index].append(f"{exercise_name}{detail_text}")
-
-    key_lines: list[str] = []
-    for day_idx in range(1, 8):
-        day_label = _DAY_NAMES.get(day_idx, f"Day {day_idx}")
-        items = workouts_by_day.get(day_idx, [])
-        if items:
-            key_lines.append(f"{day_label}: {'; '.join(items)}")
-        else:
-            key_lines.append(f"{day_label}: Rest / recovery focus.")
-
-    try:
-        tip = random_phrase(tags=["#Motivation"])
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log_utils.log_message(f"Falling back to default motivation tip: {exc}", "WARN")
-        tip = "Stay consistent and keep the effort honest."
-
-    message_lines = [
-        f"Week {week_number} training plan ({week_start.isoformat()} - {week_end.isoformat()}):",
-        "",
-        "Key workouts:",
-    ]
-    message_lines.extend(f"- {line}" for line in key_lines)
-    message_lines.append("")
-    message_lines.append(f"Tip: {tip}")
-
-    return "\n".join(message_lines).strip()
+    return builder.build_weekly_plan(
+        plan_week_rows,
+        week_number,
+        week_start=week_start,
+    )
 
 # Create the Typer application object
 app = typer.Typer(
@@ -254,6 +200,9 @@ app = typer.Typer(
     help="CLI for Pete-Eebot, your personal health and fitness orchestrator.",
     add_completion=False,
 )
+
+
+
 
 
 @app.command()

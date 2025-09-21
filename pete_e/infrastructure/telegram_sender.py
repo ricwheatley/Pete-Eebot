@@ -10,7 +10,26 @@ from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 
 _REQUEST_TIMEOUT_SECONDS = 10
-_MARKDOWN_ESCAPE_CHARS = "_[]()~`>#+-=|{}.!*"
+_MD_V2_ESCAPE_MAP = {'!': '\\!',
+ '#': '\\#',
+ '(': '\\(',
+ ')': '\\)',
+ '*': '\\*',
+ '+': '\\+',
+ '-': '\\-',
+ '.': '\\.',
+ '=': '\\=',
+ '>': '\\>',
+ '[': '\\[',
+ '\\': '\\\\',
+ ']': '\\]',
+ '_': '\\_',
+ '`': '\\`',
+ '{': '\\{',
+ '|': '\\|',
+ '}': '\\}',
+ '~': '\\~'}
+_MD_V2_TRANSLATION = str.maketrans(_MD_V2_ESCAPE_MAP)
 
 
 def _secret_to_str(value: Any) -> str:
@@ -39,13 +58,37 @@ def _scrub_sensitive(text: str) -> str:
     return sanitized
 
 
-def escape_markdown(message: str) -> str:
-    """Escape a string for Telegram Markdown parsing."""
+def _escape_markdown_v2_segment(text: str) -> str:
+    if not text:
+        return ""
+    return text.translate(_MD_V2_TRANSLATION)
+
+
+def escape_markdown_v2(message: str) -> str:
+    """Escape a string for Telegram Markdown V2 parsing while keeping simple formatting."""
 
     if not message:
         return ""
-    translation = {ch: f"\\{ch}" for ch in _MARKDOWN_ESCAPE_CHARS}
-    return message.translate(str.maketrans(translation))
+
+    lines = message.split("\n")
+    escaped_lines: list[str] = []
+    for line in lines:
+        if line == "":
+            escaped_lines.append("")
+            continue
+        if line.startswith("*") and line.endswith("*") and len(line) > 1:
+            inner = line[1:-1]
+            escaped_lines.append(f"*{_escape_markdown_v2_segment(inner)}*")
+            continue
+        if line.startswith("- "):
+            escaped_lines.append(f"- {_escape_markdown_v2_segment(line[2:])}")
+            continue
+        escaped_lines.append(_escape_markdown_v2_segment(line))
+
+    return "\n".join(escaped_lines)
+
+
+
 
 
 def send_message(message: str) -> bool:
@@ -62,10 +105,11 @@ def send_message(message: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
+    safe_text = escape_markdown_v2(message or "")
     payload = {
         "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown",
+        "text": safe_text,
+        "parse_mode": "MarkdownV2",
     }
     try:
         response = requests.post(url, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)

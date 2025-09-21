@@ -557,33 +557,67 @@ class Orchestrator:
 
 
     def get_week_plan_summary(self, target_date: date = None) -> str:
-        """
-        Generates a human-readable summary of the current week's training plan.
-        """
+        """Generates a human-readable summary of the current week's training plan."""
         if target_date is None:
             target_date = date.today()
 
-        log_utils.log_message(f"Generating weekly plan summary for week of {target_date.isoformat()}", "INFO")
-        
-        # Note: You will need to implement `get_active_plan` and `get_plan_week` in your DAL
+        log_utils.log_message(
+            f"Generating weekly plan summary for week of {target_date.isoformat()}",
+            "INFO",
+        )
+
         active_plan = self.dal.get_active_plan()
         if not active_plan:
             return "There is no active training plan in the database."
 
-        # Calculate the week number
-        days_since_start = (target_date - active_plan['start_date']).days
+        start_value = active_plan.get("start_date")
+        if isinstance(start_value, datetime):
+            start_date = start_value.date()
+        elif isinstance(start_value, date):
+            start_date = start_value
+        elif isinstance(start_value, str):
+            try:
+                start_date = date.fromisoformat(start_value)
+            except ValueError:
+                log_utils.log_message("Active plan start date could not be parsed.", "ERROR")
+                return "The active training plan has an invalid start date."
+        else:
+            return "The active training plan has an invalid start date."
+
+        days_since_start = (target_date - start_date).days
         if days_since_start < 0:
-            return f"The active training plan starts on {active_plan['start_date'].isoformat()}."
-        
+            return f"The active training plan starts on {start_date.isoformat()}."
+
+        try:
+            total_weeks = int(active_plan.get("weeks") or 0)
+        except (TypeError, ValueError):
+            total_weeks = 0
+        if total_weeks <= 0:
+            return "The active training plan is missing its duration."
+
         week_number = (days_since_start // 7) + 1
-        if week_number > active_plan['weeks']:
+        if week_number > total_weeks:
             return "The current training plan has finished. Time to generate a new one!"
 
-        plan_week_data = self.dal.get_plan_week(active_plan['id'], week_number)
-        if not plan_week_data:
-            return f"Could not find workout data for Plan ID {active_plan['id']}, Week {week_number}."
+        plan_id = active_plan.get("id")
+        if plan_id is None:
+            return "The active training plan is missing its identifier."
 
-        return self.narrative_builder.build_weekly_plan(plan_week_data, week_number)
+        try:
+            plan_week_data = self.dal.get_plan_week(plan_id, week_number)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to load plan week data: {exc}", "ERROR")
+            return f"Could not retrieve workouts for Plan ID {plan_id}, Week {week_number}."
+
+        if not plan_week_data:
+            return f"Could not find workout data for Plan ID {plan_id}, Week {week_number}."
+
+        week_start = start_date + timedelta(days=(week_number - 1) * 7)
+        return self.narrative_builder.build_weekly_plan(
+            plan_week_data,
+            week_number,
+            week_start=week_start,
+        )
 
 
     def send_telegram_message(self, message: str) -> bool:
