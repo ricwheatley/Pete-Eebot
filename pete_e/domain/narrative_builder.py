@@ -339,6 +339,13 @@ class NarrativeBuilder:
         add_metric("Active calories", summary_data.get("calories_active"))
         add_metric("Sleep", summary_data.get("sleep_asleep_minutes"), " min")
 
+        readiness_label = summary_data.get("readiness_headline") or summary_data.get("readiness_state")
+        if readiness_label:
+            sections.append(f"Readiness: {str(readiness_label)}")
+        readiness_tip = summary_data.get("readiness_tip")
+        if readiness_tip:
+            sections.append(f"Readiness tip: {str(readiness_tip)}")
+
         body = sections or ["No detailed metrics were recorded."]
         return f"{title}\n" + "\n".join(body)
 
