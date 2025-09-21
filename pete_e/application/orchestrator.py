@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
@@ -197,6 +197,14 @@ class WeeklyAutomationResult:
 
 
 
+@dataclass(frozen=True)
+class NudgeCandidate:
+    """Encapsulates a Telegram nudge before rendering."""
+
+    tag: str
+    sprinkles: List[str] | None = None
+
+
 def _next_monday(reference: date) -> date:
     """Return the next Monday strictly after the reference date."""
 
@@ -280,6 +288,272 @@ class Orchestrator:
 
         return self.narrative_builder.build_daily_summary(summary_data)
 
+
+
+    def dispatch_nudges(self, *, reference_date: date | None = None) -> List[str]:
+        """Evaluate the latest data snapshot and send any relevant nudges."""
+
+        reference = reference_date or date.today()
+
+        try:
+            history_raw = list(self.dal.get_historical_metrics(14))
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to load historical metrics for nudges: {exc}",
+                "WARN",
+            )
+            history_raw = []
+
+        cleaned_history: List[Dict[str, Any]] = []
+        for entry in history_raw:
+            if not isinstance(entry, dict):
+                continue
+            entry_date = entry.get("date")
+            if isinstance(entry_date, date) and entry_date <= reference:
+                cleaned_history.append(dict(entry))
+        cleaned_history.sort(key=lambda item: item["date"])
+
+        lift_log: Dict[str, List[Dict[str, Any]]] = {}
+        load_lift = getattr(self.dal, "load_lift_log", None)
+        if callable(load_lift):
+            try:
+                raw_log = load_lift(end_date=reference)
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Failed to load lift log for nudges: {exc}",
+                    "WARN",
+                )
+                raw_log = {}
+            else:
+                for key, entries in (raw_log or {}).items():
+                    if not entries:
+                        continue
+                    bucket: List[Dict[str, Any]] = []
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        entry_date = entry.get("date")
+                        if entry_date is not None and isinstance(entry_date, date):
+                            if entry_date > reference:
+                                continue
+                        bucket.append(dict(entry))
+                    if bucket:
+                        lift_log[str(key)] = bucket
+
+        candidates = self._build_nudge_candidates(
+            cleaned_history,
+            lift_log,
+            reference,
+        )
+
+        dispatched: List[str] = []
+        for candidate in candidates:
+            sprinkles = list(candidate.sprinkles or [])
+            message = PeteVoice.nudge(candidate.tag, sprinkles)
+            try:
+                delivered = bool(self.send_telegram_message(message))
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                delivered = False
+                log_utils.log_message(
+                    f"Failed to send nudge {candidate.tag}: {exc}",
+                    "WARN",
+                )
+            if delivered:
+                dispatched.append(message)
+        return dispatched
+
+    def _build_nudge_candidates(
+        self,
+        history: List[Dict[str, Any]],
+        lift_log: Dict[str, List[Dict[str, Any]]],
+        reference: date,
+    ) -> List[NudgeCandidate]:
+        candidates: List[NudgeCandidate] = []
+
+        withings_candidate = self._nudge_for_stale_withings(history, reference)
+        if withings_candidate:
+            candidates.append(withings_candidate)
+
+        strain_candidate = self._nudge_for_high_strain(history, reference)
+        if strain_candidate:
+            candidates.append(strain_candidate)
+
+        pb_sprinkles = self._personal_best_sprinkles(lift_log, reference)
+        if pb_sprinkles:
+            candidates.append(NudgeCandidate("#PersonalBest", pb_sprinkles))
+
+        return candidates
+
+    def _nudge_for_stale_withings(
+        self,
+        history: List[Dict[str, Any]],
+        reference: date,
+    ) -> NudgeCandidate | None:
+        raw_window = getattr(settings, "NUDGE_WITHINGS_STALE_DAYS", 3)
+        try:
+            window = max(1, int(raw_window))
+        except (TypeError, ValueError):
+            window = 3
+
+        if not history:
+            return None
+
+        missing_streak = 0
+        last_weight_date: date | None = None
+
+        for entry in reversed(history):
+            entry_date = entry["date"]
+            if entry_date > reference:
+                continue
+            weight = entry.get("weight_kg")
+            if weight is None:
+                missing_streak += 1
+                continue
+            last_weight_date = entry_date
+            break
+
+        if missing_streak < window or last_weight_date is None:
+            return None
+
+        days_since = (reference - last_weight_date).days
+        if days_since < window:
+            return None
+
+        detail = (
+            f"No Withings weight logged since {last_weight_date.isoformat()} "
+            f"({days_since} day(s))."
+        )
+        sprinkles = [detail, "Hop on the scale so I can keep the trend charts honest."]
+        return NudgeCandidate("#WithingsCheck", sprinkles)
+
+    def _nudge_for_high_strain(
+        self,
+        history: List[Dict[str, Any]],
+        reference: date,
+    ) -> NudgeCandidate | None:
+        raw_threshold = getattr(settings, "NUDGE_STRAIN_THRESHOLD", 185.0)
+        raw_window = getattr(settings, "NUDGE_STRAIN_CONSECUTIVE_DAYS", 3)
+        try:
+            threshold = float(raw_threshold)
+        except (TypeError, ValueError):
+            threshold = 185.0
+        try:
+            window = max(1, int(raw_window))
+        except (TypeError, ValueError):
+            window = 3
+
+        if len(history) < window:
+            return None
+
+        scores: List[tuple[date, float]] = []
+        for entry in history:
+            entry_date = entry["date"]
+            if entry_date > reference:
+                continue
+            scores.append((entry_date, self._estimate_daily_strain(entry)))
+
+        if len(scores) < window:
+            return None
+
+        recent = scores[-window:]
+        if not all(score >= threshold for _, score in recent):
+            return None
+
+        prior = scores[:-window]
+        if prior and prior[-1][1] >= threshold:
+            return None
+
+        avg_recent = sum(score for _, score in recent) / window
+        details = [
+            f"Strain has been above {threshold:.0f} for {window} day(s). Average {avg_recent:.0f}.",
+        ]
+        if prior:
+            details.append(
+                f"Yesterday landed at {prior[-1][1]:.0f}, so bank some recovery time."
+            )
+        else:
+            details.append("Let's bank the gains with a lighter day.")
+
+        return NudgeCandidate("#HighStrainRest", details)
+
+    def _personal_best_sprinkles(
+        self,
+        lift_log: Dict[str, List[Dict[str, Any]]],
+        reference: date,
+    ) -> List[str]:
+        summaries: List[str] = []
+
+        for exercise_id, entries in lift_log.items():
+            best_prior: tuple[float, int] | None = None
+            best_today: tuple[float, int] | None = None
+            best_entry: Dict[str, Any] | None = None
+
+            for entry in entries:
+                entry_date = entry.get("date")
+                if entry_date is not None and (
+                    not isinstance(entry_date, date) or entry_date > reference
+                ):
+                    continue
+
+                weight_raw = entry.get("weight_kg")
+                if weight_raw is None:
+                    continue
+                try:
+                    weight = float(weight_raw)
+                except (TypeError, ValueError):
+                    continue
+
+                reps_raw = entry.get("reps")
+                try:
+                    reps = int(reps_raw) if reps_raw is not None else 0
+                except (TypeError, ValueError):
+                    reps = 0
+
+                score = (weight, reps)
+
+                if entry_date == reference:
+                    if best_today is None or score > best_today:
+                        best_today = score
+                        best_entry = entry
+                else:
+                    if best_prior is None or score > best_prior:
+                        best_prior = score
+
+            if best_entry is None or (
+                best_prior is not None and best_today is not None and best_today <= best_prior
+            ):
+                continue
+
+            best_weight = float(best_entry.get("weight_kg", 0.0) or 0.0)
+            reps_display = best_entry.get("reps")
+
+            detail = f"Exercise {exercise_id} PB: {best_weight:.1f} kg"
+            if reps_display:
+                try:
+                    reps_int = int(reps_display)
+                except (TypeError, ValueError):
+                    reps_int = None
+                if reps_int:
+                    detail += f" x {reps_int}"
+
+            if best_prior is not None:
+                detail += f" (prev {best_prior[0]:.1f} kg)"
+
+            summaries.append(detail)
+
+        return summaries
+
+    def _estimate_daily_strain(self, entry: Dict[str, Any]) -> float:
+        if "strain_score" in entry and entry["strain_score"] is not None:
+            try:
+                return float(entry["strain_score"])
+            except (TypeError, ValueError):
+                pass
+
+        minutes = float(entry.get("exercise_minutes") or 0)
+        calories = float(entry.get("calories_active") or 0)
+        volume = float(entry.get("strength_volume_kg") or 0)
+        return (minutes * 1.2) + (calories / 15.0) + (volume / 200.0)
 
 
     def get_week_plan_summary(self, target_date: date = None) -> str:
@@ -698,6 +972,15 @@ class Orchestrator:
                 log_utils.log_message(
                     f"Failed to send Telegram alert: {alert_exc}",
                     "ERROR",
+                )
+
+        if success and days == 1:
+            try:
+                self.dispatch_nudges(reference_date=today)
+            except Exception as nudge_exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Failed to dispatch nudges for {today.isoformat()}: {nudge_exc}",
+                    "WARN",
                 )
 
         return success, unique_failures, source_statuses
