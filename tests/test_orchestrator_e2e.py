@@ -44,7 +44,7 @@ def test_run_end_to_end_day_runs_ingest_and_summary(monkeypatch):
 
     def fake_run_daily_sync(self, days: int):
         daily_calls.append(days)
-        return True, [], _ok_statuses()
+        return True, [], _ok_statuses(), []
 
     monkeypatch.setattr(Orchestrator, "run_daily_sync", fake_run_daily_sync)
 
@@ -65,6 +65,7 @@ def test_run_end_to_end_day_runs_ingest_and_summary(monkeypatch):
     assert result.summary_sent is True
     assert result.ingest_success is True
     assert result.source_statuses == _ok_statuses()
+    assert result.undelivered_alerts == []
 
 
 def test_run_end_to_end_day_skips_summary_when_ingest_fails(monkeypatch):
@@ -75,7 +76,7 @@ def test_run_end_to_end_day_skips_summary_when_ingest_fails(monkeypatch):
     def failing_sync(self, days: int):
         statuses = _ok_statuses()
         statuses["AppleDropbox"] = "failed"
-        return False, ["AppleDropbox"], statuses
+        return False, ["AppleDropbox"], statuses, []
 
     monkeypatch.setattr(Orchestrator, "run_daily_sync", failing_sync)
 
@@ -96,6 +97,7 @@ def test_run_end_to_end_day_skips_summary_when_ingest_fails(monkeypatch):
     assert result.ingest_success is False
     assert result.failed_sources == ["AppleDropbox"]
     assert result.source_statuses["AppleDropbox"] == "failed"
+    assert result.undelivered_alerts == []
 
 
 def test_run_end_to_end_day_respects_existing_summary(monkeypatch):
@@ -105,7 +107,7 @@ def test_run_end_to_end_day_respects_existing_summary(monkeypatch):
     orch = Orchestrator(dal=object(), summary_dispatch_ledger=ledger)
 
     def ok_sync(self, days: int):
-        return True, [], _ok_statuses()
+        return True, [], _ok_statuses(), []
 
     monkeypatch.setattr(Orchestrator, "run_daily_sync", ok_sync)
 
@@ -124,6 +126,7 @@ def test_run_end_to_end_day_respects_existing_summary(monkeypatch):
     assert ledger.sent[summary_date] == "existing"
     assert result.summary_sent is True
     assert result.ingest_success is True
+    assert result.undelivered_alerts == []
 
 
 def _make_calibration() -> WeeklyCalibrationResult:
