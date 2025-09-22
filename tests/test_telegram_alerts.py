@@ -70,12 +70,13 @@ def test_total_sync_failure_triggers_single_alert(monkeypatch, alert_spy):
     dal = RecordingDal()
     orch = Orchestrator(dal=dal)
 
-    success, failures, statuses = orch.run_daily_sync(days=2)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=2)
 
     assert not success
     assert failures == ['AppleDropbox', 'BodyAge', 'Wger', 'Withings']
     assert all(state == 'failed' for state in statuses.values())
     assert len(alert_spy) == 1
+    assert undelivered == []
 
     message = alert_spy[0]
     assert isinstance(message, str)

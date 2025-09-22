@@ -154,7 +154,7 @@ def test_run_daily_sync_marks_partial_wger_failure(monkeypatch):
     dal = RecordingDal()
     orch = Orchestrator(dal=dal)
 
-    success, failures, statuses = orch.run_daily_sync(days=1)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
 
     assert not success
     assert failures == ["Wger"]
@@ -162,6 +162,7 @@ def test_run_daily_sync_marks_partial_wger_failure(monkeypatch):
     assert statuses["Withings"] == "ok"
     assert statuses["AppleDropbox"] == "ok"
     assert statuses["BodyAge"] == "ok"
+    assert undelivered == []
 
     target_day = date.today() - timedelta(days=1)
     assert dal.withings_calls == [(target_day, 82.5, 19.2, 41.7, 55.5)]

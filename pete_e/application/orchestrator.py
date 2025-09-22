@@ -184,6 +184,7 @@ class DailyAutomationResult:
     summary_target: date
     summary_sent: bool
     summary_attempted: bool
+    undelivered_alerts: List[str]
 
 
 @dataclass(frozen=True)
@@ -805,12 +806,14 @@ class Orchestrator:
             message=message,
         )
 
-    def run_daily_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
+    def run_daily_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str], List[str]]:
         """
         Orchestrates the daily data synchronization process.
 
         This method fetches data from all external sources, saves it to the
-        database, and triggers necessary recalculations.
+        database, and triggers necessary recalculations. The returned tuple
+        captures overall success, failing sources, per-source statuses, and any
+        alert messages that could not be dispatched via Telegram.
         """
         today = date.today()
         log_utils.log_message(f"Orchestrator starting sync for last {days} days.", "INFO")
@@ -822,6 +825,7 @@ class Orchestrator:
         failed_sources: List[str] = []
         source_statuses: Dict[str, str] = {name: "ok" for name in DAILY_SYNC_SOURCES}
         alert_messages: List[str] = []
+        undelivered_alerts: List[str] = []
 
         try:
             apple_report = run_apple_health_ingest()
@@ -1002,11 +1006,24 @@ class Orchestrator:
 
         if alert_messages:
             alert_text = "\n".join(alert_messages)
+            alert_sent = False
             try:
-                telegram_sender.send_alert(alert_text)
+                alert_sent = bool(telegram_sender.send_alert(alert_text))
             except Exception as alert_exc:
                 log_utils.log_message(
                     f"Failed to send Telegram alert: {alert_exc}",
+                    "ERROR",
+                )
+                alert_sent = False
+
+            if not alert_sent:
+                undelivered_alerts = list(alert_messages)
+                combined_alerts = "\n".join(f"- {message}" for message in undelivered_alerts)
+                log_utils.log_message(
+                    (
+                        "Telegram alert dispatch unavailable; pending alerts will be "
+                        f"surfaced in automation logs.\n{combined_alerts}"
+                    ),
                     "ERROR",
                 )
 
@@ -1019,7 +1036,7 @@ class Orchestrator:
                     "WARN",
                 )
 
-        return success, unique_failures, source_statuses
+        return success, unique_failures, source_statuses, undelivered_alerts
 
 
     def run_end_to_end_day(
@@ -1031,7 +1048,7 @@ class Orchestrator:
         """Run the daily ingestion flow and ensure a summary is sent."""
 
         days = max(1, int(days))
-        success, failures, statuses = self.run_daily_sync(days)
+        success, failures, statuses, pending_alerts = self.run_daily_sync(days)
         summary_target = summary_date or (date.today() - timedelta(days=1))
         failures_list = list(failures)
         status_map = dict(statuses)
@@ -1039,6 +1056,16 @@ class Orchestrator:
 
         already_sent = self.summary_dispatch_ledger.was_sent(summary_target)
         summary_sent = already_sent
+
+        if pending_alerts:
+            combined = "\n".join(f"- {message}" for message in pending_alerts)
+            log_utils.log_message(
+                (
+                    "Pending alerts could not be delivered via Telegram and require "
+                    f"attention.\n{combined}"
+                ),
+                "ERROR",
+            )
 
         if not success:
             log_utils.log_message(
@@ -1077,6 +1104,7 @@ class Orchestrator:
             summary_target=summary_target,
             summary_sent=summary_sent,
             summary_attempted=summary_attempted,
+            undelivered_alerts=list(pending_alerts),
         )
 
     def _should_run_cycle_rollover(
