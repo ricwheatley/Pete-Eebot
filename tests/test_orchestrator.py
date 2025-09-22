@@ -132,7 +132,7 @@ def test_run_daily_sync_handles_absent_apple_data():
     dummy_dal = DummyDal()
     orch = Orchestrator(dal=dummy_dal)
 
-    success, failures, statuses = orch.run_daily_sync(days=1)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
 
     assert success
     assert failures == []
@@ -141,6 +141,7 @@ def test_run_daily_sync_handles_absent_apple_data():
     assert statuses["Wger"] == "ok"
     assert statuses["BodyAge"] == "ok"
     assert dummy_dal.apple_calls == []
+    assert undelivered == []
 
 
 def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
@@ -156,7 +157,7 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
     dummy_dal = DummyDal()
     orch = Orchestrator(dal=dummy_dal)
 
-    success, failures, statuses = orch.run_daily_sync(days=1)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
 
     assert success
     assert failures == []
@@ -170,6 +171,7 @@ def test_run_daily_sync_persists_withings_and_wger(monkeypatch):
         (target_day, 7, 2, 8, 47.5, 1),
     ]
     assert dummy_dal.refreshed is True
+    assert undelivered == []
 
 
 def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch, summary_spy):
@@ -195,7 +197,7 @@ def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch, summary_spy):
     ledger = MemorySummaryLedger()
     orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
 
-    success, failures, statuses = orch.run_daily_sync(days=1)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
 
     assert not success
     assert statuses["AppleDropbox"] == "failed"
@@ -204,6 +206,7 @@ def test_run_daily_sync_alerts_on_ingest_failure(monkeypatch, summary_spy):
     assert isinstance(alerts[0], str)
     assert len(summary_spy) == 0
     assert ledger.sent == {}
+    assert undelivered == []
 
     token = os.environ.get("TELEGRAM_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
@@ -217,7 +220,7 @@ def test_run_daily_sync_sends_summary_after_success(summary_spy):
     ledger = MemorySummaryLedger()
     orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
 
-    success, failures, statuses = orch.run_daily_sync(days=1)
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
 
     assert success
     assert failures == []
@@ -225,6 +228,7 @@ def test_run_daily_sync_sends_summary_after_success(summary_spy):
     assert len(summary_spy) == 1
     assert summary_spy[0]["target_date"] == target
     assert ledger.was_sent(target)
+    assert undelivered == []
 
 
 def test_run_daily_sync_summary_idempotent(summary_spy):
@@ -232,9 +236,55 @@ def test_run_daily_sync_summary_idempotent(summary_spy):
     ledger = MemorySummaryLedger()
     orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
 
-    success1, _, _ = orch.run_daily_sync(days=1)
-    success2, _, _ = orch.run_daily_sync(days=1)
+    success1, _, _, _ = orch.run_daily_sync(days=1)
+    success2, _, _, _ = orch.run_daily_sync(days=1)
 
     assert success1
     assert success2
     assert len(summary_spy) == 1
+
+
+def test_run_daily_sync_returns_pending_alerts_when_telegram_disabled(monkeypatch, summary_spy):
+    alerts = []
+
+    def fake_alert(message):
+        alerts.append(message)
+        return False
+
+    monkeypatch.setattr(
+        orchestrator_module.telegram_sender,
+        "send_alert",
+        fake_alert,
+        raising=False,
+    )
+
+    log_calls = []
+
+    def record_log(message, level="INFO"):
+        log_calls.append((message, level))
+
+    monkeypatch.setattr(
+        orchestrator_module.log_utils,
+        "log_message",
+        record_log,
+    )
+
+    def fail_ingest():
+        raise RuntimeError("apple ingest exploded")
+
+    monkeypatch.setattr(orchestrator_module, "run_apple_health_ingest", fail_ingest)
+
+    dummy_dal = DummyDal()
+    ledger = MemorySummaryLedger()
+    orch = Orchestrator(dal=dummy_dal, summary_dispatch_ledger=ledger)
+
+    success, failures, statuses, undelivered = orch.run_daily_sync(days=1)
+
+    assert not success
+    assert statuses["AppleDropbox"] == "failed"
+    assert "AppleDropbox" in failures
+    assert alerts and len(alerts) == 1
+    assert undelivered == alerts
+    assert any("Telegram alert dispatch unavailable" in msg for msg, _ in log_calls)
+    assert ledger.sent == {}
+    assert len(summary_spy) == 0

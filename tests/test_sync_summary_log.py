@@ -7,7 +7,7 @@ from pete_e.application import sync
 
 
 class _StubOrchestrator:
-    def __init__(self, responses: Iterable[Tuple[bool, List[str], dict]]):
+    def __init__(self, responses: Iterable[Tuple[bool, List[str], dict, List[str]]]):
         self._responses = iter(responses)
 
     def run_daily_sync(self, days: int):  # pragma: no cover - simple stub
@@ -48,6 +48,7 @@ def test_run_sync_logs_single_summary_line_success(tmp_path, monkeypatch):
                         "Wger": "ok",
                         "BodyAge": "ok",
                     },
+                    [],
                 )
             ]
         ),
@@ -68,6 +69,7 @@ def test_run_sync_logs_single_summary_line_success(tmp_path, monkeypatch):
     assert len(summary_lines) == 1
     assert result.success is True
     assert result.failed_sources == []
+    assert result.undelivered_alerts == []
 
     logging_setup.reset_logging()
     for handler in list(logger.handlers):
@@ -92,6 +94,7 @@ def test_run_sync_logs_failure_summary_once(tmp_path, monkeypatch):
                         "Wger": "ok",
                         "BodyAge": "ok",
                     },
+                    [],
                 )
             ]
         ),
@@ -110,6 +113,7 @@ def test_run_sync_logs_failure_summary_once(tmp_path, monkeypatch):
     assert len(summary_lines) == 1
     assert result.success is False
     assert result.failed_sources == ["Withings"]
+    assert result.undelivered_alerts == []
 
     logging_setup.reset_logging()
     for handler in list(logger.handlers):

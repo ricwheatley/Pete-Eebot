@@ -8,7 +8,7 @@ run from the main CLI.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
+from typing import Callable, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING, Union
 
 from tenacity import (
     RetryCallState,
@@ -43,6 +43,7 @@ class SyncResult:
     failed_sources: List[str]
     source_statuses: Dict[str, str]
     label: str
+    undelivered_alerts: List[str]
 
     def summary_line(self, *, days: int) -> str:
         statuses = self.source_statuses or {}
@@ -57,6 +58,9 @@ class SyncResult:
             f"result={verdict} | {statuses_fragment}"
         ]
         lines.extend(self._build_source_notes(days=days))
+        if self.undelivered_alerts:
+            lines.append("Alerts pending delivery:")
+            lines.extend(f"- {alert}" for alert in self.undelivered_alerts)
         return "\n".join(lines)
 
     def _build_source_notes(self, *, days: int) -> List[str]:
@@ -116,7 +120,13 @@ def _build_failure_message(
 
 
 def _run_with_retry(
-    execute: Callable[[], Tuple[bool, Iterable[str], Dict[str, str]]],
+    execute: Callable[
+        [],
+        Union[
+            Tuple[bool, Iterable[str], Dict[str, str]],
+            Tuple[bool, Iterable[str], Dict[str, str], Iterable[str]],
+        ],
+    ],
     max_attempts: int,
     base_delay: int,
     label: str,
@@ -126,13 +136,20 @@ def _run_with_retry(
     attempts = 0
     last_failures: List[str] = []
     last_statuses: Dict[str, str] = {}
+    last_alerts: List[str] = []
 
     def _sync_once() -> bool:
         nonlocal attempts, last_failures, last_statuses
         attempts += 1
-        success, failures, statuses = execute()
+        result = execute()
+        if len(result) == 4:
+            success, failures, statuses, alerts = result  # type: ignore[misc]
+        else:
+            success, failures, statuses = result  # type: ignore[misc]
+            alerts = []
         last_failures = list(failures)
         last_statuses = dict(statuses or {})
+        last_alerts = list(alerts)
         if success:
             return True
         raise SyncAttemptFailedError(last_failures, last_statuses)
@@ -176,6 +193,7 @@ def _run_with_retry(
             failed_sources=unique_failures,
             source_statuses=dict(last_statuses),
             label=summary_label,
+            undelivered_alerts=list(last_alerts),
         )
     except RetryError as exc:
         last_exception = exc.last_attempt.exception()
@@ -200,6 +218,7 @@ def _run_with_retry(
             failed_sources=unique_failures,
             source_statuses=dict(last_statuses),
             label=summary_label,
+            undelivered_alerts=list(last_alerts),
         )
 
     except SyncAttemptFailedError as exc:
@@ -215,6 +234,7 @@ def _run_with_retry(
             failed_sources=unique_failures,
             source_statuses=dict(last_statuses),
             label=summary_label,
+            undelivered_alerts=list(last_alerts),
         )
 
 

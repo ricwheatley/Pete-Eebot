@@ -193,6 +193,7 @@ def test_sync_result_summary_includes_withings_note():
         failed_sources=["Withings"],
         source_statuses={"AppleDropbox": "ok", "Withings": "failed"},
         label="daily",
+        undelivered_alerts=[],
     )
 
     summary = result.summary_line(days=1)
@@ -209,6 +210,7 @@ def test_sync_result_summary_handles_multi_day_window():
         failed_sources=["Withings"],
         source_statuses={"Withings": "failed"},
         label="daily",
+        undelivered_alerts=[],
     )
 
     summary = result.summary_line(days=3)
