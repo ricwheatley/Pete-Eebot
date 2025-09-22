@@ -54,6 +54,10 @@ def _scrub_sensitive(text: str) -> str:
         secret = getattr(settings, attr, None)
         raw = _secret_to_str(secret)
         if raw:
+            # Handle known Telegram Bot API URL patterns that embed the token directly.
+            for prefix in ("https://api.telegram.org/bot", "http://api.telegram.org/bot"):
+                sanitized = sanitized.replace(f"{prefix}{raw}", f"{prefix}[redacted]")
+            sanitized = sanitized.replace(f"bot{raw}", "bot[redacted]")
             sanitized = sanitized.replace(raw, "[redacted]")
     return sanitized
 
