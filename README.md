@@ -58,6 +58,7 @@ The remainder of this README assumes you chose the virtual environment path.
 1. Copy `.env.sample` to `.env` and populate the secrets.
 2. Provide Dropbox credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`) and the folder paths produced by Health Auto Export (`DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`).
 3. Fill in the remaining Withings, Telegram, wger, and Postgres values. The configuration module will construct `DATABASE_URL` automatically on load.
+   *Legacy note:* older revisions referenced a `GH_SECRETS_TOKEN`; the GitHub integration has been removed so the variable can be dropped from existing `.env` files.
 4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
 5. Install the pinned dependencies with `python -m pip install -r requirements.txt`, then register the CLI with `python -m pip install --no-deps -e .`. Both commands should run inside your activated virtual environment.
 

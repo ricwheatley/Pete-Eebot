@@ -6,8 +6,9 @@ import datetime as dt
 import json
 from typing import Any, Dict, List
 
-from pete_e.application.planner_v2 import build_block
-from pete_e.infrastructure.plan_rw import build_week_payload
+from pete_e.domain.plan_builder import build_block
+from pete_e.infrastructure.plan_rw import build_week_payload, get_week_ids_for_plan
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 
 
@@ -24,7 +25,11 @@ def main() -> None:
     args = parser.parse_args()
 
     start_date = dt.date.fromisoformat(args.start_date)
-    plan_id, week_ids = build_block(start_date)
+    dal = PostgresDal()
+    plan_id = build_block(dal, start_date)
+
+    week_lookup = get_week_ids_for_plan(plan_id)
+    week_ids = [week_lookup[w] for w in sorted(week_lookup)]
     print(f"Created plan {plan_id} with weeks {week_ids}")
 
     payload = build_week_payload(plan_id, 1)

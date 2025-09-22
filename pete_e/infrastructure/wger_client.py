@@ -1,34 +1,62 @@
-# (Functional) Wger API client – fetches workout log entries from the Wger workout manager API. Aggregates logs by date for the orchestrator.
+"""Read-only wger API client used during the daily sync.
 
+The exporter/writer implementation lives in :mod:`wger_exporter_v3`; this
+module is intentionally scoped to pulling historical workout logs so that the
+orchestrator can reconcile completed sessions.
 """
-Wger API client for Pete-E
-Refactored from a procedural script to a class-based client.
-It uses a centralized configuration service for credentials and API URLs.
-"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
 
 import requests
-from datetime import datetime, timedelta, timezone
 
-# Import the centralized settings object
 from pete_e.config import settings
 from pete_e.infrastructure.log_utils import log_message
 
 
-class WgerClient:
-    """A client to interact with the Wger API."""
+def _resolve_secret(value: Any) -> str:
+    """Return the underlying string for SecretStr or plain values."""
 
-    def __init__(self):
-        """Initializes the client with credentials from the settings."""
-        self.api_key = settings.WGER_API_KEY
-        self.base_url = settings.WGER_API_URL
-        self.headers = {
-            "Authorization": f"Token {self.api_key}",
+    if value is None:
+        return ""
+    get_secret = getattr(value, "get_secret_value", None)
+    if callable(get_secret):
+        try:
+            return str(get_secret())
+        except Exception:
+            return ""
+    return str(value)
+
+
+class WgerClient:
+    """Minimal helper to fetch workout log entries from wger."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        timeout: int = 30,
+    ) -> None:
+        resolved_base = base_url or getattr(settings, "WGER_BASE_URL", "https://wger.de/api/v2")
+        self.base_url = resolved_base.rstrip("/")
+
+        resolved_token = token or _resolve_secret(getattr(settings, "WGER_API_KEY", None))
+        self.api_key = resolved_token.strip()
+        self.timeout = timeout
+
+        self.headers: Dict[str, str] = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        if self.api_key:
+            self.headers["Authorization"] = f"Token {self.api_key}"
 
-    def fetch_logs(self, days: int = 1) -> list[dict]:
-        """Fetch workout logs from Wger for the past N days."""
+    def fetch_logs(self, days: int = 1) -> List[Dict[str, Any]]:
+        """Fetch workout logs from wger for the past *days* window."""
+
         if not self.api_key:
             log_message("WGER_API_KEY not set. Skipping Wger log fetch.", "WARN")
             return []
@@ -45,29 +73,30 @@ class WgerClient:
         }
 
         try:
-            r = requests.get(url, headers=self.headers, params=params, timeout=30)
-            r.raise_for_status()
-            js = r.json()
-            results = js.get("results", [])
-            log_message(f"Successfully fetched {len(results)} Wger log entries.")
-            return results
-        except requests.RequestException as e:
-            log_message(f"Failed to fetch Wger logs: {e}", "ERROR")
+            response = requests.get(url, headers=self.headers, params=params, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            log_message(f"Failed to fetch Wger logs: {exc}", "ERROR")
             return []
 
-    def get_logs_by_date(self, days: int = 1) -> dict[str, list[dict]]:
-        """Return dict of logs keyed by date with clean exercise entries."""
+        payload = response.json() if response.content else {}
+        results = payload.get("results", []) if isinstance(payload, dict) else []
+        log_message(f"Successfully fetched {len(results)} Wger log entries.")
+        return results
+
+    def get_logs_by_date(self, days: int = 1) -> Dict[str, List[Dict[str, Any]]]:
+        """Return logs keyed by ISO date with normalised fields."""
+
         logs = self.fetch_logs(days=days)
-        out: dict[str, list[dict]] = {}
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
 
         for log in logs:
-            # The date can sometimes include timezone info, so we normalize it
             try:
-                d = datetime.fromisoformat(log.get("date", "")).date().isoformat()
-            except (ValueError, TypeError):
+                log_date = datetime.fromisoformat(str(log.get("date", ""))).date().isoformat()
+            except (TypeError, ValueError):
                 continue
 
-            row = {
+            entry = {
                 "exercise_id": log.get("exercise"),
                 "sets": log.get("sets"),
                 "reps": log.get("repetitions"),
@@ -75,6 +104,6 @@ class WgerClient:
                 "rir": log.get("rir"),
                 "rest_seconds": log.get("rest"),
             }
-            out.setdefault(d, []).append(row)
+            grouped.setdefault(log_date, []).append(entry)
 
-        return out
+        return grouped
