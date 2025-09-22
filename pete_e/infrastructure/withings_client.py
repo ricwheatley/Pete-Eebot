@@ -6,6 +6,7 @@ Now persists tokens in .withings_tokens.json so you donâ€™t have to update 
 """
 
 import json
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,6 +89,11 @@ class WithingsClient:
         """Persist tokens to disk."""
         with open(self.TOKEN_FILE, "w") as f:
             json.dump(tokens, f, indent=2)
+        # Restrict the token file to the owner so refresh credentials are not exposed.
+        try:
+            os.chmod(self.TOKEN_FILE, 0o600)
+        except OSError as exc:
+            log_message(f"Could not set permissions on {self.TOKEN_FILE}: {exc}", "WARN")
         log_message("Saved Withings tokens to file.", "INFO")
 
     def get_token_state(self) -> WithingsTokenState:
