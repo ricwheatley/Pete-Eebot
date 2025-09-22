@@ -58,7 +58,7 @@ The packages ship binary wheels for Linux `aarch64`, so the install completes wi
 
 ## 5. Install the Pete Eebot package
 
-With the dependencies in place, install the local package so the `pete-e` CLI entry point is registered:
+With the dependencies in place, install the local package so the `pete` CLI entry point is registered:
 
 ```bash
 python -m pip install --no-deps -e .
@@ -86,7 +86,7 @@ At a minimum provide Dropbox, Withings, Telegram, and Postgres credentials. The 
 Run a simple health check before scheduling cron jobs:
 
 ```bash
-pete-e status
+pete status
 ```
 
 You should see a three-line summary reporting on Postgres, Dropbox, and Withings connectivity. If the command is not found, confirm that the virtual environment is active and `~/.local/bin` is on your `$PATH`.
@@ -99,13 +99,13 @@ After activation (`source .venv/bin/activate`):
 
 ```bash
 # Run the daily ingest plus summary
-pete-e sync --days 1 && pete-e message --summary
+pete sync --days 1 && pete message --summary
 
 # Execute the Apple-only ingest
-pete-e ingest-apple
+pete ingest-apple
 
 # Trigger the weekly training plan refresh (only 4-week plans are supported)
-pete-e plan --weeks 4
+pete plan --weeks 4
 ```
 
 Add the commands to cron as documented in the main README once you are satisfied with the manual runs.

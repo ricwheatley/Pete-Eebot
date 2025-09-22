@@ -85,8 +85,8 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
                 state="action_required",
                 message=(
                     f"{TOKEN_FILE_NAME} exists but could not be parsed. Delete the file and "
-                    "re-authorise via `pete-e withings-auth-url` followed by "
-                    "`pete-e withings-exchange-code <code>` to capture fresh tokens."
+                    "re-authorise via `pete withings-auth-url` followed by "
+                    "`pete withings-exchange-code <code>` to capture fresh tokens."
                 ),
             )
 
@@ -100,7 +100,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
                 state="ok",
                 message=(
                     f"Refresh token stored in {TOKEN_FILE_PATH} (updated {updated}). "
-                    "Run `pete-e refresh-withings` if you want to confirm the stored tokens."
+                    "Run `pete refresh-withings` if you want to confirm the stored tokens."
                 ),
             )
 
@@ -109,7 +109,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
             state="action_required",
             message=(
                 f"{TOKEN_FILE_PATH} is present but missing a refresh_token. "
-                "Re-run `pete-e withings-auth-url` and `pete-e withings-exchange-code <code>` "
+                "Re-run `pete withings-auth-url` and `pete withings-exchange-code <code>` "
                 "to capture a complete token set."
             ),
         )
@@ -120,7 +120,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
             state="warning",
             message=(
                 "Refresh token only lives in .env. Persist it by running "
-                "`pete-e refresh-withings` so future syncs can load "
+                "`pete refresh-withings` so future syncs can load "
                 f"{TOKEN_FILE_PATH} without manual edits."
             ),
         )
@@ -145,8 +145,8 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
         name=name,
         state="action_required",
         message=(
-            "No refresh token detected. Run `pete-e withings-auth-url`, approve the app, "
-            "then call `pete-e withings-exchange-code <code>` to save the tokens."
+            "No refresh token detected. Run `pete withings-auth-url`, approve the app, "
+            "then call `pete withings-exchange-code <code>` to save the tokens."
         ),
     )
 
