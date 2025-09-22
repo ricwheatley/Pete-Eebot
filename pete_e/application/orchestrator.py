@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
-from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.postgres_dal import PostgresDal, close_pool
 from pete_e.infrastructure.withings_client import WithingsClient, WithingsReauthRequired
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import telegram_sender
@@ -46,6 +47,17 @@ WITHINGS_ONLY_SOURCES = (
     "Withings",
     "BodyAge",
 )
+
+
+
+def _closes_postgres_pool(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        finally:
+            close_pool()
+    return wrapper
 
 
 class DailySummaryDispatchLedger:
@@ -709,7 +721,7 @@ class Orchestrator:
             "INFO",
         )
         return True
-
+    @_closes_postgres_pool
     def run_weekly_calibration(
         self,
         reference_date: date | None = None,
@@ -855,7 +867,7 @@ class Orchestrator:
             validation=validation_decision,
             message=message,
         )
-
+    @_closes_postgres_pool
     def run_daily_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str], List[str]]:
         """
         Orchestrates the daily data synchronization process.
@@ -1094,8 +1106,7 @@ class Orchestrator:
                 )
 
         return success, unique_failures, source_statuses, undelivered_alerts
-
-
+    @_closes_postgres_pool
     def run_end_to_end_day(
         self,
         *,
@@ -1190,7 +1201,7 @@ class Orchestrator:
             return False
 
         return calibration.plan_id is not None
-
+    @_closes_postgres_pool
     def run_end_to_end_week(
         self,
         *,
@@ -1239,8 +1250,7 @@ class Orchestrator:
             rollover_triggered=rollover_triggered,
             reference_date=reference,
         )
-
-
+    @_closes_postgres_pool
     def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
         """Fetch Withings data for the requested window and update dependent calculations."""
         days = max(1, days)
@@ -1298,7 +1308,7 @@ class Orchestrator:
             )
             # Optionally re-raise in development
             # raise
-
+    @_closes_postgres_pool
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
         """
         Builds and deploys the next training plan cycle.
@@ -1339,7 +1349,7 @@ class Orchestrator:
                 f"Failed to generate and deploy new plan: {e}", "ERROR"
             )
             return -1  # Return a sentinel value indicating failure
-
+    @_closes_postgres_pool
     def run_cycle_rollover(
         self,
         *,
