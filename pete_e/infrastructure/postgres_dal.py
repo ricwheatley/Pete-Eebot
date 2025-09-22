@@ -28,30 +28,50 @@ from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from ..domain.data_access import DataAccessLayer
 
+
 # -------------------------------------------------------------------------
 # Connection pool
 # -------------------------------------------------------------------------
 if not settings.DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
 
-_pool = ConnectionPool(
-    conninfo=settings.DATABASE_URL,
-    min_size=1,
-    max_size=3,
-    max_lifetime=60,
-    timeout=10,
-)
+_pool: ConnectionPool | None = None
+
+
+def _create_pool() -> ConnectionPool:
+    return ConnectionPool(
+        conninfo=settings.DATABASE_URL,
+        min_size=1,
+        max_size=3,
+        max_lifetime=60,
+        timeout=10,
+    )
+
+
+def get_pool() -> ConnectionPool:
+    global _pool
+    pool = _pool
+    if pool is None or pool.closed:
+        pool = _create_pool()
+        _pool = pool
+    return pool
+
 
 def get_conn():
-    return _pool.connection()
+    return get_pool().connection()
+
 
 def close_pool():
-    """Explicitly close the connection pool."""
-    if not _pool.closed:
-        _pool.close()
-        log_utils.log_message("Database connection pool closed.", "INFO")
-
-
+    global _pool
+    pool = _pool
+    if pool is None:
+        return
+    try:
+        if not pool.closed:
+            pool.close()
+            log_utils.log_message("Database connection pool closed.", "INFO")
+    finally:
+        _pool = None
 # -------------------------------------------------------------------------
 # Postgres DAL
 # -------------------------------------------------------------------------
@@ -59,6 +79,17 @@ class PostgresDal(DataAccessLayer):
     """
     PostgreSQL implementation of the Pete-Eebot Data Access Layer.
     """
+
+    def close(self) -> None:
+        """Close the underlying connection pool."""
+        close_pool()
+
+    def __enter__(self) -> 'PostgresDal':
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self.close()
+        return False
 
     # ---------------------------------------------------------------------
     # Withings

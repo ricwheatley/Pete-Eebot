@@ -25,23 +25,23 @@ def main() -> None:
     args = parser.parse_args()
 
     start_date = dt.date.fromisoformat(args.start_date)
-    dal = PostgresDal()
-    plan_id = build_block(dal, start_date)
+    with PostgresDal() as dal:
+        plan_id = build_block(dal, start_date)
 
-    week_lookup = get_week_ids_for_plan(plan_id)
-    week_ids = [week_lookup[w] for w in sorted(week_lookup)]
-    print(f"Created plan {plan_id} with weeks {week_ids}")
+        week_lookup = get_week_ids_for_plan(plan_id)
+        week_ids = [week_lookup[w] for w in sorted(week_lookup)]
+        print(f"Created plan {plan_id} with weeks {week_ids}")
 
-    payload = build_week_payload(plan_id, 1)
-    print("Week 1 payload preview:")
-    print(json.dumps(payload, indent=2))
+        payload = build_week_payload(plan_id, 1)
+        print("Week 1 payload preview:")
+        print(json.dumps(payload, indent=2))
 
-    if not args.no_send:
-        created = export_week_to_wger(
-            payload, week_start=start_date, week_end=start_date + dt.timedelta(days=6)
-        )
-        print("\nWger routine created or reused:")
-        print(json.dumps(created, indent=2))
+        if not args.no_send:
+            created = export_week_to_wger(
+                payload, week_start=start_date, week_end=start_date + dt.timedelta(days=6)
+            )
+            print("\nWger routine created or reused:")
+            print(json.dumps(created, indent=2))
 
 
 if __name__ == "__main__":

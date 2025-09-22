@@ -11,7 +11,7 @@ import requests
 
 # NOTE: Adjust this import path if your project structure is different.
 # This path assumes a 'pete_e' source root.
-from pete_e.infrastructure.postgres_dal import PostgresDal, close_pool
+from pete_e.infrastructure.postgres_dal import PostgresDal
 
 BASE = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
 
@@ -89,24 +89,21 @@ def main() -> None:
     Ensures the database connection pool is closed on exit.
     """
     try:
-        dal = PostgresDal()
         total = 0
         print("[wger] Starting catalog database refresh...")
-
-        # Order is important due to foreign key constraints.
-        total += update_catalog_item(dal, "exercisecategory", "categories", dal.upsert_wger_categories)
-        total += update_catalog_item(dal, "equipment", "equipment", dal.upsert_wger_equipment)
-        total += update_catalog_item(dal, "muscle", "muscles", dal.upsert_wger_muscles)
-        total += update_exercises(dal)
+        with PostgresDal() as dal:
+            # Order is important due to foreign key constraints.
+            total += update_catalog_item(dal, "exercisecategory", "categories", dal.upsert_wger_categories)
+            total += update_catalog_item(dal, "equipment", "equipment", dal.upsert_wger_equipment)
+            total += update_catalog_item(dal, "muscle", "muscles", dal.upsert_wger_muscles)
+            total += update_exercises(dal)
 
         print(f"[wger] Catalog refresh done. Total objects processed: {total}")
 
     except Exception as e:
         print(f"[ERROR] An unexpected error occurred during catalog refresh: {e}", file=sys.stderr)
         sys.exit(1)
-    finally:
-        # This will run whether the script succeeds or fails, ensuring a clean shutdown.
-        close_pool()
 
 if __name__ == "__main__":
     main()
+
