@@ -448,6 +448,31 @@ def _format_readiness_line(summary_data: Dict[str, Any]) -> str | None:
         return _ensure_sentence(f"Coach's call: {tip}")
     return None
 
+
+def _format_environment_line(summary_data: Dict[str, Any]) -> str | None:
+    temp = _to_float(summary_data.get("environment_temp_degc"))
+    humidity = _to_float(summary_data.get("environment_humidity_percent"))
+    if temp is None and humidity is None:
+        return None
+
+    parts: List[str] = []
+    if temp is not None:
+        temp_value = round(temp, 1)
+        parts.append(f"{_clean_number(temp_value)} degC")
+    if humidity is not None:
+        humidity_value = humidity
+        if humidity_value <= 1.0:
+            humidity_value = humidity_value * 100.0
+        humidity_value = max(0.0, min(100.0, humidity_value))
+        parts.append(f"{_clean_number(round(humidity_value))}% humidity")
+
+    if not parts:
+        return None
+
+    values_text = parts[0] if len(parts) == 1 else " and ".join(parts)
+    return f"Environment: {values_text} reported for the workout."
+
+
 def _no_daily_metrics_message() -> str:
     message = CoachMessage(
         greeting=_choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
@@ -915,6 +940,10 @@ class NarrativeBuilder:
             line = formatter(snapshot.get(key))
             if line:
                 bullet_lines.append(f"- {line}")
+
+        env_line = _format_environment_line(snapshot)
+        if env_line:
+            bullet_lines.append(f"- {env_line}")
 
         if not bullet_lines:
             bullet_lines.append("- No fresh metrics landed – give your trackers a sync and shout me once it's in.")

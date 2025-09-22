@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from pete_e.infrastructure import log_utils
 
@@ -120,20 +121,169 @@ class AppleHealthParser:
 
     @staticmethod
     def _get_numeric_value(data) -> Optional[float]:
-        """Safely extracts a float from a number, string, or a {'qty': x} dict."""
+        """Safely extracts a float from numbers, strings, or nested dict structures."""
         if data is None:
             return None
         if isinstance(data, (int, float)):
             return float(data)
-        if isinstance(data, dict):
-            data = data.get("qty")
-        
-        if data is not None:
-            try:
-                return float(data)
-            except (ValueError, TypeError):
+        if isinstance(data, str):
+            stripped = data.strip()
+            if not stripped:
                 return None
+            try:
+                return float(stripped)
+            except ValueError:
+                match = re.match(r"^-?\d+(?:\.\d+)?", stripped)
+                if match:
+                    try:
+                        return float(match.group(0))
+                    except ValueError:
+                        return None
+                return None
+        if isinstance(data, dict):
+            for key in ("qty", "value", "number", "doubleValue", "numericValue", "amount"):
+                if key in data:
+                    value = AppleHealthParser._get_numeric_value(data.get(key))
+                    if value is not None:
+                        return value
+            for key in ("measurement", "data"):
+                if key in data:
+                    value = AppleHealthParser._get_numeric_value(data.get(key))
+                    if value is not None:
+                        return value
+            return None
+        if isinstance(data, Iterable) and not isinstance(data, (str, bytes, bytearray)):
+            for item in data:
+                value = AppleHealthParser._get_numeric_value(item)
+                if value is not None:
+                    return value
+            return None
         return None
+
+    @staticmethod
+    def _extract_unit(source) -> Optional[str]:
+        if isinstance(source, dict):
+            for key in ("unit", "unitName", "unitSymbol", "unitString"):
+                unit = source.get(key)
+                if isinstance(unit, str):
+                    stripped = unit.strip()
+                    if stripped:
+                        return stripped
+            for key in ("value", "measurement"):
+                nested = source.get(key)
+                unit = AppleHealthParser._extract_unit(nested)
+                if unit:
+                    return unit
+        elif isinstance(source, str):
+            stripped = source.strip().lower()
+            if not stripped:
+                return None
+            if "degf" in stripped or "fahrenheit" in stripped or stripped.endswith("f"):
+                return "degF"
+            if "degc" in stripped or "celsius" in stripped or stripped.endswith("c"):
+                return "degC"
+            if "%" in stripped or "percent" in stripped or "pct" in stripped:
+                return "%"
+            if "ratio" in stripped or "fraction" in stripped:
+                return "ratio"
+        return None
+
+    @classmethod
+    def _extract_measure(cls, raw) -> Tuple[Optional[float], Optional[str]]:
+        if raw is None:
+            return None, None
+        unit = cls._extract_unit(raw)
+        value = cls._get_numeric_value(raw)
+        return value, unit
+
+    @staticmethod
+    def _normalise_temperature(value: Optional[float], unit: Optional[str]) -> Optional[float]:
+        if value is None:
+            return None
+        unit_norm = (unit or "").strip().lower()
+        if unit_norm in {"degf", "fahrenheit", "f"}:
+            return (value - 32.0) * (5.0 / 9.0)
+        return value
+
+    @staticmethod
+    def _normalise_humidity(value: Optional[float], unit: Optional[str]) -> Optional[float]:
+        if value is None:
+            return None
+        unit_norm = (unit or "").strip().lower()
+        if unit_norm in {"fraction", "ratio"}:
+            value = value * 100.0
+        elif unit_norm in {"percent", "pct", "%"}:
+            pass
+        elif value <= 1.0:
+            value = value * 100.0
+        return value
+
+    def _extract_workout_environment(self, workout: dict) -> Tuple[Optional[float], Optional[float]]:
+        if not isinstance(workout, dict):
+            return None, None
+
+        temp_value: Optional[float] = None
+        temp_unit: Optional[str] = None
+        humidity_value: Optional[float] = None
+        humidity_unit: Optional[str] = None
+
+        for key, raw in workout.items():
+            key_lower = str(key).lower()
+            if temp_value is None and "temp" in key_lower and "attempt" not in key_lower and "timestamp" not in key_lower:
+                value, unit = self._extract_measure(raw)
+                if value is not None:
+                    temp_value, temp_unit = value, unit
+            if humidity_value is None and "humid" in key_lower:
+                value, unit = self._extract_measure(raw)
+                if value is not None:
+                    humidity_value, humidity_unit = value, unit
+
+        for container_key in ("environment", "weather"):
+            container = workout.get(container_key)
+            if isinstance(container, dict):
+                if temp_value is None and "temperature" in container:
+                    value, unit = self._extract_measure(container.get("temperature"))
+                    if value is not None:
+                        temp_value, temp_unit = value, unit
+                if humidity_value is None and "humidity" in container:
+                    value, unit = self._extract_measure(container.get("humidity"))
+                    if value is not None:
+                        humidity_value, humidity_unit = value, unit
+
+        metadata_entries = workout.get("metadataEntries")
+        if isinstance(metadata_entries, list):
+            for entry in metadata_entries:
+                if not isinstance(entry, dict):
+                    continue
+                key = str(entry.get("key") or entry.get("name") or "").lower()
+                if not key:
+                    continue
+                raw_value = entry.get("value")
+                if raw_value is None:
+                    for candidate in ("numberValue", "numericValue", "qty", "doubleValue"):
+                        if entry.get(candidate) is not None:
+                            raw_value = entry.get(candidate)
+                            break
+                if raw_value is None:
+                    continue
+                if temp_value is None and "temp" in key:
+                    value, unit = self._extract_measure(raw_value)
+                    if value is not None:
+                        temp_value, temp_unit = value, unit or self._extract_unit(entry)
+                elif humidity_value is None and "humid" in key:
+                    value, unit = self._extract_measure(raw_value)
+                    if value is not None:
+                        humidity_value, humidity_unit = value, unit or self._extract_unit(entry)
+
+        temp = self._normalise_temperature(temp_value, temp_unit)
+        humidity = self._normalise_humidity(humidity_value, humidity_unit)
+
+        if temp is not None:
+            temp = round(temp, 1)
+        if humidity is not None:
+            humidity = max(0.0, min(100.0, humidity))
+            humidity = round(humidity, 1)
+        return temp, humidity
 
     def parse(self, root: dict) -> Dict[str, Iterable]:
         """Parse root HealthAutoExport JSON into typed streams for persistence."""
@@ -316,6 +466,8 @@ class AppleHealthParser:
                             device_name = candidate
                         break
 
+            env_temp, env_humidity = self._extract_workout_environment(w)
+
             header = WorkoutHeader(
                 workout_id=workout_id,
                 type_name=type_name,
@@ -328,8 +480,8 @@ class AppleHealthParser:
                 total_active_energy_kj=self._get_numeric_value(w.get("activeEnergyBurned")),
                 avg_intensity=self._get_numeric_value(w.get("intensity")),
                 elevation_gain_m=self._get_numeric_value(w.get("elevationUp")),
-                environment_temp_degc=self._get_numeric_value(w.get("temperature")),
-                environment_humidity_percent=self._get_numeric_value(w.get("humidity")),
+                environment_temp_degc=env_temp,
+                environment_humidity_percent=env_humidity,
             )
             workout_headers.append(header)
 
