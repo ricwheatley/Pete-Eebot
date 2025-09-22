@@ -149,6 +149,16 @@ Withings OK   scale reachable
 
 Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.
 
+### Operations posture
+
+Pete Eebot is maintained on a resource-constrained Raspberry Pi, so the default stance is to keep operations boring and observable:
+
+* **Favour short-lived CLI invocations.** Cron should call a single `pete-e ...` command (or a focused helper in `python -m scripts.<name>`) that exits once the task is complete. Avoid background daemons or bespoke schedulers unless the CLI lacks the feature entirely.
+* **Keep scripts experimental until proven.** Anything exploratory, data inspection-heavy, or destined for occasional manual runs belongs under `scripts/`. These helpers should have a narrow scope, document their inputs, and tolerate partial configuration so they are safe to run on the Pi.
+* **Promote only hardened flows into `pete_e/`.** When a script graduates into routine automation it should be ported into the typed application package with tests and CLI wiring. This keeps production surfaces discoverable while letting experiments evolve quickly.
+
+Contributors adding operational helpers should default to a cron-able command that fails fast and logs clearly. If the need extends beyond a few weeks of trial runs, raise a discussion before moving the logic into the production package so the maintenance burden stays manageable.
+
 ---
 
 ## Backups
