@@ -104,7 +104,7 @@ pete-e sync --days 1 && pete-e message --summary
 # Execute the Apple-only ingest
 pete-e ingest-apple
 
-# Trigger the weekly training plan refresh
+# Trigger the weekly training plan refresh (only 4-week plans are supported)
 pete-e plan --weeks 4
 ```
 
