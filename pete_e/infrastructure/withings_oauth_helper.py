@@ -1,4 +1,5 @@
-# (Functional) OAuth helper for Withings – builds auth URL and exchanges authorization code for tokens. Saves tokens to the same `.withings_tokens.json` for reuse.
+# (Functional) OAuth helper for Withings – builds auth URL and exchanges authorization code for tokens. Saves tokens to
+# `~/.config/pete_eebot/.withings_tokens.json` for reuse.
 
 import os
 import requests
@@ -15,7 +16,7 @@ def _unwrap_secret(value):
         return value.get_secret_value()
     return value
 
-TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
+TOKEN_FILE = Path.home() / ".config" / "pete_eebot" / ".withings_tokens.json"
 
 AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"
 TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"
@@ -48,6 +49,7 @@ def exchange_code_for_tokens(code: str):
     tokens = js["body"]
 
     # Save to file
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(TOKEN_FILE, "w") as f:
         json.dump(tokens, f, indent=2)
     # Lock down permissions to avoid leaking OAuth credentials.
