@@ -1,8 +1,9 @@
-﻿# (Functional) Withings API client â€“ interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `.withings_tokens.json`)
+﻿# (Functional) Withings API client â€“ interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `~/.config/pete_eebot/.withings_tokens.json`)
 
 """
 Withings API client for Pete-E.
-Now persists tokens in .withings_tokens.json so you donâ€™t have to update .env manually.
+Now persists tokens in ~/.config/pete_eebot/.withings_tokens.json so you do not have to
+update .env manually.
 """
 
 import json
@@ -52,7 +53,8 @@ class WithingsReauthRequired(RuntimeError):
 class WithingsClient:
     """A client to interact with the Withings API."""
 
-    TOKEN_FILE = Path(__file__).resolve().parent.parent.parent / ".withings_tokens.json"
+    CONFIG_DIR = Path.home() / ".config" / "pete_eebot"
+    TOKEN_FILE = CONFIG_DIR / ".withings_tokens.json"
 
     def __init__(self, request_timeout: float = 30.0):
         """Initializes the client with credentials from settings or token file."""
@@ -65,6 +67,7 @@ class WithingsClient:
         self.access_token = None
         self.refresh_token = None
 
+        self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         if self.TOKEN_FILE.exists():
             try:
                 with open(self.TOKEN_FILE) as f:
@@ -87,6 +90,7 @@ class WithingsClient:
 
     def _save_tokens(self, tokens: dict) -> None:
         """Persist tokens to disk."""
+        self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(self.TOKEN_FILE, "w") as f:
             json.dump(tokens, f, indent=2)
         # Restrict the token file to the owner so refresh credentials are not exposed.
@@ -240,7 +244,22 @@ class WithingsClient:
                 last_response.raise_for_status()
             raise RuntimeError("Withings token refresh failed after retries.")
 
-        payload = self._parse_json(last_response, context="token refresh")
+        try:
+            payload = self._parse_json(last_response, context="token refresh")
+        except RuntimeError as exc:
+            reason = str(exc)
+            self._token_state = WithingsTokenState(
+                requires_reauth=True,
+                reason=reason,
+                last_refresh_utc=self._token_state.last_refresh_utc,
+                last_error_status=None,
+                last_http_status=last_response.status_code if last_response else None,
+            )
+            raise WithingsReauthRequired(
+                reason,
+                status=None,
+                http_status=last_response.status_code if last_response else None,
+            ) from exc
 
         if payload.get("status") != 0:
             self._handle_refresh_failure(last_response, payload)

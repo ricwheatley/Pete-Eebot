@@ -143,6 +143,8 @@ class TelegramCommandListener:
             "/sync": self._handle_sync,
         }
 
+        authorized_chat_id = getattr(settings, "TELEGRAM_CHAT_ID", None)
+
         for update in updates:
             update_id = update.get("update_id") if isinstance(update, dict) else None
             if isinstance(update_id, int):
@@ -153,7 +155,18 @@ class TelegramCommandListener:
             text = None
             if isinstance(message, dict):
                 text = message.get("text")
+                chat = message.get("chat")
+            else:
+                chat = None
             if not isinstance(text, str):
+                continue
+
+            chat_id = chat.get("id") if isinstance(chat, dict) else None
+            if authorized_chat_id is not None and str(chat_id) != str(authorized_chat_id):
+                log_utils.log_message(
+                    "Skipping Telegram command from unauthorised chat.",
+                    "WARN",
+                )
                 continue
 
             command = self._extract_command(text)

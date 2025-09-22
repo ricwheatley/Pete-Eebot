@@ -71,7 +71,7 @@ Run these steps once when you provision a new deployment or rotate credentials:
 1. Generate an authorisation URL with `pete-e withings-auth-url`.
 2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
 3. Exchange the code for tokens: `pete-e withings-exchange-code <code>`.
-4. Confirm persistence by running `pete-e refresh-withings`, which refreshes the access token and saves the results to `.withings_tokens.json`.
+4. Confirm persistence by running `pete-e refresh-withings`, which refreshes the access token and saves the results to `~/.config/pete_eebot/.withings_tokens.json`.
    The helper locks the file down to owner-only permissions (`chmod 600`) so the stored tokens stay private.
 
 **Dropbox**
@@ -173,7 +173,7 @@ SD cards fail without warning, so keep the database and credentials replicated t
 * Optional knobs:
   * `RETENTION_WEEKS` (default `8`) controls how many weeks of dumps and secret copies are retained.
   * `LOG_FILE`, `DB_BACKUP_DIR`, and `SECRETS_BACKUP_DIR` override the derived locations when you want the log on the SD card but the artifacts on external storage.
-* The helper reads `.env` for the Postgres connection values and copies both `.env` and `.withings_tokens.json` into the secrets directory. Missing files are skipped with a warning so the backup continues.
+* The helper reads `.env` for the Postgres connection values and copies both `.env` and `~/.config/pete_eebot/.withings_tokens.json` into the secrets directory. Missing files are skipped with a warning so the backup continues.
 
 The script enforces `umask 077` and normalises directory permissions to `700`, with individual dump and secret copies restricted to `600`. Any existing `latest.dump` or `.env.latest` symlink is updated after each run for quick restores.
 
@@ -190,7 +190,7 @@ By default the routine writes its own audit trail to `logs/backup_db.log`. When 
 ### Restoring
 
 1. Pick a dump from the backup location (for example, `postgres/pete_eebot_20240107T020000Z.dump`) and restore it with `pg_restore --clean --if-exists --dbname pete_eebot postgres/pete_eebot_20240107T020000Z.dump`.
-2. Copy the desired `.env.TIMESTAMP` and `.withings_tokens.json.TIMESTAMP` back into the project root and drop the `.TIMESTAMP` suffix once you verify the contents.
+2. Copy the desired `.env.TIMESTAMP` and `~/.config/pete_eebot/.withings_tokens.json.TIMESTAMP` back into the project root and drop the `.TIMESTAMP` suffix once you verify the contents.
 3. Restart any long-running jobs or services so they pick up the refreshed credentials.
 
 All restore commands should be executed on a trusted machine because the artifacts contain live secrets.

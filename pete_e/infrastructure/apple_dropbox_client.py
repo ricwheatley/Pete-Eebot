@@ -1,6 +1,5 @@
 ﻿# pete_e/infrastructure/apple_dropbox_client.py
 
-import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -10,6 +9,7 @@ import dropbox
 from dropbox.exceptions import AuthError, DropboxException
 from dropbox.files import FileMetadata, ListFolderResult
 from pete_e.config.config import settings
+from pete_e.infrastructure import log_utils
 
 # British English comments and docstrings.
 
@@ -54,9 +54,9 @@ class AppleDropboxClient:
             if not name:
                 name = getattr(account, "email", None)
             self._account_display_name = name
-            logging.info("Successfully connected to Dropbox.")
+            log_utils.log_message("Successfully connected to Dropbox.", "INFO")
         except AuthError as e:
-            logging.error(f"Dropbox authentication failed: {e}")
+            log_utils.log_message(f"Dropbox authentication failed: {e}", "ERROR")
             raise ValueError("Invalid Dropbox credentials or refresh token.")
 
     def _get_all_files(self, folder_path: str) -> List[FileMetadata]:
@@ -79,7 +79,10 @@ class AppleDropboxClient:
             self._folder_cursors[folder_path] = result.cursor
             return all_entries
         except dropbox.exceptions.ApiError as e:
-            logging.error(f"Error listing Dropbox folder '{folder_path}': {e}")
+            log_utils.log_message(
+                f"Error listing Dropbox folder '{folder_path}': {e}",
+                "ERROR",
+            )
             raise IOError(f"Could not list files in Dropbox folder: {e}") from e
 
     def find_new_export_files(self, folder_path: str, since_datetime: datetime) -> List[Tuple[datetime, str]]:
@@ -87,7 +90,10 @@ class AppleDropboxClient:
         Finds all export files in a folder that have been modified after a given datetime.
         Returns a list of (modification_time, file_path) sorted chronologically.
         """
-        logging.info(f"Searching for new files since {since_datetime.isoformat()} in '{folder_path}'")
+        log_utils.log_message(
+            f"Searching for new files since {since_datetime.isoformat()} in '{folder_path}'",
+            "INFO",
+        )
 
         all_files: List[FileMetadata]
         cursor = self._folder_cursors.get(folder_path)
@@ -116,10 +122,12 @@ class AppleDropboxClient:
                 # Update cursor for subsequent incremental listings.
                 self._folder_cursors[folder_path] = result.cursor
             except DropboxException as e:
-                logging.warning(
-                    "Incremental Dropbox listing for '%s' failed (%s); falling back to full scan.",
-                    folder_path,
-                    e,
+                log_utils.log_message(
+                    (
+                        f"Incremental Dropbox listing for '{folder_path}' failed ({e}); "
+                        "falling back to full scan."
+                    ),
+                    "WARN",
                 )
                 all_files = self._get_all_files(folder_path)
         else:
@@ -147,18 +155,21 @@ class AppleDropboxClient:
 
         new_files.sort(key=lambda item: item[0])
 
-        logging.info(f"Found {len(new_files)} new files in '{folder_path}'.")
+        log_utils.log_message(
+            f"Found {len(new_files)} new files in '{folder_path}'.",
+            "INFO",
+        )
         return new_files
 
     def download_as_bytes(self, dropbox_path: str) -> bytes:
         """Downloads the specified file and returns its content as bytes."""
-        logging.info(f"Downloading {dropbox_path} from Dropbox...")
+        log_utils.log_message(f"Downloading {dropbox_path} from Dropbox...", "INFO")
         try:
             _, res = self.dbx.files_download(dropbox_path)
-            logging.info("Download successful.")
+            log_utils.log_message("Download successful.", "INFO")
             return res.content
         except dropbox.exceptions.ApiError as e:
-            logging.error(f"Failed to download {dropbox_path}: {e}")
+            log_utils.log_message(f"Failed to download {dropbox_path}: {e}", "ERROR")
             raise IOError(f"Could not download file from Dropbox: {e}") from e
         
     def ping(self) -> str:
@@ -168,7 +179,7 @@ class AppleDropboxClient:
         try:
             account = self.dbx.users_get_current_account()
         except DropboxException as e:
-            logging.error(f"Dropbox ping failed: {e}")
+            log_utils.log_message(f"Dropbox ping failed: {e}", "ERROR")
             raise IOError(f"Dropbox ping failed: {e}") from e
         name = getattr(getattr(account, "name", None), "display_name", None) or getattr(account, "email", None) or account.account_id
         self._account_display_name = name
@@ -176,7 +187,10 @@ class AppleDropboxClient:
 
     def find_new_files_since(self, folder_path: str, since_datetime: datetime) -> List[Tuple[datetime, str]]:
         """Finds all export files in a folder modified after a given datetime."""
-        logging.info(f"Searching for new files since {since_datetime} in '{folder_path}'")
+        log_utils.log_message(
+            f"Searching for new files since {since_datetime} in '{folder_path}'",
+            "INFO",
+        )
         all_files = self._get_all_files(folder_path)
         
         new_files = []
