@@ -29,7 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-pete = "pete_e.cli:app"
+pete = "pete_e.cli.messenger:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
