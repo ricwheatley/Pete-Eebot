@@ -359,7 +359,7 @@ def build_weekly_plan_overview(
 
 # Create the Typer application object
 app = typer.Typer(
-    name="pete-e",
+    name="pete",
     help="CLI for Pete-Eebot, your personal health and fitness orchestrator.",
     add_completion=False,
 )

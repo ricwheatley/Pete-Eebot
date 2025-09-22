@@ -1,4 +1,4 @@
-﻿"""Health check command support for the pete-e CLI."""
+﻿"""Health check command support for the pete CLI."""
 
 from __future__ import annotations
 

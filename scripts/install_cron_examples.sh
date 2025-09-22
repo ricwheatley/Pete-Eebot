@@ -6,14 +6,14 @@
 #
 # Environment variables:
 #   PROJECT_DIR   - Root directory of the Pete-Eebot checkout (default: repo root)
-#   PETE_BIN      - Path to the pete-e CLI binary (default: autodetected or ~/.local/bin/pete-e)
+#   PETE_BIN      - Path to the pete CLI binary (default: autodetected or ~/.local/bin/pete)
 #   PYTHON_BIN    - Interpreter used for python -m scripts.weekly_calibration (default: python3)
-#   PATH_PREFIX   - PATH line to prepend inside cron (default: includes pete-e directory + system paths)
+#   PATH_PREFIX   - PATH line to prepend inside cron (default: includes pete directory + system paths)
 #   LOG_FILE      - File that receives cron output (default: $PROJECT_DIR/logs/cron.log)
 #   REBOOT_DELAY  - Seconds to sleep before the @reboot catch-up sync (default: 120)
 #   CATCHUP_DAYS  - Days of history to sync on reboot (default: 3)
 #   SYNC_DAYS     - Days of history to sync in the daily job (default: 1)
-#   SYNC_RETRIES  - Retry count passed to pete-e sync (default: 3)
+#   SYNC_RETRIES  - Retry count passed to pete sync (default: 3)
 #   DAILY_MINUTE  - Minute for the daily sync+summary cron (default: 5)
 #   DAILY_HOUR    - Hour for the daily sync+summary cron (default: 7)
 #   WEEKLY_DAY    - Day-of-week for weekly calibration/plan (0-7, default: 1 for Monday)
@@ -21,7 +21,7 @@
 #   WEEKLY_CAL_HOUR   - Hour for weekly calibration (default: 8)
 #   WEEKLY_PLAN_MINUTE - Minute for weekly plan send (default: 5)
 #   WEEKLY_PLAN_HOUR   - Hour for weekly plan send (default: 8)
-#   LISTENER_LIMIT - Telegram poll limit passed to pete-e telegram (default: 5)
+#   LISTENER_LIMIT - Telegram poll limit passed to pete telegram (default: 5)
 #   LISTENER_TIMEOUT - Telegram long poll timeout (default: 25)
 
 set -euo pipefail
@@ -29,10 +29,10 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$PROJECT_ROOT}"
 
-if command -v pete-e >/dev/null 2>&1; then
-  DEFAULT_PETE_BIN="$(command -v pete-e)"
+if command -v pete >/dev/null 2>&1; then
+  DEFAULT_PETE_BIN="$(command -v pete)"
 else
-  DEFAULT_PETE_BIN="$HOME/.local/bin/pete-e"
+  DEFAULT_PETE_BIN="$HOME/.local/bin/pete"
 fi
 PETE_BIN="${PETE_BIN:-$DEFAULT_PETE_BIN}"
 

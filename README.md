@@ -67,10 +67,10 @@ Run these steps once when you provision a new deployment or rotate credentials:
 
 **Withings**
 
-1. Generate an authorisation URL with `pete-e withings-auth-url`.
+1. Generate an authorisation URL with `pete withings-auth-url`.
 2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
-3. Exchange the code for tokens: `pete-e withings-exchange-code <code>`.
-4. Confirm persistence by running `pete-e refresh-withings`, which refreshes the access token and saves the results to `~/.config/pete_eebot/.withings_tokens.json`.
+3. Exchange the code for tokens: `pete withings-exchange-code <code>`.
+4. Confirm persistence by running `pete refresh-withings`, which refreshes the access token and saves the results to `~/.config/pete_eebot/.withings_tokens.json`.
    The helper locks the file down to owner-only permissions (`chmod 600`) so the stored tokens stay private.
 
 **Dropbox**
@@ -89,19 +89,19 @@ The settings layer exposes derived paths such as `logs/pete_history.log`. When r
 
 ## CLI Usage
 
-The project ships a Typer application under the `pete-e` entry point. Common commands:
+The project ships a Typer application under the `pete` entry point. Common commands:
 
-* `pete-e refresh-withings` â€“ force-refreshes the Withings OAuth tokens and prints the truncated values.
-* `pete-e ingest-apple` â€“ downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
-* `pete-e sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
-* `pete-e withings-sync` â€“ executes the Withings-only branch of the pipeline.
-* `pete-e status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
-* `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
-* `pete-e message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
+* `pete refresh-withings` â€“ force-refreshes the Withings OAuth tokens and prints the truncated values.
+* `pete ingest-apple` â€“ downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
+* `pete sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
+* `pete withings-sync` â€“ executes the Withings-only branch of the pipeline.
+* `pete status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
+* `pete plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
+* `pete message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
 
 ### Telegram bot commands
 
-The short-lived listener exposed via `pete-e telegram --listen-once` polls for bot commands and responds using the same narratives as the CLI. The offset file is persisted next to the application logs so repeated invocations pick up where the last poll ended (the cron examples below reuse this helper).
+The short-lived listener exposed via `pete telegram --listen-once` polls for bot commands and responds using the same narratives as the CLI. The offset file is persisted next to the application logs so repeated invocations pick up where the last poll ended (the cron examples below reuse this helper).
 
 Supported commands:
 
@@ -117,8 +117,8 @@ When the daily sync succeeds for a single-day window the orchestrator calls `dis
 Add the proactive messages to cron (or your scheduler of choice) so the summaries arrive without manual intervention:
 
 ```
-5 7 * * * pete-e sync --days 1 && pete-e message --summary --send
-0 8 * * 1 pete-e message --plan --send
+5 7 * * * pete sync --days 1 && pete message --summary --send
+0 8 * * 1 pete message --plan --send
 ```
 
 The daily path chains a sync before messaging and respects the dispatch ledger, so repeated runs in the same morning will no-op instead of double-sending. If the orchestrator automations are also sending summaries, keep just one of them active to avoid dupe suppression. The weekly plan command now renders the upcoming week header, the key workouts per day, and a closing tip before handing it to Telegram.
@@ -127,18 +127,18 @@ The daily path chains a sync before messaging and respects the dispatch ledger, 
 
 ### Cron on Raspberry Pi
 
-When you deploy on a Raspberry Pi the CLI is installed as `pete-e`, so you can drop a ready-made cron file into `/etc/cron.d/pete-eebot` (or use `crontab -e`). The example below assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete-e`, and `python3` resolves to the interpreter you used during setup. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
+When you deploy on a Raspberry Pi the CLI is installed as `pete`, so you can drop a ready-made cron file into `/etc/cron.d/pete-eebot` (or use `crontab -e`). The example below assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete`, and `python3` resolves to the interpreter you used during setup. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
 
 ```
 SHELL=/bin/bash
 PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin
 MAILTO=""
 
-@reboot   sleep 120 && cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e sync --days 3 --retries 3 >> logs/cron.log 2>&1
-5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e sync --days 1 --retries 3 && /home/pi/.local/bin/pete-e message --summary --send >> logs/cron.log 2>&1
+@reboot   sleep 120 && cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 3 --retries 3 >> logs/cron.log 2>&1
+5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 1 --retries 3 && /home/pi/.local/bin/pete message --summary --send >> logs/cron.log 2>&1
 0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.weekly_calibration >> logs/cron.log 2>&1
-5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e message --plan --send >> logs/cron.log 2>&1
-* * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
+5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
+* * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
 ```
 
 The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.weekly_calibration` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
@@ -155,7 +155,7 @@ Override `PETE_BIN`, `PYTHON_BIN`, or `PROJECT_DIR` when your paths differ. Ensu
 Example:
 
 ```
-$ pete-e status
+$ pete status
 DB       OK   9ms
 Dropbox  OK   demo@account
 Withings OK   scale reachable
@@ -167,7 +167,7 @@ Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete
 
 Pete Eebot is maintained on a resource-constrained Raspberry Pi, so the default stance is to keep operations boring and observable:
 
-* **Favour short-lived CLI invocations.** Cron should call a single `pete-e ...` command (or a focused helper in `python -m scripts.<name>`) that exits once the task is complete. Avoid background daemons or bespoke schedulers unless the CLI lacks the feature entirely.
+* **Favour short-lived CLI invocations.** Cron should call a single `pete ...` command (or a focused helper in `python -m scripts.<name>`) that exits once the task is complete. Avoid background daemons or bespoke schedulers unless the CLI lacks the feature entirely.
 * **Keep scripts experimental until proven.** Anything exploratory, data inspection-heavy, or destined for occasional manual runs belongs under `scripts/`. These helpers should have a narrow scope, document their inputs, and tolerate partial configuration so they are safe to run on the Pi.
 * **Promote only hardened flows into `pete_e/`.** When a script graduates into routine automation it should be ported into the typed application package with tests and CLI wiring. This keeps production surfaces discoverable while letting experiments evolve quickly.
 
@@ -221,7 +221,7 @@ These entry points allow CLI commands, Airflow jobs, or simple cron tasks to cal
 ## Reliability Checks & Recovery
 
 - **Apple Dropbox stagnation:** The orchestrator logs and sends a Telegram alert when no new Apple Health exports have been processed for the configured `APPLE_MAX_STALE_DAYS` window (default three days). Increase the value if weekend gaps are expected.
-- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete-e withings-auth-url`, approving the app in the browser, then calling `pete-e withings-exchange-code <code>` followed by `pete-e refresh-withings` to confirm the new tokens are persisted.
+- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete withings-auth-url`, approving the app in the browser, then calling `pete withings-exchange-code <code>` followed by `pete refresh-withings` to confirm the new tokens are persisted.
 
 ---
 
