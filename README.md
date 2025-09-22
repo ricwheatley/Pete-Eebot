@@ -61,6 +61,27 @@ The remainder of this README assumes you chose the virtual environment path.
 4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
 5. Install the pinned dependencies with `python -m pip install -r requirements.txt`, then register the CLI with `python -m pip install --no-deps -e .`. Both commands should run inside your activated virtual environment.
 
+### First-time OAuth setup
+
+Run these steps once when you provision a new deployment or rotate credentials:
+
+**Withings**
+
+1. Generate an authorisation URL with `pete-e withings-auth-url`.
+2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
+3. Exchange the code for tokens: `pete-e withings-exchange-code <code>`.
+4. Confirm persistence by running `pete-e refresh-withings`, which refreshes the access token and saves the results to `.withings_tokens.json`.
+
+**Dropbox**
+
+1. Visit the [Dropbox App Console](https://www.dropbox.com/developers/apps) and create a **Scoped App** with at least `files.metadata.read` and `files.content.read` permissions.
+2. Generate the app key and secret, then use the "Generate" button in the console to obtain a long-lived refresh token for the same app.
+3. Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` to your `.env` file alongside the export directory paths.
+
+**Sanity check**
+
+`python -m scripts.check_auth` prints a short summary showing whether Withings and Dropbox tokens are in place or highlights the next steps to finish setup. The script works offline, so you can run it before enabling network access on a new host.
+
 The settings layer exposes derived paths such as `logs/pete_history.log`. When running locally the log directory is created automatically.
 
 ---
