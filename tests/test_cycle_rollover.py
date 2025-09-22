@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date
 from typing import Dict, Tuple
 
 import pytest
@@ -15,6 +15,11 @@ from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application import wger_sender
 from pete_e.domain import narrative_builder
+from pete_e.domain.validation import (
+    BackoffRecommendation,
+    ReadinessSummary,
+    ValidationDecision,
+)
 from pete_e.infrastructure import postgres_dal as postgres_module
 
 
@@ -83,6 +88,47 @@ def stub_telegram(monkeypatch, request):
     monkeypatch.setattr(narrative_builder.PeteVoice, "nudge", lambda tag, sprinkles=None: f"Nudge {tag}")
     request.addfinalizer(postgres_module.close_pool)
     return messages
+
+
+@pytest.fixture(autouse=True)
+def stub_validation(monkeypatch):
+    def fake_validate(dal, start_date):
+        readiness = ReadinessSummary(
+            state="steady",
+            headline="Steady",
+            tip=None,
+            severity="low",
+            breach_ratio=0.0,
+            reasons=[],
+        )
+        recommendation = BackoffRecommendation(
+            needs_backoff=False,
+            severity="none",
+            reasons=[],
+            set_multiplier=1.0,
+            rir_increment=0,
+            metrics={},
+        )
+        return ValidationDecision(
+            needs_backoff=False,
+            applied=False,
+            explanation="Recovery steady.",
+            log_entries=["severity=none"],
+            readiness=readiness,
+            recommendation=recommendation,
+        )
+
+    monkeypatch.setattr(wger_sender, "validate_and_adjust_plan", fake_validate, raising=False)
+    monkeypatch.setattr(
+        wger_sender,
+        "collect_adherence_snapshot",
+        lambda dal, start_date: {
+            "ratio": 0.9,
+            "actual_total": 1000.0,
+            "planned_total": 1100.0,
+        },
+        raising=False,
+    )
 
 
 def test_cycle_rollover_creates_plan_and_exports(monkeypatch, stub_telegram):

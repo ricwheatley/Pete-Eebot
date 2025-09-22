@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 import hashlib
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pete_e.domain.validation import (
     ValidationDecision,
@@ -13,80 +13,24 @@ from pete_e.domain.validation import (
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.plan_rw import build_week_payload
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
-from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
 
 
-def wrangle_week_for_wger(week: dict) -> dict:
-    """
-    Convert normalized DB week structure into Wger API JSON format.
-    """
-    payload = {"days": []}
-    for workout in week.get("workouts", []):
-        day_json = {"day": workout["day_of_week"], "exercises": []}
-        for ex in workout["workouts"]:
-            day_json["exercises"].append({
-                "exercise": ex["exercise_id"],  # Wger expects exercise id
-                "sets": ex["sets"],
-                "reps": ex["reps"],
-                "rir": ex.get("rir"),
-            })
-        payload["days"].append(day_json)
-    return payload
+def _summarize_adherence(adherence_snapshot: Optional[Dict[str, Any]]) -> str:
+    if not adherence_snapshot:
+        return ""
 
-
-def send_plan_week_to_wger(
-    dal: DataAccessLayer,
-    plan_id: int,
-    week_number: int,
-    current_start_date: date,
-    client: WgerClient
-) -> bool:
-    """
-    Validate plan → adjust DB → wrangle into Wger JSON → POST to Wger.
-    """
-    # 1. Validate + adjust
-    decision: ValidationDecision = validate_and_adjust_plan(dal, current_start_date)
-    adherence_snapshot = collect_adherence_snapshot(dal, current_start_date)
-    adherence_summary = ""
-    if adherence_snapshot:
-        try:
-            ratio = float(adherence_snapshot.get("ratio", 0.0))
-            actual_total = float(adherence_snapshot.get("actual_total", 0.0))
-            planned_total = float(adherence_snapshot.get("planned_total", 0.0))
-            adherence_summary = (
-                f" Adherence ratio {ratio:.2f} (actual {actual_total:.1f}kg vs planned {planned_total:.1f}kg)."
-            )
-        except (TypeError, ValueError):
-            adherence_summary = ""
-
-    # 2. Fetch updated plan week
-    plan = dal.get_plan(plan_id)
-    week = next((w for w in plan.get("weeks", []) if w["week_number"] == week_number), None)
-    if not week:
-        log_utils.log_message(f"[send_wger] Plan {plan_id}, week {week_number} not found", "ERROR")
-        return False
-
-    # 3. Wrangle into Wger JSON
-    payload = wrangle_week_for_wger(week)
-    payload["name"] = f"Pete-Eebot Week {week_number}"
-
-    # 4. Send to Wger
     try:
-        response = client.post_plan(payload)
-        adjustment_text = ", ".join(decision.log_entries) if decision.log_entries else "none"
-        log_utils.log_message(
-            f"[send_wger] Sent plan {plan_id} week {week_number} to Wger. "
-            f"Adjustments: {adjustment_text}. Recovery: {decision.explanation}.{adherence_summary} Response: {response}",
-            "INFO"
-        )
-        return True
-    except Exception as e:
-        log_utils.log_message(
-            f"[send_wger] Failed to send plan {plan_id} week {week_number} to Wger: {e}",
-            "ERROR"
-        )
-        return False
+        ratio = float(adherence_snapshot.get("ratio", 0.0))
+        actual_total = float(adherence_snapshot.get("actual_total", 0.0))
+        planned_total = float(adherence_snapshot.get("planned_total", 0.0))
+    except (TypeError, ValueError):
+        return ""
+
+    return (
+        f" Adherence ratio {ratio:.2f} "
+        f"(actual {actual_total:.1f}kg vs planned {planned_total:.1f}kg)."
+    )
 
 def _payload_checksum(payload: Dict[str, Any]) -> str:
     body = json.dumps(payload, sort_keys=True)
@@ -100,6 +44,18 @@ def push_week(
     start_date: date,
 ) -> Dict[str, Any]:
     """Push a single plan week to Wger with idempotency guards."""
+
+    decision: ValidationDecision = validate_and_adjust_plan(dal, start_date)
+    adherence_snapshot = collect_adherence_snapshot(dal, start_date)
+    adherence_summary = _summarize_adherence(adherence_snapshot)
+    log_entries = getattr(decision, "log_entries", None) or []
+    adjustment_text = ", ".join(log_entries) if log_entries else "none"
+    recovery_text = getattr(decision, "explanation", "")
+    recovery_clause = ""
+    if recovery_text:
+        recovery_clause = f" Recovery: {recovery_text}.{adherence_summary}"
+    elif adherence_summary:
+        recovery_clause = adherence_summary
 
     was_exported = False
     checker = getattr(dal, "was_week_exported", None)
@@ -115,7 +71,8 @@ def push_week(
 
     if was_exported:
         log_utils.log_message(
-            f"Wger export already exists for plan {plan_id} week {week}; skipping push.",
+            f"Wger export already exists for plan {plan_id} week {week}; skipping push.{recovery_clause} "
+            f"Adjustments: {adjustment_text}.",
             "INFO",
         )
         return {"status": "skipped", "reason": "already-exported"}
@@ -123,6 +80,8 @@ def push_week(
     payload = build_week_payload(plan_id, week)
     checksum = _payload_checksum(payload)
 
+    response: Any
+    result_status: Dict[str, Any]
     try:
         response = export_week_to_wger(
             payload,
@@ -136,6 +95,12 @@ def push_week(
             "ERROR",
         )
         raise
+
+    log_utils.log_message(
+        f"[wger_export] Sent plan {plan_id} week {week} to Wger.{recovery_clause} "
+        f"Adjustments: {adjustment_text}. Response: {response}",
+        "INFO",
+    )
 
     recorder = getattr(dal, "record_wger_export", None)
     if callable(recorder):
