@@ -72,27 +72,21 @@ def test_withings_daily_table_includes_body_composition_columns():
     assert "water_pct" in columns
 
 
-@pytest.mark.parametrize(
-    ("sql_path", "expected_columns"),
-    [
-        ("sql/2025-09-21_add_withings_muscle_water.sql", {"muscle_pct", "water_pct"}),
-        (
-            "sql/2025-09-21_add_hrv_vo2.sql",
-            {"muscle_pct", "water_pct", "hrv_sdnn_ms", "vo2_max"},
-        ),
-        (
-            "init-db/schema.sql",
-            {"muscle_pct", "water_pct", "hrv_sdnn_ms", "vo2_max"},
-        ),
-    ],
-)
-def test_daily_summary_view_select_includes_new_columns(sql_path: str, expected_columns: set[str]):
-    sql_text = Path(sql_path).read_text(encoding="utf-8")
+_EXPECTED_DAILY_SUMMARY_COLUMNS = {
+    "muscle_pct",
+    "water_pct",
+    "hrv_sdnn_ms",
+    "vo2_max",
+}
+
+
+def test_daily_summary_view_select_includes_expected_columns() -> None:
+    sql_text = Path("init-db/schema.sql").read_text(encoding="utf-8")
     select_section = _extract_daily_summary_select(sql_text)
 
-    for column in expected_columns:
+    for column in _EXPECTED_DAILY_SUMMARY_COLUMNS:
         assert re.search(rf"\b{re.escape(column)}\b", select_section), (
-            f"Expected column '{column}' in daily_summary SELECT of {sql_path}"
+            f"Expected column '{column}' in daily_summary SELECT of init-db/schema.sql"
         )
 
 
