@@ -42,8 +42,11 @@ class StubDal:
             "start_date": plan_start,
             "weeks": 8,
         }
-        self._plan_rows = plan_rows
-        self._lift_history = lift_history
+        self._plan_rows = [dict(row) for row in plan_rows]
+        self._lift_history = {
+            key: [dict(entry) for entry in entries]
+            for key, entries in lift_history.items()
+        }
         self._metrics_recent = metrics_recent
         self._metrics_baseline = metrics_baseline
         self._historical_rows = historical_rows
@@ -81,6 +84,11 @@ class StubDal:
 
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
         self.updated_targets.extend(updates)
+        for update in updates:
+            workout_id = update.get("workout_id")
+            for row in self._plan_rows:
+                if row.get("id") == workout_id:
+                    row["target_weight_kg"] = update.get("target_weight_kg")
 
     def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
         self.backoff_calls.append(
@@ -195,4 +203,53 @@ def test_weekly_calibration_applies_backoff_when_recovery_poor(plan_rows, lift_h
     assert call["week_start"] == result.week_start
     assert "severity" in " ".join(result.validation.log_entries)
     assert "recalibrated" in result.message
+    assert dal.validation_logs
+
+
+def test_weekly_calibration_is_idempotent_when_no_progression_required(plan_rows):
+    reference = date(2025, 9, 7)
+    dal = _build_stub(
+        reference,
+        plan_rows,
+        lift_history={},
+        recent_hr=50.0,
+        recent_sleep=420.0,
+        baseline_hr=50.0,
+        baseline_sleep=420.0,
+        historical_adjust=False,
+    )
+
+    orch = Orchestrator(dal=dal)
+    result = orch.run_weekly_calibration(reference_date=reference)
+
+    assert result.progression.updates == []
+    assert result.progression.persisted is False
+    assert dal.updated_targets == []
+    assert "No load adjustments required" in result.message
+    assert result.validation.needs_backoff is False
+    assert not dal.backoff_calls
+
+
+def test_weekly_calibration_recommends_backoff_when_dal_cannot_apply(plan_rows, lift_history):
+    reference = date(2025, 9, 7)
+    dal = _build_stub(
+        reference,
+        plan_rows,
+        lift_history,
+        recent_hr=60.0,
+        recent_sleep=360.0,
+        baseline_hr=50.0,
+        baseline_sleep=420.0,
+        historical_adjust=True,
+    )
+    dal.apply_plan_backoff = None
+
+    orch = Orchestrator(dal=dal)
+    result = orch.run_weekly_calibration(reference_date=reference)
+
+    assert result.validation.needs_backoff is True
+    assert result.validation.applied is False
+    assert "dal_missing_backoff" in result.validation.log_entries
+    assert not dal.backoff_calls
+    assert "back-off" in result.validation.explanation.lower()
     assert dal.validation_logs
