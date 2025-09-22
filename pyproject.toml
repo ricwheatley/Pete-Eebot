@@ -5,16 +5,17 @@ description = "Personal health and fitness orchestrator."
 
 # These are the essential packages needed to RUN the application
 dependencies = [
-    "psycopg[binary,pool]>=3.2.0",
+    "psycopg[binary,pool]==3.2.0",
     "pydantic==2.8.2",
     "pydantic-settings==2.3.4",
     "requests==2.32.3",
     "typer[all]==0.12.3",
     "click==8.1.7",
+    "rich==13.7.1",
     "Jinja2==3.1.4",
     "python-dateutil==2.9.0.post0",
     "tenacity==8.5.0",
-    "dropbox>=11.36.0",
+    "dropbox==11.36.0",
 ]
 
 [project.optional-dependencies]
@@ -22,13 +23,12 @@ dependencies = [
 # Install with: pip install .[dev]
 dev = [
     "pytest==8.2.2",
-    "rich==13.7.1",
     "twine==5.1.1",
     "ruff==0.5.0",
 ]
 
 [project.scripts]
-pete = "pete_e.cli.messenger:app"
+pete = "pete_e.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
