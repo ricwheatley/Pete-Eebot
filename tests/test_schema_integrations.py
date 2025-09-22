@@ -65,7 +65,7 @@ def _extract_daily_summary_select(sql_text: str) -> str:
 
 
 def test_withings_daily_table_includes_body_composition_columns():
-    schema_sql = Path("init-db/schmea.sql").read_text(encoding="utf-8")
+    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
     columns = _extract_table_columns(schema_sql, "withings_daily")
 
     assert "muscle_pct" in columns
@@ -81,7 +81,7 @@ def test_withings_daily_table_includes_body_composition_columns():
             {"muscle_pct", "water_pct", "hrv_sdnn_ms", "vo2_max"},
         ),
         (
-            "init-db/schmea.sql",
+            "init-db/schema.sql",
             {"muscle_pct", "water_pct", "hrv_sdnn_ms", "vo2_max"},
         ),
     ],

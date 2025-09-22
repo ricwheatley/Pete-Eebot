@@ -58,7 +58,6 @@ The remainder of this README assumes you chose the virtual environment path.
 1. Copy `.env.sample` to `.env` and populate the secrets.
 2. Provide Dropbox credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`) and the folder paths produced by Health Auto Export (`DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`).
 3. Fill in the remaining Withings, Telegram, wger, and Postgres values. The configuration module will construct `DATABASE_URL` automatically on load.
-   *Legacy note:* older revisions referenced a `GH_SECRETS_TOKEN`; the GitHub integration has been removed so the variable can be dropped from existing `.env` files.
 4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
 5. Install the pinned dependencies with `python -m pip install -r requirements.txt`, then register the CLI with `python -m pip install --no-deps -e .`. Both commands should run inside your activated virtual environment.
 
@@ -99,6 +98,19 @@ The project ships a Typer application under the `pete-e` entry point. Common com
 * `pete-e status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
 * `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
 * `pete-e message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
+
+### Telegram bot commands
+
+The short-lived listener exposed via `pete-e telegram --listen-once` polls for bot commands and responds using the same narratives as the CLI. The offset file is persisted next to the application logs so repeated invocations pick up where the last poll ended (the cron examples below reuse this helper).
+
+Supported commands:
+
+* `/summary` – builds the latest daily summary and replies in chat if content is available.
+* `/sync` – runs a one-day end-to-end sync (Dropbox, Withings, wger) and replies with ingest and messaging outcomes.
+
+### Nudges (proactive reminders)
+
+When the daily sync succeeds for a single-day window the orchestrator calls `dispatch_nudges`, which evaluates recent metrics and sends short Telegram reminders. Current heuristics cover stale Withings weigh-ins, multi-day high strain streaks that warrant recovery, and personal-best strength sessions worth celebrating. Each nudge draws from the phrase library (for example the `#WithingsCheck` tag) so the reminders stay varied. Toggle environment overrides such as `WITHINGS_ALERT_REAUTH` or optional `NUDGE_*` settings when you want to quiet specific alerts.
 
 ### Scheduled Messaging
 

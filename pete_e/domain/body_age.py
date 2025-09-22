@@ -1,15 +1,13 @@
-# (Functional) Computes “body age” metric from historical data (7-day averages) – currently not wired into main flow (DB procedure is used instead).
+"""Analytical body-age helpers for Pete-E.
 
-"""Body Age calculation for Pete-E.
-
-This module mirrors the PostgreSQL implementation in ``sp_upsert_body_age``.
-The database procedure remains the source of truth (it is invoked from the
-Postgres DAL), but keeping this Python helper in sync is useful for ad-hoc
-analysis or notebooks.  As the Apple Health ingestion moved to a normalised
-schema, records now tend to expose "flat" keys (``steps``,
-``sleep_asleep_minutes`` …) instead of the nested dictionaries that the first
-iteration of the function expected.  The helper therefore accepts either
-structure.
+Production body-age values are computed inside PostgreSQL via the
+``sp_upsert_body_age`` stored procedure (invoked by
+``PostgresDal.compute_body_age_for_date``). The Python implementation below
+mirrors that logic so notebooks and ad-hoc analysis can stay in sync with the
+database output. As the Apple Health ingestion moved to a normalised schema,
+records now tend to expose "flat" keys (``steps``, ``sleep_asleep_minutes`` …)
+instead of the nested dictionaries that the first iteration of the function
+expected. The helper therefore accepts either structure.
 """
 
 from dataclasses import dataclass
