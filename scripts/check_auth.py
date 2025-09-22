@@ -19,6 +19,7 @@ from typing import Mapping
 
 
 TOKEN_FILE_NAME = ".withings_tokens.json"
+TOKEN_FILE_PATH = Path.home() / ".config" / "pete_eebot" / TOKEN_FILE_NAME
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
                 name=name,
                 state="ok",
                 message=(
-                    f"Refresh token stored in {TOKEN_FILE_NAME} (updated {updated}). "
+                    f"Refresh token stored in {TOKEN_FILE_PATH} (updated {updated}). "
                     "Run `pete-e refresh-withings` if you want to confirm the stored tokens."
                 ),
             )
@@ -107,7 +108,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
             name=name,
             state="action_required",
             message=(
-                f"{TOKEN_FILE_NAME} is present but missing a refresh_token. "
+                f"{TOKEN_FILE_PATH} is present but missing a refresh_token. "
                 "Re-run `pete-e withings-auth-url` and `pete-e withings-exchange-code <code>` "
                 "to capture a complete token set."
             ),
@@ -120,7 +121,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
             message=(
                 "Refresh token only lives in .env. Persist it by running "
                 "`pete-e refresh-withings` so future syncs can load "
-                f"{TOKEN_FILE_NAME} without manual edits."
+                f"{TOKEN_FILE_PATH} without manual edits."
             ),
         )
 
@@ -198,7 +199,7 @@ def main() -> int:
     # Environment variables win over file-based values so ad-hoc overrides work.
     env.update({key: value for key, value in os.environ.items()})
 
-    token_path = project_root / TOKEN_FILE_NAME
+    token_path = TOKEN_FILE_PATH
 
     statuses = [
         determine_withings_status(env, token_path),

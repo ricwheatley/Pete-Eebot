@@ -15,7 +15,7 @@ LOG_FILE="${LOG_FILE:-${LOG_DIR}/backup_db.log}"
 RETENTION_WEEKS="${RETENTION_WEEKS:-8}"
 
 ENV_FILE="${ENV_FILE:-${PROJECT_ROOT}/.env}"
-TOKENS_FILE="${TOKENS_FILE:-${PROJECT_ROOT}/.withings_tokens.json}"
+TOKENS_FILE="${TOKENS_FILE:-${HOME}/.config/pete_eebot/.withings_tokens.json}"
 
 mkdir -p "${DB_BACKUP_DIR}" "${SECRETS_BACKUP_DIR}" "${LOG_DIR}"
 chmod 700 "${BACKUP_ROOT}" "${DB_BACKUP_DIR}" "${SECRETS_BACKUP_DIR}"
