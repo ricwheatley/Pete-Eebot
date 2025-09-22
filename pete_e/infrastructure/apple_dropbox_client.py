@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import dropbox
 from dropbox.exceptions import AuthError, DropboxException
@@ -36,6 +36,11 @@ class AppleDropboxClient:
 
         self._request_timeout = request_timeout
         self._account_display_name: Optional[str] = None
+        # Track Dropbox cursors and the latest modification timestamp we have
+        # seen per folder.  This allows incremental listings without re-reading
+        # entire directories on subsequent syncs.
+        self._folder_cursors: Dict[str, str] = {}
+        self._folder_latest_sync: Dict[str, datetime] = {}
 
         try:
             self.dbx = dropbox.Dropbox(
@@ -68,6 +73,10 @@ class AppleDropboxClient:
                 if not result.has_more:
                     break
                 result = self.dbx.files_list_folder_continue(result.cursor)
+
+            # Store the final cursor so that future calls can request only
+            # incremental changes.
+            self._folder_cursors[folder_path] = result.cursor
             return all_entries
         except dropbox.exceptions.ApiError as e:
             logging.error(f"Error listing Dropbox folder '{folder_path}': {e}")
@@ -79,22 +88,65 @@ class AppleDropboxClient:
         Returns a list of (modification_time, file_path) sorted chronologically.
         """
         logging.info(f"Searching for new files since {since_datetime.isoformat()} in '{folder_path}'")
-        all_files = self._get_all_files(folder_path)
-        
-        new_files = []
+
+        all_files: List[FileMetadata]
+        cursor = self._folder_cursors.get(folder_path)
+        last_sync_time = self._folder_latest_sync.get(folder_path)
+
+        use_incremental = (
+            cursor is not None
+            and last_sync_time is not None
+            and since_datetime >= last_sync_time
+        )
+
+        if use_incremental:
+            try:
+                all_files = []
+                result: ListFolderResult = self.dbx.files_list_folder_continue(cursor)
+                while True:
+                    all_files.extend(
+                        entry
+                        for entry in result.entries
+                        if isinstance(entry, FileMetadata)
+                    )
+                    if not result.has_more:
+                        break
+                    result = self.dbx.files_list_folder_continue(result.cursor)
+
+                # Update cursor for subsequent incremental listings.
+                self._folder_cursors[folder_path] = result.cursor
+            except DropboxException as e:
+                logging.warning(
+                    "Incremental Dropbox listing for '%s' failed (%s); falling back to full scan.",
+                    folder_path,
+                    e,
+                )
+                all_files = self._get_all_files(folder_path)
+        else:
+            all_files = self._get_all_files(folder_path)
+
+        new_files: List[Tuple[datetime, str]] = []
+        latest_seen = since_datetime
         for entry in all_files:
-            is_export_file = entry.name.startswith("HealthAutoExport") and entry.name.lower().endswith((".json", ".zip"))
-            
             modified_time = entry.client_modified
-            
+
             if modified_time.tzinfo is None:
                 modified_time = modified_time.replace(tzinfo=timezone.utc)
 
+            if modified_time > latest_seen:
+                latest_seen = modified_time
+
+            is_export_file = entry.name.startswith("HealthAutoExport") and entry.name.lower().endswith((".json", ".zip"))
+
             if is_export_file and modified_time > since_datetime:
                 new_files.append((modified_time, entry.path_display))
-        
+
+        # Track the most recent timestamp processed so that subsequent calls can
+        # rely on incremental updates.
+        self._folder_latest_sync[folder_path] = latest_seen
+
         new_files.sort(key=lambda item: item[0])
-        
+
         logging.info(f"Found {len(new_files)} new files in '{folder_path}'.")
         return new_files
 
