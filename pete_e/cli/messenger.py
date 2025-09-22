@@ -16,7 +16,7 @@ import typer
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
-from pete_e.domain import body_age
+from pete_e.domain import body_age, narrative_builder
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -166,6 +166,38 @@ def _format_hrv_line(dal: Any, target_date: date) -> str | None:
         line += f" (7d avg {avg_previous:.0f} ms)"
     return line
 
+
+def _collect_trend_samples(dal: Any, target_date: date) -> List[tuple[date, dict]]:
+    if dal is None or not hasattr(dal, "get_historical_data"):
+        return []
+    start = target_date - timedelta(days=89)
+    try:
+        rows = dal.get_historical_data(start, target_date)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        log_utils.log_message(f"Failed to load trend history: {exc}", "WARN")
+        return []
+    samples: List[tuple[date, dict]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        row_date = _coerce_summary_date(row.get("date"))
+        if row_date is None or row_date > target_date:
+            continue
+        samples.append((row_date, row))
+    samples.sort(key=lambda item: item[0])
+    return samples
+
+
+def _build_trend_paragraph(dal: Any, target_date: date) -> str | None:
+    samples = _collect_trend_samples(dal, target_date)
+    if not samples:
+        return None
+    lines = narrative_builder.compute_trend_lines(samples, as_of=target_date, limit=2)
+    if not lines:
+        return None
+    sentences = ["Trend check: " + lines[0]] + lines[1:]
+    return " ".join(sentences)
+
 def _append_line(base: str | None, addition: str) -> str:
     base_text = "" if base is None else str(base)
     if not addition:
@@ -215,6 +247,10 @@ def build_daily_summary(
     hrv_line = _format_hrv_line(getattr(orch, "dal", None), target)
     if hrv_line:
         summary_text = _append_line(summary_text, hrv_line)
+
+    trend_paragraph = _build_trend_paragraph(getattr(orch, 'dal', None), target)
+    if trend_paragraph:
+        summary_text = _append_line(summary_text, trend_paragraph)
 
     return summary_text
 
