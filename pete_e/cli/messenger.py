@@ -441,12 +441,15 @@ def ingest_apple() -> None:
 
 @app.command()
 def plan(
-    weeks: Annotated[int, typer.Option(help="The duration of the new plan in weeks.")] = 4,
+    weeks: Annotated[
+        int,
+        typer.Option(
+            help="The duration of the new plan in weeks (only 4-week plans are currently supported)."
+        ),
+    ] = 4,
     start_date_str: Annotated[str, typer.Option("--start-date", help="Start date in YYYY-MM-DD format. Defaults to next Monday.")] = None,
 ) -> None:
-    """
-    Generate and deploy a new training plan for the next block.
-    """
+    """Generate and deploy the next 4-week training plan block."""
     if start_date_str:
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
     else:
