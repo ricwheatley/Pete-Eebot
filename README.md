@@ -95,7 +95,7 @@ The project ships a Typer application under the `pete-e` entry point. Common com
 * `pete-e sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
 * `pete-e withings-sync` â€“ executes the Withings-only branch of the pipeline.
 * `pete-e status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
-* `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block.
+* `pete-e plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
 * `pete-e message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
 
 ### Scheduled Messaging

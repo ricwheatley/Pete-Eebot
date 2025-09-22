@@ -185,3 +185,50 @@ def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
     assert len(exports) == 1
     assert len(stub_telegram) == 1  # no duplicate notifications
     assert dal.saved_plan_calls == 1
+
+
+def test_generate_plan_rejects_unsupported_length(monkeypatch):
+    build_calls: list[tuple[object, ...]] = []
+
+    def fake_build(*args, **kwargs):  # pragma: no cover - should not be invoked
+        build_calls.append((args, kwargs))
+        return 42
+
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build)
+
+    class RejectDal:
+        def __init__(self) -> None:
+            self.refresh_called = False
+
+        def refresh_plan_view(self) -> None:  # pragma: no cover - should not run
+            self.refresh_called = True
+
+    orch = Orchestrator(dal=RejectDal())
+    result = orch.generate_and_deploy_next_plan(start_date=date(2025, 1, 6), weeks=6)
+
+    assert result == -1
+    assert build_calls == []
+    assert orch.dal.refresh_called is False
+
+
+def test_cycle_rollover_rejects_unsupported_length(monkeypatch, stub_telegram):
+    build_calls: list[tuple[object, ...]] = []
+
+    def fake_build(*args, **kwargs):  # pragma: no cover - should not be invoked
+        build_calls.append((args, kwargs))
+        return 42
+
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build)
+
+    dal = FakeDal()
+    orch = Orchestrator(dal=dal)
+    reference = date(2025, 9, 21)
+
+    result = orch.run_cycle_rollover(reference_date=reference, weeks=6)
+
+    assert result.plan_id is None
+    assert result.created is False
+    assert result.exported is False
+    assert build_calls == []
+    assert dal.saved_plan_calls == 0
+    assert stub_telegram == []

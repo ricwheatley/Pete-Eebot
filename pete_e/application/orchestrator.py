@@ -1244,16 +1244,26 @@ class Orchestrator:
 
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int) -> int:
         """
-        Builds and deploys a new multi-week training plan.
+        Builds and deploys the next training plan cycle.
 
-        This version delegates directly to build_block(), which currently
-        constructs and saves a fixed 4-week plan. The 'weeks' argument is
-        accepted for API compatibility but not yet used in build_block.
+        Notes
+        -----
+        Only 4-week blocks are currently supported. Requests for a different
+        duration are rejected to avoid implying that variable-length plans are
+        available.
         """
         log_utils.log_message(
             f"Generating new {weeks}-week plan starting {start_date.isoformat()}",
             "INFO"
         )
+
+        if weeks != 4:
+            log_utils.log_message(
+                "Requested plan length of "
+                f"{weeks} weeks is not supported (only 4-week plans are available).",
+                "ERROR",
+            )
+            return -1
 
         try:
             # Build and persist the plan in one step
