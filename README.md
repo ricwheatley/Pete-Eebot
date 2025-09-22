@@ -42,13 +42,24 @@ Pete-Eebot is a personal health and fitness orchestrator. The application ingest
 
 ---
 
+## Deployment Paths
+
+Two lightweight options are available for running Pete Eebot:
+
+1. **Python virtual environment (recommended).** Follows the Raspberry Pi-friendly guide in [`docs/venv_setup.md`](docs/venv_setup.md) using the pinned [`requirements.txt`](requirements.txt). This keeps memory usage low and avoids cross-architecture Docker images.
+2. **Existing Docker tooling.** The legacy `Dockerfile` targets x86_64 hosts and pairs with `docker-compose.yml` for Postgres only. Use this path when you already operate containerised workloads on a non-ARM server.
+
+The remainder of this README assumes you chose the virtual environment path.
+
+---
+
 ## Configuration
 
 1. Copy `.env.sample` to `.env` and populate the secrets.
 2. Provide Dropbox credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`) and the folder paths produced by Health Auto Export (`DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`).
 3. Fill in the remaining Withings, Telegram, wger, and Postgres values. The configuration module will construct `DATABASE_URL` automatically on load.
 4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
-5. Run `pip install .[dev]` (or use your preferred virtual environment manager) to install the package and its development dependencies.
+5. Install the pinned dependencies with `python -m pip install -r requirements.txt`, then register the CLI with `python -m pip install --no-deps -e .`. Both commands should run inside your activated virtual environment.
 
 The settings layer exposes derived paths such as `logs/pete_history.log`. When running locally the log directory is created automatically.
 
