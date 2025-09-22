@@ -130,6 +130,40 @@ Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete
 
 ---
 
+## Backups
+
+SD cards fail without warning, so keep the database and credentials replicated to sturdier storage (USB SSD, NAS share, or another host). The repository includes `scripts/backup_db.sh` to automate a weekly rotation that remains silent during successful runs and writes a timestamped record to `logs/backup_db.log`.
+
+### Configuration
+
+* Choose a destination owned by the service account (for example, mount an external disk at `/mnt/pete-eebot-backups`) and export it as `BACKUP_ROOT`. The script defaults to `<project>/backups` when the variable is omitted.
+* Optional knobs:
+  * `RETENTION_WEEKS` (default `8`) controls how many weeks of dumps and secret copies are retained.
+  * `LOG_FILE`, `DB_BACKUP_DIR`, and `SECRETS_BACKUP_DIR` override the derived locations when you want the log on the SD card but the artifacts on external storage.
+* The helper reads `.env` for the Postgres connection values and copies both `.env` and `.withings_tokens.json` into the secrets directory. Missing files are skipped with a warning so the backup continues.
+
+The script enforces `umask 077` and normalises directory permissions to `700`, with individual dump and secret copies restricted to `600`. Any existing `latest.dump` or `.env.latest` symlink is updated after each run for quick restores.
+
+### Scheduling
+
+Add the job to cron once the destination is available:
+
+```
+0 2 * * 0 BACKUP_ROOT=/mnt/pete-eebot-backups /home/pi/Pete-Eebot/scripts/backup_db.sh >> /home/pi/Pete-Eebot/logs/cron.log 2>&1
+```
+
+By default the routine writes its own audit trail to `logs/backup_db.log`. When cron redirects stdout/stderr (as shown above) you also get a one-line summary in the shared `cron.log` file.
+
+### Restoring
+
+1. Pick a dump from the backup location (for example, `postgres/pete_eebot_20240107T020000Z.dump`) and restore it with `pg_restore --clean --if-exists --dbname pete_eebot postgres/pete_eebot_20240107T020000Z.dump`.
+2. Copy the desired `.env.TIMESTAMP` and `.withings_tokens.json.TIMESTAMP` back into the project root and drop the `.TIMESTAMP` suffix once you verify the contents.
+3. Restart any long-running jobs or services so they pick up the refreshed credentials.
+
+All restore commands should be executed on a trusted machine because the artifacts contain live secrets.
+
+---
+
 ## End-to-End Automation Flows
 
 * `run_end_to_end_day(days=1, summary_date=None)` - executes the multi-source daily ingest via the orchestrator and ensures the previous day's Telegram summary is dispatched exactly once. The helper returns a `DailyAutomationResult` with per-source statuses and whether a summary was attempted, making it safe for cron jobs and CLI wrappers to inspect outcomes without reimplementing business logic.
