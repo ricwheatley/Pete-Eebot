@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from urllib.parse import urlencode
 
 from pete_e.config import settings
+from pete_e.infrastructure.log_utils import log_message
 def _unwrap_secret(value):
     if isinstance(value, SecretStr):
         return value.get_secret_value()
@@ -49,6 +50,11 @@ def exchange_code_for_tokens(code: str):
     # Save to file
     with open(TOKEN_FILE, "w") as f:
         json.dump(tokens, f, indent=2)
+    # Lock down permissions to avoid leaking OAuth credentials.
+    try:
+        os.chmod(TOKEN_FILE, 0o600)
+    except OSError as exc:
+        log_message(f"Could not set permissions on {TOKEN_FILE}: {exc}", "WARN")
 
     return tokens
 

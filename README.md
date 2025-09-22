@@ -71,6 +71,7 @@ Run these steps once when you provision a new deployment or rotate credentials:
 2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
 3. Exchange the code for tokens: `pete-e withings-exchange-code <code>`.
 4. Confirm persistence by running `pete-e refresh-withings`, which refreshes the access token and saves the results to `.withings_tokens.json`.
+   The helper locks the file down to owner-only permissions (`chmod 600`) so the stored tokens stay private.
 
 **Dropbox**
 
