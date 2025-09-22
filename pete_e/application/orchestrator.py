@@ -620,6 +620,56 @@ class Orchestrator:
             week_start=week_start,
         )
 
+    # TODO: Replace the fallback logic when DataAccessLayer.get_plan has a full
+    #       implementation that returns the plan structure from the database.
+    def get_plan(self, plan_id: int) -> Dict[str, Any]:
+        """Return the stored training plan or warn if the DAL stub is invoked."""
+
+        getter = getattr(self.dal, "get_plan", None)
+        if not callable(getter):
+            log_utils.log_message(
+                "Data access layer does not expose get_plan(); returning empty plan.",
+                "WARN",
+            )
+            return {}
+
+        try:
+            plan_data = getter(plan_id)
+        except NotImplementedError:
+            log_utils.log_message(
+                "Data access layer get_plan() raised NotImplementedError; TODO: implement plan retrieval.",
+                "WARN",
+            )
+            return {}
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to retrieve plan {plan_id}: {exc}",
+                "ERROR",
+            )
+            return {}
+
+        if not plan_data:
+            log_utils.log_message(
+                (
+                    f"Data access layer get_plan() returned no data for plan {plan_id}. "
+                    "TODO: implement full plan retrieval."
+                ),
+                "WARN",
+            )
+            return {}
+
+        if isinstance(plan_data, dict):
+            return dict(plan_data)
+
+        log_utils.log_message(
+            (
+                f"Data access layer get_plan() returned unexpected type {type(plan_data)!r} "
+                f"for plan {plan_id}; expected a mapping."
+            ),
+            "WARN",
+        )
+        return {}
+
 
     def send_telegram_message(self, message: str) -> bool:
         """Sends a message using the Telegram sender."""
@@ -958,11 +1008,18 @@ class Orchestrator:
                 day_logs = wger_logs_by_date.get(target_iso, [])
                 if day_logs:
                     wger_logs_found = True
-                    for i, log in enumerate(day_logs, start=1):
+                    exercise_counters: Dict[Any, int] = {}
+                    for log in day_logs:
+                        exercise_key = log.get("exercise_id")
+                        if exercise_key is None:
+                            exercise_key = ("__missing__", len(exercise_counters))
+                        set_number = exercise_counters.get(exercise_key, 0) + 1
+                        exercise_counters[exercise_key] = set_number
+
                         self.dal.save_wger_log(
                             day=target_day,
                             exercise_id=log.get("exercise_id"),
-                            set_number=i,
+                            set_number=set_number,
                             reps=log.get("reps"),
                             weight_kg=log.get("weight"),
                             rir=log.get("rir"),
