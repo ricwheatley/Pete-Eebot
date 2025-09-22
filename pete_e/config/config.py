@@ -53,8 +53,6 @@ class Settings(BaseSettings):
     DROPBOX_APP_SECRET: str
     DROPBOX_REFRESH_TOKEN: str
     
-    GH_SECRETS_TOKEN: SecretStr
-
     # --- SANITY CHECK ALERTS ---
     APPLE_MAX_STALE_DAYS: int = 3
     WITHINGS_ALERT_REAUTH: bool = True
