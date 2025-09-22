@@ -79,6 +79,33 @@ The daily path chains a sync before messaging and respects the dispatch ledger, 
 
 
 
+### Cron on Raspberry Pi
+
+When you deploy on a Raspberry Pi the CLI is installed as `pete-e`, so you can drop a ready-made cron file into `/etc/cron.d/pete-eebot` (or use `crontab -e`). The example below assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete-e`, and `python3` resolves to the interpreter you used during setup. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
+
+```
+SHELL=/bin/bash
+PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin
+MAILTO=""
+
+@reboot   sleep 120 && cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e sync --days 3 --retries 3 >> logs/cron.log 2>&1
+5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e sync --days 1 --retries 3 && /home/pi/.local/bin/pete-e message --summary --send >> logs/cron.log 2>&1
+0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.weekly_calibration >> logs/cron.log 2>&1
+5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e message --plan --send >> logs/cron.log 2>&1
+* * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete-e telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
+```
+
+The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.weekly_calibration` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
+
+An optional helper script ships in `scripts/install_cron_examples.sh` to emit the same schedule with override hooks. For example:
+
+```
+./scripts/install_cron_examples.sh | sudo tee /etc/cron.d/pete-eebot
+```
+
+Override `PETE_BIN`, `PYTHON_BIN`, or `PROJECT_DIR` when your paths differ. Ensure the repo contains a writable `logs/` directory so the cron jobs can append to `logs/cron.log`.
+
+
 Example:
 
 ```
