@@ -134,3 +134,12 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
         )
 
     return plan_id
+
+# Backward compatibility for orchestrator/tests that still expect build_block
+def build_block(dal, start_date, weeks: int = 4) -> int:
+    """
+    Compatibility shim. Ignore `dal` and call build_training_block.
+    """
+    return build_training_block(start_date, weeks)
+
+
