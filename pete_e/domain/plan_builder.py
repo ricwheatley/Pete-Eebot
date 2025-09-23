@@ -1,364 +1,136 @@
+# pete_e/domain/plan_builder.py
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+import random
 from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Any, List
 
-from pete_e.config import settings
-from pete_e.domain.data_access import DataAccessLayer
-from pete_e.domain.validation import ensure_muscle_balance, validate_plan_structure
-
-INTENSITY_SEQUENCE: Tuple[str, ...] = ("light", "medium", "heavy", "deload")
-INTENSITY_SETTINGS: Dict[str, Dict[str, Any]] = {
-    "light": {"set_multiplier": 0.85, "rir_adjust": 1, "rep_bias": "high"},
-    "medium": {"set_multiplier": 1.0, "rir_adjust": 0, "rep_bias": "mid"},
-    "heavy": {"set_multiplier": 1.15, "rir_adjust": -1, "rep_bias": "low"},
-    "deload": {"set_multiplier": 0.60, "rir_adjust": 1, "rep_bias": "high"},
-}
-
-_VO2_METRIC_KEYS: Tuple[str, ...] = (
-    "vo2_max",
-    "vo2_ml_kg_min",
-    "cardio_fitness_score",
-    "cardio_vo2_max",
-)
+from pete_e.domain import schedule_rules
+from pete_e.domain import validation
+from pete_e.infrastructure import plan_rw
 
 
-@dataclass(frozen=True)
-class SessionSlot:
-    pool: str
-    slot: str
-    base_sets: int
-    reps_low: int
-    reps_high: int
-    base_rir: Optional[int]
-    min_sets: int = 1
+def _pick_random(ids: List[int], k: int) -> List[int]:
+    if not ids:
+        return []
+    if k >= len(ids):
+        return random.sample(ids, len(ids))
+    return random.sample(ids, k)
 
 
-EXERCISE_POOLS: Dict[str, Tuple[Dict[str, Any], ...]] = {
-    "push_compound": (
-        {"id": 1001, "muscle_group": "upper_push"},
-        {"id": 1002, "muscle_group": "upper_push"},
-        {"id": 1003, "muscle_group": "upper_push"},
-        {"id": 1004, "muscle_group": "upper_push"},
-    ),
-    "push_accessory": (
-        {"id": 1101, "muscle_group": "upper_push"},
-        {"id": 1102, "muscle_group": "upper_push"},
-        {"id": 1103, "muscle_group": "upper_push"},
-        {"id": 1104, "muscle_group": "upper_push"},
-    ),
-    "pull_compound": (
-        {"id": 2001, "muscle_group": "upper_pull"},
-        {"id": 2002, "muscle_group": "upper_pull"},
-        {"id": 2003, "muscle_group": "upper_pull"},
-        {"id": 2004, "muscle_group": "upper_pull"},
-    ),
-    "pull_accessory": (
-        {"id": 2101, "muscle_group": "upper_pull"},
-        {"id": 2102, "muscle_group": "upper_pull"},
-        {"id": 2103, "muscle_group": "upper_pull"},
-        {"id": 2104, "muscle_group": "upper_pull"},
-    ),
-    "lower_compound": (
-        {"id": 3001, "muscle_group": "lower"},
-        {"id": 3002, "muscle_group": "lower"},
-        {"id": 3003, "muscle_group": "lower"},
-        {"id": 3004, "muscle_group": "lower"},
-    ),
-    "lower_accessory": (
-        {"id": 3101, "muscle_group": "lower"},
-        {"id": 3102, "muscle_group": "lower"},
-        {"id": 3103, "muscle_group": "lower"},
-        {"id": 3104, "muscle_group": "lower"},
-    ),
-    "core": (
-        {"id": 5001, "muscle_group": "core"},
-        {"id": 5002, "muscle_group": "core"},
-        {"id": 5003, "muscle_group": "core"},
-        {"id": 5004, "muscle_group": "core"},
-    ),
-    "conditioning": (
-        {"id": 6001, "muscle_group": "conditioning"},
-        {"id": 6002, "muscle_group": "conditioning"},
-        {"id": 6003, "muscle_group": "conditioning"},
-        {"id": 6004, "muscle_group": "conditioning"},
-    ),
-}
+def build_training_block(start_date: date, weeks: int = 4) -> int:
+    """
+    Build a 4-week block aligned to the blueprint:
+      - Mon Bench (after Blaze)
+      - Tue Squat (before Blaze)
+      - Thu OHP (after Blaze)
+      - Fri Deadlift (before Blaze)
+    Each session = main lift + 2 assistance + 1 core.
+    Blaze (id=1630) is added at fixed times.
+    """
+    if weeks != 4:
+        raise ValueError("Only 4-week blocks are supported")
 
-SESSION_BLUEPRINT: Tuple[Dict[str, Any], ...] = (
-    {
-        "day_of_week": 1,
-        "focus": "upper_push",
-        "slots": (
-            SessionSlot("push_compound", "main", 4, 6, 8, 2, min_sets=2),
-            SessionSlot("push_accessory", "secondary", 3, 10, 12, 2),
-            SessionSlot("pull_accessory", "support", 2, 10, 12, 2),
-            SessionSlot("core", "auxiliary", 3, 12, 15, 3),
-        ),
-    },
-    {
-        "day_of_week": 2,
-        "focus": "lower",
-        "slots": (
-            SessionSlot("lower_compound", "main", 4, 6, 9, 2, min_sets=2),
-            SessionSlot("lower_accessory", "secondary", 3, 8, 12, 2),
-            SessionSlot("push_accessory", "support", 2, 10, 12, 2),
-            SessionSlot("core", "auxiliary", 3, 10, 15, 3),
-        ),
-    },
-    {
-        "day_of_week": 4,
-        "focus": "upper_pull",
-        "slots": (
-            SessionSlot("pull_compound", "main", 4, 6, 8, 2, min_sets=2),
-            SessionSlot("pull_accessory", "secondary", 3, 8, 12, 2),
-            SessionSlot("lower_accessory", "support", 2, 8, 12, 2),
-            SessionSlot("core", "auxiliary", 3, 12, 15, 3),
-        ),
-    },
-    {
-        "day_of_week": 5,
-        "focus": "posterior_chain",
-        "slots": (
-            SessionSlot("lower_compound", "main", 3, 6, 8, 2, min_sets=2),
-            SessionSlot("pull_accessory", "secondary", 3, 8, 12, 2),
-            SessionSlot("push_accessory", "support", 2, 10, 12, 2),
-            SessionSlot("core", "auxiliary", 3, 10, 15, 3),
-            SessionSlot("conditioning", "conditioning", 1, 1, 1, None, min_sets=1),
-        ),
-    },
-)
+    # Create block and plan
+    plan_id, week_ids = plan_rw.create_block_and_plan(start_date, weeks)
 
+    # Iterate weeks
+    for w in range(1, weeks + 1):
+        week_id = week_ids[w - 1]
+        week_start = start_date + timedelta(days=(w - 1) * 7)
 
+        for dow, main_id in schedule_rules.MAIN_LIFT_BY_DOW.items():
+            # Blaze first if required
+            blaze_time = schedule_rules.BLAZE_TIMES.get(dow)
+            if blaze_time:
+                plan_rw.insert_workout(
+                    week_id=week_id,
+                    day_of_week=dow,
+                    exercise_id=schedule_rules.BLAZE_ID,
+                    sets=1,
+                    reps=1,
+                    rir_cue=None,
+                    percent_1rm=None,
+                    target_weight_kg=None,
+                    scheduled_time=blaze_time.strftime("%H:%M"),
+                    is_cardio=True,
+                )
 
-def _mean_metric(rows: List[Dict[str, Any]], key: str) -> Optional[float]:
-    values: List[float] = []
-    for row in rows:
-        value = row.get(key)
-        if not value:
-            continue
-        try:
-            values.append(float(value))
-        except (TypeError, ValueError):
-            continue
-    if not values:
-        return None
-    return sum(values) / len(values)
+            # Main lift
+            scheme = schedule_rules.WEEK_PCTS[w]
+            plan_rw.insert_workout(
+                week_id=week_id,
+                day_of_week=dow,
+                exercise_id=main_id,
+                sets=scheme["sets"],
+                reps=scheme["reps"],
+                rir_cue=scheme["rir_cue"],
+                percent_1rm=scheme["percent_1rm"],
+                target_weight_kg=None,  # filled later by progression
+                scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M"),
+                is_cardio=False,
+            )
 
+            # Assistance
+            pool_ids = plan_rw.assistance_pool_for(main_id)
+            chosen = _pick_random(pool_ids, 2)
+            if chosen:
+                # Assistance 1
+                a1_scheme = schedule_rules.ASSISTANCE_1
+                plan_rw.insert_workout(
+                    week_id=week_id,
+                    day_of_week=dow,
+                    exercise_id=chosen[0],
+                    sets=a1_scheme["sets"] - (1 if w == 4 else 0),
+                    reps=a1_scheme["reps_low"],
+                    rir_cue=a1_scheme["rir_cue"],
+                    percent_1rm=None,
+                    target_weight_kg=None,
+                    scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M"),
+                    is_cardio=False,
+                )
+                # Assistance 2
+                if len(chosen) > 1:
+                    a2_scheme = schedule_rules.ASSISTANCE_2
+                    plan_rw.insert_workout(
+                        week_id=week_id,
+                        day_of_week=dow,
+                        exercise_id=chosen[1],
+                        sets=a2_scheme["sets"] - (1 if w == 4 else 0),
+                        reps=a2_scheme["reps_low"],
+                        rir_cue=a2_scheme["rir_cue"],
+                        percent_1rm=None,
+                        target_weight_kg=None,
+                        scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M"),
+                        is_cardio=False,
+                    )
 
-def _vo2_average(metrics: List[Dict[str, Any]]) -> Optional[float]:
-    for key in _VO2_METRIC_KEYS:
-        values: List[float] = []
-        for row in metrics:
-            value = row.get(key)
-            if value is None:
-                continue
-            try:
-                values.append(float(value))
-            except (TypeError, ValueError):
-                continue
-        if values:
-            return sum(values) / len(values)
-    return None
+            # Core
+            core_ids = plan_rw.core_pool_ids()
+            chosen_core = _pick_random(core_ids, 1)
+            if chosen_core:
+                core_scheme = schedule_rules.CORE_SCHEME
+                plan_rw.insert_workout(
+                    week_id=week_id,
+                    day_of_week=dow,
+                    exercise_id=chosen_core[0],
+                    sets=core_scheme["sets"] - (1 if w == 4 else 0),
+                    reps=core_scheme["reps_low"],
+                    rir_cue=core_scheme["rir_cue"],
+                    percent_1rm=None,
+                    target_weight_kg=None,
+                    scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M"),
+                    is_cardio=False,
+                )
 
-
-def _resolve_conditioning_scale(
-    metrics: List[Dict[str, Any]],
-    prefer_light: bool,
-) -> Tuple[float, Optional[float]]:
-    vo2_avg = _vo2_average(metrics)
-    high_threshold = float(getattr(settings, "VO2_HIGH_THRESHOLD", 48.0))
-    low_threshold = float(getattr(settings, "VO2_LOW_THRESHOLD", 36.0))
-    moderate_threshold = max(low_threshold, high_threshold - 3.0)
-
-    scale = 1.0
-    if vo2_avg is not None:
-        if vo2_avg >= high_threshold:
-            scale = 1.6
-        elif vo2_avg >= moderate_threshold:
-            scale = 1.3
-        elif vo2_avg <= low_threshold:
-            scale = 0.8
-
-    if prefer_light:
-        scale = min(scale, 1.0)
-
-    scale = max(0.6, min(2.0, scale))
-    return scale, vo2_avg
-
-
-def _prefer_lighter_weeks(metrics: List[Dict[str, Any]]) -> bool:
-    avg_sleep = _mean_metric(metrics, "sleep_asleep_minutes")
-    avg_rhr = _mean_metric(metrics, "hr_resting")
-
-    sleep_threshold = getattr(settings, "RECOVERY_SLEEP_THRESHOLD_MINUTES", None)
-    rhr_threshold = getattr(settings, "RECOVERY_RHR_THRESHOLD", None)
-
-    prefer_light = False
-    if sleep_threshold and avg_sleep is not None and avg_sleep < float(sleep_threshold):
-        prefer_light = True
-    if rhr_threshold and avg_rhr is not None and avg_rhr > float(rhr_threshold):
-        prefer_light = True
-    return prefer_light
-
-
-def _initial_pool_offsets(start_date: date) -> Dict[str, int]:
-    seed = start_date.toordinal()
-    offsets: Dict[str, int] = {}
-    for name, pool in EXERCISE_POOLS.items():
-        if not pool:
-            raise ValueError(f"Exercise pool '{name}' has no exercises configured")
-        offsets[name] = seed % len(pool)
-        seed = (seed // 7) + 1
-    return offsets
-
-
-def _pull_exercise(pool_name: str, offsets: Dict[str, int]) -> Dict[str, Any]:
-    pool = EXERCISE_POOLS[pool_name]
-    index = offsets[pool_name]
-    exercise = pool[index]
-    offsets[pool_name] = (index + 1) % len(pool)
-    return exercise
-
-
-def _scaled_sets(slot: SessionSlot, multiplier: float) -> int:
-    scaled = round(slot.base_sets * multiplier)
-    min_sets = max(1, slot.min_sets)
-    return max(min_sets, int(scaled))
-
-
-def _select_reps(slot: SessionSlot, bias: str) -> int:
-    low, high = slot.reps_low, slot.reps_high
-    if low == high:
-        return low
-    if bias == "low":
-        return low
-    if bias == "high":
-        return high
-    return int(round((low + high) / 2))
-
-
-def _intensity_params(intensity: str, prefer_light: bool) -> Tuple[float, int, str]:
-    base = INTENSITY_SETTINGS[intensity]
-    set_multiplier = float(base["set_multiplier"])
-    rir_adjust = int(base["rir_adjust"])
-    rep_bias = str(base["rep_bias"])
-
-    if prefer_light:
-        if intensity == "light":
-            set_multiplier *= 0.90
-        elif intensity == "medium":
-            set_multiplier *= 0.95
-        elif intensity == "heavy":
-            set_multiplier *= 1.00
-        rir_adjust += 1
-        if rep_bias == "low":
-            rep_bias = "mid"
-    return set_multiplier, rir_adjust, rep_bias
-
-
-def _resolve_rir(slot: SessionSlot, rir_adjust: int) -> Optional[int]:
-    if slot.base_rir is None:
-        return None
-    rir_value = slot.base_rir + rir_adjust
-    return max(0, min(4, rir_value))
-
-
-def build_block(dal: DataAccessLayer, start_date: date, weeks: int = 4) -> int:
-    if weeks != len(INTENSITY_SEQUENCE):
-        raise ValueError("plan_builder only supports 4-week blocks")
-
-    lookup_existing = getattr(dal, "find_plan_by_start_date", None)
-    if callable(lookup_existing):
-        try:
-            existing = lookup_existing(start_date)
-        except Exception:
-            existing = None
-        if isinstance(existing, dict) and existing.get("id") is not None:
-            return int(existing["id"])
-
-    recent_metrics = dal.get_historical_metrics(7)
-    if not recent_metrics:
-        raise RuntimeError("No historical metrics available to seed plan building")
-
-    prefer_light = _prefer_lighter_weeks(recent_metrics)
-    pool_offsets = _initial_pool_offsets(start_date)
-    conditioning_scale, vo2_average = _resolve_conditioning_scale(recent_metrics, prefer_light)
-
-    weeks_out: List[Dict[str, Any]] = []
-    for week_index, intensity in enumerate(INTENSITY_SEQUENCE, start=1):
-        set_multiplier, rir_adjust, rep_bias = _intensity_params(intensity, prefer_light)
-        week_workouts: List[Dict[str, Any]] = []
-        week_start = start_date + timedelta(days=(week_index - 1) * 7)
-
-        for session in SESSION_BLUEPRINT:
-            focus = session["focus"]
-            day_of_week = session["day_of_week"]
-
-            for slot in session["slots"]:
-                exercise = _pull_exercise(slot.pool, pool_offsets)
-
-                slot_multiplier = set_multiplier
-                if slot.slot == "auxiliary":
-                    slot_multiplier *= 0.9
-                elif slot.slot == "conditioning":
-                    slot_multiplier = conditioning_scale
-
-                sets = _scaled_sets(slot, slot_multiplier)
-                slot_bias = rep_bias
-                if slot.slot != "main" and rep_bias == "low":
-                    slot_bias = "mid"
-                reps = _select_reps(slot, slot_bias)
-                rir = _resolve_rir(slot, rir_adjust)
-
-                workout = {
-                    "day_of_week": day_of_week,
-                    "exercise_id": exercise["id"],
-                    "sets": sets,
-                    "reps": reps,
-                    "rir": rir,
-                    "focus": focus,
-                    "slot": slot.slot,
-                    "muscle_group": exercise["muscle_group"],
-                    "intensity": intensity,
-                }
-                week_workouts.append(workout)
-
-        weeks_out.append(
-            {
-                "week_number": week_index,
-                "intensity": intensity,
-                "start_date": week_start.isoformat(),
-                "workouts": week_workouts,
-            }
+    # Validate the plan structure
+    active_plan = plan_rw.get_active_plan()
+    if active_plan:
+        validation.validate_plan_structure(
+            {"weeks": [{"week_number": i + 1, "start_date": start_date + timedelta(days=7 * i),
+                        "workouts": plan_rw.plan_week_rows(plan_id, i + 1)} for i in range(weeks)]},
+            block_start_date=start_date,
         )
-
-    metadata: Dict[str, Any] = {
-        "prefer_light": prefer_light,
-        "conditioning_scale": conditioning_scale,
-    }
-    if vo2_average is not None:
-        metadata["vo2_average"] = vo2_average
-
-    plan = {
-        "weeks": weeks_out,
-        "metadata": metadata,
-    }
-
-    validate_plan_structure(plan, start_date)
-
-    balance_report = ensure_muscle_balance(plan)
-    if not balance_report.balanced:
-        raise RuntimeError(
-            "Generated plan failed muscle balance validation: "
-            f"volumes={balance_report.totals_by_group}, "
-            f"missing={balance_report.missing_groups}"
-        )
-
-    plan_id = dal.save_training_plan(plan, start_date)
-    if not plan_id:
-        raise RuntimeError("Failed to persist training plan to database")
 
     return plan_id
-

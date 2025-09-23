@@ -9,7 +9,7 @@ DEADLIFT_ID = 184
 OHP_ID = 566
 
 # Blaze is a fixed HIIT class logged as this id
-BLAZE_ID = 99999
+BLAZE_ID = 1630
 
 # Blaze class start times by weekday (1=Mon ... 7=Sun)
 BLAZE_TIMES = {
