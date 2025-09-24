@@ -185,7 +185,7 @@ def export_week_to_wger(week_payload: Dict[str, Any],
                         *,
                         routine_name: Optional[str] = None,
                         routine_desc: Optional[str] = None,
-                        blaze_exercise_id: int = 99999) -> Dict[str, Any]:
+                        blaze_exercise_id: int = 1630) -> Dict[str, Any]:
     """
     Create or update a wger routine for a given week and push all slots + entries.
 
