@@ -160,13 +160,15 @@ class TelegramCommandListener:
     def _handle_lets_begin(self) -> str:
         success = False
         try:
-            success = bool(self._get_orchestrator().generate_strength_test_week())
+            result = self._get_orchestrator().generate_strength_test_week()
         except Exception as exc:  # pragma: no cover - defensive guardrail
             log_utils.log_message(
                 f"Strength test week scheduling failed: {exc}",
                 "ERROR",
             )
             success = False
+        else:
+            success = True if result is None else bool(result)
 
         if success:
             confirmation = "Strength test week scheduled"

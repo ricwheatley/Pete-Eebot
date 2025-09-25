@@ -821,9 +821,11 @@ class Orchestrator:
             )
             return False
 
-        message_date = target_date + timedelta(days=1)
         try:
-            summary_text = self.send_trainer_message(message_date=message_date)
+            summary_text = messenger_cli.send_daily_summary(
+                orchestrator=self,
+                target_date=target_date,
+            )
         except Exception as exc:
             log_utils.log_message(
                 f"Auto trainer summary send failed for {target_date.isoformat()}: {exc}",
@@ -1173,12 +1175,24 @@ class Orchestrator:
                 source_statuses["BodyAge"] = "failed"
 
 
-        try:
-            log_utils.log_message("Refreshing daily_summary view...", "INFO")
-            self.dal.refresh_daily_summary_view()
-        except Exception as exc:
-            log_utils.log_message(f"Failed to refresh daily_summary view: {exc}", "ERROR")
-            alert_messages.append("daily_summary view refresh failed; data may be stale.")
+        refresh_summary_view = getattr(self.dal, "refresh_daily_summary_view", None)
+        if callable(refresh_summary_view):
+            try:
+                log_utils.log_message("Refreshing daily_summary view...", "INFO")
+                refresh_summary_view()
+            except NotImplementedError:
+                log_utils.log_message(
+                    "Skipping daily_summary view refresh; DAL does not implement refresh_daily_summary_view().",
+                    "DEBUG",
+                )
+            except Exception as exc:
+                log_utils.log_message(f"Failed to refresh daily_summary view: {exc}", "ERROR")
+                alert_messages.append("daily_summary view refresh failed; data may be stale.")
+        else:
+            log_utils.log_message(
+                "Skipping daily_summary view refresh; DAL does not expose refresh_daily_summary_view().",
+                "DEBUG",
+            )
 
         if wger_logs_found:
             log_utils.log_message("Refreshing actual muscle volume view...", "INFO")
