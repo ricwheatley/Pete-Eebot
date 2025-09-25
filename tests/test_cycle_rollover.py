@@ -53,6 +53,12 @@ class FakeDal:
     def find_plan_by_start_date(self, start_date: date):
         return self._plans_by_start.get(start_date)
 
+    def get_plan_week(self, plan_id: int, week_number: int):
+        return []
+
+    def update_workout_targets(self, updates):
+        return None
+
     def get_active_plan(self):
         if not self._plans_by_start:
             return None
