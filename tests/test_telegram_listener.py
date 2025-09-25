@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
 
 from pete_e.application import telegram_listener
 from pete_e.application.telegram_listener import TelegramCommandListener
@@ -127,8 +130,14 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
         "send_alert",
         lambda message: alerts.append(message) or True,
     )
+    monkeypatch.setattr(
+        telegram_listener.telegram_sender,
+        "escape_markdown_v2",
+        lambda message: message,
+    )
 
     orchestration_calls: dict[str, int] = {"generate": 0}
+    factory_calls: list[object] = []
 
     def fake_generate() -> None:
         orchestration_calls["generate"] += 1
@@ -139,7 +148,7 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
         offset_path=tmp_path / "offset.json",
         poll_limit=2,
         poll_timeout=0,
-        orchestrator_factory=lambda: orch_stub,
+        orchestrator_factory=lambda: factory_calls.append("called") or orch_stub,
     )
 
     processed = listener.listen_once()
@@ -148,6 +157,7 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
     assert captured == ["Strength test week scheduled"]
     assert alerts == ["Strength test week scheduled"]
     assert orchestration_calls == {"generate": 1}
+    assert factory_calls == ["called"]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 99
 

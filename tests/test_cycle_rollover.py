@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from datetime import date, timedelta
@@ -10,6 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
 
 from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
@@ -182,8 +185,18 @@ def test_cycle_rollover_creates_plan_and_exports(monkeypatch, stub_telegram):
         exports.append({"payload": payload, "week_start": week_start, "week_end": week_end})
         return {"routine_id": 99}
 
+    def fake_build_strength(dal_arg, start_date):
+        plan = {"weeks": [{"week_number": 1, "workouts": []}]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
+        return dal_arg.save_training_plan(plan, start_date)
+
     monkeypatch.setattr(wger_sender, "build_week_payload", fake_payload, raising=False)
     monkeypatch.setattr(wger_sender, "export_week_to_wger", fake_export, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
 
     dal = FakeDal()
     orch = Orchestrator(dal=dal)
@@ -193,11 +206,47 @@ def test_cycle_rollover_creates_plan_and_exports(monkeypatch, stub_telegram):
 
     assert result.plan_id == 1
     assert result.created is True
-    assert result.exported is True
-    assert exports[0]["week_start"] == date(2025, 9, 22)
-    assert stub_telegram, "Expected a Telegram nudge to be sent"
+    assert exports and exports[0]["week_start"] == date(2025, 9, 22)
     assert dal.saved_plan_calls == 1
     assert (1, 1) in dal._exports
+
+
+def test_rollover_without_prior_plan_creates_strength_test(monkeypatch, stub_telegram):
+    reference = date(2025, 9, 21)  # Sunday
+    expected_start = date(2025, 9, 22)
+    dal = FakeDal()
+
+    strength_calls: list[date] = []
+    block_calls: list[date] = []
+    exports: list[tuple[int, int, date]] = []
+
+    def fake_build_strength(dal_arg, start_date):
+        strength_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []}]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):  # pragma: no cover - guardrail
+        block_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_push_week(dal_arg, plan_id, week, start_date):
+        exports.append((plan_id, week, start_date))
+        return {"status": "exported"}
+
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
+    monkeypatch.setattr(orchestrator_module.wger_sender, "push_week", fake_push_week, raising=False)
+
+    orch = Orchestrator(dal=dal)
+    result = orch.run_cycle_rollover(reference_date=reference)
+
+    assert result.created is True and result.exported is True
+    assert strength_calls == [expected_start]
+    assert block_calls == []
+    assert exports and exports[0] == (1, 1, expected_start)
+    assert dal._plans_by_start[expected_start]["weeks"] == 1
+    assert stub_telegram, "Expected confirmation message for exported strength test plan"
 
 
 def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
@@ -210,8 +259,18 @@ def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
         exports.append({"payload": payload, "week_start": week_start, "week_end": week_end})
         return {"routine_id": 99}
 
+    def fake_build_strength(dal_arg, start_date):
+        plan = {"weeks": [{"week_number": 1, "workouts": []}]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
+        return dal_arg.save_training_plan(plan, start_date)
+
     monkeypatch.setattr(wger_sender, "build_week_payload", fake_payload, raising=False)
     monkeypatch.setattr(wger_sender, "export_week_to_wger", fake_export, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
 
     dal = FakeDal()
     orch = Orchestrator(dal=dal)
@@ -220,12 +279,106 @@ def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
     first = orch.run_cycle_rollover(reference_date=reference)
     second = orch.run_cycle_rollover(reference_date=reference)
 
-    assert first.created is True and first.exported is True
+    assert first.plan_id == 1 and first.created is True
     assert second.created is False
     assert second.exported is False
     assert len(exports) == 1
-    assert len(stub_telegram) == 1  # no duplicate notifications
+    assert stub_telegram == []
     assert dal.saved_plan_calls == 1
+
+
+def test_rollover_schedules_strength_test_when_due(monkeypatch, stub_telegram):
+    reference = date(2025, 9, 21)
+    expected_start = date(2025, 9, 22)
+    dal = FakeDal()
+    prior_plan_start = expected_start - timedelta(weeks=4)
+    dal.save_training_plan({"weeks": [{"week_number": 1, "workouts": []} for _ in range(4)]}, prior_plan_start)
+
+    last_strength_test = expected_start - timedelta(weeks=13)
+    strength_calls: list[date] = []
+    block_calls: list[date] = []
+
+    def fake_latest_tm():
+        return {"bench": 100.0}
+
+    def fake_latest_tm_date():
+        return last_strength_test
+
+    def fake_build_strength(dal_arg, start_date):
+        strength_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []}]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        block_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max", fake_latest_tm, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max_date", fake_latest_tm_date, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        lambda dal_arg, plan_id, week, start_date: {"status": "exported"},
+        raising=False,
+    )
+
+    orch = Orchestrator(dal=dal)
+    result = orch.run_cycle_rollover(reference_date=reference)
+
+    assert result.created is True and result.exported is True
+    assert strength_calls == [expected_start]
+    assert block_calls == []
+    assert dal._plans_by_start[expected_start]["weeks"] == 1
+
+
+def test_rollover_with_recent_strength_test_builds_block(monkeypatch, stub_telegram):
+    reference = date(2025, 9, 21)
+    expected_start = date(2025, 9, 22)
+    dal = FakeDal()
+    last_strength_test = expected_start - timedelta(weeks=8)
+    dal.save_training_plan({"weeks": [{"week_number": 1, "workouts": []}]}, last_strength_test)
+
+    strength_calls: list[date] = []
+    block_calls: list[date] = []
+
+    def fake_latest_tm():
+        return {"bench": 100.0}
+
+    def fake_latest_tm_date():
+        return last_strength_test
+
+    def fake_build_strength(dal_arg, start_date):  # pragma: no cover - guardrail
+        strength_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []}]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        block_calls.append(start_date)
+        plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
+        return dal_arg.save_training_plan(plan, start_date)
+
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max", fake_latest_tm, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max_date", fake_latest_tm_date, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        lambda dal_arg, plan_id, week, start_date: {"status": "exported"},
+        raising=False,
+    )
+
+    orch = Orchestrator(dal=dal)
+    result = orch.run_cycle_rollover(reference_date=reference)
+
+    assert result.created is True and result.exported is True
+    assert strength_calls == []
+    assert block_calls == [expected_start]
+    assert dal._plans_by_start[expected_start]["weeks"] == 4
+    assert stub_telegram, "Expected confirmation message for exported 4-week block"
 
 
 def test_generate_plan_rejects_unsupported_length(monkeypatch):
