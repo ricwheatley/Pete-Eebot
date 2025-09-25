@@ -378,6 +378,37 @@ class Orchestrator:
                 dispatched.append(message)
         return dispatched
 
+    def generate_strength_test_week(self, start_date: date = date.today()) -> bool:
+        """Create, activate, and export a strength test week."""
+
+        try:
+            plan_id = build_strength_test(self.dal, start_date)
+            if not plan_id:
+                raise ValueError("Strength test builder returned invalid plan identifier.")
+
+            activator = getattr(self.dal, "mark_plan_active", None)
+            if callable(activator):
+                activator(plan_id)
+
+            wger_sender.push_week(
+                self.dal,
+                plan_id,
+                week=1,
+                start_date=start_date,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to generate strength test week: {exc}",
+                "ERROR",
+            )
+            return False
+
+        log_utils.log_message(
+            f"Strength test week {plan_id} generated and exported.",
+            "INFO",
+        )
+        return True
+
     def _build_nudge_candidates(
         self,
         history: List[Dict[str, Any]],
