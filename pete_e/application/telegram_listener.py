@@ -53,7 +53,7 @@ class _OrchestratorProtocol(Protocol):
     def run_end_to_end_day(self, *, days: int = 1):
         ...
 
-    def generate_strength_test_week(self) -> None:
+    def generate_strength_test_week(self) -> bool:
         ...
 
 
@@ -158,18 +158,23 @@ class TelegramCommandListener:
         )
 
     def _handle_lets_begin(self) -> str:
+        success = False
         try:
-            self._get_orchestrator().generate_strength_test_week()
+            success = bool(self._get_orchestrator().generate_strength_test_week())
         except Exception as exc:  # pragma: no cover - defensive guardrail
             log_utils.log_message(
                 f"Strength test week scheduling failed: {exc}",
                 "ERROR",
             )
-            return "Strength test week scheduling failed; check logs."
+            success = False
 
-        confirmation = "Strength test week scheduled"
-        telegram_sender.send_alert(confirmation)
-        return confirmation
+        if success:
+            confirmation = "Strength test week scheduled"
+            telegram_sender.send_alert(confirmation)
+            return confirmation
+
+        failure_message = "Strength test week scheduling failed; check logs."
+        return failure_message
 
     def _extract_command(self, text: str) -> Optional[str]:
         stripped = text.strip()
