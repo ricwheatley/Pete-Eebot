@@ -15,7 +15,7 @@ import os
 import json
 import hashlib
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import psycopg
@@ -55,6 +55,25 @@ def latest_training_max() -> Dict[str, Optional[float]]:
         for row in cur.fetchall():
             out[row["lift_code"]] = row["tm_kg"]
     return out
+
+
+def latest_training_max_date() -> Optional[date]:
+    """Return the most recent date a training max was recorded."""
+
+    sql = "SELECT MAX(measured_at) AS latest FROM training_max;"
+    with conn_cursor() as (_, cur):
+        cur.execute(sql)
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        latest = row.get("latest")
+        if latest is None:
+            return None
+
+        if isinstance(latest, datetime):
+            return latest.date()
+        return latest
 
 
 def assistance_pool_for(main_exercise_id: int) -> List[int]:
