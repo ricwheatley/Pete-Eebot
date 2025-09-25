@@ -16,7 +16,9 @@ import typer
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.application.wger_sender import push_week
 from pete_e.domain import body_age, narrative_builder
+from pete_e.domain.plan_builder import build_strength_test
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -465,6 +467,55 @@ def plan(
         raise typer.Exit(code=0)
     log_utils.log_message("Failed to deploy new plan.", "ERROR")
     raise typer.Exit(code=1)
+
+
+@app.command("lets-begin")
+def lets_begin() -> None:
+    """Manually create and export a strength test training week."""
+
+    orchestrator = _build_orchestrator()
+    dal = getattr(orchestrator, "dal", None)
+    if dal is None:
+        log_utils.log_message(
+            "Data access layer unavailable; cannot create strength test week.", "ERROR"
+        )
+        raise typer.Exit(code=1)
+
+    today = date.today()
+
+    try:
+        plan_id = build_strength_test(dal, today)
+    except Exception as exc:  # pragma: no cover - defensive guardrail
+        log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
+        raise typer.Exit(code=1)
+
+    if not plan_id:
+        log_utils.log_message(
+            "Strength test week build returned invalid plan identifier.", "ERROR"
+        )
+        raise typer.Exit(code=1)
+
+    activator = getattr(dal, "mark_plan_active", None)
+    if callable(activator):
+        try:
+            activator(plan_id)
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to mark plan {plan_id} as active: {exc}", "ERROR"
+            )
+            raise typer.Exit(code=1)
+
+    try:
+        push_week(dal, plan_id=plan_id, week=1, start_date=today)
+    except Exception as exc:  # pragma: no cover - defensive guardrail
+        log_utils.log_message(
+            f"Failed to export strength test week {plan_id}: {exc}", "ERROR"
+        )
+        raise typer.Exit(code=1)
+
+    log_utils.log_message("Strength test week created via manual trigger.", "INFO")
+    typer.echo("Strength test week created via manual trigger.")
+    raise typer.Exit(code=0)
 
 
 @app.command()
