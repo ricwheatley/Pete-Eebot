@@ -1,5 +1,67 @@
 import pytest
+import sys
+import types
 from datetime import date, timedelta
+from pathlib import Path
+
+# Provide lightweight stubs for heavy dependencies imported during plan builder
+# module initialisation. This keeps the tests self-contained and avoids pulling
+# in optional runtime-only packages.
+config_stub = types.ModuleType("pete_e.config")
+
+
+class _StubSettings:
+    def __init__(self):
+        self.log_path = Path("/tmp/pete_eebot-test.log")
+
+
+config_stub.Settings = _StubSettings
+config_stub.settings = _StubSettings()
+sys.modules.setdefault("pete_e.config", config_stub)
+sys.modules.setdefault("pete_e.config.config", config_stub)
+
+psycopg_stub = types.ModuleType("psycopg")
+
+
+def _stub_connect(*_args, **_kwargs):
+    raise RuntimeError("psycopg stub does not support database connections")
+
+
+psycopg_stub.connect = _stub_connect
+
+conninfo_module = types.ModuleType("psycopg.conninfo")
+conninfo_module.make_conninfo = lambda *_args, **_kwargs: ""
+
+rows_module = types.ModuleType("psycopg.rows")
+
+
+def _stub_dict_row(_cursor):  # pragma: no cover - defensive stub
+    raise RuntimeError("psycopg.rows.dict_row is unavailable in tests")
+
+
+rows_module.dict_row = _stub_dict_row
+
+json_module = types.ModuleType("psycopg.types.json")
+
+
+class Json:  # pragma: no cover - behaviour is not exercised in tests
+    def __init__(self, data):
+        self.data = data
+
+
+types_module = types.ModuleType("psycopg.types")
+json_module.Json = Json
+types_module.json = json_module
+
+psycopg_stub.conninfo = conninfo_module
+psycopg_stub.rows = rows_module
+psycopg_stub.types = types_module
+
+sys.modules.setdefault("psycopg", psycopg_stub)
+sys.modules.setdefault("psycopg.conninfo", conninfo_module)
+sys.modules.setdefault("psycopg.rows", rows_module)
+sys.modules.setdefault("psycopg.types", types_module)
+sys.modules.setdefault("psycopg.types.json", json_module)
 
 from pete_e.domain import plan_builder, schedule_rules
 from pete_e.infrastructure import plan_rw
@@ -50,6 +112,7 @@ class DummyDAL:
                 reps=reps,
                 rir=rir_cue,
                 pct=percent_1rm,
+                target_weight_kg=target_weight_kg,
                 time=scheduled_time,
                 cardio=is_cardio,
             )
@@ -72,7 +135,18 @@ def dal(monkeypatch):
     return dummy
 
 
-def test_block_structure(dal):
+def test_block_structure(dal, monkeypatch):
+    monkeypatch.setattr(
+        plan_rw,
+        "latest_training_max",
+        lambda: {
+            "squat": 100.0,
+            "bench": 80.0,
+            "deadlift": 120.0,
+            "ohp": 60.0,
+        },
+    )
+
     start = date(2025, 1, 6)  # a Monday
     plan_id = plan_builder.build_training_block(start, weeks=4)
 
@@ -104,3 +178,25 @@ def test_block_structure(dal):
     non_mains = [w for w in week4 if w["exercise_id"] not in schedule_rules.MAIN_LIFT_BY_DOW.values()]
     for w in non_mains:
         assert w["sets"] < 3 or w["sets"] < schedule_rules.ASSISTANCE_1["sets"]
+
+    # Week 1 main lifts should have target weights derived from training maxes
+    tm_map = plan_rw.latest_training_max()
+    week1_pct = schedule_rules.WEEK_PCTS[1]["percent_1rm"]
+    expected_targets = {}
+    for exercise_id, lift_code in schedule_rules.LIFT_CODE_BY_ID.items():
+        if lift_code in tm_map:
+            expected_targets[exercise_id] = round(
+                tm_map[lift_code] * week1_pct / 100 / 2.5
+            ) * 2.5
+
+    week1_main_lifts = [
+        w
+        for w in workouts
+        if w["week_id"] == 1
+        and not w["cardio"]
+        and w["exercise_id"] in schedule_rules.MAIN_LIFT_BY_DOW.values()
+    ]
+    assert week1_main_lifts, "Expected to find main lifts for week 1"
+    for workout in week1_main_lifts:
+        expected = expected_targets[workout["exercise_id"]]
+        assert workout["target_weight_kg"] == expected
