@@ -436,6 +436,25 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
                     invalid_day_flagged = True
                 continue
 
+            percent_1rm = workout.get('percent_1rm')
+            has_percent = percent_1rm is not None
+            if isinstance(percent_1rm, str) and percent_1rm.strip() == '':
+                has_percent = False
+
+            is_cardio = bool(workout.get('is_cardio'))
+            if not is_cardio and has_percent:
+                target_weight_raw = workout.get('target_weight_kg')
+                weight_valid = False
+                if target_weight_raw is not None:
+                    try:
+                        weight_valid = float(target_weight_raw) != 0
+                    except (TypeError, ValueError):
+                        weight_valid = False
+                if not weight_valid:
+                    errors.append(
+                        f"{prefix}: {_DAY_NAME_BY_NUMBER.get(day, str(day))} session missing target weight"
+                    )
+
             slot_raw = workout.get('slot')
             slot = str(slot_raw).lower() if slot_raw is not None else ''
             if slot == 'conditioning':
