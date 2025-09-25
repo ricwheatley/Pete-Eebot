@@ -363,10 +363,37 @@ class PostgresDal(DataAccessLayer):
                                 workout_data.get("reps"),
                                 workout_data.get("rir"),
                             ),
-                        )
+                )
                 return plan_id
         except Exception as e:
             log_utils.log_message(f"Error saving training plan: {e}", "ERROR")
+            raise
+
+    def mark_plan_active(self, plan_id: int) -> None:
+        """Set the provided plan id as the only active plan."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE training_plans SET is_active = false WHERE is_active = true AND id <> %s;",
+                    (plan_id,),
+                )
+                cur.execute(
+                    "UPDATE training_plans SET is_active = true WHERE id = %s;",
+                    (plan_id,),
+                )
+        except Exception as e:
+            log_utils.log_message(f"Error marking plan {plan_id} active: {e}", "ERROR")
+            raise
+
+    def has_any_plan(self) -> bool:
+        """Return True if any training plan exists in the database."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("SELECT EXISTS (SELECT 1 FROM training_plans);")
+                row = cur.fetchone()
+                return bool(row[0]) if row else False
+        except Exception as e:
+            log_utils.log_message(f"Error checking for existing plans: {e}", "ERROR")
             raise
 
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
