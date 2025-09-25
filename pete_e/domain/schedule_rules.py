@@ -8,6 +8,14 @@ BENCH_ID = 73
 DEADLIFT_ID = 184
 OHP_ID = 566
 
+# Mapping of main lift exercise IDs to plan builder lift codes
+LIFT_CODE_BY_ID = {
+    SQUAT_ID: "squat",
+    BENCH_ID: "bench",
+    DEADLIFT_ID: "deadlift",
+    OHP_ID: "ohp",
+}
+
 # Blaze is a fixed HIIT class logged as this id
 BLAZE_ID = 1630
 
