@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from datetime import date, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
 from pete_e.domain import validation
@@ -153,5 +153,78 @@ def build_block(dal, start_date, weeks: int = 4) -> int:
     Compatibility shim. Ignore `dal` and call build_training_block.
     """
     return build_training_block(start_date, weeks)
+
+
+TEST_WEEK_LIFT_ORDER = [
+    schedule_rules.BENCH_ID,
+    schedule_rules.SQUAT_ID,
+    schedule_rules.OHP_ID,
+    schedule_rules.DEADLIFT_ID,
+]
+
+TEST_WEEK_PCTS = {
+    schedule_rules.BENCH_ID: 85.0,
+    schedule_rules.SQUAT_ID: 87.5,
+    schedule_rules.OHP_ID: 85.0,
+    schedule_rules.DEADLIFT_ID: 90.0,
+}
+
+
+def _round_to_2p5(value: float) -> float:
+    return round(value / 2.5) * 2.5
+
+
+def _tm_key_for_lift(exercise_id: int) -> Optional[str]:
+    return schedule_rules.LIFT_CODE_BY_ID.get(exercise_id)
+
+
+def _target_weight_from_tm(tm_map: Dict[str, Optional[float]], exercise_id: int, percent: float) -> Optional[float]:
+    code = _tm_key_for_lift(exercise_id)
+    if not code:
+        return None
+    tm = tm_map.get(code)
+    if tm is None:
+        return None
+    return _round_to_2p5(tm * percent / 100.0)
+
+
+def build_strength_test(dal, start_date: date) -> int:
+    """Create a 1-week strength test plan with AMRAP sessions for the main lifts."""
+
+    plan_id, week_id = plan_rw.create_test_week_plan(start_date)
+
+    tm_map = plan_rw.latest_training_max()
+
+    for dow in sorted(schedule_rules.BLAZE_TIMES.keys()):
+        plan_rw.insert_workout(
+            week_id=week_id,
+            day_of_week=dow,
+            exercise_id=schedule_rules.BLAZE_ID,
+            sets=1,
+            reps=1,
+            rir_cue=None,
+            percent_1rm=None,
+            target_weight_kg=None,
+            scheduled_time=schedule_rules.BLAZE_TIMES[dow].strftime("%H:%M:%S"),
+            is_cardio=True,
+        )
+
+    for dow, exercise_id in zip([1, 2, 4, 5], TEST_WEEK_LIFT_ORDER):
+        percent = TEST_WEEK_PCTS[exercise_id]
+        target_weight = _target_weight_from_tm(tm_map, exercise_id, percent)
+        plan_rw.insert_workout(
+            week_id=week_id,
+            day_of_week=dow,
+            exercise_id=exercise_id,
+            sets=1,
+            reps=1,
+            rir_cue=None,
+            percent_1rm=percent,
+            target_weight_kg=target_weight,
+            scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S"),
+            is_cardio=False,
+        )
+
+    return plan_id
 
 
