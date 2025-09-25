@@ -15,7 +15,7 @@ def pytest_configure():
         "USER_HEIGHT_CM": "180",
         "USER_GOAL_WEIGHT_KG": "80",
         "TELEGRAM_TOKEN": "dummy",
-        "TELEGRAM_CHAT_ID": "123",
+        "TELEGRAM_CHAT_ID": "123456",
         "WITHINGS_CLIENT_ID": "dummy",
         "WITHINGS_CLIENT_SECRET": "dummy",
         "WITHINGS_REDIRECT_URI": "https://example.com",
