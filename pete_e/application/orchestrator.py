@@ -18,7 +18,7 @@ from pete_e.infrastructure import telegram_sender
 
 # Core Logic and Helpers
 from pete_e.domain.narrative_builder import NarrativeBuilder, PeteVoice
-from pete_e.domain.plan_builder import build_block
+from pete_e.domain.plan_builder import build_block, build_strength_test
 from pete_e.domain.progression import PlanProgressionDecision, calibrate_plan_week
 from pete_e.domain.validation import (
     ValidationDecision,
@@ -30,6 +30,7 @@ from pete_e.cli import messenger as messenger_cli
 from pete_e.domain import body_age, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
+from pete_e.infrastructure import plan_rw
 from pete_e.config import settings
 from pete_e.application.apple_dropbox_ingest import (
     AppleIngestError,
@@ -1333,34 +1334,91 @@ class Orchestrator:
             return -1
 
         try:
+            should_build_strength_test = False
+            has_any_plan = True
+
+            plan_checker = getattr(self.dal, "has_any_plan", None)
+            if callable(plan_checker):
+                try:
+                    has_any_plan = bool(plan_checker())
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to check for existing plans: {exc}",
+                        "WARN",
+                    )
+                    has_any_plan = True
+
+            tm_map: Dict[str, Any] = {}
+            try:
+                tm_map = plan_rw.latest_training_max()
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to load latest training max values: {exc}",
+                    "WARN",
+                )
+
+            if not has_any_plan or not tm_map:
+                should_build_strength_test = True
+
             # Build and persist the plan in one step
-            plan_id = build_block(self.dal, start_date)
+            if should_build_strength_test:
+                plan_id = build_strength_test(self.dal, start_date)
+                plan_kind = "strength test"
+            else:
+                plan_id = build_block(self.dal, start_date)
+                plan_kind = f"{weeks}-week block"
+
             log_utils.log_message(
-                f"Successfully saved new plan with ID: {plan_id}", "INFO"
+                f"Successfully saved new {plan_kind} plan with ID: {plan_id}", "INFO"
             )
 
-            try:
-                progression_decision = calibrate_plan_week(
-                    self.dal,
-                    plan_id=plan_id,
-                    week_number=1,
-                    persist=True,
-                )
-            except Exception as calibration_error:  # pragma: no cover - log only
-                log_utils.log_message(
-                    "Failed to calibrate week 1 for plan "
-                    f"{plan_id}: {calibration_error}",
-                    "ERROR",
-                )
-            else:
-                log_utils.log_message(
-                    "Applied progression calibration to week 1 for plan "
-                    f"{plan_id}: {progression_decision}",
-                    "INFO",
-                )
+            activator = getattr(self.dal, "mark_plan_active", None)
+            if callable(activator) and plan_id:
+                try:
+                    activator(plan_id)
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to mark plan {plan_id} as active: {exc}",
+                        "WARN",
+                    )
+
+            if not should_build_strength_test:
+                try:
+                    progression_decision = calibrate_plan_week(
+                        self.dal,
+                        plan_id=plan_id,
+                        week_number=1,
+                        persist=True,
+                    )
+                except Exception as calibration_error:  # pragma: no cover - log only
+                    log_utils.log_message(
+                        "Failed to calibrate week 1 for plan "
+                        f"{plan_id}: {calibration_error}",
+                        "ERROR",
+                    )
+                else:
+                    log_utils.log_message(
+                        "Applied progression calibration to week 1 for plan "
+                        f"{plan_id}: {progression_decision}",
+                        "INFO",
+                    )
 
             # Refresh the plan view to include the new data
             self.dal.refresh_plan_view()
+
+            if should_build_strength_test and plan_id:
+                try:
+                    wger_sender.push_week(
+                        self.dal,
+                        plan_id,
+                        week=1,
+                        start_date=start_date,
+                    )
+                except Exception as export_error:
+                    log_utils.log_message(
+                        f"Failed to export strength test plan {plan_id}: {export_error}",
+                        "ERROR",
+                    )
 
             return plan_id
 

@@ -29,6 +29,8 @@ class FakeDal:
         self._exports: Dict[Tuple[int, int], Dict[str, object]] = {}
         self.saved_plan_calls = 0
         self.refresh_calls = 0
+        self._active_plan_id: int | None = None
+        self.active_plan_calls: list[int] = []
 
     # --- Plan generation -------------------------------------------------
     def get_historical_metrics(self, days: int):
@@ -45,7 +47,16 @@ class FakeDal:
             "start_date": start_date,
             "weeks": len(plan.get("weeks", [])) or 4,
         }
+        if self._active_plan_id is None:
+            self._active_plan_id = plan_id
         return plan_id
+
+    def mark_plan_active(self, plan_id: int) -> None:
+        self._active_plan_id = plan_id
+        self.active_plan_calls.append(plan_id)
+
+    def has_any_plan(self) -> bool:
+        return bool(self._plans_by_start)
 
     def refresh_plan_view(self) -> None:
         self.refresh_calls += 1
@@ -60,6 +71,14 @@ class FakeDal:
         return None
 
     def get_active_plan(self):
+        if self._active_plan_id is not None:
+            for entry in self._plans_by_start.values():
+                if entry["id"] == self._active_plan_id:
+                    return {
+                        "id": entry["id"],
+                        "start_date": entry["start_date"],
+                        "weeks": entry["weeks"],
+                    }
         if not self._plans_by_start:
             return None
         latest_start = max(self._plans_by_start.keys())
@@ -94,6 +113,16 @@ def stub_telegram(monkeypatch, request):
     monkeypatch.setattr(narrative_builder.PeteVoice, "nudge", lambda tag, sprinkles=None: f"Nudge {tag}")
     request.addfinalizer(postgres_module.close_pool)
     return messages
+
+
+@pytest.fixture(autouse=True)
+def stub_training_max(monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_module.plan_rw,
+        "latest_training_max",
+        lambda: {"bench": 100.0, "squat": 150.0},
+        raising=False,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -238,3 +267,34 @@ def test_cycle_rollover_rejects_unsupported_length(monkeypatch, stub_telegram):
     assert build_calls == []
     assert dal.saved_plan_calls == 0
     assert stub_telegram == []
+
+
+def test_first_plan_uses_strength_test(monkeypatch):
+    start = date(2025, 1, 6)
+    dal = FakeDal()
+
+    strength_calls: list[tuple[object, object]] = []
+    export_calls: list[tuple[int, int, date]] = []
+
+    def fake_build_strength(dal_arg, start_date):
+        strength_calls.append((dal_arg, start_date))
+        plan_id = dal_arg.save_training_plan({"weeks": [{"week_number": 1, "workouts": []}]}, start_date)
+        return plan_id
+
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max", lambda: {}, raising=False)
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        lambda dal_arg, plan_id, week, start_date: export_calls.append((plan_id, week, start_date))
+        or {"status": "exported"},
+        raising=False,
+    )
+
+    orch = Orchestrator(dal=dal)
+    plan_id = orch.generate_and_deploy_next_plan(start_date=start, weeks=4)
+
+    assert strength_calls == [(dal, start)]
+    assert plan_id == 1
+    assert dal.active_plan_calls == [plan_id]
+    assert export_calls == [(plan_id, 1, start)]
