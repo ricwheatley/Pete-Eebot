@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 from typing import Dict, Tuple
 
 import pytest
@@ -121,6 +121,12 @@ def stub_training_max(monkeypatch):
         orchestrator_module.plan_rw,
         "latest_training_max",
         lambda: {"bench": 100.0, "squat": 150.0},
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestrator_module.plan_rw,
+        "latest_training_max_date",
+        lambda: None,
         raising=False,
     )
 
@@ -298,3 +304,88 @@ def test_first_plan_uses_strength_test(monkeypatch):
     assert plan_id == 1
     assert dal.active_plan_calls == [plan_id]
     assert export_calls == [(plan_id, 1, start)]
+
+
+def test_strength_test_every_thirteen_weeks(monkeypatch):
+    start = date(2025, 1, 6)
+    dal = FakeDal()
+
+    state = {"last_test_date": start - timedelta(weeks=13)}
+    strength_calls: list[date] = []
+    block_calls: list[date] = []
+    push_calls: list[tuple[int, int, date]] = []
+
+    def fake_latest_tm_date():
+        return state["last_test_date"]
+
+    def fake_build_strength(dal_arg, start_date):
+        strength_calls.append(start_date)
+        plan_id = dal_arg.save_training_plan(
+            {"weeks": [{"week_number": 1, "workouts": []}]},
+            start_date,
+        )
+        state["last_test_date"] = start_date
+        return plan_id
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        block_calls.append(start_date)
+        plan = {
+            "weeks": [
+                {"week_number": i + 1, "workouts": []}
+                for i in range(weeks)
+            ]
+        }
+        return dal_arg.save_training_plan(plan, start_date)
+
+    def fake_push_week(dal_arg, plan_id, week, start_date):
+        push_calls.append((plan_id, week, start_date))
+        return {"status": "exported"}
+
+    monkeypatch.setattr(
+        orchestrator_module.plan_rw,
+        "latest_training_max_date",
+        fake_latest_tm_date,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "build_strength_test",
+        fake_build_strength,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestrator_module,
+        "build_block",
+        fake_build_block,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        fake_push_week,
+        raising=False,
+    )
+
+    orch = Orchestrator(dal=dal)
+
+    plan_ids = [
+        orch.generate_and_deploy_next_plan(start_date=start, weeks=4),
+        orch.generate_and_deploy_next_plan(start_date=start + timedelta(weeks=1), weeks=4),
+        orch.generate_and_deploy_next_plan(start_date=start + timedelta(weeks=5), weeks=4),
+        orch.generate_and_deploy_next_plan(start_date=start + timedelta(weeks=9), weeks=4),
+        orch.generate_and_deploy_next_plan(start_date=start + timedelta(weeks=13), weeks=4),
+        orch.generate_and_deploy_next_plan(start_date=start + timedelta(weeks=14), weeks=4),
+    ]
+
+    assert all(pid > 0 for pid in plan_ids)
+    assert strength_calls == [
+        start,
+        start + timedelta(weeks=13),
+    ]
+    assert block_calls == [
+        start + timedelta(weeks=1),
+        start + timedelta(weeks=5),
+        start + timedelta(weeks=9),
+        start + timedelta(weeks=14),
+    ]
+    assert [call[2] for call in push_calls] == strength_calls

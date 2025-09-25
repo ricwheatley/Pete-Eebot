@@ -49,6 +49,8 @@ WITHINGS_ONLY_SOURCES = (
     "BodyAge",
 )
 
+STRENGTH_TEST_INTERVAL_WEEKS = 13
+
 
 
 def _closes_postgres_pool(func):
@@ -1336,6 +1338,7 @@ class Orchestrator:
         try:
             should_build_strength_test = False
             has_any_plan = True
+            last_strength_test_date: date | None = None
 
             plan_checker = getattr(self.dal, "has_any_plan", None)
             if callable(plan_checker):
@@ -1357,8 +1360,41 @@ class Orchestrator:
                     "WARN",
                 )
 
+            latest_tm_date_reader = getattr(plan_rw, "latest_training_max_date", None)
+            if callable(latest_tm_date_reader):
+                try:
+                    last_strength_test_date = latest_tm_date_reader()
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to load latest training max date: {exc}",
+                        "WARN",
+                    )
+            else:
+                log_utils.log_message(
+                    "Training max date lookup not available; defaulting to strength test schedule",
+                    "WARN",
+                )
+
             if not has_any_plan or not tm_map:
                 should_build_strength_test = True
+            elif last_strength_test_date is None:
+                log_utils.log_message(
+                    "No historical strength test date found; scheduling test week.",
+                    "INFO",
+                )
+                should_build_strength_test = True
+            else:
+                next_strength_test_due = last_strength_test_date + timedelta(
+                    weeks=STRENGTH_TEST_INTERVAL_WEEKS
+                )
+                if start_date >= next_strength_test_due:
+                    log_utils.log_message(
+                        "Strength test due based on last test "
+                        f"{last_strength_test_date.isoformat()} and "
+                        f"{STRENGTH_TEST_INTERVAL_WEEKS}-week interval.",
+                        "INFO",
+                    )
+                    should_build_strength_test = True
 
             # Build and persist the plan in one step
             if should_build_strength_test:
