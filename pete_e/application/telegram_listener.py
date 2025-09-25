@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Callable, Dict, Optional
@@ -10,11 +11,49 @@ from typing_extensions import Protocol
 
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils, telegram_sender
-from pete_e.cli import messenger
+
+
+class _LazyModuleProxy:
+    """Provides attribute access to a module loaded only when required."""
+
+    def __init__(self, module_name: str) -> None:
+        object.__setattr__(self, "_module_name", module_name)
+        object.__setattr__(self, "_module", None)
+
+    def _load(self):
+        module = object.__getattribute__(self, "_module")
+        if module is None:
+            module = importlib.import_module(object.__getattribute__(self, "_module_name"))
+            object.__setattr__(self, "_module", module)
+        return module
+
+    def __getattribute__(self, item):
+        if item in {"_module_name", "_module", "_load", "__dict__", "__class__", "__setattr__", "__getattribute__"}:
+            return object.__getattribute__(self, item)
+
+        data = object.__getattribute__(self, "__dict__")
+        if item in data:
+            return data[item]
+
+        module = object.__getattribute__(self, "_load")()
+        return getattr(module, item)
+
+    def __setattr__(self, key, value):
+        if key in {"_module_name", "_module"}:
+            object.__setattr__(self, key, value)
+        else:
+            object.__getattribute__(self, "__dict__")[key] = value
+
+
+messenger = _LazyModuleProxy("pete_e.cli.messenger")
+messenger.build_daily_summary = None  # type: ignore[attr-defined]
 
 
 class _OrchestratorProtocol(Protocol):
     def run_end_to_end_day(self, *, days: int = 1):
+        ...
+
+    def generate_strength_test_week(self) -> None:
         ...
 
 
@@ -87,7 +126,11 @@ class TelegramCommandListener:
         return self._orchestrator
 
     def _handle_summary(self) -> str:
-        summary = messenger.build_daily_summary(orchestrator=self._get_orchestrator())
+        build_summary = messenger.__dict__.get("build_daily_summary")
+        if not callable(build_summary):
+            build_summary = messenger.build_daily_summary
+
+        summary = build_summary(orchestrator=self._get_orchestrator())
         summary_text = (summary or "").strip()
         if not summary_text:
             return "No summary is available yet."
@@ -113,6 +156,20 @@ class TelegramCommandListener:
             f"summary_sent: {bool(summary_sent)} "
             f"failed_sources: {failure_text}"
         )
+
+    def _handle_lets_begin(self) -> str:
+        try:
+            self._get_orchestrator().generate_strength_test_week()
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Strength test week scheduling failed: {exc}",
+                "ERROR",
+            )
+            return "Strength test week scheduling failed; check logs."
+
+        confirmation = "Strength test week scheduled"
+        telegram_sender.send_alert(confirmation)
+        return confirmation
 
     def _extract_command(self, text: str) -> Optional[str]:
         stripped = text.strip()
@@ -141,6 +198,7 @@ class TelegramCommandListener:
         handlers: Dict[str, Callable[[], str]] = {
             "/summary": self._handle_summary,
             "/sync": self._handle_sync,
+            "/lets-begin": self._handle_lets_begin,
         }
 
         authorized_chat_id = getattr(settings, "TELEGRAM_CHAT_ID", None)
