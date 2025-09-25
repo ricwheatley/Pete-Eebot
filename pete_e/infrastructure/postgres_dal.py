@@ -1,4 +1,4 @@
-# (Functional) **Postgres DataAccess** – concrete implementation of DataAccessLayer using psycopg3 pool
+# Postgres DataAccess implementation using psycopg3 pool
 
 """
 PostgreSQL implementation of the Data Access Layer.
@@ -6,7 +6,7 @@ PostgreSQL implementation of the Data Access Layer.
 Implements Pete-Eebot's relational schema:
 - Source tables: withings_daily, apple_daily, wger_logs, body_age_daily
 - Reference tables: Wger exercise catalog (refreshed separately)
-- Training plans: training_plans → training_plan_weeks → training_plan_workouts
+- Training plans: training_plans -> training_plan_weeks -> training_plan_workouts
 - Views: daily_summary, plan_muscle_volume, actual_muscle_volume
 """
 
@@ -19,12 +19,10 @@ import hashlib
 
 import psycopg
 from psycopg.rows import dict_row
-from psycopg.types.json import json
-import hashlib
+from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 from pete_e.config import settings
-from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from ..domain.data_access import DataAccessLayer
 
@@ -32,13 +30,13 @@ from ..domain.data_access import DataAccessLayer
 # -------------------------------------------------------------------------
 # Connection pool
 # -------------------------------------------------------------------------
-if not settings.DATABASE_URL:
-    raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
+
 
 _pool: ConnectionPool | None = None
 
-
 def _create_pool() -> ConnectionPool:
+    if not settings.DATABASE_URL:
+        raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
     return ConnectionPool(
         conninfo=settings.DATABASE_URL,
         min_size=1,
@@ -47,14 +45,11 @@ def _create_pool() -> ConnectionPool:
         timeout=10,
     )
 
-
 def get_pool() -> ConnectionPool:
     global _pool
-    pool = _pool
-    if pool is None or pool.closed:
-        pool = _create_pool()
-        _pool = pool
-    return pool
+    if _pool is None or _pool.closed:
+        _pool = _create_pool()
+    return _pool
 
 
 def get_conn():
@@ -323,6 +318,27 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error fetching historical data: {e}", "ERROR")
             raise
     
+    # ---------------------------------------------------------------------
+    def refresh_daily_summary_view(self) -> None:
+        """Refresh the materialized daily_summary view."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("REFRESH MATERIALIZED VIEW daily_summary;")
+                log_utils.log_message("Refreshed daily_summary view.", "INFO")
+        except Exception as e:
+            log_utils.log_message(f"Error refreshing daily_summary view: {e}", "ERROR")
+            raise
+
+    def get_metrics_overview(self) -> List[Dict[str, Any]]:
+        """Return metric summary rows from metrics_overview view."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT * FROM metrics_overview;")
+                return cur.fetchall()
+        except Exception as e:
+            log_utils.log_message(f"Error fetching metrics overview: {e}", "ERROR")
+            raise
+
     # ---------------------------------------------------------------------
     # Training plans
     # ---------------------------------------------------------------------

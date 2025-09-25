@@ -12,23 +12,27 @@ os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:
 
 from pete_e.application import telegram_listener
 from pete_e.application.telegram_listener import TelegramCommandListener
+from pete_e.config import settings
 
 
-def _make_update(update_id: int, text: str) -> dict:
+def _make_update(update_id: int, text: str, chat_id: int = 123456) -> dict:
     return {
         "update_id": update_id,
         "message": {
             "message_id": update_id,
             "date": 1695270000,
-            "chat": {"id": 123456},
+            "chat": {"id": chat_id},
             "text": text,
         },
     }
 
 
 def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    updates = [_make_update(42, "/summary")]
+    updates = [_make_update(42, "/summary", chat_id=42)]
     captured: list[str] = []
+
+    # Patch settings so this chat is authorised
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
 
     monkeypatch.setattr(
         telegram_listener.telegram_sender,
@@ -65,8 +69,11 @@ def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest
 
 
 def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    updates = [_make_update(77, "/sync")]
+    updates = [_make_update(77, "/sync", chat_id=77)]
     captured: list[str] = []
+
+    # Patch settings so this chat is authorised
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "77")
 
     monkeypatch.setattr(
         telegram_listener.telegram_sender,
@@ -110,9 +117,12 @@ def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: p
 
 
 def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    updates = [_make_update(99, "/lets-begin")]
+    updates = [_make_update(99, "/lets-begin", chat_id=99)]
     captured: list[str] = []
     alerts: list[str] = []
+
+    # Patch settings so this chat is authorised
+    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "99")
 
     monkeypatch.setattr(
         telegram_listener.telegram_sender,
@@ -193,5 +203,3 @@ def test_listen_once_uses_stored_offset(tmp_path: Path, monkeypatch: pytest.Monk
     assert called == {"offset": 901, "limit": 4, "timeout": 1}
     stored = json.loads(offset_file.read_text())
     assert stored["last_update_id"] == 900
-
-

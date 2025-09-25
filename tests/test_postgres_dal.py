@@ -1,13 +1,14 @@
 import unittest
 from datetime import date
 from unittest.mock import patch, MagicMock
+import pete_e.infrastructure.postgres_dal as postgres_dal
 
 # Assuming your DAL is in this structure
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
 class TestPostgresDal(unittest.TestCase):
 
-    @patch('pete_e.infrastructure.postgres_dal.get_conn')
+    @patch.object(postgres_dal, "get_conn")
     def test_save_withings_daily(self, mock_get_conn):
         """Test that save_withings_daily executes the correct SQL."""
         mock_conn = MagicMock()
@@ -35,7 +36,7 @@ class TestPostgresDal(unittest.TestCase):
         self.assertEqual(data_tuple, (test_date, 75.5, 22.1, 41.5, 55.0))
 
 
-    @patch('pete_e.infrastructure.postgres_dal.get_conn')
+    @patch.object(postgres_dal, "get_conn")
     def test_get_historical_data(self, mock_get_conn):
         """Test that get_historical_data queries the daily_summary view."""
         mock_conn = MagicMock()

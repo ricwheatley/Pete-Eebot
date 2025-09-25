@@ -4,6 +4,9 @@ import types
 from datetime import datetime, timezone
 from pathlib import Path
 
+os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -32,9 +35,23 @@ if "psycopg" not in sys.modules:
     json_module.json = _Json
 
     class _Connection:  # pragma: no cover - placeholder connection type
-        pass
+        def cursor(self, *a, **k):
+            return types.SimpleNamespace(
+                __enter__=lambda s: s,
+                __exit__=lambda s, *exc: None,
+                execute=lambda *args, **kwargs: None,
+                fetchone=lambda: None,
+                fetchall=lambda: [],
+            )
+        
+        def close(self): pass
+
+    # Fake connect for "from psycopg import connect"
+    def _fake_connect(*args, **kwargs):
+        return _Connection()
 
     psycopg.Connection = _Connection
+    psycopg.connect = _fake_connect
     psycopg.rows = rows_module
     psycopg.conninfo = conninfo_module
     psycopg.types = types_module
@@ -47,12 +64,21 @@ if "psycopg" not in sys.modules:
     sql_module.Identifier = _sql_identity
     sql_module.Literal = _sql_identity
 
+    # Add __file__ attributes so pytest’s import machinery doesn’t choke
+    psycopg.__file__ = __file__
+    rows_module.__file__ = __file__
+    conninfo_module.__file__ = __file__
+    types_module.__file__ = __file__
+    json_module.__file__ = __file__
+    sql_module.__file__ = __file__
+
     sys.modules["psycopg"] = psycopg
     sys.modules["psycopg.rows"] = rows_module
     sys.modules["psycopg.conninfo"] = conninfo_module
     sys.modules["psycopg.types"] = types_module
     sys.modules["psycopg.types.json"] = json_module
     sys.modules["psycopg.sql"] = sql_module
+
 
 
 if "psycopg_pool" not in sys.modules:
@@ -66,7 +92,12 @@ if "psycopg_pool" not in sys.modules:
             pass
 
     psycopg_pool_module.ConnectionPool = ConnectionPool
+
+    # add __file__ so pytest doesn’t complain
+    psycopg_pool_module.__file__ = __file__
+
     sys.modules["psycopg_pool"] = psycopg_pool_module
+
 
 
 if "dropbox" not in sys.modules:
@@ -82,15 +113,16 @@ if "dropbox" not in sys.modules:
 
     class FileMetadata:  # pragma: no cover - stub type
         def __init__(self, name: str = "stub", client_modified=None, path_display: str = "/stub"):
+            from datetime import datetime, timezone
             self.name = name
             self.client_modified = client_modified or datetime.now(timezone.utc)
             self.path_display = path_display
 
     class ListFolderResult:  # pragma: no cover - stub type
-        def __init__(self):
-            self.entries: list[FileMetadata] = []
-            self.has_more = False
-            self.cursor = "cursor"
+        def __init__(self, entries=None, cursor="cursor", has_more=False):
+            self.entries = entries or []
+            self.has_more = has_more
+            self.cursor = cursor
 
     class Dropbox:  # pragma: no cover - stub client
         def __init__(self, *args, **kwargs):
@@ -107,9 +139,15 @@ if "dropbox" not in sys.modules:
     files_module.FileMetadata = FileMetadata
     files_module.ListFolderResult = ListFolderResult
 
+    # Add __file__ attributes so pytest’s import/rewrite doesn’t choke
+    dropbox_module.__file__ = __file__
+    exceptions_module.__file__ = __file__
+    files_module.__file__ = __file__
+
     sys.modules["dropbox"] = dropbox_module
     sys.modules["dropbox.exceptions"] = exceptions_module
     sys.modules["dropbox.files"] = files_module
+
 
 if "tenacity" not in sys.modules:
     tenacity_module = types.ModuleType("tenacity")
@@ -138,7 +176,8 @@ if "tenacity" not in sys.modules:
             try:
                 return func()
             except Exception as exc:  # pragma: no cover - fallback path
-                attempt = types.SimpleNamespace(exception=lambda: exc)
+                # Bind exc into the lambda so it's not lost after except scope
+                attempt = types.SimpleNamespace(exception=lambda exc=exc: exc)
                 if self._before_sleep:
                     state = RetryCallState(exception=exc)
                     self._before_sleep(state)
@@ -164,20 +203,6 @@ if "tenacity" not in sys.modules:
 
     sys.modules["tenacity"] = tenacity_module
 
-if "pete_e.infrastructure.postgres_dal" not in sys.modules:
-    postgres_stub = types.ModuleType("pete_e.infrastructure.postgres_dal")
-
-    class PostgresDal:  # pragma: no cover - stub preventing real DB access
-        def __init__(self, *args, **kwargs):
-            pass
-
-    def close_pool() -> None:  # pragma: no cover - stub
-        pass
-
-    postgres_stub.PostgresDal = PostgresDal
-    postgres_stub.close_pool = close_pool
-
-    sys.modules["pete_e.infrastructure.postgres_dal"] = postgres_stub
 
 if "requests" not in sys.modules:
     requests_module = types.ModuleType("requests")
@@ -190,8 +215,23 @@ if "requests" not in sys.modules:
         def json(self):
             return self._json_data
 
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise Exception(f"HTTP {self.status_code}")
+            
+        def _fake_get(*args, **kwargs): raise NotImplementedError
+        def _fake_post(*args, **kwargs): raise NotImplementedError
+    
+        requests_module.get = _fake_get
+        requests_module.post = _fake_post
+
     requests_module.Response = Response
+
+    # add __file__
+    requests_module.__file__ = __file__
+
     sys.modules["requests"] = requests_module
+
 
 if "typer" not in sys.modules:
     typer_module = types.ModuleType("typer")
@@ -210,8 +250,101 @@ if "typer" not in sys.modules:
                 command_name = name or func.__name__.replace("_", "-")
                 self._commands[command_name] = func
                 return func
-
             return decorator
+
+    def option(*args, **kwargs):
+        return {"args": args, "kwargs": kwargs}
+
+    _echo_messages: list[str] = []
+
+    def echo(message: object) -> None:
+        _echo_messages.append(str(message))
+
+    typer_module.Exit = Exit
+    typer_module.Typer = TyperApp
+    typer_module.Option = option
+    typer_module.echo = echo
+    typer_module._echo_messages = _echo_messages
+
+    class CliResult:
+        def __init__(self, exit_code: int, stdout: str, exception: Exception | None = None):
+            self.exit_code = exit_code
+            self.stdout = stdout
+            self.exception = exception
+
+    class CliRunner:
+        def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
+            """
+            Minimal stub of Click's CliRunner.invoke.
+            Accepts extra kwargs (e.g. catch_exceptions) for compatibility.
+            """
+            args = list(args or [])
+            if not args:
+                raise ValueError("A command name is required")
+
+            command_name = args[0]
+            func = app._commands.get(command_name)
+            if func is None:
+                raise ValueError(f"Unknown command: {command_name}")
+
+            kwargs_dict: dict[str, object] = {}
+            idx = 1
+            while idx < len(args):
+                token = args[idx]
+                if token.startswith("--"):
+                    key = token.lstrip("-").replace("-", "_")
+                    idx += 1
+                    if idx >= len(args):
+                        raise ValueError(f"Missing value for option {token}")
+                    value_token = args[idx]
+                    if value_token.lower() in {"true", "false"}:
+                        value: object = value_token.lower() == "true"
+                    else:
+                        try:
+                            value = int(value_token)
+                        except ValueError:
+                            try:
+                                value = float(value_token)
+                            except ValueError:
+                                value = value_token
+                    kwargs_dict[key] = value
+                else:
+                    kwargs_dict.setdefault("_args", []).append(token)
+                idx += 1
+
+            typer_module._echo_messages.clear()
+            try:
+                if "_args" in kwargs_dict:
+                    positional = kwargs_dict.pop("_args")
+                    result = func(*positional, **kwargs_dict)
+                else:
+                    result = func(**kwargs_dict)
+            except Exit as exc:
+                stdout = "\n".join(typer_module._echo_messages)
+                if stdout:
+                    stdout += "\n"
+                return CliResult(exc.exit_code, stdout)
+            except Exception as exc:
+                stdout = "\n".join(typer_module._echo_messages)
+                if stdout:
+                    stdout += "\n"
+                return CliResult(1, stdout, exception=exc)
+
+            stdout = "\n".join(typer_module._echo_messages)
+            if stdout:
+                stdout += "\n"
+            return CliResult(0, stdout, exception=None if result is None else result)
+
+    testing_module = types.ModuleType("typer.testing")
+    testing_module.CliRunner = CliRunner
+    typer_module.testing = testing_module
+
+    # add __file__ attributes
+    typer_module.__file__ = __file__
+    testing_module.__file__ = __file__
+
+    sys.modules["typer"] = typer_module
+    sys.modules["typer.testing"] = testing_module
 
     def option(*args, **kwargs):  # pragma: no cover - metadata only
         return {"args": args, "kwargs": kwargs}
@@ -234,7 +367,13 @@ if "typer" not in sys.modules:
             self.exception = exception
 
     class CliRunner:
-        def invoke(self, app: TyperApp, args: list[str] | None = None):
+        def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
+            """
+            Minimal stub of Click's CliRunner.invoke.
+
+            Accepts extra kwargs (e.g. catch_exceptions) for compatibility,
+            but ignores them since our TyperApp stub doesn’t use them.
+            """
             args = list(args or [])
             if not args:
                 raise ValueError("A command name is required")
@@ -244,7 +383,7 @@ if "typer" not in sys.modules:
             if func is None:
                 raise ValueError(f"Unknown command: {command_name}")
 
-            kwargs: dict[str, object] = {}
+            kwargs_dict: dict[str, object] = {}
             idx = 1
             while idx < len(args):
                 token = args[idx]
@@ -264,19 +403,19 @@ if "typer" not in sys.modules:
                                 value = float(value_token)
                             except ValueError:
                                 value = value_token
-                    kwargs[key] = value
+                    kwargs_dict[key] = value
                 else:
                     # Positional argument - store as-is using incremental key
-                    kwargs.setdefault("_args", []).append(token)
+                    kwargs_dict.setdefault("_args", []).append(token)
                 idx += 1
 
             typer_module._echo_messages.clear()
             try:
-                if "_args" in kwargs:
-                    positional = kwargs.pop("_args")
-                    result = func(*positional, **kwargs)
+                if "_args" in kwargs_dict:
+                    positional = kwargs_dict.pop("_args")
+                    result = func(*positional, **kwargs_dict)
                 else:
-                    result = func(**kwargs)
+                    result = func(**kwargs_dict)
             except Exit as exc:
                 stdout = "\n".join(typer_module._echo_messages)
                 if stdout:
@@ -292,6 +431,7 @@ if "typer" not in sys.modules:
             if stdout:
                 stdout += "\n"
             return CliResult(0, stdout, exception=None if result is None else result)
+
 
     testing_module = types.ModuleType("typer.testing")
     testing_module.CliRunner = CliRunner

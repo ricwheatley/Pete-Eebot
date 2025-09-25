@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Iterable, List, Optional
+from types import SimpleNamespace
 from dropbox.exceptions import DropboxException
-from dropbox.files import FileMetadata, ListFolderResult
+from dropbox.files import FileMetadata
 
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 
@@ -16,12 +17,12 @@ def _make_file(path: str, modified: datetime) -> FileMetadata:
 class FakeDropbox:
     def __init__(
         self,
-        initial_results: Iterable[ListFolderResult],
-        incremental_results: Optional[Iterable[ListFolderResult]] = None,
+        initial_results: Iterable[object],
+        incremental_results: Optional[Iterable[object]] = None,
         incremental_exception: Optional[DropboxException] = None,
     ) -> None:
-        self._initial_results: List[ListFolderResult] = list(initial_results)
-        self._incremental_results: List[ListFolderResult] = list(incremental_results or [])
+        self._initial_results: List[object] = list(initial_results)
+        self._incremental_results: List[object] = list(incremental_results or [])
         self._incremental_exception = incremental_exception
         self.list_calls = 0
         self.continue_calls = 0
@@ -29,7 +30,7 @@ class FakeDropbox:
         self._incremental_index = 0
         self._serving_initial = False
 
-    def files_list_folder(self, folder_path: str, recursive: bool = False) -> ListFolderResult:
+    def files_list_folder(self, folder_path: str, recursive: bool = False) -> object:
         del folder_path, recursive
         if self._initial_index >= len(self._initial_results):
             raise AssertionError("No initial results remaining")
@@ -41,7 +42,7 @@ class FakeDropbox:
             self._serving_initial = False
         return result
 
-    def files_list_folder_continue(self, cursor: str) -> ListFolderResult:
+    def files_list_folder_continue(self, cursor: str) -> object:
         del cursor
         self.continue_calls += 1
         if self._serving_initial:
@@ -57,7 +58,7 @@ class FakeDropbox:
             raise self._incremental_exception
 
         if self._incremental_index >= len(self._incremental_results):
-            return ListFolderResult(entries=[], cursor=cursor, has_more=False)
+            return SimpleNamespace(entries=[], cursor=cursor, has_more=False)
 
         result = self._incremental_results[self._incremental_index]
         self._incremental_index += 1
@@ -82,14 +83,14 @@ def test_find_new_export_files_uses_incremental_listing() -> None:
     second_mod = datetime(2024, 1, 3, tzinfo=timezone.utc)
 
     initial_listing = [
-        ListFolderResult(
+        SimpleNamespace(
             entries=[_make_file(f"{folder}/HealthAutoExport-20240102.json", first_mod)],
             cursor="cursor-initial",
             has_more=False,
         )
     ]
     incremental_listing = [
-        ListFolderResult(
+        SimpleNamespace(
             entries=[_make_file(f"{folder}/HealthAutoExport-20240103.json", second_mod)],
             cursor="cursor-incremental",
             has_more=False,
@@ -122,7 +123,7 @@ def test_find_new_export_files_falls_back_on_cursor_error() -> None:
     new_mod = datetime(2024, 1, 4, tzinfo=timezone.utc)
 
     fallback_listing = [
-        ListFolderResult(
+        SimpleNamespace(
             entries=[_make_file(f"{folder}/HealthAutoExport-20240104.json", new_mod)],
             cursor="cursor-refreshed",
             has_more=False,

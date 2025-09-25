@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
@@ -27,7 +27,7 @@ from pete_e.domain.validation import (
 )
 from pete_e.application import wger_sender
 from pete_e.cli import messenger as messenger_cli
-from pete_e.domain import body_age, phrase_picker
+from pete_e.domain import body_age, metrics_service, french_trainer, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import plan_rw
@@ -259,6 +259,97 @@ class Orchestrator:
         self.dal = dal or PostgresDal()
         self.narrative_builder = NarrativeBuilder()
         self.summary_dispatch_ledger = summary_dispatch_ledger or DailySummaryDispatchLedger()
+
+    def _describe_session(self, rows: Iterable[Mapping[str, Any]]) -> str | None:
+        strength_names: list[str] = []
+        cardio_present = False
+        for row in rows or []:
+            if not isinstance(row, Mapping):
+                continue
+            if row.get("is_cardio"):
+                cardio_present = True
+                continue
+            name = row.get("exercise_name") or row.get("name")
+            if name:
+                strength_names.append(str(name))
+        if not strength_names and not cardio_present:
+            return None
+        unique_strength = sorted({name for name in strength_names})
+        if unique_strength and cardio_present:
+            focus = ", ".join(unique_strength[:2])
+            if len(unique_strength) > 2:
+                focus += ", ..."
+            return f"Strength ({focus}) + cardio"
+        if unique_strength:
+            focus = ", ".join(unique_strength[:2])
+            if len(unique_strength) > 2:
+                focus += ", ..."
+            return f"Strength ({focus})"
+        if cardio_present:
+            return "Cardio / conditioning"
+        return None
+
+    def _build_calendar_context(self, message_date: date) -> Dict[str, Any]:
+        context: Dict[str, Any] = {}
+        try:
+            active_plan = self.dal.get_active_plan()
+        except Exception as exc:
+            log_utils.log_message(f"Failed to load active plan for trainer context: {exc}", "WARN")
+            return context
+        if not active_plan:
+            return context
+        start_date = _ensure_date(active_plan.get("start_date"))
+        weeks_raw = active_plan.get("weeks")
+        try:
+            total_weeks = int(weeks_raw) if weeks_raw is not None else None
+        except (TypeError, ValueError):
+            total_weeks = None
+        if start_date is None or not total_weeks or total_weeks <= 0:
+            return context
+        days_since_start = (message_date - start_date).days
+        if days_since_start < 0:
+            return context
+        week_number = (days_since_start // 7) + 1
+        if week_number > total_weeks:
+            return context
+        plan_id = active_plan.get("id")
+        if plan_id is None:
+            return context
+        try:
+            week_rows = self.dal.get_plan_week(plan_id, week_number)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to load plan week {week_number} for trainer context: {exc}", "WARN")
+            return context
+        dow_target = message_date.isoweekday()
+        todays: list[Mapping[str, Any]] = []
+        for row in week_rows or []:
+            if not isinstance(row, Mapping):
+                continue
+            try:
+                dow_value = int(row.get("day_of_week"))
+            except (TypeError, ValueError):
+                continue
+            if dow_value == dow_target:
+                todays.append(row)
+        if not todays:
+            context["today_session_type"] = "rest"
+            return context
+        label = self._describe_session(todays)
+        context["today_session_type"] = label or "training"
+        return context
+
+    def build_trainer_message(self, *, message_date: date | None = None) -> str:
+        metrics = metrics_service.get_metrics_overview(self.dal)
+        context = self._build_calendar_context(message_date or date.today())
+        return french_trainer.compose_daily_message(metrics, context)
+
+    def send_trainer_message(self, *, message_date: date | None = None) -> str:
+        message = self.build_trainer_message(message_date=message_date)
+        if not message or not message.strip():
+            return ""
+        if not self.send_telegram_message(message):
+            raise RuntimeError("Telegram send failed for trainer summary.")
+        return message
 
     def get_daily_summary(self, target_date: date = None) -> str:
         """
@@ -722,7 +813,7 @@ class Orchestrator:
         return telegram_sender.send_message(message)
 
     def _auto_send_daily_summary(self, *, target_date: date) -> bool:
-        """Generate and send the daily summary for the target date with idempotency."""
+        """Generate and send Pierre's trainer summary with idempotency."""
         if self.summary_dispatch_ledger.was_sent(target_date):
             log_utils.log_message(
                 f"Skipping auto summary send for {target_date.isoformat()}; already sent.",
@@ -730,28 +821,26 @@ class Orchestrator:
             )
             return False
 
+        message_date = target_date + timedelta(days=1)
         try:
-            summary_text = messenger_cli.send_daily_summary(
-                orchestrator=self,
-                target_date=target_date,
-            )
-        except Exception as exc:  # pragma: no cover - defensive guardrail
+            summary_text = self.send_trainer_message(message_date=message_date)
+        except Exception as exc:
             log_utils.log_message(
-                f"Auto daily summary send failed for {target_date.isoformat()}: {exc}",
+                f"Auto trainer summary send failed for {target_date.isoformat()}: {exc}",
                 "ERROR",
             )
             return False
 
-        if not summary_text or not str(summary_text).strip():
+        if not summary_text or not summary_text.strip():
             log_utils.log_message(
-                f"Auto daily summary skipped for {target_date.isoformat()}: summary empty.",
+                f"Auto trainer summary skipped for {target_date.isoformat()}: summary empty.",
                 "WARN",
             )
             return False
 
-        self.summary_dispatch_ledger.mark_sent(target_date, str(summary_text))
+        self.summary_dispatch_ledger.mark_sent(target_date, summary_text)
         log_utils.log_message(
-            f"Auto daily summary sent for {target_date.isoformat()}",
+            f"Auto trainer summary sent for {target_date.isoformat()}",
             "INFO",
         )
         return True
@@ -1083,6 +1172,13 @@ class Orchestrator:
                 failed_sources.append("BodyAge")
                 source_statuses["BodyAge"] = "failed"
 
+
+        try:
+            log_utils.log_message("Refreshing daily_summary view...", "INFO")
+            self.dal.refresh_daily_summary_view()
+        except Exception as exc:
+            log_utils.log_message(f"Failed to refresh daily_summary view: {exc}", "ERROR")
+            alert_messages.append("daily_summary view refresh failed; data may be stale.")
 
         if wger_logs_found:
             log_utils.log_message("Refreshing actual muscle volume view...", "INFO")
@@ -1615,3 +1711,6 @@ class Orchestrator:
             start_date=next_start,
             message=message,
         )
+
+
+
