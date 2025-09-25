@@ -105,7 +105,7 @@ def test_withings_client_retries_rate_limits(monkeypatch):
     def fake_sleep(seconds):  # pragma: no cover - behaviour asserted via recorded calls
         sleep_calls.append(seconds)
 
-    monkeypatch.setattr(withings_module.requests, "get", fake_get)
+    monkeypatch.setattr("pete_e.infrastructure.withings_client.requests.get", fake_get)
     monkeypatch.setattr(withings_module.time, "sleep", fake_sleep)
 
     start = datetime(2024, 1, 1, tzinfo=timezone.utc)

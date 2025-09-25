@@ -83,7 +83,7 @@ def test_send_message_escapes_markdown_v2(monkeypatch):
 
         return _Reply()
 
-    monkeypatch.setattr(telegram_sender.requests, "post", fake_post)
+    monkeypatch.setattr("pete_e.infrastructure.telegram_sender.requests.post", fake_post)
     monkeypatch.setattr(settings, "TELEGRAM_TOKEN", SecretStr("abc123"))
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "chat-42")
 

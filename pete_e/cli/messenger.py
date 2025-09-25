@@ -155,13 +155,13 @@ def _format_hrv_line(dal: Any, target_date: date) -> str | None:
     previous_values = [value for sample_date, value in samples if sample_date < current_date]
     avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
 
-    arrow = "→"
+    arrow = "->"
     if avg_previous is not None:
         delta = current_value - avg_previous
         if delta >= 2.0:
             arrow = "↗"
         elif delta <= -2.0:
-            arrow = "↘"
+            arrow = "v"
 
     line = f"HRV: {current_value:.0f} ms {arrow}"
     if avg_previous is not None:
@@ -281,6 +281,40 @@ def send_daily_summary(
     return summary_str
 
 
+def build_trainer_summary(
+    *,
+    orchestrator: "OrchestratorType | None" = None,
+    target_date: date | None = None,
+) -> str:
+    """Build Pierre's trainer message for the provided day (defaults to today)."""
+    orch = orchestrator or _build_orchestrator()
+    message_day = target_date or date.today()
+    return orch.build_trainer_message(message_date=message_day)
+
+
+def send_trainer_summary(
+    *,
+    orchestrator: "OrchestratorType | None" = None,
+    target_date: date | None = None,
+    summary_text: str | None = None,
+) -> str:
+    """Send Pierre's trainer message via Telegram and return the content."""
+    orch = orchestrator or _build_orchestrator()
+    message_day = target_date or date.today()
+    if summary_text is None:
+        summary_value = build_trainer_summary(orchestrator=orch, target_date=message_day)
+    else:
+        summary_value = summary_text
+    summary_str = "" if summary_value is None else str(summary_value)
+
+    if not summary_str.strip():
+        return summary_str
+
+    sent = orch.send_telegram_message(summary_str)
+    if not sent:
+        raise RuntimeError("Telegram send for trainer summary failed.")
+
+    return summary_str
 
 def build_weekly_plan_overview(
     *,
@@ -522,13 +556,14 @@ def lets_begin() -> None:
 def message(
     send: Annotated[bool, typer.Option("--send", help="Send the generated message via Telegram.")] = False,
     summary: Annotated[bool, typer.Option("--summary", help="Generate and send the daily summary.")] = False,
+    trainer: Annotated[bool, typer.Option("--trainer", help="Generate Pierre's trainer check-in.")] = False,
     plan: Annotated[bool, typer.Option("--plan", help="Generate and send the weekly training plan.")] = False,
 ) -> None:
     """
-    Generate and optionally send messages (daily summary or weekly plan).
+    Generate and optionally send messages (daily summary, trainer check-in, or weekly plan).
     """
-    if not summary and not plan:
-        log_utils.log_message("Please specify a message type to generate: --summary or --plan", "WARN")
+    if not summary and not plan and not trainer:
+        log_utils.log_message("Please specify a message type to generate: --summary, --trainer, or --plan", "WARN")
         raise typer.Exit(code=1)
 
     orchestrator = _build_orchestrator()
@@ -543,6 +578,18 @@ def message(
                 send_daily_summary(orchestrator=orchestrator, summary_text=daily_summary)
             except Exception as exc:  # pragma: no cover - defensive guardrail
                 log_utils.log_message(f"Failed to send daily summary via Telegram: {exc}", "ERROR")
+                raise typer.Exit(code=1)
+
+    if trainer:
+        log_utils.log_message("Generating trainer summary...", "INFO")
+        trainer_summary = build_trainer_summary(orchestrator=orchestrator)
+        print("--- Trainer Summary ---")
+        print(trainer_summary)
+        if send:
+            try:
+                send_trainer_summary(orchestrator=orchestrator, summary_text=trainer_summary)
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(f"Failed to send trainer summary via Telegram: {exc}", "ERROR")
                 raise typer.Exit(code=1)
 
     if plan:

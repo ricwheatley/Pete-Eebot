@@ -12,6 +12,10 @@ class DummyDal(DataAccessLayer):
         self._metrics_7 = metrics_7
         self._metrics_baseline = metrics_baseline
 
+    def get_metrics_overview(self, *a, **k): return {}
+
+    def refresh_daily_summary_view(self, *a, **k): return None
+
     # Lift log operations
     def load_lift_log(
         self,

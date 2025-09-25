@@ -78,13 +78,15 @@ def _make_rows(base_date: date, days: int, rhr: float, sleep_min: int) -> List[D
 
 @pytest.fixture(autouse=True)
 def patch_log_path(tmp_path, monkeypatch):
-    # ensure any real logger uses a tmp file path
     from pete_e import config as cfg
-    class _Settings(cfg.settings.__class__):  # type: ignore
-        @property
-        def log_path(self):  # pragma: no cover
-            return tmp_path / "test_validation.log"
-    monkeypatch.setattr(cfg, "settings", _Settings())
+
+    # Patch the stubbed settings object’s log_path property
+    monkeypatch.setattr(
+        cfg.settings.__class__,
+        "log_path",
+        property(lambda self: tmp_path / "test_validation.log"),
+    )
+
 
 
 def test_baselines_use_recent_medians():

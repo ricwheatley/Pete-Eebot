@@ -60,6 +60,15 @@ class DataAccessLayer(ABC):
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         pass
 
+    @abstractmethod
+    def get_metrics_overview(self) -> List[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def refresh_daily_summary_view(self) -> None:
+        pass
+
+
     # -------------------------------------------------------------------------
     # Training plans
     # -------------------------------------------------------------------------
@@ -150,3 +159,4 @@ class DataAccessLayer(ABC):
         routine_id: Optional[int] = None,
     ) -> None:
         pass
+

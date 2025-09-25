@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import psycopg
+from psycopg import connect
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
@@ -30,7 +30,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def conn_cursor():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
-    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    conn = connect(DATABASE_URL, row_factory=dict_row)
     try:
         with conn:
             with conn.cursor() as cur:
