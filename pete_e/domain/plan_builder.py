@@ -35,6 +35,9 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
     # Create block and plan
     plan_id, week_ids = plan_rw.create_block_and_plan(start_date, weeks)
 
+    # Retrieve latest training max values for main lifts
+    tm_map = plan_rw.latest_training_max()
+
     # Iterate weeks
     for w in range(1, weeks + 1):
         week_id = week_ids[w - 1]
@@ -59,6 +62,15 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
 
             # Main lift
             scheme = schedule_rules.WEEK_PCTS[w]
+            target_weight_kg = None
+            lift_code = schedule_rules.LIFT_CODE_BY_ID.get(main_id)
+            if lift_code:
+                training_max = tm_map.get(lift_code)
+                percent_1rm = scheme.get("percent_1rm")
+                if training_max is not None and percent_1rm is not None:
+                    target_weight_kg = round(
+                        training_max * percent_1rm / 100 / 2.5
+                    ) * 2.5
             plan_rw.insert_workout(
                 week_id=week_id,
                 day_of_week=dow,
@@ -67,7 +79,7 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
                 reps=scheme["reps"],
                 rir_cue=scheme["rir_cue"],
                 percent_1rm=scheme["percent_1rm"],
-                target_weight_kg=None,  # filled later by progression
+                target_weight_kg=target_weight_kg,
                 scheduled_time=schedule_rules.weight_slot_for_day(dow).strftime("%H:%M"),
                 is_cardio=False,
             )
