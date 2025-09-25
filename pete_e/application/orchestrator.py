@@ -1339,6 +1339,26 @@ class Orchestrator:
                 f"Successfully saved new plan with ID: {plan_id}", "INFO"
             )
 
+            try:
+                progression_decision = calibrate_plan_week(
+                    self.dal,
+                    plan_id=plan_id,
+                    week_number=1,
+                    persist=True,
+                )
+            except Exception as calibration_error:  # pragma: no cover - log only
+                log_utils.log_message(
+                    "Failed to calibrate week 1 for plan "
+                    f"{plan_id}: {calibration_error}",
+                    "ERROR",
+                )
+            else:
+                log_utils.log_message(
+                    "Applied progression calibration to week 1 for plan "
+                    f"{plan_id}: {progression_decision}",
+                    "INFO",
+                )
+
             # Refresh the plan view to include the new data
             self.dal.refresh_plan_view()
 
