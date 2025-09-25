@@ -3,6 +3,7 @@ from typing import Dict, List
 
 import pytest
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.validation import ensure_muscle_balance, validate_plan_structure
 
 
@@ -159,3 +160,42 @@ def test_validate_plan_structure_flags_muscle_imbalance() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "muscle balance" in str(excinfo.value)
+
+
+def test_validate_plan_structure_flags_missing_weights() -> None:
+    start = date(2025, 9, 22)
+    weeks: List[Dict[str, object]] = []
+    muscle_group_by_day = {1: "upper_push", 2: "lower", 4: "upper_pull", 5: "lower"}
+
+    for week_number in range(1, 5):
+        week_start = start + timedelta(days=(week_number - 1) * 7)
+        workouts: List[Dict[str, object]] = []
+        for day_of_week, exercise_id in schedule_rules.MAIN_LIFT_BY_DOW.items():
+            workouts.append(
+                {
+                    "day_of_week": day_of_week,
+                    "exercise_id": exercise_id,
+                    "sets": schedule_rules.WEEK_PCTS[week_number]["sets"],
+                    "reps": schedule_rules.WEEK_PCTS[week_number]["reps"],
+                    "rir": schedule_rules.WEEK_PCTS[week_number]["rir_cue"],
+                    "percent_1rm": schedule_rules.WEEK_PCTS[week_number]["percent_1rm"],
+                    "target_weight_kg": None,
+                    "slot": "main",
+                    "is_cardio": False,
+                    "muscle_group": muscle_group_by_day.get(day_of_week, "upper_push"),
+                }
+            )
+        weeks.append(
+            {
+                "week_number": week_number,
+                "start_date": week_start.isoformat(),
+                "workouts": workouts,
+            }
+        )
+
+    plan = {"weeks": weeks}
+
+    with pytest.raises(ValueError) as excinfo:
+        validate_plan_structure(plan, start)
+
+    assert "missing target weight" in str(excinfo.value)
