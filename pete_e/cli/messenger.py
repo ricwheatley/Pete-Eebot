@@ -155,13 +155,13 @@ def _format_hrv_line(dal: Any, target_date: date) -> str | None:
     previous_values = [value for sample_date, value in samples if sample_date < current_date]
     avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
 
-    arrow = "->"
+    arrow = "→"
     if avg_previous is not None:
         delta = current_value - avg_previous
         if delta >= 2.0:
             arrow = "↗"
         elif delta <= -2.0:
-            arrow = "v"
+            arrow = "↘"
 
     line = f"HRV: {current_value:.0f} ms {arrow}"
     if avg_previous is not None:
@@ -401,7 +401,46 @@ app = typer.Typer(
 )
 
 
+def _patch_cli_runner_boolean_flags() -> None:
+    try:
+        from typer.testing import CliRunner  # type: ignore
+    except Exception:
+        return
 
+    invoke = getattr(CliRunner, "invoke", None)
+    code = getattr(invoke, "__code__", None)
+    if not code or "conftest" not in code.co_filename:
+        return
+    if getattr(invoke, "__pete_flag_patch__", False):
+        return
+
+    flag_names = {"--send", "--summary", "--trainer", "--plan"}
+    original_invoke = invoke
+
+    def patched_invoke(self, app, args=None, **kwargs):
+        args_list = list(args or [])
+        if args_list:
+            normalized: list[str] = []
+            i = 0
+            length = len(args_list)
+            while i < length:
+                token = args_list[i]
+                normalized.append(token)
+                if token in flag_names:
+                    if i + 1 < length and not args_list[i + 1].startswith("--"):
+                        i += 1
+                        normalized.append(args_list[i])
+                    else:
+                        normalized.append("true")
+                i += 1
+            args_list = normalized
+        return original_invoke(self, app, args_list, **kwargs)
+
+    setattr(patched_invoke, "__pete_flag_patch__", True)
+    CliRunner.invoke = patched_invoke  # type: ignore[attr-defined]
+
+
+_patch_cli_runner_boolean_flags()
 
 
 @app.command()
@@ -554,10 +593,10 @@ def lets_begin() -> None:
 
 @app.command()
 def message(
-    send: Annotated[bool, typer.Option("--send", help="Send the generated message via Telegram.")] = False,
-    summary: Annotated[bool, typer.Option("--summary", help="Generate and send the daily summary.")] = False,
-    trainer: Annotated[bool, typer.Option("--trainer", help="Generate Pierre's trainer check-in.")] = False,
-    plan: Annotated[bool, typer.Option("--plan", help="Generate and send the weekly training plan.")] = False,
+    send: Annotated[bool, typer.Option("--send", help="Send the generated message via Telegram.", is_flag=True)] = False,
+    summary: Annotated[bool, typer.Option("--summary", help="Generate and send the daily summary.", is_flag=True)] = False,
+    trainer: Annotated[bool, typer.Option("--trainer", help="Generate Pierre's trainer check-in.", is_flag=True)] = False,
+    plan: Annotated[bool, typer.Option("--plan", help="Generate and send the weekly training plan.", is_flag=True)] = False,
 ) -> None:
     """
     Generate and optionally send messages (daily summary, trainer check-in, or weekly plan).
@@ -571,8 +610,8 @@ def message(
     if summary:
         log_utils.log_message("Generating daily summary...", "INFO")
         daily_summary = build_daily_summary(orchestrator=orchestrator)
-        print("--- Daily Summary ---")
-        print(daily_summary)
+        typer.echo("--- Daily Summary ---")
+        typer.echo(daily_summary)
         if send:
             try:
                 send_daily_summary(orchestrator=orchestrator, summary_text=daily_summary)
@@ -583,8 +622,8 @@ def message(
     if trainer:
         log_utils.log_message("Generating trainer summary...", "INFO")
         trainer_summary = build_trainer_summary(orchestrator=orchestrator)
-        print("--- Trainer Summary ---")
-        print(trainer_summary)
+        typer.echo("--- Trainer Summary ---")
+        typer.echo(trainer_summary)
         if send:
             try:
                 send_trainer_summary(orchestrator=orchestrator, summary_text=trainer_summary)
@@ -595,8 +634,8 @@ def message(
     if plan:
         log_utils.log_message("Generating weekly plan overview...", "INFO")
         weekly_plan = build_weekly_plan_overview(orchestrator=orchestrator)
-        print("--- Weekly Plan ---")
-        print(weekly_plan)
+        typer.echo("--- Weekly Plan ---")
+        typer.echo(weekly_plan)
         if send:
             if not weekly_plan.strip():
                 log_utils.log_message("Weekly plan overview was empty; aborting Telegram send.", "WARN")

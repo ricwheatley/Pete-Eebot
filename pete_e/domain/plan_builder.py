@@ -8,6 +8,7 @@ from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
 from pete_e.domain import validation
+from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure import plan_rw
 
 
@@ -18,6 +19,149 @@ def _pick_random(ids: List[int], k: int) -> List[int]:
         return random.sample(ids, len(ids))
     return random.sample(ids, k)
 
+
+def _safe_get_historical_metrics(dal: Any, days: int) -> List[Dict[str, Any]]:
+    getter = getattr(dal, "get_historical_metrics", None)
+    if not callable(getter):
+        return []
+    try:
+        rows = getter(days)
+    except Exception:
+        return []
+    if not rows:
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+def _conditioning_sets_from_metrics(metrics: List[Dict[str, Any]]) -> int:
+    values: List[float] = []
+    for row in metrics:
+        for key in ("vo2_max", "vo2max"):
+            if key not in row:
+                continue
+            raw = row.get(key)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                values.append(value)
+            break
+    if not values:
+        return 1
+    peak = max(values)
+    if peak >= 55.0:
+        return 3
+    if peak >= 50.0:
+        return 2
+    return 1
+
+def _deload_adjustment(week_key: int) -> int:
+    try:
+        final_week = max(schedule_rules.WEEK_PCTS)
+    except ValueError:
+        return 0
+    return 1 if week_key == final_week else 0
+
+def _build_stub_plan(dal: Any, start_date: date, weeks: int) -> Dict[str, Any]:
+    metrics_history = _safe_get_historical_metrics(dal, max(14, weeks * 7))
+    conditioning_sets = _conditioning_sets_from_metrics(metrics_history)
+    plan_weeks: List[Dict[str, Any]] = []
+    scheme_keys = sorted(schedule_rules.WEEK_PCTS.keys())
+    max_scheme_key = scheme_keys[-1] if scheme_keys else 4
+
+    for index in range(weeks):
+        week_number = index + 1
+        scheme_key = week_number if week_number in schedule_rules.WEEK_PCTS else max_scheme_key
+        week_scheme = schedule_rules.WEEK_PCTS.get(scheme_key, schedule_rules.WEEK_PCTS[max_scheme_key])
+        reduction = _deload_adjustment(scheme_key)
+
+        week_data: Dict[str, Any] = {
+            "week_number": week_number,
+            "start_date": start_date + timedelta(days=7 * index),
+            "workouts": [],
+        }
+
+        for dow in sorted(schedule_rules.MAIN_LIFT_BY_DOW):
+            week_data["workouts"].append(
+                {
+                    "day_of_week": dow,
+                    "slot": "conditioning",
+                    "exercise_id": schedule_rules.BLAZE_ID,
+                    "sets": conditioning_sets,
+                    "reps": 1,
+                    "rir": None,
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": True,
+                }
+            )
+
+            main_id = schedule_rules.MAIN_LIFT_BY_DOW[dow]
+            week_data["workouts"].append(
+                {
+                    "day_of_week": dow,
+                    "slot": "main",
+                    "exercise_id": main_id,
+                    "sets": week_scheme["sets"],
+                    "reps": week_scheme["reps"],
+                    "rir": week_scheme.get("rir_cue"),
+                    "percent_1rm": week_scheme.get("percent_1rm"),
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                }
+            )
+
+            assistance_primary_sets = max(1, schedule_rules.ASSISTANCE_1["sets"] - reduction)
+            week_data["workouts"].append(
+                {
+                    "day_of_week": dow,
+                    "slot": "assistance",
+                    "exercise_id": None,
+                    "sets": assistance_primary_sets,
+                    "reps": schedule_rules.ASSISTANCE_1["reps_low"],
+                    "rir": schedule_rules.ASSISTANCE_1["rir_cue"],
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                }
+            )
+
+            assistance_secondary_sets = max(1, schedule_rules.ASSISTANCE_2["sets"] - reduction)
+            week_data["workouts"].append(
+                {
+                    "day_of_week": dow,
+                    "slot": "assistance",
+                    "exercise_id": None,
+                    "sets": assistance_secondary_sets,
+                    "reps": schedule_rules.ASSISTANCE_2["reps_low"],
+                    "rir": schedule_rules.ASSISTANCE_2["rir_cue"],
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                }
+            )
+
+            core_sets = max(1, schedule_rules.CORE_SCHEME["sets"] - reduction)
+            week_data["workouts"].append(
+                {
+                    "day_of_week": dow,
+                    "slot": "core",
+                    "exercise_id": None,
+                    "sets": core_sets,
+                    "reps": schedule_rules.CORE_SCHEME["reps_low"],
+                    "rir": schedule_rules.CORE_SCHEME["rir_cue"],
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                }
+            )
+
+        plan_weeks.append(week_data)
+
+    return {
+        "start_date": start_date,
+        "weeks": plan_weeks,
+    }
 
 def build_training_block(start_date: date, weeks: int = 4) -> int:
     """
@@ -150,9 +294,23 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
 # Backward compatibility for orchestrator/tests that still expect build_block
 def build_block(dal, start_date, weeks: int = 4) -> int:
     """
-    Compatibility shim. Ignore `dal` and call build_training_block.
+    Compatibility shim. Persist a plan via the provided DAL when possible.
     """
-    return build_training_block(start_date, weeks)
+    weeks = max(1, int(weeks or 1))
+
+    if isinstance(dal, DataAccessLayer):
+        return build_training_block(start_date, weeks)
+
+    saver = getattr(dal, "save_training_plan", None)
+    if not callable(saver):
+        return build_training_block(start_date, weeks)
+
+    plan_payload = _build_stub_plan(dal, start_date, weeks)
+    plan_id = saver(plan_payload, start_date)
+    try:
+        return int(plan_id)
+    except (TypeError, ValueError):
+        return plan_id
 
 
 TEST_WEEK_LIFT_ORDER = [
