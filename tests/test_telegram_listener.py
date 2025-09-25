@@ -39,15 +39,18 @@ def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest
 
     monkeypatch.setattr(telegram_listener.telegram_sender, "send_message", fake_send)
     monkeypatch.setattr(
-        telegram_listener.messenger,
-        "build_daily_summary",
-        lambda orchestrator=None, target_date=None: "Daily summary ready",
+        telegram_listener,
+        "messenger",
+        SimpleNamespace(
+            build_daily_summary=lambda orchestrator=None, target_date=None: "Daily summary ready"
+        ),
     )
 
     listener = TelegramCommandListener(
         offset_path=tmp_path / "offset.json",
         poll_limit=5,
         poll_timeout=0,
+        orchestrator_factory=lambda: SimpleNamespace(),
     )
 
     processed = listener.listen_once()
@@ -101,6 +104,52 @@ def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: p
     assert "summary\\_sent: True" in captured[0]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 77
+
+
+def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    updates = [_make_update(99, "/lets-begin")]
+    captured: list[str] = []
+    alerts: list[str] = []
+
+    monkeypatch.setattr(
+        telegram_listener.telegram_sender,
+        "get_updates",
+        lambda *, offset=None, limit=2, timeout=0: updates,
+    )
+
+    def fake_send(message: str) -> bool:
+        captured.append(message)
+        return True
+
+    monkeypatch.setattr(telegram_listener.telegram_sender, "send_message", fake_send)
+    monkeypatch.setattr(
+        telegram_listener.telegram_sender,
+        "send_alert",
+        lambda message: alerts.append(message) or True,
+    )
+
+    orchestration_calls: dict[str, int] = {"generate": 0}
+
+    def fake_generate() -> None:
+        orchestration_calls["generate"] += 1
+
+    orch_stub = SimpleNamespace(generate_strength_test_week=fake_generate)
+
+    listener = TelegramCommandListener(
+        offset_path=tmp_path / "offset.json",
+        poll_limit=2,
+        poll_timeout=0,
+        orchestrator_factory=lambda: orch_stub,
+    )
+
+    processed = listener.listen_once()
+
+    assert processed == 1
+    assert captured == ["Strength test week scheduled"]
+    assert alerts == ["Strength test week scheduled"]
+    assert orchestration_calls == {"generate": 1}
+    stored = json.loads((tmp_path / "offset.json").read_text())
+    assert stored["last_update_id"] == 99
 
 
 def test_listen_once_uses_stored_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
