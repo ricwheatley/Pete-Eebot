@@ -1,5 +1,7 @@
-# (Functional) Workout exporter (v3) – updated version for exporting training week data to Wger.
-# (Used by weekly reviewer for auto-export.)
+# pete_e/infrastructure/wger_exporter_v3.py
+#
+# Workout exporter (v3) – exports training week data to Wger.
+# Used by strength test and weekly reviewer for auto-export.
 
 from __future__ import annotations
 
@@ -21,10 +23,9 @@ class WgerError(RuntimeError):
 
 class WgerClient:
     """
-    Thin HTTP client around the wger API v2.
-
-    Auth: Authorization: Token <KEY>  - token-based auth with 'Token' prefix.
+    Thin HTTP client around the Wger API v2.
     """
+
     def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = 30):
         self.base_url = (base_url or os.getenv("WGER_API_BASE") or "https://wger.de").rstrip("/")
         self.token = token or os.getenv("WGER_API_KEY")
@@ -74,20 +75,15 @@ class WgerClient:
         }
         return self.post("/api/v2/routine/", payload)
 
-    # Weeks
+    # Weeks (WorkoutSession in schema)
     def create_week(self, *, routine_id: int, order: int) -> Dict[str, Any]:
         payload = {
             "routine": routine_id,
             "order": order,
         }
-        return self.post("/api/v2/workoutsessionweek/", payload)
+        return self.post("/api/v2/workoutsession/", payload)
 
     # Days
-    def find_day(self, *, routine_id: int, order: int) -> Optional[Dict[str, Any]]:
-        data = self.get("/api/v2/day/", params={"routine": routine_id, "order": order})
-        results = data.get("results", [])
-        return results[0] if results else None
-
     def create_day(
         self, *, routine_id: int, order: int, name: Optional[str] = None,
         is_rest: bool = False, week_id: Optional[int] = None
@@ -99,7 +95,7 @@ class WgerClient:
             "is_rest": is_rest,
         }
         if week_id is not None:
-            payload["week"] = week_id
+            payload["workout_session"] = week_id
         return self.post("/api/v2/day/", payload)
 
     # Slots
@@ -130,7 +126,7 @@ class WgerClient:
             payload["weight_unit"] = weight_unit_id
         return self.post("/api/v2/slot-entry/", payload)
 
-    # Configs for set count, reps and RiR
+    # Configs
     def set_sets(self, slot_entry_id: int, sets: int) -> Dict[str, Any]:
         payload = {
             "slot_entry": slot_entry_id,
@@ -146,7 +142,7 @@ class WgerClient:
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": 1,
-            "value": str(int(reps)),  # API expects decimal string
+            "value": str(int(reps)),
             "operation": "r",
             "step": "na",
             "repeat": True,
@@ -164,7 +160,7 @@ class WgerClient:
         }
         return self.post("/api/v2/rir-config/", payload)
 
-    # Look up units
+    # Lookups
     def repetition_unit_id(self, name: str = "repetitions") -> Optional[int]:
         data = self.get("/api/v2/setting-repetitionunit/", params={"name": name})
         results = data.get("results", [])
@@ -211,7 +207,7 @@ def export_week_to_wger(
 
     created: Dict[str, Any] = {"routine_id": routine_id, "days": []}
 
-    # 2) Create a week in Wger
+    # 2) Week
     week_number = int(week_payload.get("week_number", 1))
     week = client.create_week(routine_id=routine_id, order=week_number)
     week_id = week["id"]
@@ -224,7 +220,12 @@ def export_week_to_wger(
         exercises: List[Dict[str, Any]] = day.get("exercises", [])
 
         day_name = weekday_name(dow)
-        wger_day = client.create_day(routine_id=routine_id, order=day_order, name=day_name, week_id=week_id)
+        wger_day = client.create_day(
+            routine_id=routine_id,
+            order=day_order,
+            name=day_name,
+            week_id=week_id
+        )
         day_id = wger_day["id"]
         created_day = {"order": day_order, "source_day_of_week": dow, "id": day_id, "slots": []}
 
@@ -259,7 +260,7 @@ def export_week_to_wger(
             if reps > 0:
                 client.set_reps(slot_entry_id, reps)
 
-            # crude RIR extraction from comment
+            # crude RIR parse
             rir_val: Optional[float] = None
             lower = comment.lower()
             if "rir" in lower:
@@ -281,7 +282,7 @@ def export_week_to_wger(
         created["days"].append(created_day)
         day_order += 1
 
-    # 4) Log the export
+    # 4) Log
     plan_id = week_payload.get("plan_id")
     if plan_id:
         try:
