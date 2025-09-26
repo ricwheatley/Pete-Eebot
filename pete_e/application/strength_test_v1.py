@@ -3,21 +3,21 @@
 # Create a 1-week AMRAP test plan and evaluate it to update Training Maxes.
 #
 # Protocol:
-#   - Bench: 1xAMRAP @ 85%
-#   - Squat: 1xAMRAP @ 87.5%
-#   - OHP:   1xAMRAP @ 85%
-#   - Dead:  1xAMRAP @ 90%
+#   - Bench:   1xAMRAP @ 85%
+#   - Squat:   1xAMRAP @ 87.5%
+#   - OHP:     1xAMRAP @ 85%
+#   - Deadlift:1xAMRAP @ 90%
 #
 # e1RM = weight * (1 + reps/30)  (Epley), TM = 90% of e1RM, rounded to 2.5 kg.
-#
 
-import math
+from __future__ import annotations
+
 from datetime import date, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from pete_e.domain.schedule_rules import (
     BLAZE_ID, BLAZE_TIMES, weight_slot_for_day,
-    SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
+    SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID,
 )
 from pete_e.infrastructure.plan_rw import (
     latest_training_max,
@@ -27,20 +27,21 @@ from pete_e.infrastructure.plan_rw import (
     week_date_range,
     insert_strength_test_result,
     upsert_training_max,
+    build_week_payload,
 )
-
-from pete_e.infrastructure.plan_rw import build_week_payload
+# Use the new v4 exporter that supports find-or-create, overwrite, dry-run, etc.
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 
 
-TEST_PCTS = {
+TEST_PCTS: Dict[int, float] = {
     BENCH_ID: 85.0,
     SQUAT_ID: 87.5,
-    OHP_ID:   85.0,
+    OHP_ID: 85.0,
     DEADLIFT_ID: 90.0,
 }
 
-MAIN_LIFT_ORDER = [BENCH_ID, SQUAT_ID, OHP_ID, DEADLIFT_ID]  # Mon, Tue, Thu, Fri
+# Mon, Tue, Thu, Fri main-lift order
+MAIN_LIFT_ORDER = [BENCH_ID, SQUAT_ID, OHP_ID, DEADLIFT_ID]
 
 
 def _round_2p5(x: float) -> float:
@@ -80,12 +81,13 @@ def schedule_test_week(start_monday: date) -> Tuple[int, int]:
             week_id=week_id,
             day_of_week=dow,
             exercise_id=BLAZE_ID,
-            sets=1, reps=1,
+            sets=1,
+            reps=1,
             rir_cue=None,
             percent_1rm=None,
             target_weight_kg=None,
             scheduled_time=BLAZE_TIMES[dow].strftime("%H:%M:%S"),
-            is_cardio=True
+            is_cardio=True,
         )
 
     # Insert AMRAP test main lifts
@@ -97,12 +99,12 @@ def schedule_test_week(start_monday: date) -> Tuple[int, int]:
             day_of_week=dow,
             exercise_id=ex_id,
             sets=1,
-            reps=1,                 # AMRAP will be performed in the gym; we label it in exporter
+            reps=1,  # AMRAP performed in the gym - we label via exporter comment
             rir_cue=None,
             percent_1rm=pct,
             target_weight_kg=tgt,
             scheduled_time=weight_slot_for_day(dow).strftime("%H:%M:%S"),
-            is_cardio=False
+            is_cardio=False,
         )
 
     # Build a payload with plan_id and week_number
@@ -110,8 +112,16 @@ def schedule_test_week(start_monday: date) -> Tuple[int, int]:
     week_start = start_monday
     week_end = week_start + timedelta(days=6)
 
-    # Export and log
-    export_week_to_wger(payload, week_start=week_start, week_end=week_end)
+    # Export and log - use v4 exporter with your preferred options
+    export_week_to_wger(
+        payload,
+        week_start=week_start,
+        week_end=week_end,
+        routine_prefix="Strength Test",  # 16 - helpful routine naming
+        force_overwrite=True,            # 17/4 - wipe week days before re-export
+        blaze_mode="exercise",           # 11 - show Blaze as a real exercise
+        debug_api=False,                 # 5 - flip to True if you want request/response logs
+    )
 
     return plan_id, week_id
 
@@ -130,6 +140,7 @@ def evaluate_test_week_and_update_tms() -> Optional[Dict[str, str]]:
     week window, store strength_test_result rows, and upsert training_max per lift.
     """
     from pete_e.infrastructure.plan_rw import conn_cursor
+
     tw = latest_test_week()
     if not tw:
         return None
@@ -151,7 +162,8 @@ def evaluate_test_week_and_update_tms() -> Optional[Dict[str, str]]:
       AND reps >= 1 AND reps <= 20
     ORDER BY date, exercise_id, weight_kg DESC, reps DESC;
     """
-    best: Dict[int, Tuple[date, int, float, float]] = {}  # ex_id -> (date, reps, weight, e1rm)
+    # ex_id -> (date, reps, weight, e1rm)
+    best: Dict[int, tuple] = {}
 
     with conn_cursor() as (_, cur):
         cur.execute(sql, (week_start, week_end, list(main_ids)))

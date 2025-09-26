@@ -1,39 +1,70 @@
-# pete_e/infrastructure/wger_exporter_v3.py
+# pete_e/infrastructure/wger_exporter_v4.py
 #
-# Workout exporter (v3) – exports training week data to Wger.
-# Used by strength test and weekly reviewer for auto-export.
+# Workout exporter (v4) – exports training week data to Wger with idempotency, validation,
+# retries, diagnostics, dry-run, and configurable behaviour.
+# Implements improvements 1–17 discussed with Ric.
+#
+# Backwards compatible entrypoint: export_week_to_wger(...)
 
 from __future__ import annotations
 
 import os
+import json
+import time
 import datetime as dt
-from typing import Any, Dict, List, Optional
-from pete_e.infrastructure.plan_rw import log_wger_export
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from pete_e.infrastructure.plan_rw import log_wger_export, conn_cursor
+from pete_e.config.logging import get_logger
+
+logger = get_logger()
+
+
+# ---------------------------
+# Exceptions
+# ---------------------------
 
 class WgerError(RuntimeError):
     def __init__(self, msg: str, resp: Optional[requests.Response] = None):
         super().__init__(msg)
         self.resp = resp
         self.status_code = None if resp is None else resp.status_code
-        self.text = None if resp is None else resp.text
+        self.text = None if resp is None else (resp.text or "")
 
+
+# ---------------------------
+# HTTP client with retries & debug logging
+# ---------------------------
 
 class WgerClient:
     """
-    Thin HTTP client around the Wger API v2.
+    Thin HTTP client around the Wger API v2 with retry and optional debug logging.
     """
 
-    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = 30):
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        token: Optional[str] = None,
+        timeout: int = 30,
+        max_retries: int = 3,
+        backoff_base: float = 0.75,
+        debug_api: bool = False,
+    ):
         self.base_url = (base_url or os.getenv("WGER_API_BASE") or "https://wger.de").rstrip("/")
         self.token = token or os.getenv("WGER_API_KEY")
         if not self.token:
             raise WgerError("WGER_API_KEY is not set in environment")
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_base = backoff_base
+        self.debug_api = debug_api
 
-    # --- low-level ----
+        # simple cache for lookups
+        self._rep_unit_id_cache: Optional[int] = None
+        self._weight_unit_id_cache: Dict[str, Optional[int]] = {}
+
     def _headers(self) -> Dict[str, str]:
         return {
             "Authorization": f"Token {self.token}",
@@ -46,19 +77,98 @@ class WgerClient:
             path = "/" + path
         return f"{self.base_url}{path}"
 
+    def _should_retry(self, status: int) -> bool:
+        # Retry on transient conditions
+        return status in (408, 429, 500, 502, 503, 504)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Optional[Dict[str, Any]] = None,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        url = self._url(path)
+        attempt = 0
+        last_exc: Optional[Exception] = None
+
+        while attempt < self.max_retries:
+            try:
+                if self.debug_api:
+                    logger.debug(f"[wger.api] {method} {path} params={params or {}} payload={json.dumps(payload or {}, ensure_ascii=False)}")
+                r = requests.request(
+                    method=method.upper(),
+                    url=url,
+                    headers=self._headers(),
+                    params=params,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                if self.debug_api:
+                    logger.debug(f"[wger.api] <- {r.status_code} {r.text[:800]}")
+
+                if r.status_code in (200, 201, 204):
+                    if r.status_code == 204:
+                        return {}
+                    # Some endpoints return non-JSON on success; try JSON else return {}
+                    try:
+                        return r.json()
+                    except ValueError:
+                        return {}
+                if self._should_retry(r.status_code):
+                    # back off and retry
+                    sleep_for = self.backoff_base * (2 ** attempt)
+                    logger.warning(f"[wger.api] Transient {r.status_code} on {method} {path}, retrying in {sleep_for:.2f}s...")
+                    time.sleep(sleep_for)
+                    attempt += 1
+                    continue
+                # non-retryable error
+                raise WgerError(f"{method} {path} failed with {r.status_code}", r)
+            except requests.RequestException as exc:
+                last_exc = exc
+                sleep_for = self.backoff_base * (2 ** attempt)
+                logger.warning(f"[wger.api] Network error on {method} {path}: {exc!r}, retrying in {sleep_for:.2f}s...")
+                time.sleep(sleep_for)
+                attempt += 1
+
+        # exhausted retries
+        if isinstance(last_exc, requests.RequestException):
+            raise WgerError(f"{method} {path} failed after retries: {last_exc!r}")
+        raise WgerError(f"{method} {path} failed after retries")
+
+    # convenience wrappers
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        r = requests.get(self._url(path), headers=self._headers(), params=params, timeout=self.timeout)
-        if r.status_code != 200:
-            raise WgerError(f"GET {path} failed with {r.status_code}", r)
-        return r.json()
+        return self._request("GET", path, params=params)
 
     def post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        r = requests.post(self._url(path), headers=self._headers(), json=payload, timeout=self.timeout)
-        if r.status_code not in (200, 201):
-            raise WgerError(f"POST {path} failed with {r.status_code}", r)
-        return r.json()
+        return self._request("POST", path, payload=payload)
 
-    # --- high-level helpers ----
+    def patch(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("PATCH", path, payload=payload)
+
+    def delete(self, path: str) -> Dict[str, Any]:
+        return self._request("DELETE", path)
+
+    # pagination helper
+    def _get_all(self, path: str, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        q = dict(params or {})
+        while True:
+            data = self.get(path, params=q)
+            results = data.get("results", [])
+            items.extend(results)
+            next_url = data.get("next")
+            if not next_url:
+                break
+            # crude next-page handling: let server handle it; many deployments accept 'page'
+            # If next_url is absolute, we ignore and just bump 'page'
+            q["page"] = int(q.get("page", 1)) + 1
+        return items
+
+    # ---------------------------
+    # High-level helpers (Routines, Weeks, Days, Slots, SlotEntries)
+    # ---------------------------
 
     # Routines
     def find_routine(self, *, name: str, start: dt.date) -> Optional[Dict[str, Any]]:
@@ -75,44 +185,71 @@ class WgerClient:
         }
         return self.post("/api/v2/routine/", payload)
 
-    # Weeks (WorkoutSession in schema)
+    # Weeks (WorkoutSession)
+    def find_week(self, *, routine_id: int, order: int) -> Optional[Dict[str, Any]]:
+        data = self.get("/api/v2/workoutsession/", params={"routine": routine_id, "order": order})
+        results = data.get("results", [])
+        return results[0] if results else None
+
     def create_week(self, *, routine_id: int, order: int) -> Dict[str, Any]:
-        payload = {
-            "routine": routine_id,
-            "order": order,
-        }
+        payload = {"routine": routine_id, "order": order}
         return self.post("/api/v2/workoutsession/", payload)
 
+    def delete_week(self, *, week_id: int) -> None:
+        self.delete(f"/api/v2/workoutsession/{week_id}/")
+
     # Days
-    def create_day(
-        self, *, routine_id: int, order: int, name: Optional[str] = None,
-        is_rest: bool = False, week_id: Optional[int] = None
-    ) -> Dict[str, Any]:
-        payload = {
-            "routine": routine_id,
-            "order": order,
-            "name": name or "",
-            "is_rest": is_rest,
-        }
+    def find_day(self, *, routine_id: int, order: int, week_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        params: Dict[str, Any] = {"routine": routine_id, "order": order}
+        if week_id is not None:
+            params["workout_session"] = week_id
+        data = self.get("/api/v2/day/", params=params)
+        results = data.get("results", [])
+        return results[0] if results else None
+
+    def list_days_for_week(self, *, routine_id: int, week_id: int) -> List[Dict[str, Any]]:
+        return self._get_all("/api/v2/day/", {"routine": routine_id, "workout_session": week_id})
+
+    def create_day(self, *, routine_id: int, order: int, name: str = "", is_rest: bool = False, week_id: Optional[int] = None) -> Dict[str, Any]:
+        payload = {"routine": routine_id, "order": order, "name": name or "", "is_rest": is_rest}
         if week_id is not None:
             payload["workout_session"] = week_id
         return self.post("/api/v2/day/", payload)
 
+    def delete_day(self, *, day_id: int) -> None:
+        self.delete(f"/api/v2/day/{day_id}/")
+
     # Slots
+    def find_slot(self, *, day_id: int, order: int) -> Optional[Dict[str, Any]]:
+        data = self.get("/api/v2/slot/", params={"day": day_id, "order": order})
+        results = data.get("results", [])
+        return results[0] if results else None
+
     def create_slot(self, *, day_id: int, order: int, comment: Optional[str] = None) -> Dict[str, Any]:
-        payload = {
-            "day": day_id,
-            "order": order,
-            "comment": (comment or "")[:200],
-        }
+        payload = {"day": day_id, "order": order, "comment": (comment or "")[:200]}
         return self.post("/api/v2/slot/", payload)
 
-    # Slot Entries
+    def delete_slot(self, *, slot_id: int) -> None:
+        self.delete(f"/api/v2/slot/{slot_id}/")
+
+    # Slot entries
+    def find_slot_entry(self, *, slot_id: int, order: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        params: Dict[str, Any] = {"slot": slot_id}
+        if order is not None:
+            params["order"] = order
+        data = self.get("/api/v2/slot-entry/", params=params)
+        results = data.get("results", [])
+        return results[0] if results else None
+
     def create_slot_entry(
-        self, *, slot_id: int, exercise_id: int,
-        order: int, comment: Optional[str] = None,
+        self,
+        *,
+        slot_id: int,
+        exercise_id: int,
+        order: int,
+        comment: Optional[str] = None,
         repetition_unit_id: Optional[int] = None,
-        weight_unit_id: Optional[int] = None
+        weight_unit_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         payload = {
             "slot": slot_id,
@@ -126,60 +263,118 @@ class WgerClient:
             payload["weight_unit"] = weight_unit_id
         return self.post("/api/v2/slot-entry/", payload)
 
-    # Configs
+    def update_slot_entry(self, *, slot_entry_id: int, comment: Optional[str] = None) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if comment is not None:
+            payload["comment"] = comment[:100]
+        if not payload:
+            return {}
+        return self.patch(f"/api/v2/slot-entry/{slot_entry_id}/", payload)
+
+    def delete_slot_entry(self, *, slot_entry_id: int) -> None:
+        self.delete(f"/api/v2/slot-entry/{slot_entry_id}/")
+
+    # Config posts
     def set_sets(self, slot_entry_id: int, sets: int) -> Dict[str, Any]:
-        payload = {
-            "slot_entry": slot_entry_id,
-            "iteration": 1,
-            "value": int(sets),
-            "operation": "r",
-            "step": "na",
-            "repeat": True,
-        }
+        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": int(sets), "operation": "r", "step": "na", "repeat": True}
         return self.post("/api/v2/sets-config/", payload)
 
     def set_reps(self, slot_entry_id: int, reps: int) -> Dict[str, Any]:
-        payload = {
-            "slot_entry": slot_entry_id,
-            "iteration": 1,
-            "value": str(int(reps)),
-            "operation": "r",
-            "step": "na",
-            "repeat": True,
-        }
+        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": str(int(reps)), "operation": "r", "step": "na", "repeat": True}
         return self.post("/api/v2/repetitions-config/", payload)
 
     def set_rir(self, slot_entry_id: int, rir_value: float) -> Dict[str, Any]:
-        payload = {
-            "slot_entry": slot_entry_id,
-            "iteration": 1,
-            "value": f"{rir_value:.1f}",
-            "operation": "r",
-            "step": "na",
-            "repeat": True,
-        }
+        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": f"{rir_value:.1f}", "operation": "r", "step": "na", "repeat": True}
         return self.post("/api/v2/rir-config/", payload)
 
-    # Lookups
+    # Lookups with small caches
     def repetition_unit_id(self, name: str = "repetitions") -> Optional[int]:
+        if self._rep_unit_id_cache is not None:
+            return self._rep_unit_id_cache
         data = self.get("/api/v2/setting-repetitionunit/", params={"name": name})
         results = data.get("results", [])
-        return results[0]["id"] if results else None
+        self._rep_unit_id_cache = results[0]["id"] if results else None
+        return self._rep_unit_id_cache
 
     def weight_unit_id(self, name: str = "kg") -> Optional[int]:
+        if name in self._weight_unit_id_cache:
+            return self._weight_unit_id_cache[name]
         data = self.get("/api/v2/setting-weightunit/", params={"name": name})
         results = data.get("results", [])
-        return results[0]["id"] if results else None
+        self._weight_unit_id_cache[name] = results[0]["id"] if results else None
+        return self._weight_unit_id_cache[name]
 
 
-def routine_name_for_date(start: dt.date) -> str:
-    return f"Wk {start.day} {start.strftime('%B')} {start.strftime('%y')}"
+# ---------------------------
+# Helpers
+# ---------------------------
+
+def routine_name_for_date(start: dt.date, prefix: Optional[str] = None) -> str:
+    core = f"Wk {start.day} {start.strftime('%B')} {start.strftime('%y')}"
+    if prefix:
+        name = f"{prefix.strip()} {core}"
+    else:
+        name = core
+    # Wger routine name max length is conservative ~25 chars; trim if needed
+    return name[:25]
 
 
-def weekday_name(day_of_week: int) -> str:
+def weekday_name(dow: int) -> str:
     names = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
-    return names.get(day_of_week, f"Day {day_of_week}")
+    return names.get(dow, f"Day {dow}")
 
+
+def _validate_exercises_exist_locally(week_payload: Dict[str, Any]) -> None:
+    """
+    Ensures all exercise IDs used in week_payload exist in the local wger_exercise catalogue.
+    Raises WgerError with a clear message if any are missing.
+    """
+    ex_ids = set()
+    for d in week_payload.get("days", []):
+        for ex in d.get("exercises", []):
+            if ex.get("exercise") is not None:
+                try:
+                    ex_ids.add(int(ex["exercise"]))
+                except Exception:
+                    raise WgerError(f"Invalid exercise id value: {ex.get('exercise')!r}")
+
+    if not ex_ids:
+        return
+
+    missing: List[int] = []
+    with conn_cursor() as (_, cur):
+        cur.execute("SELECT id FROM wger_exercise WHERE id = ANY(%s);", (list(ex_ids),))
+        present = {row["id"] for row in cur.fetchall()}
+        for eid in ex_ids:
+            if eid not in present:
+                missing.append(eid)
+
+    if missing:
+        raise WgerError(f"One or more exercise IDs are not present in local catalogue: {sorted(missing)}")
+
+
+def _pretty(obj: Any) -> str:
+    try:
+        return json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True)
+    except Exception:
+        return str(obj)
+
+
+def _wipe_week_contents(client: WgerClient, *, routine_id: int, week_id: int) -> None:
+    """
+    Delete all days under the given week to ensure a clean re-export.
+    """
+    days = client.list_days_for_week(routine_id=routine_id, week_id=week_id)
+    for d in days:
+        try:
+            client.delete_day(day_id=int(d["id"]))
+        except Exception as exc:
+            logger.warning(f"Failed to delete day {d.get('id')}: {exc}")
+
+
+# ---------------------------
+# Public API
+# ---------------------------
 
 def export_week_to_wger(
     week_payload: Dict[str, Any],
@@ -188,45 +383,87 @@ def export_week_to_wger(
     *,
     routine_name: Optional[str] = None,
     routine_desc: Optional[str] = None,
-    blaze_exercise_id: int = 1630
+    routine_prefix: Optional[str] = None,
+    dry_run: bool = False,
+    force_overwrite: bool = False,
+    debug_api: bool = False,
+    blaze_mode: str = "exercise",  # "exercise" or "comment"
 ) -> Dict[str, Any]:
-    client = WgerClient()
-    rep_unit_id = client.repetition_unit_id()
+    """
+    Export a training week to Wger.
+
+    Args:
+        week_payload: {"plan_id": int, "week_number": int, "days": [{"day_of_week": int, "exercises":[...]}, ...]}
+        week_start: Monday date
+        week_end: Optional end date, defaults to week_start + 6
+        routine_name: Optional explicit routine name, else derived from date
+        routine_desc: Optional description
+        routine_prefix: Optional prefix added to generated routine name
+        dry_run: If True, validates and logs but does not call Wger
+        force_overwrite: If True, deletes existing days for the week before creating new ones
+        debug_api: If True, logs request/response bodies at DEBUG level
+        blaze_mode: "exercise" to export Blaze as a normal exercise slot, or "comment" to export as a comment-only slot
+
+    Returns:
+        Dict summarising created or updated objects, including Wger IDs.
+    """
+    # Validate up front
+    _validate_exercises_exist_locally(week_payload)
 
     week_end = week_end or (week_start + dt.timedelta(days=6))
-    routine_name = routine_name or routine_name_for_date(week_start)
-    routine_desc = routine_desc or "Auto-scheduled by Pete-Eebot"
-
-    # 1) Routine
-    existing = client.find_routine(name=routine_name, start=week_start)
-    if existing:
-        routine = existing
-    else:
-        routine = client.create_routine(name=routine_name, description=routine_desc, start=week_start, end=week_end)
-    routine_id = routine["id"]
-
-    created: Dict[str, Any] = {"routine_id": routine_id, "days": []}
-
-    # 2) Week
+    r_name = routine_name or routine_name_for_date(week_start, routine_prefix)
+    r_desc = routine_desc or "Auto-scheduled by Pete-Eebot"
     week_number = int(week_payload.get("week_number", 1))
-    week = client.create_week(routine_id=routine_id, order=week_number)
-    week_id = week["id"]
+    plan_id = week_payload.get("plan_id")
 
-    # 3) Days and slots
+    # Log the outgoing payload pretty for diagnostics
+    logger.info(f"[wger_export] Preparing export for plan {plan_id} week {week_number} ({r_name})")
+    logger.debug(f"[wger_export] Payload:\n{_pretty(week_payload)}")
+
+    if dry_run:
+        logger.info("[wger_export] Dry-run mode enabled, skipping Wger calls.")
+        created = {"routine_id": None, "week_id": None, "days": [], "dry_run": True}
+        # Still write a log entry so we can inspect payloads historically
+        try:
+            log_wger_export(plan_id, week_number, week_payload, {"name": r_name, "description": r_desc, "start": str(week_start), "end": str(week_end)}, routine_id=None)
+        except Exception as e:
+            logger.warning(f"Failed to write export log in dry-run: {e}")
+        return created
+
+    client = WgerClient(debug_api=debug_api)
+    rep_unit_id = client.repetition_unit_id()
+
+    # 1) Routine: find or create
+    routine = client.find_routine(name=r_name, start=week_start) or client.create_routine(
+        name=r_name, description=r_desc, start=week_start, end=week_end
+    )
+    routine_id = int(routine["id"])
+
+    # 2) Week (WorkoutSession): find or create, optionally wipe its contents
+    week_obj = client.find_week(routine_id=routine_id, order=week_number) or client.create_week(
+        routine_id=routine_id, order=week_number
+    )
+    week_id = int(week_obj["id"])
+
+    if force_overwrite:
+        logger.info(f"[wger_export] force_overwrite=True, wiping days for week_id={week_id}")
+        _wipe_week_contents(client, routine_id=routine_id, week_id=week_id)
+
+    # 3) Days and slots (idempotent, find-or-create where possible)
     ordered_days = sorted(week_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
+    created: Dict[str, Any] = {"routine_id": routine_id, "week_id": week_id, "days": []}
+
     day_order = 1
     for day in ordered_days:
         dow = int(day.get("day_of_week"))
         exercises: List[Dict[str, Any]] = day.get("exercises", [])
-
         day_name = weekday_name(dow)
-        wger_day = client.create_day(
-            routine_id=routine_id,
-            order=day_order,
-            name=day_name,
-            week_id=week_id
-        )
-        day_id = wger_day["id"]
+
+        # Find or create day by (routine_id, week_id, order)
+        wger_day = client.find_day(routine_id=routine_id, order=day_order, week_id=week_id)
+        if not wger_day:
+            wger_day = client.create_day(routine_id=routine_id, order=day_order, name=day_name, week_id=week_id)
+        day_id = int(wger_day["id"])
         created_day = {"order": day_order, "source_day_of_week": dow, "id": day_id, "slots": []}
 
         slot_order = 1
@@ -234,61 +471,88 @@ def export_week_to_wger(
             ex_id = int(ex.get("exercise"))
             sets = int(ex.get("sets", 0) or 0)
             reps = int(ex.get("reps", 0) or 0)
-            comment = ex.get("comment") or ""
+            comment = (ex.get("comment") or "").strip()
 
-            if ex_id == blaze_exercise_id:
-                slot = client.create_slot(day_id=day_id, order=slot_order, comment=comment or "Blaze class")
-                created_day["slots"].append({"slot_id": slot["id"], "type": "comment-only"})
-                slot_order += 1
-                continue
+            # Create or reuse slot
+            slot = client.find_slot(day_id=day_id, order=slot_order) or client.create_slot(day_id=day_id, order=slot_order)
+            slot_id = int(slot["id"])
 
-            slot = client.create_slot(day_id=day_id, order=slot_order)
-            slot_id = slot["id"]
+            # Blaze handling
+            if blaze_mode == "comment" and comment.lower().startswith("rir"):
+                # It is fine to leave RIR in comment; prepend Blaze label for clarity
+                comment_for_slot = f"Blaze class. {comment}"
+            else:
+                comment_for_slot = comment or ("Blaze class" if ex_id == 1630 else "")
 
-            slot_entry = client.create_slot_entry(
-                slot_id=slot_id,
-                exercise_id=ex_id,
-                order=1,
-                comment=comment[:100],
-                repetition_unit_id=rep_unit_id,
-                weight_unit_id=None,
-            )
-            slot_entry_id = slot_entry["id"]
+            # If we created a fresh slot with a comment, but find_slot returned existing slot with its own comment,
+            # we do not try to PATCH slot comments here, we attach a slot-entry with the comment instead.
 
-            if sets > 0:
-                client.set_sets(slot_entry_id, sets)
-            if reps > 0:
-                client.set_reps(slot_entry_id, reps)
+            # Create or reuse slot-entry (order 1)
+            slot_entry = client.find_slot_entry(slot_id=slot_id, order=1)
+            if not slot_entry:
+                # Two modes: Blaze as exercise vs comment-only
+                if blaze_mode == "comment" and ex_id == 1630:
+                    # Comment-only slot, no slot-entry
+                    created_day["slots"].append({"slot_id": slot_id, "type": "comment-only"})
+                    slot_order += 1
+                    continue
 
-            # crude RIR parse
-            rir_val: Optional[float] = None
-            lower = comment.lower()
-            if "rir" in lower:
-                import re
-                m = re.search(r"([0-9]+(?:\.[0-9])?)", lower.split("rir", 1)[1])
-                if m:
+                slot_entry = client.create_slot_entry(
+                    slot_id=slot_id,
+                    exercise_id=ex_id,
+                    order=1,
+                    comment=comment_for_slot if comment_for_slot else None,
+                    repetition_unit_id=rep_unit_id,
+                    weight_unit_id=None,
+                )
+            else:
+                # Update comment if provided
+                if comment_for_slot:
                     try:
-                        rir_val = float(m.group(1))
+                        client.update_slot_entry(slot_entry_id=int(slot_entry["id"]), comment=comment_for_slot)
+                    except Exception as exc:
+                        logger.debug(f"[wger_export] ignoring slot-entry comment update failure: {exc}")
+
+            slot_entry_id = int(slot_entry["id"]) if slot_entry else None
+
+            # Post set/reps configs - re-posting is idempotent on Wger for operation="r"
+            if slot_entry_id is not None:
+                if sets > 0:
+                    client.set_sets(slot_entry_id, sets)
+                if reps > 0:
+                    client.set_reps(slot_entry_id, reps)
+
+                # Parse RIR in comment if present, apply as config
+                lower = comment_for_slot.lower()
+                if "rir" in lower:
+                    try:
+                        import re
+                        m = re.search(r"([0-9]+(?:\.[0-9])?)", lower.split("rir", 1)[1])
+                        if m:
+                            rir_val = float(m.group(1))
+                            client.set_rir(slot_entry_id, rir_val)
                     except Exception:
-                        rir_val = None
-            if rir_val is not None:
-                client.set_rir(slot_entry_id, rir_val)
+                        pass
 
             created_day["slots"].append(
-                {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id}
+                {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id} if slot_entry_id
+                else {"slot_id": slot_id, "type": "comment-only"}
             )
             slot_order += 1
 
         created["days"].append(created_day)
         day_order += 1
 
-    # 4) Log
-    plan_id = week_payload.get("plan_id")
-    if plan_id:
-        try:
-            log_wger_export(plan_id, week_number, week_payload, routine, routine_id=routine_id)
-        except Exception as e:
-            import sys
-            print(f"[warn] failed to log wger export: {e}", file=sys.stderr)
+    # 4) Export log with rich response for traceability
+    try:
+        log_wger_export(plan_id, week_number, week_payload, {"id": routine_id, "name": r_name}, routine_id=routine_id)
+    except Exception as e:
+        logger.warning(f"[wger_export] Failed to write export log: {e}")
+
+    logger.info(
+        f"[wger_export] Sent plan {plan_id} week {week_number} to Wger. "
+        f"Response summary: routine_id={routine_id}, week_id={week_id}, days={len(created['days'])}"
+    )
+    logger.debug(f"[wger_export] Created mapping:\n{_pretty(created)}")
 
     return created
