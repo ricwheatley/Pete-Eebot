@@ -17,17 +17,24 @@
 # Env:
 #   DATABASE_URL
 #   TELEGRAM_TOKEN (optional)
-#   TELEGRAM_CHAT_ID   (optional)
-#   WGER_API_KEY (for real exports, optional; we still log payloads without it)
+#   TELEGRAM_CHAT_ID (optional)
+#   WGER_API_KEY (optional for real exports; payloads still logged without it)
 #
+# Exporter v3 (your v4 implementation) extra env toggles:
+#   WGER_DRY_RUN           -> "true"/"1" to validate and log only, no API calls
+#   WGER_FORCE_OVERWRITE   -> "true"/"1" to wipe days for the target week before export
+#   WGER_EXPORT_DEBUG      -> "true"/"1" to log request/response bodies at DEBUG level
+#   WGER_BLAZE_MODE        -> "exercise" (default) or "comment"
+#   WGER_ROUTINE_PREFIX    -> optional prefix for routine names (e.g. "Mesocycle A")
+#
+
+from __future__ import annotations
 
 import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
 
-import psycopg
-from psycopg.rows import dict_row
 import requests
 
 from pete_e.infrastructure.plan_rw import (
@@ -37,10 +44,11 @@ from pete_e.infrastructure.plan_rw import (
     adjust_sets_only,
     adjust_rir,
     adjust_main_lifts_intensity,
+    build_week_payload,
 )
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
+# Note: you've overwritten v3 with the new implementation, so keep this import path.
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
-from pete_e.infrastructure.plan_rw import build_week_payload
 
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)
@@ -52,6 +60,13 @@ VOL_CAP_DOWN = 0.80
 VOL_CAP_UP = 1.20
 INTENSITY_CAP_DOWN = -5.0
 INTENSITY_CAP_UP = 5.0
+
+
+def _bool_env(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "y", "on")
 
 
 @dataclass
@@ -293,7 +308,6 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
     """
     Main entrypoint. Returns a summary dict, or None if no action required.
     """
-
     if today is None:
         today = date.today()
 
@@ -352,8 +366,24 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
 
     # Export to Wger
     week_payload = build_week_payload(inputs.plan_id, inputs.upcoming_week_no)
+
+    # Exporter options via env
+    dry_run = _bool_env("WGER_DRY_RUN", False)
+    force_overwrite = _bool_env("WGER_FORCE_OVERWRITE", False)
+    debug_api = _bool_env("WGER_EXPORT_DEBUG", False)
+    blaze_mode = (os.getenv("WGER_BLAZE_MODE") or "exercise").strip().lower()
+    if blaze_mode not in ("exercise", "comment"):
+        blaze_mode = "exercise"
+    routine_prefix = os.getenv("WGER_ROUTINE_PREFIX")  # optional
+
     export_res = export_week_to_wger(
-        week_payload, week_start=inputs.last_week_end + timedelta(days=1)
+        week_payload,
+        week_start=inputs.last_week_end + timedelta(days=1),
+        routine_prefix=routine_prefix,
+        force_overwrite=force_overwrite,
+        blaze_mode=blaze_mode,
+        debug_api=debug_api,
+        dry_run=dry_run,
     )
 
     # Telegram summary
@@ -364,6 +394,7 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
     ] + decision.reasons
     _post_telegram("\n".join(summary_lines))
 
+    export_status = "dry-run" if dry_run else ("ok" if export_res else "logged")
     return {
         "status": "applied",
         "plan_id": str(inputs.plan_id),
@@ -371,5 +402,5 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
         "set_multiplier": f"{decision.set_multiplier:.2f}",
         "rir_delta": f"{decision.rir_delta:+.1f}",
         "intensity_delta": f"{decision.intensity_delta_abs:+.1f}",
-        "export": "ok" if export_res else "logged",
+        "export": export_status,
     }
