@@ -39,7 +39,6 @@ from pete_e.infrastructure.plan_rw import (
     adjust_main_lifts_intensity,
 )
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
-from pete_e.infrastructure.wger_exporter_v2 import export_week
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 from pete_e.infrastructure.plan_rw import build_week_payload
 
@@ -294,7 +293,6 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
     """
     Main entrypoint. Returns a summary dict, or None if no action required.
     """
-    from pete_e.infrastructure.wger_exporter_v2 import export_week  # local import to avoid cycles
 
     if today is None:
         today = date.today()
