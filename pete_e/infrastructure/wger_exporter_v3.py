@@ -1,10 +1,11 @@
-# (Functional) Workout exporter (v3) – updated version for exporting training week data to Wger. *(Used by weekly reviewer for auto-export.)*
+# (Functional) Workout exporter (v3) – updated version for exporting training week data to Wger.
+# (Used by weekly reviewer for auto-export.)
 
 from __future__ import annotations
 
 import os
 import datetime as dt
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from pete_e.infrastructure.plan_rw import log_wger_export
 
 import requests
@@ -22,7 +23,7 @@ class WgerClient:
     """
     Thin HTTP client around the wger API v2.
 
-    Auth: Authorization: Token <KEY>  - token-based auth with 'Token' prefix. 
+    Auth: Authorization: Token <KEY>  - token-based auth with 'Token' prefix.
     """
     def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None, timeout: int = 30):
         self.base_url = (base_url or os.getenv("WGER_API_BASE") or "https://wger.de").rstrip("/")
@@ -40,7 +41,6 @@ class WgerClient:
         }
 
     def _url(self, path: str) -> str:
-        # paths in the OpenAPI spec include trailing slash, keep it to avoid 301/404
         if not path.startswith("/"):
             path = "/" + path
         return f"{self.base_url}{path}"
@@ -54,7 +54,6 @@ class WgerClient:
     def post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         r = requests.post(self._url(path), headers=self._headers(), json=payload, timeout=self.timeout)
         if r.status_code not in (200, 201):
-            # wger returns HTML error pages for some errors, include text for diagnostics
             raise WgerError(f"POST {path} failed with {r.status_code}", r)
         return r.json()
 
@@ -62,10 +61,9 @@ class WgerClient:
 
     # Routines
     def find_routine(self, *, name: str, start: dt.date) -> Optional[Dict[str, Any]]:
-        # Supports name and start filters. 
         data = self.get("/api/v2/routine/", params={"name": name, "start": start.isoformat()})
         results = data.get("results", [])
-        return results[0] if results else None  # :contentReference[oaicite:6]{index=6}
+        return results[0] if results else None
 
     def create_routine(self, *, name: str, description: Optional[str], start: dt.date, end: dt.date) -> Dict[str, Any]:
         payload = {
@@ -76,22 +74,33 @@ class WgerClient:
         }
         return self.post("/api/v2/routine/", payload)
 
+    # Weeks
+    def create_week(self, *, routine_id: int, order: int) -> Dict[str, Any]:
+        payload = {
+            "routine": routine_id,
+            "order": order,
+        }
+        return self.post("/api/v2/workoutsessionweek/", payload)
 
     # Days
     def find_day(self, *, routine_id: int, order: int) -> Optional[Dict[str, Any]]:
         data = self.get("/api/v2/day/", params={"routine": routine_id, "order": order})
         results = data.get("results", [])
-        return results[0] if results else None  # :contentReference[oaicite:8]{index=8}
+        return results[0] if results else None
 
-    def create_day(self, *, routine_id: int, order: int, name: Optional[str] = None,
-                   is_rest: bool = False) -> Dict[str, Any]:
+    def create_day(
+        self, *, routine_id: int, order: int, name: Optional[str] = None,
+        is_rest: bool = False, week_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         payload = {
             "routine": routine_id,
             "order": order,
             "name": name or "",
             "is_rest": is_rest,
         }
-        return self.post("/api/v2/day/", payload)  # :contentReference[oaicite:9]{index=9}
+        if week_id is not None:
+            payload["week"] = week_id
+        return self.post("/api/v2/day/", payload)
 
     # Slots
     def create_slot(self, *, day_id: int, order: int, comment: Optional[str] = None) -> Dict[str, Any]:
@@ -100,13 +109,15 @@ class WgerClient:
             "order": order,
             "comment": (comment or "")[:200],
         }
-        return self.post("/api/v2/slot/", payload)  # :contentReference[oaicite:10]{index=10}
+        return self.post("/api/v2/slot/", payload)
 
     # Slot Entries
-    def create_slot_entry(self, *, slot_id: int, exercise_id: int,
-                          order: int, comment: Optional[str] = None,
-                          repetition_unit_id: Optional[int] = None,
-                          weight_unit_id: Optional[int] = None) -> Dict[str, Any]:
+    def create_slot_entry(
+        self, *, slot_id: int, exercise_id: int,
+        order: int, comment: Optional[str] = None,
+        repetition_unit_id: Optional[int] = None,
+        weight_unit_id: Optional[int] = None
+    ) -> Dict[str, Any]:
         payload = {
             "slot": slot_id,
             "exercise": exercise_id,
@@ -117,7 +128,7 @@ class WgerClient:
             payload["repetition_unit"] = repetition_unit_id
         if weight_unit_id is not None:
             payload["weight_unit"] = weight_unit_id
-        return self.post("/api/v2/slot-entry/", payload)  # :contentReference[oaicite:11]{index=11}
+        return self.post("/api/v2/slot-entry/", payload)
 
     # Configs for set count, reps and RiR
     def set_sets(self, slot_entry_id: int, sets: int) -> Dict[str, Any]:
@@ -129,7 +140,7 @@ class WgerClient:
             "step": "na",
             "repeat": True,
         }
-        return self.post("/api/v2/sets-config/", payload)  # :contentReference[oaicite:12]{index=12}
+        return self.post("/api/v2/sets-config/", payload)
 
     def set_reps(self, slot_entry_id: int, reps: int) -> Dict[str, Any]:
         payload = {
@@ -140,69 +151,51 @@ class WgerClient:
             "step": "na",
             "repeat": True,
         }
-        return self.post("/api/v2/repetitions-config/", payload)  # :contentReference[oaicite:13]{index=13}
+        return self.post("/api/v2/repetitions-config/", payload)
 
     def set_rir(self, slot_entry_id: int, rir_value: float) -> Dict[str, Any]:
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": 1,
-            "value": f"{rir_value:.1f}",  # decimal string, 1 dp
+            "value": f"{rir_value:.1f}",
             "operation": "r",
             "step": "na",
             "repeat": True,
         }
-        return self.post("/api/v2/rir-config/", payload)  # 
+        return self.post("/api/v2/rir-config/", payload)
 
-    # Look up units, optional quality of life
+    # Look up units
     def repetition_unit_id(self, name: str = "repetitions") -> Optional[int]:
-        data = self.get("/api/v2/setting-repetitionunit/", params={"name": name})  # :contentReference[oaicite:15]{index=15}
+        data = self.get("/api/v2/setting-repetitionunit/", params={"name": name})
         results = data.get("results", [])
         return results[0]["id"] if results else None
 
     def weight_unit_id(self, name: str = "kg") -> Optional[int]:
-        data = self.get("/api/v2/setting-weightunit/", params={"name": name})  # :contentReference[oaicite:16]{index=16}
+        data = self.get("/api/v2/setting-weightunit/", params={"name": name})
         results = data.get("results", [])
         return results[0]["id"] if results else None
-    
+
+
 def routine_name_for_date(start: dt.date) -> str:
-    """
-    Generate a short routine name like 'Wk 22 September 25'.
-    Always <= 25 characters to satisfy Wger API.
-    """
     return f"Wk {start.day} {start.strftime('%B')} {start.strftime('%y')}"
 
 
-
 def weekday_name(day_of_week: int) -> str:
-    # Map 1..7 like your payload uses, 1 = Monday
     names = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
     return names.get(day_of_week, f"Day {day_of_week}")
 
 
-def export_week_to_wger(week_payload: Dict[str, Any],
-                        week_start: dt.date,
-                        week_end: Optional[dt.date] = None,
-                        *,
-                        routine_name: Optional[str] = None,
-                        routine_desc: Optional[str] = None,
-                        blaze_exercise_id: int = 1630) -> Dict[str, Any]:
-    """
-    Create or update a wger routine for a given week and push all slots + entries.
-
-    week_payload shape must be like the object your generator prints:
-    {
-      "days": [
-         {"day_of_week": 1, "exercises": [
-             {"exercise": 73, "sets": 4, "reps": 8, "comment": "..."},
-             ...
-         ]},
-         ...
-      ]
-    }
-    """
+def export_week_to_wger(
+    week_payload: Dict[str, Any],
+    week_start: dt.date,
+    week_end: Optional[dt.date] = None,
+    *,
+    routine_name: Optional[str] = None,
+    routine_desc: Optional[str] = None,
+    blaze_exercise_id: int = 1630
+) -> Dict[str, Any]:
     client = WgerClient()
-    rep_unit_id = client.repetition_unit_id()  # optional, if None, wger still accepts the slot entry
-    # weight_unit_id = client.weight_unit_id("kg")  # we do not set weight configs yet
+    rep_unit_id = client.repetition_unit_id()
 
     week_end = week_end or (week_start + dt.timedelta(days=6))
     routine_name = routine_name or routine_name_for_date(week_start)
@@ -214,24 +207,24 @@ def export_week_to_wger(week_payload: Dict[str, Any],
         routine = existing
     else:
         routine = client.create_routine(name=routine_name, description=routine_desc, start=week_start, end=week_end)
-
     routine_id = routine["id"]
 
     created: Dict[str, Any] = {"routine_id": routine_id, "days": []}
 
-    # 2) Days and slots
-    # We keep the order stable and compact, independent of actual weekday numbers,
-    # but set the name to the weekday for readability in wger.
+    # 2) Create a week in Wger
+    week_number = int(week_payload.get("week_number", 1))
+    week = client.create_week(routine_id=routine_id, order=week_number)
+    week_id = week["id"]
+
+    # 3) Days and slots
     ordered_days = sorted(week_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
     day_order = 1
     for day in ordered_days:
         dow = int(day.get("day_of_week"))
         exercises: List[Dict[str, Any]] = day.get("exercises", [])
 
-        # If a day only contains Blaze, we still create a day with one comment slot.
         day_name = weekday_name(dow)
-        wger_day = client.find_day(routine_id=routine_id, order=day_order) or \
-                   client.create_day(routine_id=routine_id, order=day_order, name=day_name)
+        wger_day = client.create_day(routine_id=routine_id, order=day_order, name=day_name, week_id=week_id)
         day_id = wger_day["id"]
         created_day = {"order": day_order, "source_day_of_week": dow, "id": day_id, "slots": []}
 
@@ -243,64 +236,58 @@ def export_week_to_wger(week_payload: Dict[str, Any],
             comment = ex.get("comment") or ""
 
             if ex_id == blaze_exercise_id:
-                # Blaze - create a plain slot with a comment
                 slot = client.create_slot(day_id=day_id, order=slot_order, comment=comment or "Blaze class")
                 created_day["slots"].append({"slot_id": slot["id"], "type": "comment-only"})
                 slot_order += 1
                 continue
 
-            # Normal lifting movement
             slot = client.create_slot(day_id=day_id, order=slot_order)
             slot_id = slot["id"]
 
-            # Blend a short human comment that will show up in the app UI
-            short_comment = comment
             slot_entry = client.create_slot_entry(
                 slot_id=slot_id,
                 exercise_id=ex_id,
                 order=1,
-                comment=short_comment[:100],
+                comment=comment[:100],
                 repetition_unit_id=rep_unit_id,
                 weight_unit_id=None,
             )
             slot_entry_id = slot_entry["id"]
 
-            # Targets - sets, reps, rir
             if sets > 0:
                 client.set_sets(slot_entry_id, sets)
             if reps > 0:
                 client.set_reps(slot_entry_id, reps)
 
-            # extract 'RIR 2.0' if present in comment
+            # crude RIR extraction from comment
             rir_val: Optional[float] = None
             lower = comment.lower()
             if "rir" in lower:
-                try:
-                    after = lower.split("rir", 1)[1]
-                    # find first float-ish token
-                    import re
-                    m = re.search(r"([0-9]+(?:\.[0-9])?)", after)
-                    if m:
+                import re
+                m = re.search(r"([0-9]+(?:\.[0-9])?)", lower.split("rir", 1)[1])
+                if m:
+                    try:
                         rir_val = float(m.group(1))
-                except Exception:
-                    rir_val = None
+                    except Exception:
+                        rir_val = None
             if rir_val is not None:
                 client.set_rir(slot_entry_id, rir_val)
 
-            created_day["slots"].append({"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id})
+            created_day["slots"].append(
+                {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id}
+            )
             slot_order += 1
 
         created["days"].append(created_day)
         day_order += 1
 
-        plan_id = week_payload.get("plan_id")
-        week_number = week_payload.get("week_number")
-        if plan_id and week_number:
-            try:
-                log_wger_export(plan_id, int(week_number), week_payload, routine, routine_id=routine_id)
-            except Exception as e:
-                # don’t blow up on logging errors, just emit to stderr
-                import sys
-                print(f"[warn] failed to log wger export: {e}", file=sys.stderr)
+    # 4) Log the export
+    plan_id = week_payload.get("plan_id")
+    if plan_id:
+        try:
+            log_wger_export(plan_id, week_number, week_payload, routine, routine_id=routine_id)
+        except Exception as e:
+            import sys
+            print(f"[warn] failed to log wger export: {e}", file=sys.stderr)
 
-        return created
+    return created

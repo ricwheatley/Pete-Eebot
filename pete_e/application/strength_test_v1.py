@@ -28,7 +28,7 @@ from pete_e.infrastructure.plan_rw import (
     insert_strength_test_result,
     upsert_training_max,
 )
-from pete_e.infrastructure.wger_exporter_v2 import export_week
+
 from pete_e.infrastructure.plan_rw import build_week_payload
 from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
 
