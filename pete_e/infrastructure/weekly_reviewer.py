@@ -138,7 +138,7 @@ def _refresh_mvs_concurrently():
 
 def _fetch_recovery_metrics(last_week_start: date, last_week_end: date) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     """
-    Returns (avg_rhr, base_rhr, avg_sleep, base_sleep) from daily_summary MV.
+    Returns (avg_rhr, base_rhr, avg_sleep, base_sleep) from daily_summary.
     Baseline computed over previous 60 days excluding the last week. Fallbacks to overall mean if needed.
     """
     with conn_cursor() as (_, cur):
