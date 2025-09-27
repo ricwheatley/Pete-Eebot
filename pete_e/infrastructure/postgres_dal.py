@@ -4,10 +4,11 @@
 PostgreSQL implementation of the Data Access Layer.
 
 Implements Pete-Eebot's relational schema:
-- Source tables: withings_daily, apple_daily, wger_logs, body_age_daily
+- Source tables: withings_daily, wger_logs, body_age_daily
 - Reference tables: Wger exercise catalog (refreshed separately)
 - Training plans: training_plans -> training_plan_weeks -> training_plan_workouts
-- Views: daily_summary, plan_muscle_volume, actual_muscle_volume
+- Derived table: daily_summary (refreshed via sp_refresh_daily_summary)
+- Materialized views: plan_muscle_volume, actual_muscle_volume
 """
 
 from __future__ import annotations

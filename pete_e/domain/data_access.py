@@ -26,11 +26,6 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
-    def save_apple_daily(self, day: date, metrics: Dict[str, Any]) -> None:
-        """metrics dict should contain steps, exercise_minutes, calories, HR, sleep, etc."""
-        pass
-
-    @abstractmethod
     def save_wger_log(self, day: date, exercise_id: int, set_number: int,
                       reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         pass

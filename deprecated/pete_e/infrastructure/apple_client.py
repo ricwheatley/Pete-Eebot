@@ -135,43 +135,14 @@ def process_apple_health_export(zip_path: str, dal: Optional[DataAccessLayer] = 
     if not payloads:
         raise ValueError("No daily summaries were found in the Apple Health export.")
 
-    processed = 0
-    close_pool = None
-
-    if dal is None:
-        try:
-            from pete_e.infrastructure.postgres_dal import PostgresDal, close_pool as closer
-        except Exception as exc:  # pragma: no cover - import-time environment issues
-            log_utils.log_message(
-                f"Unable to initialise Postgres DAL for Apple ingestion: {exc}",
-                "ERROR",
-            )
-            raise
-
-        dal = PostgresDal()
-        close_pool = closer
-
-    try:
-        for payload in payloads:
-            normalised = _normalise_daily_payload(payload)
-            if not normalised:
-                continue
-
-            day, metrics = normalised
-            dal.save_apple_daily(day, metrics)
-            processed += 1
-            log_utils.log_message(
-                f"Saved Apple Health summary for {day.isoformat()}", "INFO"
-            )
-    finally:
-        if close_pool:
-            close_pool()
-
     log_utils.log_message(
-        f"Processed {processed} Apple Health daily summaries from export.", "INFO"
+        "process_apple_health_export is deprecated. Use AppleHealthWriter via pete_e.application.apple_dropbox_ingest.",
+        "ERROR",
+    )
+    raise RuntimeError(
+        "process_apple_health_export is no longer supported; switch to AppleHealthWriter via apple_dropbox_ingest."
     )
 
-    return processed
 
 
 def _iter_daily_payloads(obj: Any) -> Iterator[Dict[str, Any]]:

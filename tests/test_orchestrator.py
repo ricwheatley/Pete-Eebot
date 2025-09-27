@@ -46,7 +46,6 @@ from pete_e.cli import messenger as messenger_module
 
 class DummyDal:
     def __init__(self):
-        self.apple_calls = []
         self.withings_calls = []
         self.wger_logs = []
         self.refreshed = False
@@ -54,10 +53,6 @@ class DummyDal:
     # Withings -------------------------------------------------------------
     def save_withings_daily(self, day, weight_kg, body_fat_pct, muscle_pct, water_pct):
         self.withings_calls.append((day, weight_kg, body_fat_pct, muscle_pct, water_pct))
-
-    # Apple ----------------------------------------------------------------
-    def save_apple_daily(self, day, metrics):  # pragma: no cover - legacy compatibility
-        self.apple_calls.append((day, metrics))
 
     # Wger -----------------------------------------------------------------
     def save_wger_log(self, day, exercise_id, set_number, reps, weight_kg, rir):
@@ -140,7 +135,6 @@ def test_run_daily_sync_handles_absent_apple_data():
     assert statuses["Withings"] == "ok"
     assert statuses["Wger"] == "ok"
     assert statuses["BodyAge"] == "ok"
-    assert dummy_dal.apple_calls == []
     assert undelivered == []
 
 

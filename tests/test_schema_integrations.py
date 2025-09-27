@@ -57,7 +57,7 @@ def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
 
 
 def _extract_daily_summary_select(sql_text: str) -> str:
-    pattern = r"SELECT\s+(.*?)\s+FROM\s+generate_series"
+    pattern = r"SELECT\s+(.*?)\s+FROM\s+generate_series\s*\(\s*p_start"
     match = re.search(pattern, sql_text, flags=re.IGNORECASE | re.DOTALL)
     if match is None:
         raise AssertionError("Could not locate daily_summary SELECT statement.")

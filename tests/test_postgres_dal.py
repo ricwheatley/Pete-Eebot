@@ -38,7 +38,7 @@ class TestPostgresDal(unittest.TestCase):
 
     @patch.object(postgres_dal, "get_conn")
     def test_get_historical_data(self, mock_get_conn):
-        """Test that get_historical_data queries the daily_summary view."""
+        """Test that get_historical_data queries the daily_summary table."""
         mock_conn = MagicMock()
         mock_cur = MagicMock()
         mock_get_conn.return_value = mock_conn
