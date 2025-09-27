@@ -5,16 +5,11 @@ from pete_e.domain.progression import apply_progression
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
 
-
 class DummyDal(DataAccessLayer):
     def __init__(self, lift_history: Dict[str, Any], metrics_7: List[Dict[str, Any]], metrics_baseline: List[Dict[str, Any]]):
         self._lift_history = lift_history
         self._metrics_7 = metrics_7
         self._metrics_baseline = metrics_baseline
-
-    def get_metrics_overview(self, *a, **k): return {}
-
-    def refresh_daily_summary_view(self, *a, **k): return None
 
     # Lift log operations
     def load_lift_log(
@@ -121,14 +116,11 @@ class DummyDal(DataAccessLayer):
     def was_week_exported(self, plan_id: int, week: int) -> bool:
         return False
 
-
-
 def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     return [
         {"hr_resting": rhr, "sleep_asleep_minutes": sleep}
         for _ in range(days)
     ]
-
 
 def make_week(target: float = 100.0, ex_id: int = 1) -> dict:
     return {
@@ -145,7 +137,6 @@ def make_week(target: float = 100.0, ex_id: int = 1) -> dict:
             }
         ]
     }
-
 
 def test_low_rir_good_recovery():
     lift_history = {
@@ -167,7 +158,6 @@ def test_low_rir_good_recovery():
     assert any("+7.5%" in n for n in notes)
     assert any("recovery good" in n for n in notes)
 
-
 def test_high_rir_good_recovery():
     lift_history = {
         "1": [
@@ -186,7 +176,6 @@ def test_high_rir_good_recovery():
     weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
     assert weight == 95.0
     assert any("-5.0%" in n for n in notes)
-
 
 def test_poor_recovery_halves_increment():
     lift_history = {
@@ -208,7 +197,6 @@ def test_poor_recovery_halves_increment():
     assert weight == 103.75
     assert any("recovery poor" in n for n in notes)
 
-
 def test_missing_history_keeps_target():
     lift_history = {
         "1": [
@@ -228,7 +216,6 @@ def test_missing_history_keeps_target():
     assert weight == 50
     assert any("no history" in n for n in notes)
 
-
 def test_no_rir_uses_weight_and_recovery():
     lift_history = {
         "1": [
@@ -247,5 +234,4 @@ def test_no_rir_uses_weight_and_recovery():
     weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
     assert weight == 105.0
     assert any("no RIR" in n for n in notes)
-
 
