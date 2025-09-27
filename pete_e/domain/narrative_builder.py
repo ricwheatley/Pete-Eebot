@@ -397,7 +397,137 @@ def _format_active_calories(value: Any) -> str | None:
         return None
     return f"Active burn: {val:,} kcal"
 
-def _format_sleep_minutes(value: Any) -> str | None:
+
+def _format_resting_calories(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val < 0:
+        return None
+    return f"Resting burn: {val:,} kcal"
+
+
+def _format_distance(value: Any) -> str | None:
+    dist = _to_float(value)
+    if dist is None or dist <= 0:
+        return None
+    if dist >= 1000:
+        km = dist / 1000.0
+        return f"Distance: {_clean_number(round(km, 2))} km covered"
+    return f"Distance: {_clean_number(round(dist))} m covered"
+
+
+def _format_flights(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Flights climbed: {val}"
+
+
+def _format_exercise_minutes(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Exercise: {val} min logged"
+
+
+def _format_stand_minutes(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Stand: {val} min upright"
+
+
+def _format_daylight_minutes(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Daylight: {val} min outside"
+
+
+def _format_strength_volume(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"Strength volume: {val:,.0f} kg moved"
+
+
+def _format_hr_avg(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Avg HR: {val} bpm"
+
+
+def _format_hr_max(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Max HR: {val} bpm"
+
+
+def _format_hr_min(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Min HR: {val} bpm"
+
+
+def _format_walking_hr_avg(value: Any) -> str | None:
+    val = _to_int(value)
+    if val is None or val <= 0:
+        return None
+    return f"Walking HR avg: {val} bpm"
+
+
+def _format_cardio_recovery(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"Cardio recovery: {val:.1f} bpm"
+
+
+def _format_respiratory_rate(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"Respiratory rate: {val:.1f} breaths/min"
+
+
+def _format_blood_oxygen(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"SpO2: {val:.1f}%"
+
+
+def _format_wrist_temperature(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None:
+        return None
+    return f"Wrist temp: {val:.1f} degC"
+
+
+def _format_vo2_max(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"VO2max: {val:.1f} ml/kg/min"
+
+
+def _format_body_age_years(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None or val <= 0:
+        return None
+    return f"Body age: {val:.1f} yr"
+
+
+def _format_body_age_delta(value: Any) -> str | None:
+    val = _to_float(value)
+    if val is None:
+        return None
+    return f"Body age delta: {val:+.1f} yr"
+
+
+def _format_minutes_duration(value: Any, label: str, *, suffix: str | None = None) -> str | None:
     total = _to_int(value)
     if total is None or total <= 0:
         return None
@@ -409,18 +539,69 @@ def _format_sleep_minutes(value: Any) -> str | None:
         parts.append(f"{minutes}m")
     if not parts:
         parts.append("0m")
-    return f"Sleep: {' '.join(parts)} logged"
+    text = f"{label}: {' '.join(parts)}"
+    if suffix:
+        text = f"{text} {suffix}"
+    return text
+
+
+def _format_sleep_total_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "Sleep total")
+
+
+def _format_sleep_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "Sleep", suffix="logged")
+
+
+def _format_sleep_rem_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "REM sleep")
+
+
+def _format_sleep_deep_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "Deep sleep")
+
+
+def _format_sleep_core_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "Core sleep")
+
+
+def _format_sleep_awake_minutes(value: Any) -> str | None:
+    return _format_minutes_duration(value, "Awake")
+
 
 _DAILY_METRIC_BUILDERS = {
     "weight_kg": _format_weight,
     "body_fat_pct": _format_body_fat,
     "muscle_pct": _format_muscle_pct,
     "water_pct": _format_water_pct,
+    "body_age_years": _format_body_age_years,
+    "body_age_delta_years": _format_body_age_delta,
     "hr_resting": _format_resting_hr,
+    "hr_avg": _format_hr_avg,
+    "hr_max": _format_hr_max,
+    "hr_min": _format_hr_min,
+    "walking_hr_avg": _format_walking_hr_avg,
+    "cardio_recovery": _format_cardio_recovery,
+    "respiratory_rate": _format_respiratory_rate,
+    "blood_oxygen_saturation": _format_blood_oxygen,
+    "wrist_temperature": _format_wrist_temperature,
     "hrv_sdnn_ms": _format_hrv,
+    "vo2_max": _format_vo2_max,
     "steps": _format_steps,
+    "distance_m": _format_distance,
+    "flights_climbed": _format_flights,
+    "exercise_minutes": _format_exercise_minutes,
     "calories_active": _format_active_calories,
+    "calories_resting": _format_resting_calories,
+    "stand_minutes": _format_stand_minutes,
+    "time_in_daylight": _format_daylight_minutes,
+    "strength_volume_kg": _format_strength_volume,
+    "sleep_total_minutes": _format_sleep_total_minutes,
     "sleep_asleep_minutes": _format_sleep_minutes,
+    "sleep_rem_minutes": _format_sleep_rem_minutes,
+    "sleep_deep_minutes": _format_sleep_deep_minutes,
+    "sleep_core_minutes": _format_sleep_core_minutes,
+    "sleep_awake_minutes": _format_sleep_awake_minutes,
 }
 
 _DAILY_METRIC_ORDER = [
@@ -428,12 +609,36 @@ _DAILY_METRIC_ORDER = [
     "body_fat_pct",
     "muscle_pct",
     "water_pct",
+    "body_age_years",
+    "body_age_delta_years",
     "hr_resting",
+    "hr_avg",
+    "hr_max",
+    "hr_min",
+    "walking_hr_avg",
+    "cardio_recovery",
+    "respiratory_rate",
+    "blood_oxygen_saturation",
+    "wrist_temperature",
     "hrv_sdnn_ms",
+    "vo2_max",
     "steps",
+    "distance_m",
+    "flights_climbed",
+    "exercise_minutes",
     "calories_active",
+    "calories_resting",
+    "stand_minutes",
+    "time_in_daylight",
+    "strength_volume_kg",
+    "sleep_total_minutes",
     "sleep_asleep_minutes",
+    "sleep_rem_minutes",
+    "sleep_deep_minutes",
+    "sleep_core_minutes",
+    "sleep_awake_minutes",
 ]
+
 
 def _format_readiness_line(summary_data: Dict[str, Any]) -> str | None:
     headline = summary_data.get("readiness_headline") or summary_data.get("readiness_state")
