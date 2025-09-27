@@ -1166,33 +1166,12 @@ class Orchestrator:
                 failed_sources.append("Wger")
                 source_statuses["Wger"] = "failed"
 
-            # --- Body Age Recalculation ---
-            try:
-                self._recalculate_body_age(target_day)
-            except Exception as e:
-                log_utils.log_message(f"Body Age calculation failed for {target_iso}: {e}", "ERROR")
-                failed_sources.append("BodyAge")
-                source_statuses["BodyAge"] = "failed"
-
-
-        refresh_summary_view = getattr(self.dal, "refresh_daily_summary_view", None)
-        if callable(refresh_summary_view):
-            try:
-                log_utils.log_message("Refreshing daily_summary view...", "INFO")
-                refresh_summary_view()
-            except NotImplementedError:
-                log_utils.log_message(
-                    "Skipping daily_summary view refresh; DAL does not implement refresh_daily_summary_view().",
-                    "DEBUG",
-                )
-            except Exception as exc:
-                log_utils.log_message(f"Failed to refresh daily_summary view: {exc}", "ERROR")
-                alert_messages.append("daily_summary view refresh failed; data may be stale.")
-        else:
-            log_utils.log_message(
-                "Skipping daily_summary view refresh; DAL does not expose refresh_daily_summary_view().",
-                "DEBUG",
-            )
+        try:
+            log_utils.log_message("Refreshing body_age_daily and daily_summary table...", "INFO")
+            self.refresh_daily_summary(7)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to refresh derived tables: {exc}", "ERROR")
+            alert_messages.append("Derived table refresh failed; data may be stale.")                
 
         if wger_logs_found:
             log_utils.log_message("Refreshing actual muscle volume view...", "INFO")
@@ -1250,6 +1229,8 @@ class Orchestrator:
                 )
 
         return success, unique_failures, source_statuses, undelivered_alerts
+    
+
     @_closes_postgres_pool
     def run_end_to_end_day(
         self,
@@ -1395,45 +1376,42 @@ class Orchestrator:
             reference_date=reference,
         )
     @_closes_postgres_pool
-    def run_withings_only_sync(self, days: int) -> Tuple[bool, List[str], Dict[str, str]]:
-        """Fetch Withings data for the requested window and update dependent calculations."""
-        days = max(1, days)
-        today = date.today()
-        log_utils.log_message(f"Withings-only sync starting for last {days} days.", "INFO")
+    def run_withings_only_sync(self, days: int = 1) -> Tuple[bool, List[str], Dict[str, str], List[str]]:
+        """
+        Run a Withings-only sync, then refresh derived tables (body_age_daily and daily_summary).
+        """
 
-        withings_client = WithingsClient()
         failures: List[str] = []
-        source_statuses: Dict[str, str] = {name: "ok" for name in WITHINGS_ONLY_SOURCES}
+        source_statuses: Dict[str, str] = {}
+        alert_messages: List[str] = []
 
         for offset in range(days, 0, -1):
-            target_day = today - timedelta(days=offset)
+            target_day = date.today() - timedelta(days=offset - 1)
             target_iso = target_day.isoformat()
-            log_utils.log_message(f"Syncing Withings data for {target_iso}", "INFO")
 
             try:
-                withings_data = withings_client.get_summary(days_back=offset)
-                if withings_data:
-                    self.dal.save_withings_daily(
-                        day=target_day,
-                        weight_kg=withings_data.get("weight"),
-                        body_fat_pct=withings_data.get("fat_percent"),
-                        muscle_pct=withings_data.get("muscle_percent"),
-                        water_pct=withings_data.get("water_percent"),
-                    )
-            except Exception as exc:
-                log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
-                failures.append(f"Withings:{target_iso}")
+                self.withings_sync(target_day)
+                source_statuses["Withings"] = "ok"
+            except Exception as e:
+                log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
+                failures.append("Withings")
                 source_statuses["Withings"] = "failed"
-                continue
 
-            try:
-                self._recalculate_body_age(target_day)
-            except Exception as exc:
-                log_utils.log_message(f"Body Age calculation failed for {target_iso}: {exc}", "ERROR")
-                failures.append(f"BodyAge:{target_iso}")
-                source_statuses["BodyAge"] = "failed"
+        # After Withings sync, refresh derived tables (body_age_daily + daily_summary)
+        try:
+            log_utils.log_message("Refreshing body_age_daily and daily_summary table (Withings-only)...", "INFO")
+            self.refresh_daily_summary(7)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to refresh derived tables in Withings-only sync: {exc}", "ERROR")
+            failures.append("Derived")
+            source_statuses["Derived"] = "failed"
+            alert_messages.append("Derived table refresh failed; data may be stale.")
+        else:
+            source_statuses["Derived"] = "ok"
 
-        return not failures, failures, source_statuses
+        success = len(failures) == 0
+        return success, failures, source_statuses, alert_messages
+
 
     def _recalculate_body_age(self, target_day: date) -> None:
         try:

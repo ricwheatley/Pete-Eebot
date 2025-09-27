@@ -319,24 +319,41 @@ class PostgresDal(DataAccessLayer):
             raise
     
     # ---------------------------------------------------------------------
-    def refresh_daily_summary_view(self) -> None:
-        """Refresh the materialized daily_summary view."""
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        """
+        Refresh supporting body_age_daily first, then upsert into daily_summary table.
+        Ensures derived values are consistent before summary rollup.
+        """
         try:
+            # 1. Refresh body_age_daily for recent days
             with get_conn() as conn, conn.cursor() as cur:
-                cur.execute("REFRESH MATERIALIZED VIEW daily_summary;")
-                log_utils.log_message("Refreshed daily_summary view.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error refreshing daily_summary view: {e}", "ERROR")
-            raise
+                cur.execute(
+                    """
+                    SELECT sp_upsert_body_age_range(
+                        current_date - interval %s,
+                        current_date,
+                        %s
+                    );
+                    """,
+                    (f'{days} days', self.config.birth_date),
+                )
+            log_utils.log_message(f"Refreshed body_age_daily for last {days} days.", "INFO")
 
-    def get_metrics_overview(self) -> List[Dict[str, Any]]:
-        """Return metric summary rows from metrics_overview view."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT * FROM metrics_overview;")
-                return cur.fetchall()
+            # 2. Refresh the daily_summary table
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT sp_refresh_daily_summary(
+                        current_date - interval %s,
+                        current_date
+                    );
+                    """,
+                    (f'{days} days',),
+                )
+            log_utils.log_message("Refreshed daily_summary table via sp_refresh_daily_summary().", "INFO")
+
         except Exception as e:
-            log_utils.log_message(f"Error fetching metrics overview: {e}", "ERROR")
+            log_utils.log_message(f"Error refreshing daily_summary (with body_age): {e}", "ERROR")
             raise
 
     # ---------------------------------------------------------------------
