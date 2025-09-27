@@ -49,6 +49,7 @@ DROP TABLE IF EXISTS wger_exercise CASCADE;
 DROP TABLE IF EXISTS wger_muscle CASCADE;
 DROP TABLE IF EXISTS wger_equipment CASCADE;
 DROP TABLE IF EXISTS wger_category CASCADE;
+DROP TABLE IF EXISTS daily_summary CASCADE;
 DROP FUNCTION IF EXISTS sp_upsert_body_age(date, date);
 DROP FUNCTION IF EXISTS sp_upsert_body_age_range(date, date, date);
 
@@ -370,611 +371,652 @@ CREATE TABLE daily_summary (
   body_fat_pct         NUMERIC(4,2),
   muscle_pct           NUMERIC(4,2),
   water_pct            NUMERIC(4,2),
+
+  -- Activity / energy
   steps                DOUBLE PRECISION,
   exercise_minutes     DOUBLE PRECISION,
   calories_active      DOUBLE PRECISION,
   calories_resting     DOUBLE PRECISION,
   stand_minutes        DOUBLE PRECISION,
   distance_m           DOUBLE PRECISION,
+
+  -- New Apple metrics
+  flights_climbed            DOUBLE PRECISION,
+  respiratory_rate           DOUBLE PRECISION,
+  walking_hr_avg             DOUBLE PRECISION,
+  blood_oxygen_saturation    DOUBLE PRECISION,
+  wrist_temperature          DOUBLE PRECISION,
+  time_in_daylight           DOUBLE PRECISION,
+  cardio_recovery            DOUBLE PRECISION,
+
+  -- Heart and fitness
   hr_resting           DOUBLE PRECISION,
   hrv_sdnn_ms          DOUBLE PRECISION,
   vo2_max              DOUBLE PRECISION,
   hr_avg               DOUBLE PRECISION,
   hr_max               SMALLINT,
   hr_min               SMALLINT,
+
+  -- Sleep
   sleep_total_minutes  NUMERIC,
   sleep_asleep_minutes NUMERIC,
   sleep_rem_minutes    NUMERIC,
   sleep_deep_minutes   NUMERIC,
   sleep_core_minutes   NUMERIC,
   sleep_awake_minutes  NUMERIC,
+
+  -- Body age and strength
   body_age_years       NUMERIC(6,1),
   body_age_delta_years NUMERIC(6,1),
   strength_volume_kg   NUMERIC
 );
 
 COMMENT ON TABLE daily_summary IS
-'Daily metrics summary table. Refreshed by sp_refresh_daily_summary().';
+'Daily metrics summary table. Refreshed by sp_refresh_daily_summary(). '
+'Includes flights climbed, respiratory and walking HR metrics, blood oxygen, sleep wrist temperature, daylight exposure and cardio recovery for richer wellness monitoring.';
+
 
 -- =============================================================================
--- SECTION 2: VIEWS FOR ANALYSIS
+-- SECTION 2: FUNCTIONS AND PROCEDURES
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- View: metrics_overview
--- -----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW metrics_overview AS
+CREATE OR REPLACE FUNCTION sp_refresh_daily_summary(p_start DATE, p_end DATE)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  -- Temporary staging table mirroring daily_summary, with added metrics
+  CREATE TEMP TABLE tmp_daily_summary (
+    date DATE PRIMARY KEY,
+    weight_kg NUMERIC(5,2),
+    body_fat_pct NUMERIC(4,2),
+    muscle_pct NUMERIC(4,2),
+    water_pct NUMERIC(4,2),
+    steps DOUBLE PRECISION,
+    exercise_minutes DOUBLE PRECISION,
+    calories_active DOUBLE PRECISION,
+    calories_resting DOUBLE PRECISION,
+    stand_minutes DOUBLE PRECISION,
+    distance_m DOUBLE PRECISION,
+    -- new metrics
+    flights_climbed DOUBLE PRECISION,
+    respiratory_rate DOUBLE PRECISION,
+    walking_hr_avg DOUBLE PRECISION,
+    blood_oxygen_saturation DOUBLE PRECISION,
+    wrist_temperature DOUBLE PRECISION,
+    time_in_daylight DOUBLE PRECISION,
+    cardio_recovery DOUBLE PRECISION,
+    -- existing heart and fitness metrics
+    hr_resting DOUBLE PRECISION,
+    hrv_sdnn_ms DOUBLE PRECISION,
+    vo2_max DOUBLE PRECISION,
+    hr_avg DOUBLE PRECISION,
+    hr_max SMALLINT,
+    hr_min SMALLINT,
+    -- sleep metrics
+    sleep_total_minutes NUMERIC,
+    sleep_asleep_minutes NUMERIC,
+    sleep_rem_minutes NUMERIC,
+    sleep_deep_minutes NUMERIC,
+    sleep_core_minutes NUMERIC,
+    sleep_awake_minutes NUMERIC,
+    -- body age and strength
+    body_age_years NUMERIC(6,1),
+    body_age_delta_years NUMERIC(6,1),
+    strength_volume_kg NUMERIC
+  ) ON COMMIT DROP;
+
+  INSERT INTO tmp_daily_summary(date)
+  SELECT generate_series(p_start, p_end, interval '1 day')::date;
+
+  -- Withings body composition
+  UPDATE tmp_daily_summary AS tmp
+    SET weight_kg = w.weight_kg,
+        body_fat_pct = w.body_fat_pct,
+        muscle_pct = w.muscle_pct,
+        water_pct = w.water_pct
+  FROM withings_daily AS w
+  WHERE w.date = tmp.date
+    AND w.date BETWEEN p_start AND p_end;
+
+  -- Aggregate Apple Health metrics, including the new ones
+  WITH apple_metrics AS (
+    SELECT dm.date,
+           SUM(dm.value) FILTER (WHERE mt.name = 'step_count') AS steps,
+           SUM(dm.value) FILTER (WHERE mt.name = 'apple_exercise_time') AS exercise_minutes,
+           SUM(dm.value) FILTER (WHERE mt.name = 'active_energy') * 0.239006 AS calories_active,
+           SUM(dm.value) FILTER (WHERE mt.name = 'basal_energy_burned') * 0.239006 AS calories_resting,
+           SUM(dm.value) FILTER (WHERE mt.name = 'apple_stand_time') AS stand_minutes,
+           SUM(dm.value) FILTER (WHERE mt.name = 'distance_walking_running') * 1000 AS distance_m,
+           SUM(dm.value) FILTER (WHERE mt.name = 'flights_climbed') AS flights_climbed,
+           AVG(dm.value) FILTER (WHERE mt.name = 'respiratory_rate') AS respiratory_rate,
+           AVG(dm.value) FILTER (WHERE mt.name = 'walking_heart_rate_average') AS walking_hr_avg,
+           AVG(dm.value) FILTER (WHERE mt.name = 'blood_oxygen_saturation') AS blood_oxygen_saturation,
+           AVG(dm.value) FILTER (WHERE mt.name = 'apple_sleeping_wrist_temperature') AS wrist_temperature,
+           SUM(dm.value) FILTER (WHERE mt.name = 'time_in_daylight') AS time_in_daylight,
+           AVG(dm.value) FILTER (WHERE mt.name = 'cardio_recovery') AS cardio_recovery,
+           AVG(dm.value) FILTER (WHERE mt.name = 'resting_heart_rate') AS resting_hr,
+           AVG(dm.value) FILTER (WHERE mt.name = 'hrv_sdnn_ms') AS hrv_sdnn_ms,
+           AVG(dm.value) FILTER (WHERE mt.name = 'vo2_max') AS vo2_max
+    FROM "DailyMetric" AS dm
+    JOIN "MetricType" AS mt ON dm.metric_id = mt.metric_id
+    WHERE dm.date BETWEEN p_start AND p_end
+    GROUP BY dm.date
+  )
+  UPDATE tmp_daily_summary AS tmp
+     SET steps                = am.steps,
+         exercise_minutes      = am.exercise_minutes,
+         calories_active       = am.calories_active,
+         calories_resting      = am.calories_resting,
+         stand_minutes         = am.stand_minutes,
+         distance_m            = am.distance_m,
+         flights_climbed       = am.flights_climbed,
+         respiratory_rate      = am.respiratory_rate,
+         walking_hr_avg        = am.walking_hr_avg,
+         blood_oxygen_saturation = am.blood_oxygen_saturation,
+         wrist_temperature     = am.wrist_temperature,
+         time_in_daylight      = am.time_in_daylight,
+         cardio_recovery       = am.cardio_recovery,
+         hr_resting            = am.resting_hr,
+         hrv_sdnn_ms           = am.hrv_sdnn_ms,
+         vo2_max               = am.vo2_max
+  FROM apple_metrics AS am
+  WHERE am.date = tmp.date;
+
+  -- DailyHeartRateSummary for HR min/avg/max (resting HR now taken from Apple metrics)
+  WITH hr_summ AS (
+    SELECT date,
+           MIN(hr_min) AS hr_min,
+           AVG(hr_avg) AS hr_avg,
+           MAX(hr_max) AS hr_max
+    FROM "DailyHeartRateSummary"
+    WHERE date BETWEEN p_start AND p_end
+    GROUP BY date
+  )
+  UPDATE tmp_daily_summary AS tmp
+     SET hr_avg = hs.hr_avg,
+         hr_max = hs.hr_max,
+         hr_min = hs.hr_min
+  FROM hr_summ AS hs
+  WHERE hs.date = tmp.date;
+
+  -- Sleep durations
+  WITH sleep AS (
+    SELECT DISTINCT ON (date) date,
+           total_sleep_hrs,
+           core_hrs,
+           deep_hrs,
+           rem_hrs,
+           awake_hrs
+    FROM "DailySleepSummary"
+    WHERE date BETWEEN p_start AND p_end
+    ORDER BY date, total_sleep_hrs DESC
+  )
+  UPDATE tmp_daily_summary AS tmp
+     SET sleep_total_minutes    = (sleep.total_sleep_hrs * 60)::NUMERIC,
+         sleep_asleep_minutes   = ((sleep.core_hrs + sleep.deep_hrs + sleep.rem_hrs) * 60)::NUMERIC,
+         sleep_rem_minutes      = (sleep.rem_hrs * 60)::NUMERIC,
+         sleep_deep_minutes     = (sleep.deep_hrs * 60)::NUMERIC,
+         sleep_core_minutes     = (sleep.core_hrs * 60)::NUMERIC,
+         sleep_awake_minutes    = (sleep.awake_hrs * 60)::NUMERIC
+  FROM sleep
+  WHERE sleep.date = tmp.date;
+
+  -- Body age metrics
+  UPDATE tmp_daily_summary AS tmp
+     SET body_age_years        = b.body_age_years,
+         body_age_delta_years  = b.age_delta_years
+  FROM body_age_daily AS b
+  WHERE b.date = tmp.date
+    AND b.date BETWEEN p_start AND p_end;
+
+  -- Strength training volume (kg × reps)
+  WITH strength AS (
+    SELECT date,
+           SUM(COALESCE(weight_kg, 0) * COALESCE(reps, 0)) AS total_volume
+    FROM wger_logs
+    WHERE date BETWEEN p_start AND p_end
+    GROUP BY date
+  )
+  UPDATE tmp_daily_summary AS tmp
+     SET strength_volume_kg = COALESCE(strength.total_volume, 0)
+  FROM strength
+  WHERE strength.date = tmp.date;
+
+  UPDATE tmp_daily_summary
+     SET strength_volume_kg = 0
+   WHERE strength_volume_kg IS NULL;
+
+  -- Upsert into daily_summary
+  INSERT INTO daily_summary AS ds
+      SELECT * FROM tmp_daily_summary
+  ON CONFLICT (date) DO UPDATE SET
+      weight_kg            = EXCLUDED.weight_kg,
+      body_fat_pct         = EXCLUDED.body_fat_pct,
+      muscle_pct           = EXCLUDED.muscle_pct,
+      water_pct            = EXCLUDED.water_pct,
+      steps                = EXCLUDED.steps,
+      exercise_minutes     = EXCLUDED.exercise_minutes,
+      calories_active      = EXCLUDED.calories_active,
+      calories_resting     = EXCLUDED.calories_resting,
+      stand_minutes        = EXCLUDED.stand_minutes,
+      distance_m           = EXCLUDED.distance_m,
+      flights_climbed      = EXCLUDED.flights_climbed,
+      respiratory_rate     = EXCLUDED.respiratory_rate,
+      walking_hr_avg       = EXCLUDED.walking_hr_avg,
+      blood_oxygen_saturation = EXCLUDED.blood_oxygen_saturation,
+      wrist_temperature    = EXCLUDED.wrist_temperature,
+      time_in_daylight     = EXCLUDED.time_in_daylight,
+      cardio_recovery      = EXCLUDED.cardio_recovery,
+      hr_resting           = EXCLUDED.hr_resting,
+      hrv_sdnn_ms          = EXCLUDED.hrv_sdnn_ms,
+      vo2_max              = EXCLUDED.vo2_max,
+      hr_avg               = EXCLUDED.hr_avg,
+      hr_max               = EXCLUDED.hr_max,
+      hr_min               = EXCLUDED.hr_min,
+      sleep_total_minutes  = EXCLUDED.sleep_total_minutes,
+      sleep_asleep_minutes = EXCLUDED.sleep_asleep_minutes,
+      sleep_rem_minutes    = EXCLUDED.sleep_rem_minutes,
+      sleep_deep_minutes   = EXCLUDED.sleep_deep_minutes,
+      sleep_core_minutes   = EXCLUDED.sleep_core_minutes,
+      sleep_awake_minutes  = EXCLUDED.sleep_awake_minutes,
+      body_age_years       = EXCLUDED.body_age_years,
+      body_age_delta_years = EXCLUDED.body_age_delta_years,
+      strength_volume_kg   = EXCLUDED.strength_volume_kg;
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION sp_get_daily_metric_overview(
+    p_column_name   TEXT,
+    p_display_name  TEXT,
+    p_ref_date      DATE
+) RETURNS TABLE (
+    metric_name        TEXT,
+    yesterday_value    NUMERIC,
+    day_before_value   NUMERIC,
+    avg_7d             NUMERIC,
+    avg_14d            NUMERIC,
+    avg_28d            NUMERIC,
+    abs_change_d1      NUMERIC,
+    pct_change_d1      NUMERIC,
+    abs_change_7d      NUMERIC,
+    pct_change_7d      NUMERIC,
+    all_time_high      NUMERIC,
+    all_time_low       NUMERIC,
+    six_month_high     NUMERIC,
+    six_month_low      NUMERIC,
+    three_month_high   NUMERIC,
+    three_month_low    NUMERIC,
+    moving_avg_7d      NUMERIC,
+    moving_avg_28d     NUMERIC,
+    moving_avg_90d     NUMERIC
+) LANGUAGE plpgsql AS $$
+DECLARE
+    col TEXT := format('%I', p_column_name);
+    v_yesterday NUMERIC;
+    v_day_before NUMERIC;
+    v_avg_7d NUMERIC;
+    v_avg_14d NUMERIC;
+    v_avg_28d NUMERIC;
+    v_avg_90d NUMERIC;
+    v_all_high NUMERIC;
+    v_all_low NUMERIC;
+    v_six_high NUMERIC;
+    v_six_low NUMERIC;
+    v_three_high NUMERIC;
+    v_three_low NUMERIC;
+BEGIN
+    metric_name := p_display_name;
+
+    -- Values on reference date and the day before
+    EXECUTE format('SELECT %s FROM daily_summary WHERE date = $1', col)
+       INTO v_yesterday USING p_ref_date;
+    EXECUTE format('SELECT %s FROM daily_summary WHERE date = $1', col)
+       INTO v_day_before USING (p_ref_date - INTERVAL '1 day')::date;
+
+    -- Moving averages (preceding intervals, not including the reference date)
+    EXECUTE format(
+        'SELECT AVG(%s)::numeric FROM daily_summary WHERE date >= $1 AND date < $2',
+        col
+    ) INTO v_avg_7d  USING (p_ref_date - INTERVAL '7 days')::date,  p_ref_date;
+    EXECUTE format(
+        'SELECT AVG(%s)::numeric FROM daily_summary WHERE date >= $1 AND date < $2',
+        col
+    ) INTO v_avg_14d USING (p_ref_date - INTERVAL '14 days')::date, p_ref_date;
+    EXECUTE format(
+        'SELECT AVG(%s)::numeric FROM daily_summary WHERE date >= $1 AND date < $2',
+        col
+    ) INTO v_avg_28d USING (p_ref_date - INTERVAL '28 days')::date, p_ref_date;
+    EXECUTE format(
+        'SELECT AVG(%s)::numeric FROM daily_summary WHERE date >= $1 AND date < $2',
+        col
+    ) INTO v_avg_90d USING (p_ref_date - INTERVAL '90 days')::date, p_ref_date;
+
+    -- All‑time and recent highs/lows, restricted to p_ref_date or earlier
+    EXECUTE format(
+        'SELECT MAX(%s)::numeric FROM daily_summary WHERE date <= $1',
+        col
+    ) INTO v_all_high USING p_ref_date;
+    EXECUTE format(
+        'SELECT MIN(%s)::numeric FROM daily_summary WHERE date <= $1 AND %s IS NOT NULL',
+        col, col
+    ) INTO v_all_low USING p_ref_date;
+
+    EXECUTE format(
+        'SELECT MAX(%s)::numeric FROM daily_summary WHERE date >= $1 AND date <= $2',
+        col
+    ) INTO v_six_high USING (p_ref_date - INTERVAL '6 months')::date, p_ref_date;
+    EXECUTE format(
+        'SELECT MIN(%s)::numeric FROM daily_summary WHERE date >= $1 AND date <= $2 AND %s IS NOT NULL',
+        col, col
+    ) INTO v_six_low USING (p_ref_date - INTERVAL '6 months')::date, p_ref_date;
+
+    EXECUTE format(
+        'SELECT MAX(%s)::numeric FROM daily_summary WHERE date >= $1 AND date <= $2',
+        col
+    ) INTO v_three_high USING (p_ref_date - INTERVAL '3 months')::date, p_ref_date;
+    EXECUTE format(
+        'SELECT MIN(%s)::numeric FROM daily_summary WHERE date >= $1 AND date <= $2 AND %s IS NOT NULL',
+        col, col
+    ) INTO v_three_low USING (p_ref_date - INTERVAL '3 months')::date, p_ref_date;
+
+    -- Populate output columns
+    yesterday_value  := v_yesterday;
+    day_before_value := v_day_before;
+    avg_7d           := v_avg_7d;
+    avg_14d          := v_avg_14d;
+    avg_28d          := v_avg_28d;
+    moving_avg_7d    := v_avg_7d;
+    moving_avg_28d   := v_avg_28d;
+    moving_avg_90d   := v_avg_90d;
+
+    IF v_yesterday IS NULL OR v_day_before IS NULL THEN
+        abs_change_d1 := NULL;
+        pct_change_d1 := NULL;
+    ELSE
+        abs_change_d1 := v_yesterday - v_day_before;
+        IF v_day_before = 0 THEN
+            pct_change_d1 := NULL;
+        ELSE
+            pct_change_d1 := (abs_change_d1 / v_day_before) * 100;
+        END IF;
+    END IF;
+
+    abs_change_7d := v_avg_7d - v_avg_28d;
+    IF v_avg_28d IS NULL OR v_avg_28d = 0 THEN
+        pct_change_7d := NULL;
+    ELSE
+        pct_change_7d := (abs_change_7d / v_avg_28d) * 100;
+    END IF;
+
+    all_time_high   := v_all_high;
+    all_time_low    := v_all_low;
+    six_month_high  := v_six_high;
+    six_month_low   := v_six_low;
+    three_month_high:= v_three_high;
+    three_month_low := v_three_low;
+
+    RETURN NEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION sp_get_exercise_volume_overview(
+    p_exercise_id INT,
+    p_ref_date    DATE
+) RETURNS TABLE (
+    metric_name        TEXT,
+    yesterday_value    NUMERIC,
+    day_before_value   NUMERIC,
+    avg_7d             NUMERIC,
+    avg_14d            NUMERIC,
+    avg_28d            NUMERIC,
+    abs_change_d1      NUMERIC,
+    pct_change_d1      NUMERIC,
+    abs_change_7d      NUMERIC,
+    pct_change_7d      NUMERIC,
+    all_time_high      NUMERIC,
+    all_time_low       NUMERIC,
+    six_month_high     NUMERIC,
+    six_month_low      NUMERIC,
+    three_month_high   NUMERIC,
+    three_month_low    NUMERIC,
+    moving_avg_7d      NUMERIC,
+    moving_avg_28d     NUMERIC,
+    moving_avg_90d     NUMERIC
+) LANGUAGE plpgsql AS $$
+DECLARE
+    ex_name TEXT;
+    v_yesterday NUMERIC;
+    v_day_before NUMERIC;
+    v_avg_7d NUMERIC;
+    v_avg_14d NUMERIC;
+    v_avg_28d NUMERIC;
+    v_avg_90d NUMERIC;
+    v_all_high NUMERIC;
+    v_all_low NUMERIC;
+    v_six_high NUMERIC;
+    v_six_low NUMERIC;
+    v_three_high NUMERIC;
+    v_three_low NUMERIC;
+BEGIN
+    SELECT LOWER(name) INTO ex_name
+      FROM wger_exercise
+     WHERE id = p_exercise_id;
+
+    metric_name := coalesce(ex_name || '_volume', 'exercise_' || p_exercise_id || '_volume');
+
+    -- Daily volume up to and including ref date
+    SELECT COALESCE(SUM(weight_kg * reps), 0) INTO v_yesterday
+      FROM wger_logs
+     WHERE exercise_id = p_exercise_id AND date = p_ref_date;
+
+    SELECT COALESCE(SUM(weight_kg * reps), 0) INTO v_day_before
+      FROM wger_logs
+     WHERE exercise_id = p_exercise_id AND date = p_ref_date - INTERVAL '1 day';
+
+    -- Moving averages for 7/14/28/90 days (preceding p_ref_date)
+    SELECT AVG(vol)::numeric INTO v_avg_7d
+      FROM (
+          SELECT g::date AS dt,
+                 COALESCE(
+                   (SELECT SUM(weight_kg * reps)
+                      FROM wger_logs w
+                     WHERE w.exercise_id = p_exercise_id AND w.date = g::date),
+                   0
+                 ) AS vol
+            FROM generate_series(p_ref_date - INTERVAL '7 days', p_ref_date - INTERVAL '1 day', interval '1 day') AS s(g)
+      ) t;
+
+    SELECT AVG(vol)::numeric INTO v_avg_14d
+      FROM (
+          SELECT g::date AS dt,
+                 COALESCE(
+                   (SELECT SUM(weight_kg * reps)
+                      FROM wger_logs w
+                     WHERE w.exercise_id = p_exercise_id AND w.date = g::date),
+                   0
+                 ) AS vol
+            FROM generate_series(p_ref_date - INTERVAL '14 days', p_ref_date - INTERVAL '1 day', interval '1 day') AS s(g)
+      ) t;
+
+    SELECT AVG(vol)::numeric INTO v_avg_28d
+      FROM (
+          SELECT g::date AS dt,
+                 COALESCE(
+                   (SELECT SUM(weight_kg * reps)
+                      FROM wger_logs w
+                     WHERE w.exercise_id = p_exercise_id AND w.date = g::date),
+                   0
+                 ) AS vol
+            FROM generate_series(p_ref_date - INTERVAL '28 days', p_ref_date - INTERVAL '1 day', interval '1 day') AS s(g)
+      ) t;
+
+    SELECT AVG(vol)::numeric INTO v_avg_90d
+      FROM (
+          SELECT g::date AS dt,
+                 COALESCE(
+                   (SELECT SUM(weight_kg * reps)
+                      FROM wger_logs w
+                     WHERE w.exercise_id = p_exercise_id AND w.date = g::date),
+                   0
+                 ) AS vol
+            FROM generate_series(p_ref_date - INTERVAL '90 days', p_ref_date - INTERVAL '1 day', interval '1 day') AS s(g)
+      ) t;
+
+    -- Highs and lows up to ref date
+    SELECT MAX(sum_vol), MIN(sum_vol)
+      INTO v_all_high, v_all_low
+      FROM (
+          SELECT SUM(weight_kg * reps) AS sum_vol
+            FROM wger_logs
+           WHERE exercise_id = p_exercise_id AND date <= p_ref_date
+           GROUP BY date
+      ) t;
+
+    -- 6‑month and 3‑month highs/lows up to ref date
     SELECT
-        'weight'::text AS metric_name,
-        (SELECT weight_kg FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT weight_kg FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT weight_kg FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT weight_kg FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT weight_kg FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT weight_kg FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(weight_kg)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(weight_kg)::numeric FROM daily_summary WHERE weight_kg IS NOT NULL) AS all_time_low,
-        (SELECT MAX(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND weight_kg IS NOT NULL) AS six_month_low,
-        (SELECT MAX(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND weight_kg IS NOT NULL) AS three_month_low,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(weight_kg)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+      MAX(sum_vol) FILTER (WHERE dt >= p_ref_date - INTERVAL '6 months'),
+      MIN(sum_vol) FILTER (WHERE dt >= p_ref_date - INTERVAL '6 months'),
+      MAX(sum_vol) FILTER (WHERE dt >= p_ref_date - INTERVAL '3 months'),
+      MIN(sum_vol) FILTER (WHERE dt >= p_ref_date - INTERVAL '3 months')
+      INTO v_six_high, v_six_low, v_three_high, v_three_low
+      FROM (
+          SELECT date AS dt, SUM(weight_kg * reps) AS sum_vol
+            FROM wger_logs
+           WHERE exercise_id = p_exercise_id AND date <= p_ref_date
+           GROUP BY date
+      ) t;
 
-UNION ALL
-    SELECT
-        'body_fat_pct'::text AS metric_name,
-        (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT body_fat_pct FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(body_fat_pct)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(body_fat_pct)::numeric FROM daily_summary WHERE body_fat_pct IS NOT NULL) AS all_time_low,
-        (SELECT MAX(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND body_fat_pct IS NOT NULL) AS six_month_low,
-        (SELECT MAX(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND body_fat_pct IS NOT NULL) AS three_month_low,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(body_fat_pct)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+    yesterday_value  := v_yesterday;
+    day_before_value := v_day_before;
+    avg_7d           := v_avg_7d;
+    avg_14d          := v_avg_14d;
+    avg_28d          := v_avg_28d;
+    moving_avg_7d    := v_avg_7d;
+    moving_avg_28d   := v_avg_28d;
+    moving_avg_90d   := v_avg_90d;
 
-UNION ALL
-    SELECT
-        'muscle_pct'::text AS metric_name,
-        (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT muscle_pct FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT muscle_pct FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(muscle_pct)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(muscle_pct)::numeric FROM daily_summary WHERE muscle_pct IS NOT NULL) AS all_time_low,
-        (SELECT MAX(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND muscle_pct IS NOT NULL) AS six_month_low,
-        (SELECT MAX(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND muscle_pct IS NOT NULL) AS three_month_low,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(muscle_pct)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+    abs_change_d1 := v_yesterday - v_day_before;
+    IF v_day_before = 0 THEN
+        pct_change_d1 := NULL;
+    ELSE
+        pct_change_d1 := (abs_change_d1 / v_day_before) * 100;
+    END IF;
 
-UNION ALL
-    SELECT
-        'resting_heart_rate'::text AS metric_name,
-        (SELECT hr_resting FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT hr_resting FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT hr_resting FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT hr_resting FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT hr_resting FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT hr_resting FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(hr_resting)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(hr_resting)::numeric FROM daily_summary WHERE hr_resting IS NOT NULL) AS all_time_low,
-        (SELECT MAX(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND hr_resting IS NOT NULL) AS six_month_low,
-        (SELECT MAX(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND hr_resting IS NOT NULL) AS three_month_low,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(hr_resting)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+    abs_change_7d := v_avg_7d - v_avg_28d;
+    IF v_avg_28d IS NULL OR v_avg_28d = 0 THEN
+        pct_change_7d := NULL;
+    ELSE
+        pct_change_7d := (abs_change_7d / v_avg_28d) * 100;
+    END IF;
 
-UNION ALL
-    SELECT
-        'steps'::text AS metric_name,
-        (SELECT steps FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT steps FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT steps FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT steps FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT steps FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT steps FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT steps FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT steps FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT steps FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT steps FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT steps FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(steps)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(steps)::numeric FROM daily_summary WHERE steps IS NOT NULL) AS all_time_low,
-        (SELECT MAX(steps)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(steps)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND steps IS NOT NULL) AS six_month_low,
-        (SELECT MAX(steps)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(steps)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND steps IS NOT NULL) AS three_month_low,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(steps)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+    all_time_high    := v_all_high;
+    all_time_low     := v_all_low;
+    six_month_high   := v_six_high;
+    six_month_low    := v_six_low;
+    three_month_high := v_three_high;
+    three_month_low  := v_three_low;
 
-UNION ALL
-    SELECT
-        'strength_volume'::text AS metric_name,
-        (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 1)::numeric AS yesterday_value,
-        (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2)::numeric AS day_before_value,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS avg_7d,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 14 AND date < current_date) AS avg_14d,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS avg_28d,
-        CASE
-            WHEN (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 1) IS NULL
-              OR (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2) IS NULL
-            THEN NULL
-            ELSE (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2)
-        END::numeric AS abs_change_d1,
-        CASE
-            WHEN (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2) IS NULL
-              OR (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2) = 0
-            THEN NULL
-            ELSE ((SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 1)
-                 - (SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2))
-                 / NULLIF((SELECT strength_volume_kg FROM daily_summary WHERE date = current_date - 2), 0) * 100
-        END::numeric AS pct_change_d1,
-        (
-            (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) AS abs_change_7d,
-        CASE
-            WHEN (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-              OR (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-            THEN NULL
-            ELSE (
-                (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-                - (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-            ) / NULLIF((SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-        END::numeric AS pct_change_7d,
-        (SELECT MAX(strength_volume_kg)::numeric FROM daily_summary) AS all_time_high,
-        (SELECT MIN(strength_volume_kg)::numeric FROM daily_summary WHERE strength_volume_kg IS NOT NULL) AS all_time_low,
-        (SELECT MAX(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months') AS six_month_high,
-        (SELECT MIN(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND strength_volume_kg IS NOT NULL) AS six_month_low,
-        (SELECT MAX(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months') AS three_month_high,
-        (SELECT MIN(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND strength_volume_kg IS NOT NULL) AS three_month_low,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date) AS moving_avg_7d,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) AS moving_avg_28d,
-        (SELECT AVG(strength_volume_kg)::numeric FROM daily_summary WHERE date >= current_date - 90 AND date < current_date) AS moving_avg_90d
+    RETURN NEXT;
+END;
+$$;
 
-UNION ALL
-SELECT
-    'sleep_hours'::text AS metric_name,
-    (SELECT sleep_total_minutes / 60.0 FROM daily_summary WHERE date = current_date - 1)::numeric,
-    (SELECT sleep_total_minutes / 60.0 FROM daily_summary WHERE date = current_date - 2)::numeric,
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)::numeric,
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 14 AND date < current_date)::numeric,
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)::numeric,
-    CASE
-        WHEN (SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2) IS NULL
-        THEN NULL
-        ELSE ((SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 1)
-              - (SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2)) / 60.0
-    END::numeric AS abs_change_d1,
-    CASE
-        WHEN (SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2) IS NULL
-          OR (SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2) = 0
-        THEN NULL
-        ELSE ((SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 1)
-              - (SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2))
-              / NULLIF((SELECT sleep_total_minutes FROM daily_summary WHERE date = current_date - 2), 0) * 100
-    END::numeric AS pct_change_d1,
-    ((SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-      - (SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)) / 60.0 AS abs_change_7d,
-    CASE
-        WHEN (SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) IS NULL
-          OR (SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date) = 0
-        THEN NULL
-        ELSE (
-            (SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)
-            - (SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)
-        ) / NULLIF((SELECT AVG(sleep_total_minutes)::numeric FROM daily_summary WHERE date >= current_date - 28 AND date < current_date), 0) * 100
-    END::numeric AS pct_change_7d,
-    (SELECT MAX(sleep_total_minutes) / 60.0 FROM daily_summary),
-    (SELECT MIN(sleep_total_minutes) / 60.0 FROM daily_summary WHERE sleep_total_minutes IS NOT NULL),
-    (SELECT MAX(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - INTERVAL '6 months'),
-    (SELECT MIN(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - INTERVAL '6 months' AND sleep_total_minutes IS NOT NULL),
-    (SELECT MAX(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - INTERVAL '3 months'),
-    (SELECT MIN(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - INTERVAL '3 months' AND sleep_total_minutes IS NOT NULL),
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 7 AND date < current_date)::numeric AS moving_avg_7d,
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 28 AND date < current_date)::numeric AS moving_avg_28d,
-    (SELECT AVG(sleep_total_minutes) / 60.0 FROM daily_summary WHERE date >= current_date - 90 AND date < current_date)::numeric AS moving_avg_90d
+CREATE OR REPLACE FUNCTION sp_metrics_overview(p_ref_date DATE)
+RETURNS TABLE (
+    metric_name        TEXT,
+    yesterday_value    NUMERIC,
+    day_before_value   NUMERIC,
+    avg_7d             NUMERIC,
+    avg_14d            NUMERIC,
+    avg_28d            NUMERIC,
+    abs_change_d1      NUMERIC,
+    pct_change_d1      NUMERIC,
+    abs_change_7d      NUMERIC,
+    pct_change_7d      NUMERIC,
+    all_time_high      NUMERIC,
+    all_time_low       NUMERIC,
+    six_month_high     NUMERIC,
+    six_month_low      NUMERIC,
+    three_month_high   NUMERIC,
+    three_month_low    NUMERIC,
+    moving_avg_7d      NUMERIC,
+    moving_avg_28d     NUMERIC,
+    moving_avg_90d     NUMERIC
+) LANGUAGE sql AS $$
+    SELECT * FROM sp_get_daily_metric_overview('weight_kg',             'weight',                p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('body_fat_pct',         'body_fat_pct',          p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('muscle_pct',           'muscle_pct',            p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('water_pct',            'water_pct',             p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('steps',                'steps',                 p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('exercise_minutes',     'exercise_minutes',      p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('calories_active',      'calories_active',       p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('calories_resting',     'calories_resting',      p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('stand_minutes',        'stand_minutes',         p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('distance_m',           'distance_m',            p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('flights_climbed',      'flights_climbed',       p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('respiratory_rate',     'respiratory_rate',      p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('walking_hr_avg',       'walking_hr_avg',        p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('blood_oxygen_saturation','blood_oxygen_saturation',p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('wrist_temperature',    'wrist_temperature',     p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('time_in_daylight',     'time_in_daylight',      p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('cardio_recovery',      'cardio_recovery',       p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('hr_resting',           'resting_heart_rate',    p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('hrv_sdnn_ms',          'hrv_sdnn_ms',           p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('vo2_max',              'vo2_max',               p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('hr_avg',               'hr_avg',                p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('hr_max',               'hr_max',                p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('hr_min',               'hr_min',                p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_total_minutes',  'sleep_total_minutes',   p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_asleep_minutes', 'sleep_asleep_minutes',  p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_rem_minutes',    'sleep_rem_minutes',     p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_deep_minutes',   'sleep_deep_minutes',    p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_core_minutes',   'sleep_core_minutes',    p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('sleep_awake_minutes',  'sleep_awake_minutes',   p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('body_age_years',       'body_age_years',        p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('body_age_delta_years', 'body_age_delta_years',  p_ref_date)
+    UNION ALL
+    SELECT * FROM sp_get_daily_metric_overview('strength_volume_kg',   'strength_volume',       p_ref_date)
+    UNION ALL
+    -- Big Four lifts (exercise IDs from schedule_rules.py: squat 615, bench 73, deadlift 184, OHP 566)
+    SELECT * FROM sp_get_exercise_volume_overview(615, p_ref_date)  -- squat
+    UNION ALL
+    SELECT * FROM sp_get_exercise_volume_overview(73,  p_ref_date)  -- bench
+    UNION ALL
+    SELECT * FROM sp_get_exercise_volume_overview(184, p_ref_date)  -- deadlift
+    UNION ALL
+    SELECT * FROM sp_get_exercise_volume_overview(566, p_ref_date); -- overhead press
+$$;
 
-UNION ALL
-SELECT
-    'squat_volume'::text AS metric_name,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w
-        JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE w.date = current_date - 1 AND LOWER(e.name) LIKE '%squat%'
-    )::numeric AS yesterday_value,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w
-        JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE w.date = current_date - 2 AND LOWER(e.name) LIKE '%squat%'
-    )::numeric AS day_before_value,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 7, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS avg_7d,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 14, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS avg_14d,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS avg_28d,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w
-        JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE w.date = current_date - 1 AND LOWER(e.name) LIKE '%squat%'
-    )
-    - (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w
-        JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE w.date = current_date - 2 AND LOWER(e.name) LIKE '%squat%'
-    ) AS abs_change_d1,
-    CASE
-        WHEN (
-            SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-            FROM wger_logs w
-            JOIN wger_exercise e ON e.id = w.exercise_id
-            WHERE w.date = current_date - 2 AND LOWER(e.name) LIKE '%squat%'
-        ) = 0
-        THEN NULL
-        ELSE (
-            (
-                SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-                FROM wger_logs w
-                JOIN wger_exercise e ON e.id = w.exercise_id
-                WHERE w.date = current_date - 1 AND LOWER(e.name) LIKE '%squat%'
-            )
-            - (
-                SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-                FROM wger_logs w
-                JOIN wger_exercise e ON e.id = w.exercise_id
-                WHERE w.date = current_date - 2 AND LOWER(e.name) LIKE '%squat%'
-            )
-        ) / NULLIF((
-            SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-            FROM wger_logs w
-            JOIN wger_exercise e ON e.id = w.exercise_id
-            WHERE w.date = current_date - 2 AND LOWER(e.name) LIKE '%squat%'
-        ), 0) * 100
-    END::numeric AS pct_change_d1,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 7, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    )
-    - (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS abs_change_7d,
-    CASE
-        WHEN (
-            SELECT AVG(volume)::numeric
-            FROM (
-                SELECT g::date AS dt, COALESCE(
-                    (SELECT SUM(w.weight_kg * w.reps)
-                     FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                     WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                    0
-                ) AS volume
-                FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-            ) sub
-        ) = 0
-        THEN NULL
-        ELSE (
-            (
-                SELECT AVG(volume)::numeric
-                FROM (
-                    SELECT g::date AS dt, COALESCE(
-                        (SELECT SUM(w.weight_kg * w.reps)
-                         FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                         WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                        0
-                    ) AS volume
-                    FROM generate_series(current_date - 7, current_date - 1, interval '1 day') AS s(g)
-                ) sub
-            )
-            - (
-                SELECT AVG(volume)::numeric
-                FROM (
-                    SELECT g::date AS dt, COALESCE(
-                        (SELECT SUM(w.weight_kg * w.reps)
-                         FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                         WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                        0
-                    ) AS volume
-                    FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-                ) sub
-            )
-        ) / NULLIF((
-            SELECT AVG(volume)::numeric
-            FROM (
-                SELECT g::date AS dt, COALESCE(
-                    (SELECT SUM(w.weight_kg * w.reps)
-                     FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                     WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                    0
-                ) AS volume
-                FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-            ) sub
-        ), 0) * 100
-    END::numeric AS pct_change_7d,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) DESC
-        LIMIT 1
-    )::numeric AS all_time_high,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) ASC
-        LIMIT 1
-    )::numeric AS all_time_low,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%' AND w.date >= current_date - INTERVAL '6 months'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) DESC
-        LIMIT 1
-    )::numeric AS six_month_high,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%' AND w.date >= current_date - INTERVAL '6 months'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) ASC
-        LIMIT 1
-    )::numeric AS six_month_low,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%' AND w.date >= current_date - INTERVAL '3 months'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) DESC
-        LIMIT 1
-    )::numeric AS three_month_high,
-    (
-        SELECT COALESCE(SUM(w.weight_kg * w.reps), 0)
-        FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-        WHERE LOWER(e.name) LIKE '%squat%' AND w.date >= current_date - INTERVAL '3 months'
-        GROUP BY w.date
-        ORDER BY SUM(w.weight_kg * w.reps) ASC
-        LIMIT 1
-    )::numeric AS three_month_low,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 7, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS moving_avg_7d,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 28, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS moving_avg_28d,
-    (
-        SELECT AVG(volume)::numeric
-        FROM (
-            SELECT g::date AS dt, COALESCE(
-                (SELECT SUM(w.weight_kg * w.reps)
-                 FROM wger_logs w JOIN wger_exercise e ON e.id = w.exercise_id
-                 WHERE w.date = g::date AND LOWER(e.name) LIKE '%squat%'),
-                0
-            ) AS volume
-            FROM generate_series(current_date - 90, current_date - 1, interval '1 day') AS s(g)
-        ) sub
-    ) AS moving_avg_90d
-;
-COMMENT ON VIEW metrics_overview IS 'Aggregated metric snapshot for Pierre''s trainer narrative.';
+
 
 -- -----------------------------------------------------------------------------
 -- Other MVs (No changes in this version)
@@ -1111,108 +1153,6 @@ COMMENT ON TABLE "ImportLog" IS 'Tracks the progress of the Dropbox import proce
 COMMENT ON COLUMN "ImportLog".import_id IS 'A unique identifier for each import run.';
 COMMENT ON COLUMN "ImportLog".import_timestamp IS 'The timestamp when the import script was executed.';
 COMMENT ON COLUMN "ImportLog".last_file_processed_at IS 'The ''client_modified'' timestamp of the last file processed in this run.';
-
--- =============================================================================
--- SECTION 5: FUNCTIONS AND PROCEDURES
--- =============================================================================
-
-CREATE OR REPLACE FUNCTION sp_refresh_daily_summary(p_start DATE, p_end DATE)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-  INSERT INTO daily_summary
-  SELECT
-    d.date,
-    w.weight_kg,
-    w.body_fat_pct,
-    w.muscle_pct,
-    w.water_pct,
-    am.steps,
-    am.exercise_minutes,
-    am.calories_active,
-    am.calories_resting,
-    am.stand_minutes,
-    am.distance_m,
-    am.hr_resting,
-    am.hrv_sdnn_ms,
-    am.vo2_max,
-    dhr.hr_avg,
-    dhr.hr_max,
-    dhr.hr_min,
-    dss.total_sleep_hrs * 60,
-    (dss.core_hrs + dss.deep_hrs + dss.rem_hrs) * 60,
-    dss.rem_hrs * 60,
-    dss.deep_hrs * 60,
-    dss.core_hrs * 60,
-    dss.awake_hrs * 60,
-    b.body_age_years,
-    b.age_delta_years,
-    COALESCE(SUM(gl.weight_kg * gl.reps), 0)
-  FROM generate_series(p_start, p_end, interval '1 day') AS d(date)
-  LEFT JOIN withings_daily w USING (date)
-  LEFT JOIN (
-      SELECT dm.date,
-             SUM(dm.value) FILTER (WHERE mt.name='step_count') AS steps,
-             SUM(dm.value) FILTER (WHERE mt.name='apple_exercise_time') AS exercise_minutes,
-             SUM(dm.value) FILTER (WHERE mt.name='active_energy')*0.239006 AS calories_active,
-             SUM(dm.value) FILTER (WHERE mt.name='basal_energy_burned')*0.239006 AS calories_resting,
-             SUM(dm.value) FILTER (WHERE mt.name='apple_stand_time') AS stand_minutes,
-             SUM(dm.value) FILTER (WHERE mt.name='distance_walking_running') AS distance_m,
-             AVG(dm.value) FILTER (WHERE mt.name='resting_heart_rate') AS hr_resting,
-             AVG(dm.value) FILTER (WHERE mt.name='hrv_sdnn_ms') AS hrv_sdnn_ms,
-             AVG(dm.value) FILTER (WHERE mt.name='vo2_max') AS vo2_max
-      FROM "DailyMetric" dm
-      JOIN "MetricType" mt ON dm.metric_id=mt.metric_id
-      GROUP BY dm.date
-  ) am USING (date)
-  LEFT JOIN (
-      SELECT date, MIN(hr_min) AS hr_min, AVG(hr_avg) AS hr_avg, MAX(hr_max) AS hr_max
-      FROM "DailyHeartRateSummary" GROUP BY date
-  ) dhr USING (date)
-  LEFT JOIN (
-      SELECT DISTINCT ON (date) date,
-             total_sleep_hrs, core_hrs, deep_hrs, rem_hrs, awake_hrs
-      FROM "DailySleepSummary"
-      ORDER BY date, total_sleep_hrs DESC
-  ) dss USING (date)
-  LEFT JOIN body_age_daily b USING (date)
-  LEFT JOIN wger_logs gl USING (date)
-  GROUP BY d.date, w.weight_kg, w.body_fat_pct, w.muscle_pct, w.water_pct,
-           am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m,
-           am.hr_resting, am.hrv_sdnn_ms, am.vo2_max,
-           dhr.hr_avg, dhr.hr_max, dhr.hr_min,
-           dss.total_sleep_hrs, dss.core_hrs, dss.deep_hrs, dss.rem_hrs, dss.awake_hrs,
-           b.body_age_years, b.age_delta_years
-  ON CONFLICT (date) DO UPDATE SET
-    weight_kg=EXCLUDED.weight_kg,
-    body_fat_pct=EXCLUDED.body_fat_pct,
-    muscle_pct=EXCLUDED.muscle_pct,
-    water_pct=EXCLUDED.water_pct,
-    steps=EXCLUDED.steps,
-    exercise_minutes=EXCLUDED.exercise_minutes,
-    calories_active=EXCLUDED.calories_active,
-    calories_resting=EXCLUDED.calories_resting,
-    stand_minutes=EXCLUDED.stand_minutes,
-    distance_m=EXCLUDED.distance_m,
-    hr_resting=EXCLUDED.hr_resting,
-    hrv_sdnn_ms=EXCLUDED.hrv_sdnn_ms,
-    vo2_max=EXCLUDED.vo2_max,
-    hr_avg=EXCLUDED.hr_avg,
-    hr_max=EXCLUDED.hr_max,
-    hr_min=EXCLUDED.hr_min,
-    sleep_total_minutes=EXCLUDED.sleep_total_minutes,
-    sleep_asleep_minutes=EXCLUDED.sleep_asleep_minutes,
-    sleep_rem_minutes=EXCLUDED.sleep_rem_minutes,
-    sleep_deep_minutes=EXCLUDED.sleep_deep_minutes,
-    sleep_core_minutes=EXCLUDED.sleep_core_minutes,
-    sleep_awake_minutes=EXCLUDED.sleep_awake_minutes,
-    body_age_years=EXCLUDED.body_age_years,
-    body_age_delta_years=EXCLUDED.body_age_delta_years,
-    strength_volume_kg=EXCLUDED.strength_volume_kg;
-END;
-$$;
-
-
-
 
 
 
