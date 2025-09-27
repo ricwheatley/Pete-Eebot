@@ -40,7 +40,7 @@ def stub_phrase_picker(monkeypatch):
 
 
 def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
-    pattern = rf"CREATE TABLE\s+{re.escape(table_name)}\s*\((.*?)\);"
+    pattern = rf"CREATE\s+(?:TEMPORARY\s+|TEMP\s+)?TABLE\s+{re.escape(table_name)}\s*\((.*?)\)\s*(?:ON\s+COMMIT\s+\w+\s*)?;"
     match = re.search(pattern, sql_text, flags=re.IGNORECASE | re.DOTALL)
     if match is None:
         raise AssertionError(f"Could not find definition for table '{table_name}'.")
@@ -56,14 +56,6 @@ def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
     return columns
 
 
-def _extract_daily_summary_select(sql_text: str) -> str:
-    pattern = r"SELECT\s+(.*?)\s+FROM\s+generate_series\s*\(\s*p_start"
-    match = re.search(pattern, sql_text, flags=re.IGNORECASE | re.DOTALL)
-    if match is None:
-        raise AssertionError("Could not locate daily_summary SELECT statement.")
-    return match.group(1)
-
-
 def test_withings_daily_table_includes_body_composition_columns():
     schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
     columns = _extract_table_columns(schema_sql, "withings_daily")
@@ -77,16 +69,42 @@ _EXPECTED_DAILY_SUMMARY_COLUMNS = {
     "water_pct",
     "hrv_sdnn_ms",
     "vo2_max",
+    "flights_climbed",
+    "respiratory_rate",
+    "walking_hr_avg",
+    "blood_oxygen_saturation",
+    "wrist_temperature",
+    "time_in_daylight",
+    "cardio_recovery",
+    "hr_avg",
+    "hr_max",
+    "hr_min",
+    "sleep_total_minutes",
+    "sleep_rem_minutes",
+    "sleep_deep_minutes",
+    "sleep_core_minutes",
+    "sleep_awake_minutes",
+    "body_age_years",
+    "body_age_delta_years",
+    "strength_volume_kg",
+    "distance_m",
+    "exercise_minutes",
+    "calories_resting",
+    "stand_minutes",
 }
 
 
 def test_daily_summary_view_select_includes_expected_columns() -> None:
     sql_text = Path("init-db/schema.sql").read_text(encoding="utf-8")
-    select_section = _extract_daily_summary_select(sql_text)
+    staging_columns = set(_extract_table_columns(sql_text, "tmp_daily_summary"))
+    table_columns = set(_extract_table_columns(sql_text, "daily_summary"))
 
     for column in _EXPECTED_DAILY_SUMMARY_COLUMNS:
-        assert re.search(rf"\b{re.escape(column)}\b", select_section), (
-            f"Expected column '{column}' in daily_summary SELECT of init-db/schema.sql"
+        assert column in staging_columns, (
+            f"Expected column '{column}' in tmp_daily_summary staging table definition."
+        )
+        assert column in table_columns, (
+            f"Expected column '{column}' in daily_summary table definition."
         )
 
 

@@ -70,6 +70,86 @@ def test_daily_summary_uses_coach_voice(fixed_random, monkeypatch):
     assert message == expected
 
 
+
+
+def test_daily_summary_formats_extended_metrics(fixed_random, monkeypatch):
+    monkeypatch.setattr(
+        narrative_builder,
+        "phrase_for",
+        lambda **_: "Consistency is queen, volume is king!",
+    )
+
+    summary_data = {
+        "date": date(2024, 9, 4),
+        "body_age_years": 31.4,
+        "body_age_delta_years": -2.3,
+        "hr_resting": 50,
+        "hr_avg": 68,
+        "hr_max": 154,
+        "hr_min": 44,
+        "walking_hr_avg": 102,
+        "cardio_recovery": 14.6,
+        "respiratory_rate": 15.3,
+        "blood_oxygen_saturation": 97.8,
+        "wrist_temperature": 32.2,
+        "hrv_sdnn_ms": 95,
+        "vo2_max": 49.1,
+        "steps": 12345,
+        "distance_m": 8570,
+        "flights_climbed": 18,
+        "exercise_minutes": 62,
+        "calories_active": 850,
+        "calories_resting": 1760,
+        "stand_minutes": 750,
+        "time_in_daylight": 95,
+        "strength_volume_kg": 12450,
+        "sleep_total_minutes": 440,
+        "sleep_asleep_minutes": 420,
+        "sleep_rem_minutes": 110,
+        "sleep_deep_minutes": 90,
+        "sleep_core_minutes": 220,
+        "sleep_awake_minutes": 35,
+        "readiness_headline": "Ready",
+    }
+
+    builder = NarrativeBuilder()
+    message = builder.build_daily_summary(summary_data)
+
+    bullet_lines = [line for line in message.split("\n") if line.startswith("- ")]
+    expected_lines = [
+        "- Body age: 31.4 yr",
+        "- Body age delta: -2.3 yr",
+        "- Resting HR: 50 bpm",
+        "- Avg HR: 68 bpm",
+        "- Max HR: 154 bpm",
+        "- Min HR: 44 bpm",
+        "- Walking HR avg: 102 bpm",
+        "- Cardio recovery: 14.6 bpm",
+        "- Respiratory rate: 15.3 breaths/min",
+        "- SpO2: 97.8%",
+        "- Wrist temp: 32.2 degC",
+        "- HRV: 95 ms",
+        "- VO2max: 49.1 ml/kg/min",
+        "- Steps: 12,345 struts",
+        "- Distance: 8.57 km covered",
+        "- Flights climbed: 18",
+        "- Exercise: 62 min logged",
+        "- Active burn: 850 kcal",
+        "- Resting burn: 1,760 kcal",
+        "- Stand: 750 min upright",
+        "- Daylight: 95 min outside",
+        "- Strength volume: 12,450 kg moved",
+        "- Sleep total: 7h 20m",
+        "- Sleep: 7h logged",
+        "- REM sleep: 1h 50m",
+        "- Deep sleep: 1h 30m",
+        "- Core sleep: 3h 40m",
+        "- Awake: 35m",
+    ]
+
+    assert bullet_lines == expected_lines
+
+
 def test_send_message_escapes_markdown_v2(monkeypatch):
     payload = {}
 
