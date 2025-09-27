@@ -364,100 +364,41 @@ CREATE TABLE wger_export_log (
     UNIQUE (plan_id, week_number, checksum)
 );
 
+CREATE TABLE daily_summary (
+  date                 DATE PRIMARY KEY,
+  weight_kg            NUMERIC(5,2),
+  body_fat_pct         NUMERIC(4,2),
+  muscle_pct           NUMERIC(4,2),
+  water_pct            NUMERIC(4,2),
+  steps                DOUBLE PRECISION,
+  exercise_minutes     DOUBLE PRECISION,
+  calories_active      DOUBLE PRECISION,
+  calories_resting     DOUBLE PRECISION,
+  stand_minutes        DOUBLE PRECISION,
+  distance_m           DOUBLE PRECISION,
+  hr_resting           DOUBLE PRECISION,
+  hrv_sdnn_ms          DOUBLE PRECISION,
+  vo2_max              DOUBLE PRECISION,
+  hr_avg               DOUBLE PRECISION,
+  hr_max               SMALLINT,
+  hr_min               SMALLINT,
+  sleep_total_minutes  NUMERIC,
+  sleep_asleep_minutes NUMERIC,
+  sleep_rem_minutes    NUMERIC,
+  sleep_deep_minutes   NUMERIC,
+  sleep_core_minutes   NUMERIC,
+  sleep_awake_minutes  NUMERIC,
+  body_age_years       NUMERIC(6,1),
+  body_age_delta_years NUMERIC(6,1),
+  strength_volume_kg   NUMERIC
+);
+
+COMMENT ON TABLE daily_summary IS
+'Daily metrics summary table. Refreshed by sp_refresh_daily_summary().';
+
 -- =============================================================================
--- SECTION 2: MATERIALIZED VIEWS FOR ANALYSIS
+-- SECTION 2: VIEWS FOR ANALYSIS
 -- =============================================================================
-
--- -----------------------------------------------------------------------------
--- MV: daily_summary (REWRITTEN)
--- -----------------------------------------------------------------------------
-CREATE MATERIALIZED VIEW daily_summary AS
-WITH apple_metrics AS (
-  SELECT
-    dm.date,
-    SUM(dm.value) FILTER (WHERE mt.name = 'step_count')                         AS steps,
-    SUM(dm.value) FILTER (WHERE mt.name = 'apple_exercise_time')                AS exercise_minutes,
-    SUM(dm.value) FILTER (WHERE mt.name = 'active_energy') * 0.239006           AS calories_active,
-    SUM(dm.value) FILTER (WHERE mt.name = 'basal_energy_burned') * 0.239006     AS calories_resting,
-    SUM(dm.value) FILTER (WHERE mt.name = 'apple_stand_time')                   AS stand_minutes,
-    SUM(dm.value) FILTER (WHERE mt.name = 'distance_walking_running')           AS distance_m,
-    AVG(dm.value) FILTER (WHERE mt.name = 'resting_heart_rate')                 AS hr_resting,
-    AVG(dm.value) FILTER (WHERE mt.name = 'hrv_sdnn_ms')                        AS hrv_sdnn_ms,
-    AVG(dm.value) FILTER (WHERE mt.name = 'vo2_max')                            AS vo2_max
-  FROM "DailyMetric" dm
-  JOIN "MetricType" mt ON dm.metric_id = mt.metric_id
-  GROUP BY dm.date
-),
-dhr_agg AS (
-  SELECT
-    date,
-    MIN(hr_min) AS hr_min,
-    AVG(hr_avg) AS hr_avg,
-    MAX(hr_max) AS hr_max
-  FROM "DailyHeartRateSummary"
-  GROUP BY date
-),
-dss_pick AS (
-  -- pick the longest sleep episode per date
-  SELECT DISTINCT ON (date)
-    date,
-    sleep_start, sleep_end, in_bed_start, in_bed_end,
-    total_sleep_hrs, core_hrs, deep_hrs, rem_hrs, awake_hrs
-  FROM "DailySleepSummary"
-  ORDER BY date, total_sleep_hrs DESC
-),
-bounds AS (
-  SELECT LEAST(
-           COALESCE((SELECT MIN(date) FROM withings_daily), current_date),
-           COALESCE((SELECT MIN(date) FROM "DailyMetric"), current_date),
-           COALESCE((SELECT MIN(date) FROM "DailyHeartRateSummary"), current_date),
-           COALESCE((SELECT MIN(date) FROM "DailySleepSummary"), current_date)
-         ) AS start_date
-)
-SELECT
-  d.date,
-  w.weight_kg,
-  w.body_fat_pct,
-  w.muscle_pct,
-  w.water_pct,
-  am.steps,
-  am.exercise_minutes,
-  am.calories_active,
-  am.calories_resting,
-  am.stand_minutes,
-  am.distance_m,
-  am.hr_resting,
-  am.hrv_sdnn_ms,
-  am.vo2_max,
-  dhr.hr_avg,
-  dhr.hr_max,
-  dhr.hr_min,
-  dss.total_sleep_hrs * 60                                                        AS sleep_total_minutes,
-  (dss.core_hrs + dss.deep_hrs + dss.rem_hrs) * 60                                AS sleep_asleep_minutes,
-  dss.rem_hrs * 60                                                                AS sleep_rem_minutes,
-  dss.deep_hrs * 60                                                               AS sleep_deep_minutes,
-  dss.core_hrs * 60                                                               AS sleep_core_minutes,
-  dss.awake_hrs * 60                                                              AS sleep_awake_minutes,
-  b.body_age_years,
-  b.age_delta_years                                                                AS body_age_delta_years,
-  COALESCE(SUM(gl.weight_kg * gl.reps), 0)                                        AS strength_volume_kg
-FROM generate_series((SELECT start_date FROM bounds), current_date, interval '1 day') AS d(date)
-LEFT JOIN withings_daily w USING (date)
-LEFT JOIN apple_metrics am USING (date)
-LEFT JOIN dhr_agg dhr USING (date)
-LEFT JOIN dss_pick dss USING (date)
-LEFT JOIN body_age_daily b USING (date)
-LEFT JOIN wger_logs gl USING (date)
-GROUP BY
-  d.date, w.weight_kg, w.body_fat_pct, w.muscle_pct, w.water_pct,
-  am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m, am.hr_resting, am.hrv_sdnn_ms, am.vo2_max,
-  dhr.hr_avg, dhr.hr_max, dhr.hr_min,
-  dss.total_sleep_hrs, dss.core_hrs, dss.deep_hrs, dss.rem_hrs, dss.awake_hrs,
-  b.body_age_years, b.age_delta_years;
-
-CREATE UNIQUE INDEX ux_daily_summary_date ON daily_summary(date);
-COMMENT ON MATERIALIZED VIEW daily_summary IS 'Materialised daily metrics view, sourcing Apple data from new normalized tables.';
-
 
 -- -----------------------------------------------------------------------------
 -- View: metrics_overview
@@ -1170,6 +1111,109 @@ COMMENT ON TABLE "ImportLog" IS 'Tracks the progress of the Dropbox import proce
 COMMENT ON COLUMN "ImportLog".import_id IS 'A unique identifier for each import run.';
 COMMENT ON COLUMN "ImportLog".import_timestamp IS 'The timestamp when the import script was executed.';
 COMMENT ON COLUMN "ImportLog".last_file_processed_at IS 'The ''client_modified'' timestamp of the last file processed in this run.';
+
+-- =============================================================================
+-- SECTION 5: FUNCTIONS AND PROCEDURES
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION sp_refresh_daily_summary(p_start DATE, p_end DATE)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO daily_summary
+  SELECT
+    d.date,
+    w.weight_kg,
+    w.body_fat_pct,
+    w.muscle_pct,
+    w.water_pct,
+    am.steps,
+    am.exercise_minutes,
+    am.calories_active,
+    am.calories_resting,
+    am.stand_minutes,
+    am.distance_m,
+    am.hr_resting,
+    am.hrv_sdnn_ms,
+    am.vo2_max,
+    dhr.hr_avg,
+    dhr.hr_max,
+    dhr.hr_min,
+    dss.total_sleep_hrs * 60,
+    (dss.core_hrs + dss.deep_hrs + dss.rem_hrs) * 60,
+    dss.rem_hrs * 60,
+    dss.deep_hrs * 60,
+    dss.core_hrs * 60,
+    dss.awake_hrs * 60,
+    b.body_age_years,
+    b.age_delta_years,
+    COALESCE(SUM(gl.weight_kg * gl.reps), 0)
+  FROM generate_series(p_start, p_end, interval '1 day') AS d(date)
+  LEFT JOIN withings_daily w USING (date)
+  LEFT JOIN (
+      SELECT dm.date,
+             SUM(dm.value) FILTER (WHERE mt.name='step_count') AS steps,
+             SUM(dm.value) FILTER (WHERE mt.name='apple_exercise_time') AS exercise_minutes,
+             SUM(dm.value) FILTER (WHERE mt.name='active_energy')*0.239006 AS calories_active,
+             SUM(dm.value) FILTER (WHERE mt.name='basal_energy_burned')*0.239006 AS calories_resting,
+             SUM(dm.value) FILTER (WHERE mt.name='apple_stand_time') AS stand_minutes,
+             SUM(dm.value) FILTER (WHERE mt.name='distance_walking_running') AS distance_m,
+             AVG(dm.value) FILTER (WHERE mt.name='resting_heart_rate') AS hr_resting,
+             AVG(dm.value) FILTER (WHERE mt.name='hrv_sdnn_ms') AS hrv_sdnn_ms,
+             AVG(dm.value) FILTER (WHERE mt.name='vo2_max') AS vo2_max
+      FROM "DailyMetric" dm
+      JOIN "MetricType" mt ON dm.metric_id=mt.metric_id
+      GROUP BY dm.date
+  ) am USING (date)
+  LEFT JOIN (
+      SELECT date, MIN(hr_min) AS hr_min, AVG(hr_avg) AS hr_avg, MAX(hr_max) AS hr_max
+      FROM "DailyHeartRateSummary" GROUP BY date
+  ) dhr USING (date)
+  LEFT JOIN (
+      SELECT DISTINCT ON (date) date,
+             total_sleep_hrs, core_hrs, deep_hrs, rem_hrs, awake_hrs
+      FROM "DailySleepSummary"
+      ORDER BY date, total_sleep_hrs DESC
+  ) dss USING (date)
+  LEFT JOIN body_age_daily b USING (date)
+  LEFT JOIN wger_logs gl USING (date)
+  GROUP BY d.date, w.weight_kg, w.body_fat_pct, w.muscle_pct, w.water_pct,
+           am.steps, am.exercise_minutes, am.calories_active, am.calories_resting, am.stand_minutes, am.distance_m,
+           am.hr_resting, am.hrv_sdnn_ms, am.vo2_max,
+           dhr.hr_avg, dhr.hr_max, dhr.hr_min,
+           dss.total_sleep_hrs, dss.core_hrs, dss.deep_hrs, dss.rem_hrs, dss.awake_hrs,
+           b.body_age_years, b.age_delta_years
+  ON CONFLICT (date) DO UPDATE SET
+    weight_kg=EXCLUDED.weight_kg,
+    body_fat_pct=EXCLUDED.body_fat_pct,
+    muscle_pct=EXCLUDED.muscle_pct,
+    water_pct=EXCLUDED.water_pct,
+    steps=EXCLUDED.steps,
+    exercise_minutes=EXCLUDED.exercise_minutes,
+    calories_active=EXCLUDED.calories_active,
+    calories_resting=EXCLUDED.calories_resting,
+    stand_minutes=EXCLUDED.stand_minutes,
+    distance_m=EXCLUDED.distance_m,
+    hr_resting=EXCLUDED.hr_resting,
+    hrv_sdnn_ms=EXCLUDED.hrv_sdnn_ms,
+    vo2_max=EXCLUDED.vo2_max,
+    hr_avg=EXCLUDED.hr_avg,
+    hr_max=EXCLUDED.hr_max,
+    hr_min=EXCLUDED.hr_min,
+    sleep_total_minutes=EXCLUDED.sleep_total_minutes,
+    sleep_asleep_minutes=EXCLUDED.sleep_asleep_minutes,
+    sleep_rem_minutes=EXCLUDED.sleep_rem_minutes,
+    sleep_deep_minutes=EXCLUDED.sleep_deep_minutes,
+    sleep_core_minutes=EXCLUDED.sleep_core_minutes,
+    sleep_awake_minutes=EXCLUDED.sleep_awake_minutes,
+    body_age_years=EXCLUDED.body_age_years,
+    body_age_delta_years=EXCLUDED.body_age_delta_years,
+    strength_volume_kg=EXCLUDED.strength_volume_kg;
+END;
+$$;
+
+
+
+
 
 
 -- =============================================================================
