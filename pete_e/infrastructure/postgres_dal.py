@@ -116,53 +116,6 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error saving Withings data for {day}: {e}", "ERROR")
             raise
 
-    # ---------------------------------------------------------------------
-    # Apple
-    # ---------------------------------------------------------------------
-    def save_apple_daily(self, day: date, metrics: Dict[str, Any]) -> None:
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO apple_daily (
-                        date, steps, exercise_minutes, calories_active, calories_resting,
-                        stand_minutes, distance_m, hr_resting, hr_avg, hr_max, hr_min,
-                        sleep_total_minutes, sleep_asleep_minutes, sleep_rem_minutes,
-                        sleep_deep_minutes, sleep_core_minutes, sleep_awake_minutes
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (date) DO UPDATE SET
-                        steps = EXCLUDED.steps,
-                        exercise_minutes = EXCLUDED.exercise_minutes,
-                        calories_active = EXCLUDED.calories_active,
-                        calories_resting = EXCLUDED.calories_resting,
-                        stand_minutes = EXCLUDED.stand_minutes,
-                        distance_m = EXCLUDED.distance_m,
-                        hr_resting = EXCLUDED.hr_resting,
-                        hr_avg = EXCLUDED.hr_avg,
-                        hr_max = EXCLUDED.hr_max,
-                        hr_min = EXCLUDED.hr_min,
-                        sleep_total_minutes = EXCLUDED.sleep_total_minutes,
-                        sleep_asleep_minutes = EXCLUDED.sleep_asleep_minutes,
-                        sleep_rem_minutes = EXCLUDED.sleep_rem_minutes,
-                        sleep_deep_minutes = EXCLUDED.sleep_deep_minutes,
-                        sleep_core_minutes = EXCLUDED.sleep_core_minutes,
-                        sleep_awake_minutes = EXCLUDED.sleep_awake_minutes;
-                    """,
-                    (
-                        day, metrics.get("steps"), metrics.get("exercise_minutes"),
-                        metrics.get("calories_active"), metrics.get("calories_resting"),
-                        metrics.get("stand_minutes"), metrics.get("distance_m"),
-                        metrics.get("hr_resting"), metrics.get("hr_avg"),
-                        metrics.get("hr_max"), metrics.get("hr_min"),
-                        metrics.get("sleep_total_minutes"), metrics.get("sleep_asleep_minutes"),
-                        metrics.get("sleep_rem_minutes"), metrics.get("sleep_deep_minutes"),
-                        metrics.get("sleep_core_minutes"), metrics.get("sleep_awake_minutes"),
-                    ),
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error saving Apple data for {day}: {e}", "ERROR")
-            raise
 
     # ---------------------------------------------------------------------
     # Wger Logs
