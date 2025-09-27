@@ -1,3 +1,6 @@
+-- Recreate daily_summary with correct definition
+DROP MATERIALIZED VIEW IF EXISTS daily_summary CASCADE;
+
 CREATE MATERIALIZED VIEW daily_summary AS
 WITH apple_metrics AS (
   SELECT
