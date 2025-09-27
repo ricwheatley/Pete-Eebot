@@ -8,7 +8,7 @@
 #
 from datetime import date, datetime
 import argparse
-from pete_e.infrastructure.weekly_reviewer_v2 import review_and_apply
+from pete_e.infrastructure.weekly_reviewer import review_and_apply
 
 def main():
     parser = argparse.ArgumentParser()

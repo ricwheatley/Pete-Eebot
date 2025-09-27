@@ -30,7 +30,7 @@ from pete_e.infrastructure.plan_rw import (
     build_week_payload,
 )
 # Use the new v4 exporter that supports find-or-create, overwrite, dry-run, etc.
-from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 
 
 TEST_PCTS: Dict[int, float] = {

@@ -1,25 +1,52 @@
-# pete_e/infrastructure/wger_exporter_v4.py
+# pete_e/infrastructure/wger_exporter_v3.py
 #
-# Workout exporter (v4) – exports training week data to Wger with idempotency, validation,
+# Workout exporter (v3) - exports training week data to Wger with idempotency, validation,
 # retries, diagnostics, dry-run, and configurable behaviour.
-# Implements improvements 1–17 discussed with Ric.
-#
-# Backwards compatible entrypoint: export_week_to_wger(...)
+# Logging is integrated with Pete's central logger via pete_e.logging_setup.get_logger().
+# Falls back to a local stdout logger if the central logger is unavailable.
 
 from __future__ import annotations
 
 import os
 import json
 import time
+import logging
 import datetime as dt
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import requests
 
-from pete_e.infrastructure.plan_rw import log_wger_export, conn_cursor
-from pete_e.config.logging import get_logger
+# --- logging: prefer central logger, else fall back ---
+def _fallback_get_logger() -> logging.Logger:
+    logger = logging.getLogger("pete_e.history")
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ")
+        fmt.converter = time.gmtime  # UTC timestamps
+        handler.setFormatter(fmt)
+        logger.addHandler(handler)
+        level = os.getenv("PETE_LOG_LEVEL", "INFO").upper()
+        logger.setLevel(getattr(logging, level, logging.INFO))
+    logger.propagate = False
+    return logger
 
-logger = get_logger()
+try:
+    # Your project canonical logger
+    from pete_e.logging_setup import get_logger as _get_logger  # type: ignore
+except Exception:
+    # Historical/alt paths - ignore any import errors and fall back
+    try:
+        from pete_e.logging import get_logger as _get_logger  # type: ignore
+    except Exception:
+        try:
+            from pete_e.config.logging import get_logger as _get_logger  # type: ignore
+        except Exception:
+            _get_logger = _fallback_get_logger  # type: ignore
+
+logger = _get_logger()  # type: ignore
+
+# --- DB helpers for validation and export logging ---
+from pete_e.infrastructure.plan_rw import log_wger_export, conn_cursor
 
 
 # ---------------------------
@@ -35,7 +62,7 @@ class WgerError(RuntimeError):
 
 
 # ---------------------------
-# HTTP client with retries & debug logging
+# HTTP client with retries and debug logging
 # ---------------------------
 
 class WgerClient:
@@ -61,7 +88,7 @@ class WgerClient:
         self.backoff_base = backoff_base
         self.debug_api = debug_api
 
-        # simple cache for lookups
+        # simple caches
         self._rep_unit_id_cache: Optional[int] = None
         self._weight_unit_id_cache: Dict[str, Optional[int]] = {}
 
@@ -78,7 +105,6 @@ class WgerClient:
         return f"{self.base_url}{path}"
 
     def _should_retry(self, status: int) -> bool:
-        # Retry on transient conditions
         return status in (408, 429, 500, 502, 503, 504)
 
     def _request(
@@ -111,33 +137,28 @@ class WgerClient:
                 if r.status_code in (200, 201, 204):
                     if r.status_code == 204:
                         return {}
-                    # Some endpoints return non-JSON on success; try JSON else return {}
                     try:
                         return r.json()
                     except ValueError:
                         return {}
                 if self._should_retry(r.status_code):
-                    # back off and retry
                     sleep_for = self.backoff_base * (2 ** attempt)
-                    logger.warning(f"[wger.api] Transient {r.status_code} on {method} {path}, retrying in {sleep_for:.2f}s...")
+                    logger.warning(f"[wger.api] transient {r.status_code} on {method} {path}, retrying in {sleep_for:.2f}s...")
                     time.sleep(sleep_for)
                     attempt += 1
                     continue
-                # non-retryable error
                 raise WgerError(f"{method} {path} failed with {r.status_code}", r)
             except requests.RequestException as exc:
                 last_exc = exc
                 sleep_for = self.backoff_base * (2 ** attempt)
-                logger.warning(f"[wger.api] Network error on {method} {path}: {exc!r}, retrying in {sleep_for:.2f}s...")
+                logger.warning(f"[wger.api] network error on {method} {path}: {exc!r}, retrying in {sleep_for:.2f}s...")
                 time.sleep(sleep_for)
                 attempt += 1
 
-        # exhausted retries
         if isinstance(last_exc, requests.RequestException):
             raise WgerError(f"{method} {path} failed after retries: {last_exc!r}")
         raise WgerError(f"{method} {path} failed after retries")
 
-    # convenience wrappers
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self._request("GET", path, params=params)
 
@@ -161,13 +182,11 @@ class WgerClient:
             next_url = data.get("next")
             if not next_url:
                 break
-            # crude next-page handling: let server handle it; many deployments accept 'page'
-            # If next_url is absolute, we ignore and just bump 'page'
             q["page"] = int(q.get("page", 1)) + 1
         return items
 
     # ---------------------------
-    # High-level helpers (Routines, Weeks, Days, Slots, SlotEntries)
+    # High-level helpers
     # ---------------------------
 
     # Routines
@@ -177,12 +196,7 @@ class WgerClient:
         return results[0] if results else None
 
     def create_routine(self, *, name: str, description: Optional[str], start: dt.date, end: dt.date) -> Dict[str, Any]:
-        payload = {
-            "name": name,
-            "description": description or "Created by Pete-Eebot",
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-        }
+        payload = {"name": name, "description": description or "Created by Pete-Eebot", "start": start.isoformat(), "end": end.isoformat()}
         return self.post("/api/v2/routine/", payload)
 
     # Weeks (WorkoutSession)
@@ -287,7 +301,7 @@ class WgerClient:
         payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": f"{rir_value:.1f}", "operation": "r", "step": "na", "repeat": True}
         return self.post("/api/v2/rir-config/", payload)
 
-    # Lookups with small caches
+    # Lookups with caches
     def repetition_unit_id(self, name: str = "repetitions") -> Optional[int]:
         if self._rep_unit_id_cache is not None:
             return self._rep_unit_id_cache
@@ -311,23 +325,22 @@ class WgerClient:
 
 def routine_name_for_date(start: dt.date, prefix: Optional[str] = None) -> str:
     core = f"Wk {start.day} {start.strftime('%B')} {start.strftime('%y')}"
-    if prefix:
-        name = f"{prefix.strip()} {core}"
-    else:
-        name = core
-    # Wger routine name max length is conservative ~25 chars; trim if needed
-    return name[:25]
-
+    name = f"{prefix.strip()} {core}" if prefix else core
+    return name[:25]  # conservative for Wger UI
 
 def weekday_name(dow: int) -> str:
     names = {1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday"}
     return names.get(dow, f"Day {dow}")
 
+def _pretty(obj: Any) -> str:
+    try:
+        return json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True)
+    except Exception:
+        return str(obj)
 
 def _validate_exercises_exist_locally(week_payload: Dict[str, Any]) -> None:
     """
-    Ensures all exercise IDs used in week_payload exist in the local wger_exercise catalogue.
-    Raises WgerError with a clear message if any are missing.
+    Ensure all exercise IDs in week_payload exist in the local wger_exercise catalogue.
     """
     ex_ids = set()
     for d in week_payload.get("days", []):
@@ -351,14 +364,6 @@ def _validate_exercises_exist_locally(week_payload: Dict[str, Any]) -> None:
 
     if missing:
         raise WgerError(f"One or more exercise IDs are not present in local catalogue: {sorted(missing)}")
-
-
-def _pretty(obj: Any) -> str:
-    try:
-        return json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True)
-    except Exception:
-        return str(obj)
-
 
 def _wipe_week_contents(client: WgerClient, *, routine_id: int, week_id: int) -> None:
     """
@@ -395,14 +400,14 @@ def export_week_to_wger(
     Args:
         week_payload: {"plan_id": int, "week_number": int, "days": [{"day_of_week": int, "exercises":[...]}, ...]}
         week_start: Monday date
-        week_end: Optional end date, defaults to week_start + 6
-        routine_name: Optional explicit routine name, else derived from date
-        routine_desc: Optional description
-        routine_prefix: Optional prefix added to generated routine name
-        dry_run: If True, validates and logs but does not call Wger
-        force_overwrite: If True, deletes existing days for the week before creating new ones
-        debug_api: If True, logs request/response bodies at DEBUG level
-        blaze_mode: "exercise" to export Blaze as a normal exercise slot, or "comment" to export as a comment-only slot
+        week_end: optional end date, defaults to week_start + 6
+        routine_name: optional explicit routine name, else derived from date
+        routine_desc: optional description
+        routine_prefix: optional prefix added to generated routine name
+        dry_run: validate and log only, do not call Wger
+        force_overwrite: delete existing days for the week before creating new ones
+        debug_api: log request and response bodies at DEBUG level
+        blaze_mode: "exercise" to export Blaze as a normal exercise slot, or "comment" for comment-only
 
     Returns:
         Dict summarising created or updated objects, including Wger IDs.
@@ -416,14 +421,12 @@ def export_week_to_wger(
     week_number = int(week_payload.get("week_number", 1))
     plan_id = week_payload.get("plan_id")
 
-    # Log the outgoing payload pretty for diagnostics
-    logger.info(f"[wger_export] Preparing export for plan {plan_id} week {week_number} ({r_name})")
-    logger.debug(f"[wger_export] Payload:\n{_pretty(week_payload)}")
+    logger.info(f"[wger_export] preparing export for plan {plan_id} week {week_number} ({r_name})")
+    logger.debug(f"[wger_export] payload:\n{_pretty(week_payload)}")
 
     if dry_run:
-        logger.info("[wger_export] Dry-run mode enabled, skipping Wger calls.")
+        logger.info("[wger_export] dry-run mode enabled, skipping Wger calls.")
         created = {"routine_id": None, "week_id": None, "days": [], "dry_run": True}
-        # Still write a log entry so we can inspect payloads historically
         try:
             log_wger_export(plan_id, week_number, week_payload, {"name": r_name, "description": r_desc, "start": str(week_start), "end": str(week_end)}, routine_id=None)
         except Exception as e:
@@ -446,10 +449,10 @@ def export_week_to_wger(
     week_id = int(week_obj["id"])
 
     if force_overwrite:
-        logger.info(f"[wger_export] force_overwrite=True, wiping days for week_id={week_id}")
+        logger.info(f"[wger_export] force_overwrite=True - wiping days for week_id={week_id}")
         _wipe_week_contents(client, routine_id=routine_id, week_id=week_id)
 
-    # 3) Days and slots (idempotent, find-or-create where possible)
+    # 3) Days and slots - idempotent, find-or-create where possible
     ordered_days = sorted(week_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
     created: Dict[str, Any] = {"routine_id": routine_id, "week_id": week_id, "days": []}
 
@@ -478,44 +481,34 @@ def export_week_to_wger(
             slot_id = int(slot["id"])
 
             # Blaze handling
-            if blaze_mode == "comment" and comment.lower().startswith("rir"):
-                # It is fine to leave RIR in comment; prepend Blaze label for clarity
-                comment_for_slot = f"Blaze class. {comment}"
-            else:
-                comment_for_slot = comment or ("Blaze class" if ex_id == 1630 else "")
-
-            # If we created a fresh slot with a comment, but find_slot returned existing slot with its own comment,
-            # we do not try to PATCH slot comments here, we attach a slot-entry with the comment instead.
+            if blaze_mode == "comment" and ex_id == 1630:
+                slot_comment = comment or "Blaze class"
+                created_day["slots"].append({"slot_id": slot_id, "type": "comment-only", "comment": slot_comment})
+                slot_order += 1
+                continue
 
             # Create or reuse slot-entry (order 1)
             slot_entry = client.find_slot_entry(slot_id=slot_id, order=1)
             if not slot_entry:
-                # Two modes: Blaze as exercise vs comment-only
-                if blaze_mode == "comment" and ex_id == 1630:
-                    # Comment-only slot, no slot-entry
-                    created_day["slots"].append({"slot_id": slot_id, "type": "comment-only"})
-                    slot_order += 1
-                    continue
-
                 slot_entry = client.create_slot_entry(
                     slot_id=slot_id,
                     exercise_id=ex_id,
                     order=1,
-                    comment=comment_for_slot if comment_for_slot else None,
+                    comment=(comment or ("Blaze class" if ex_id == 1630 else None)),
                     repetition_unit_id=rep_unit_id,
                     weight_unit_id=None,
                 )
             else:
                 # Update comment if provided
-                if comment_for_slot:
+                if comment:
                     try:
-                        client.update_slot_entry(slot_entry_id=int(slot_entry["id"]), comment=comment_for_slot)
+                        client.update_slot_entry(slot_entry_id=int(slot_entry["id"]), comment=comment)
                     except Exception as exc:
                         logger.debug(f"[wger_export] ignoring slot-entry comment update failure: {exc}")
 
             slot_entry_id = int(slot_entry["id"]) if slot_entry else None
 
-            # Post set/reps configs - re-posting is idempotent on Wger for operation="r"
+            # Post set/reps configs - re-posting is idempotent for operation="r"
             if slot_entry_id is not None:
                 if sets > 0:
                     client.set_sets(slot_entry_id, sets)
@@ -523,7 +516,7 @@ def export_week_to_wger(
                     client.set_reps(slot_entry_id, reps)
 
                 # Parse RIR in comment if present, apply as config
-                lower = comment_for_slot.lower()
+                lower = (comment or "").lower()
                 if "rir" in lower:
                     try:
                         import re
@@ -535,24 +528,25 @@ def export_week_to_wger(
                         pass
 
             created_day["slots"].append(
-                {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id} if slot_entry_id
-                else {"slot_id": slot_id, "type": "comment-only"}
+                {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id}
+                if slot_entry_id else
+                {"slot_id": slot_id, "type": "comment-only"}
             )
             slot_order += 1
 
         created["days"].append(created_day)
         day_order += 1
 
-    # 4) Export log with rich response for traceability
+    # 4) Export log with routine meta
     try:
         log_wger_export(plan_id, week_number, week_payload, {"id": routine_id, "name": r_name}, routine_id=routine_id)
     except Exception as e:
-        logger.warning(f"[wger_export] Failed to write export log: {e}")
+        logger.warning(f"[wger_export] failed to write export log: {e}")
 
     logger.info(
-        f"[wger_export] Sent plan {plan_id} week {week_number} to Wger. "
-        f"Response summary: routine_id={routine_id}, week_id={week_id}, days={len(created['days'])}"
+        f"[wger_export] sent plan {plan_id} week {week_number} to Wger - "
+        f"routine_id={routine_id}, week_id={week_id}, days={len(created['days'])}"
     )
-    logger.debug(f"[wger_export] Created mapping:\n{_pretty(created)}")
+    logger.debug(f"[wger_export] mapping:\n{json.dumps(created, ensure_ascii=False, indent=2)}")
 
     return created
