@@ -9,7 +9,7 @@
 --  - Introduced new tables: Device, MetricType, DailyMetric,
 --    DailyHeartRateSummary, DailySleepSummary, and a suite of tables for
 --    detailed workout logging (Workout, WorkoutType, etc.).
---  - Rewrote the 'daily_summary' materialized view to aggregate data from
+--  - Introduced the 'daily_summary' table to aggregate data from
 --    these new normalized tables.
 -- =============================================================================
 
@@ -1018,7 +1018,7 @@ CREATE UNIQUE INDEX ux_actual_muscle_volume ON actual_muscle_volume (date, muscl
 
 -- =============================================================================
 -- SECTION 3: STORED PROCEDURES
--- (No changes needed; depends on daily_summary view which maintains its interface)
+-- (No changes needed; depends on daily_summary table which maintains its interface)
 -- =============================================================================
 CREATE OR REPLACE FUNCTION sp_upsert_body_age(p_target_date date, p_birth_date date)
 RETURNS void LANGUAGE plpgsql AS $$
