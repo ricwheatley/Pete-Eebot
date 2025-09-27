@@ -132,11 +132,14 @@ $$;
 
 -- 4. Seed the table with historic data
 SELECT sp_refresh_daily_summary(
-  (SELECT LEAST(
-     COALESCE((SELECT MIN(date) FROM withings_daily), current_date),
-     COALESCE((SELECT MIN(date) FROM "DailyMetric"), current_date),
-     COALESCE((SELECT MIN(date) FROM "DailyHeartRateSummary"), current_date),
-     COALESCE((SELECT MIN(date) FROM "DailySleepSummary"), current_date)
-   )),
-  current_date
+  (
+    SELECT LEAST(
+      COALESCE((SELECT MIN(date) FROM withings_daily), current_date),
+      COALESCE((SELECT MIN(date) FROM "DailyMetric"), current_date),
+      COALESCE((SELECT MIN(date) FROM "DailyHeartRateSummary"), current_date),
+      COALESCE((SELECT MIN(date) FROM "DailySleepSummary"), current_date)
+    )
+  )::date,
+  current_date::date
 );
+
