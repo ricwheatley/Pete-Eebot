@@ -335,7 +335,7 @@ class PostgresDal(DataAccessLayer):
                         %s
                     );
                     """,
-                    (f'{days} days', self.config.birth_date),
+                    (f'{days} days', settings.USER_DATE_OF_BIRTH),
                 )
             log_utils.log_message(f"Refreshed body_age_daily for last {days} days.", "INFO")
 
