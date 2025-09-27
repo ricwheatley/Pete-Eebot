@@ -12,7 +12,7 @@ from pete_e.domain.validation import (
 )
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.plan_rw import build_week_payload
-from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 from pete_e.infrastructure import log_utils
 
 

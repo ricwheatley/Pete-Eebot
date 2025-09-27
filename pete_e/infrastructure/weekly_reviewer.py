@@ -48,7 +48,7 @@ from pete_e.infrastructure.plan_rw import (
 )
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 # Note: you've overwritten v3 with the new implementation, so keep this import path.
-from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)

@@ -6,9 +6,9 @@
 
 from datetime import timedelta
 
-from pete_e.application.strength_test_v1 import evaluate_test_week_and_update_tms
+from pete_e.application.strength_test import evaluate_test_week_and_update_tms
 from pete_e.infrastructure.plan_rw import latest_test_week, build_week_payload
-from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 
 
 def main():

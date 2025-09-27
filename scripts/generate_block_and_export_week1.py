@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 from pete_e.domain.plan_builder import build_block
 from pete_e.infrastructure.plan_rw import build_week_payload, get_week_ids_for_plan
 from pete_e.infrastructure.postgres_dal import PostgresDal
-from pete_e.infrastructure.wger_exporter_v3 import export_week_to_wger
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 
 
 def main() -> None:
