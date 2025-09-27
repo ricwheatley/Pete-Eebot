@@ -12,7 +12,7 @@ Implements Pete-Eebot's relational schema:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 import json
 import hashlib
@@ -320,42 +320,28 @@ class PostgresDal(DataAccessLayer):
     
     # ---------------------------------------------------------------------
     def refresh_daily_summary(self, days: int = 7) -> None:
-        """
-        Refresh supporting body_age_daily first, then upsert into daily_summary table.
-        Ensures derived values are consistent before summary rollup.
-        """
         try:
-            # 1. Refresh body_age_daily for recent days
+            start_date = date.today() - timedelta(days=days)
+            end_date = date.today()
             with get_conn() as conn, conn.cursor() as cur:
+                # refresh body_age_daily
                 cur.execute(
-                    """
-                    SELECT sp_upsert_body_age_range(
-                        current_date - interval %s,
-                        current_date,
-                        %s
-                    );
-                    """,
-                    (f'{days} days', settings.USER_DATE_OF_BIRTH),
+                    "SELECT sp_upsert_body_age_range(%s, %s, %s);",
+                    (start_date, end_date, settings.USER_DATE_OF_BIRTH),
                 )
             log_utils.log_message(f"Refreshed body_age_daily for last {days} days.", "INFO")
 
-            # 2. Refresh the daily_summary table
             with get_conn() as conn, conn.cursor() as cur:
+                # refresh daily_summary
                 cur.execute(
-                    """
-                    SELECT sp_refresh_daily_summary(
-                        current_date - interval %s,
-                        current_date
-                    );
-                    """,
-                    (f'{days} days',),
+                    "SELECT sp_refresh_daily_summary(%s, %s);",
+                    (start_date, end_date),
                 )
             log_utils.log_message("Refreshed daily_summary table via sp_refresh_daily_summary().", "INFO")
 
         except Exception as e:
             log_utils.log_message(f"Error refreshing daily_summary (with body_age): {e}", "ERROR")
             raise
-
     # ---------------------------------------------------------------------
     # Training plans
     # ---------------------------------------------------------------------
