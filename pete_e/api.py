@@ -48,11 +48,11 @@ def metrics_overview(
 # SSE endpoint for streaming
 @app.get("/sse")
 def sse(request: Request, x_api_key: str = Header(None)):
-    """
-    Simple SSE endpoint that streams a timestamp every 5 seconds.
-    Requires API key in header (X-API-Key) or query string (?api_key=).
-    """
-    validate_api_key(request, x_api_key)
+    key = x_api_key or request.query_params.get("api_key")
+
+    # allow no key in dev mode
+    if not settings.DEV_MODE and key != settings.PETEEEBOT_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     def event_generator():
         while True:
@@ -60,6 +60,11 @@ def sse(request: Request, x_api_key: str = Header(None)):
             time.sleep(5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/")
+def root_get():
+    return {"status": "ok", "message": "Pete-Eebot API root"}
 
 @app.post("/")
 def root_post(request: Request):
