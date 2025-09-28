@@ -7,13 +7,12 @@
 
 from __future__ import annotations
 
-import os
 import json
 import time
 import logging
 import datetime as dt
 from typing import Any, Dict, List, Optional
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 import requests
 
 # --- logging: prefer central logger, else fall back ---
@@ -25,7 +24,7 @@ def _fallback_get_logger() -> logging.Logger:
         fmt.converter = time.gmtime  # UTC timestamps
         handler.setFormatter(fmt)
         logger.addHandler(handler)
-        level = os.getenv("PETE_LOG_LEVEL", "INFO").upper()
+        level = str(get_env("PETE_LOG_LEVEL", default=settings.PETE_LOG_LEVEL)).upper()
         logger.setLevel(getattr(logging, level, logging.INFO))
     logger.propagate = False
     return logger
@@ -79,8 +78,13 @@ class WgerClient:
         backoff_base: float = 0.75,
         debug_api: bool = False,
     ):
-        self.base_url = (base_url or settings.WGER_API_BASE or "https://wger.de").rstrip("/")
-        self.token = token or settings.WGER_API_KEY
+        base_candidate = (base_url or settings.WGER_BASE_URL).rstrip("/")
+        if base_candidate.endswith("/api/v2"):
+            base_candidate = base_candidate[: -len("/api/v2")]
+        self.base_url = base_candidate
+
+        resolved_token = token or get_env("WGER_API_KEY")
+        self.token = (resolved_token or "").strip()
         if not self.token:
             raise WgerError("WGER_API_KEY is not set in environment")
         self.timeout = timeout

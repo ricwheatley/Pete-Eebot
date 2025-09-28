@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from pete_e.config import get_env
 
 
 def get_database_url() -> str:
@@ -15,15 +15,9 @@ def get_database_url() -> str:
     string, keeping failure modes explicit.
     """
 
-    env_url = os.getenv("DATABASE_URL")
-    if env_url:
-        return env_url
-
-    from pete_e.config.config import settings
-
-    settings_url = settings.DATABASE_URL
-    if settings_url:
-        return settings_url
+    url = get_env("DATABASE_URL")
+    if url:
+        return str(url)
 
     raise RuntimeError(
         "Database connection information is missing. Set the DATABASE_URL "

@@ -9,7 +9,7 @@ through a singleton `settings` object.
 import os
 from datetime import date
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional, TypeVar
 
 from psycopg.conninfo import make_conninfo
 from pydantic import Field, SecretStr
@@ -17,6 +17,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+
+T = TypeVar("T")
 
 
 class Settings(BaseSettings):
@@ -56,8 +59,9 @@ class Settings(BaseSettings):
 
     # --- API KEYS (from environment) ---
     PETEEEBOT_API_KEY: str | None = None
+    PETE_LOG_LEVEL: str = "INFO"
 
-    
+
     # --- SANITY CHECK ALERTS ---
     APPLE_MAX_STALE_DAYS: int = 3
     WITHINGS_ALERT_REAUTH: bool = True
@@ -87,6 +91,13 @@ class Settings(BaseSettings):
     RECOVERY_RHR_THRESHOLD: int = 60
     VO2_HIGH_THRESHOLD: float = 48.0
     VO2_LOW_THRESHOLD: float = 36.0
+
+    # --- WGER EXPORT CONTROLS ---
+    WGER_DRY_RUN: bool = False
+    WGER_FORCE_OVERWRITE: bool = False
+    WGER_EXPORT_DEBUG: bool = False
+    WGER_BLAZE_MODE: str = "exercise"
+    WGER_ROUTINE_PREFIX: str | None = None
 
     def __init__(self, **values):
         """Dynamically constructs the DATABASE_URL after initial validation."""
@@ -123,4 +134,64 @@ class Settings(BaseSettings):
 
 # Create a single, importable instance of the settings for the entire application.
 settings = Settings()
+
+
+def _coerce_secret(value: Any) -> Any:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
+
+
+def _to_bool(raw: str) -> bool:
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _coerce_type(raw: str, template: Any) -> Any:
+    if isinstance(template, bool):
+        return _to_bool(raw)
+    if isinstance(template, int) and not isinstance(template, bool):
+        return int(raw)
+    if isinstance(template, float):
+        return float(raw)
+    if isinstance(template, Path):
+        return Path(raw)
+    return raw
+
+
+def get_env(
+    name: str,
+    default: T | None = None,
+    *,
+    parser: Callable[[str], T] | None = None,
+) -> T | Any | None:
+    """Return a configuration value resolving environment overrides consistently.
+
+    The resolution order is:
+
+    1. Explicit environment variable overrides at runtime.
+    2. Typed values provided by the Pydantic ``settings`` object.
+    3. The supplied ``default`` value.
+
+    When an override is read directly from :mod:`os.environ`, ``parser`` (or the
+    inferred type from ``settings``) is used to coerce the string into the
+    expected type.
+    """
+
+    if name in os.environ:
+        raw_value = os.environ[name]
+        if parser is not None:
+            return parser(raw_value)
+        if hasattr(settings, name):
+            template = _coerce_secret(getattr(settings, name))
+            try:
+                return _coerce_type(raw_value, template)
+            except (TypeError, ValueError):
+                return template
+        return raw_value
+
+    if hasattr(settings, name):
+        return _coerce_secret(getattr(settings, name))
+
+    return default
+
 

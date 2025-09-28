@@ -11,11 +11,12 @@ Run via ``python -m scripts.check_auth`` to print a small status report.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
+
+from pete_e.config import get_env
 
 
 TOKEN_FILE_NAME = ".withings_tokens.json"
@@ -71,7 +72,21 @@ def load_env_file(path: Path) -> dict[str, str]:
     return env
 
 
-def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthStatus:
+def _get_env_value(name: str, env: Optional[Mapping[str, str]] = None) -> str:
+    """Resolve an environment value, preferring supplied overrides."""
+
+    if env is not None and name in env:
+        return str(env[name])
+
+    value = get_env(name)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def determine_withings_status(
+    env: Optional[Mapping[str, str]] = None, token_path: Path = TOKEN_FILE_PATH
+) -> AuthStatus:
     """Return the current Withings authorisation status."""
 
     name = "Withings"
@@ -114,7 +129,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
             ),
         )
 
-    if env.get("WITHINGS_REFRESH_TOKEN"):
+    if _get_env_value("WITHINGS_REFRESH_TOKEN", env):
         return AuthStatus(
             name=name,
             state="warning",
@@ -128,7 +143,7 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
     missing_fields = [
         key
         for key in ("WITHINGS_CLIENT_ID", "WITHINGS_CLIENT_SECRET", "WITHINGS_REDIRECT_URI")
-        if not env.get(key)
+        if not _get_env_value(key, env)
     ]
     if missing_fields:
         field_list = ", ".join(missing_fields)
@@ -151,12 +166,12 @@ def determine_withings_status(env: Mapping[str, str], token_path: Path) -> AuthS
     )
 
 
-def determine_dropbox_status(env: Mapping[str, str]) -> AuthStatus:
+def determine_dropbox_status(env: Optional[Mapping[str, str]] = None) -> AuthStatus:
     """Return the Dropbox credential status."""
 
     name = "Dropbox"
     required_keys = ["DROPBOX_APP_KEY", "DROPBOX_APP_SECRET", "DROPBOX_REFRESH_TOKEN"]
-    missing = [key for key in required_keys if not env.get(key)]
+    missing = [key for key in required_keys if not _get_env_value(key, env)]
 
     if not missing:
         return AuthStatus(
@@ -193,17 +208,11 @@ def determine_dropbox_status(env: Mapping[str, str]) -> AuthStatus:
 def main() -> int:
     """Entry point for the script."""
 
-    project_root = Path.cwd()
-    env_path = project_root / ".env"
-    env = load_env_file(env_path)
-    # Environment variables win over file-based values so ad-hoc overrides work.
-    env.update({key: value for key, value in os.environ.items()})
-
     token_path = TOKEN_FILE_PATH
 
     statuses = [
-        determine_withings_status(env, token_path),
-        determine_dropbox_status(env),
+        determine_withings_status(token_path=token_path),
+        determine_dropbox_status(),
     ]
 
     for status in statuses:
