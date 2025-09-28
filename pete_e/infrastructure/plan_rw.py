@@ -11,7 +11,6 @@
 #   DATABASE_URL = postgresql://user:pass@host:port/dbname
 #
 
-import os
 import json
 import hashlib
 from contextlib import contextmanager
@@ -19,18 +18,15 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from psycopg import connect
+from pete_e.infrastructure.db_conn import get_database_url
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
 @contextmanager
 def conn_cursor():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set")
-    conn = connect(DATABASE_URL, row_factory=dict_row)
+    db_url = get_database_url()
+    conn = connect(db_url, row_factory=dict_row)
     try:
         with conn:
             with conn.cursor() as cur:
