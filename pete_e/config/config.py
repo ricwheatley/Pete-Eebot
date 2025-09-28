@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     )
 
     # --- CORE APP SETTINGS ---
-    PROJECT_ROOT: Path = Path(__file__).parent.parent.resolve()
+    PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
     ENVIRONMENT: str = "development"
     DATABASE_URL: Optional[str] = Field(None, validate_default=True)
 
