@@ -136,6 +136,11 @@ coverage.xml
 
 *.py,cover
 
+# Ignore any local stub packages
+app/psycopg/
+app/pydantic/
+app/pydantic_settings/
+app/requests/
 
 
 # =================================================================
