@@ -19,7 +19,7 @@ import pathlib
 import psycopg
 import os
 import csv
-import json
+import json as jsonlib
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
@@ -743,7 +743,7 @@ def db(
         "--csv", "-c",
         help="CSV file path to export results instead of printing a table."
     ),
-    json: bool = typer.Option(
+    json_out: bool = typer.Option(
         False,
         "--json", "-j",
         help="Output JSON to stdout."
@@ -826,16 +826,16 @@ def db(
         return
 
     # Export to JSON (stdout)
-    if json:
+    if json_out:
         data = [dict(zip(col_names, row)) for row in all_rows]
-        console.print_json(json.dumps(data, indent=2, default=str))
+        console.print_json(jsonlib.dumps(data, indent=2, default=str))
         return
 
     # Export to JSON (file)
     if json_file:
         data = [dict(zip(col_names, row)) for row in all_rows]
         with open(json_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=str)
+            jsonlib.dump(data, f, indent=2, default=str)
         console.print(f"[green]Results exported to {json_file}[/green]")
         return
 
@@ -864,7 +864,7 @@ def metrics(
         "--csv", "-c",
         help="CSV file path to export results instead of printing a table."
     ),
-    json: bool = typer.Option(
+    json_out: bool = typer.Option(
         False,
         "--json", "-j",
         help="Output JSON to stdout."
@@ -945,16 +945,16 @@ def metrics(
         return
 
     # Export to JSON stdout
-    if json:
+    if json_out:
         data = [dict(zip(col_names, row)) for row in all_rows]
-        console.print_json(json.dumps(data, indent=2, default=str))
+        console.print_json(jsonlib.dumps(data, indent=2, default=str))
         return
 
     # Export to JSON file
     if json_file:
         data = [dict(zip(col_names, row)) for row in all_rows]
         with open(json_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=str)
+            jsonlib.dump(data, f, indent=2, default=str)
         console.print(f"[green]Metrics exported to {json_file}[/green]")
         return
 
