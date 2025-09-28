@@ -728,9 +728,9 @@ def db(
         ...,
         help="SQL query to execute, e.g. 'SELECT * FROM metrics_overview'"
     ),
-    query_date: date = typer.Argument(
+    query_date: str = typer.Argument(
         None,
-        help="Optional date to substitute for {date} in the query, e.g. 2025-09-20"
+        help="Optional date (YYYY-MM-DD) to substitute for {date} in the query."
     ),
     limit: int = typer.Option(
         None,
@@ -752,10 +752,15 @@ def db(
         "--no-header",
         help="Suppress column headers in output."
     ),
+    today: bool = typer.Option(
+        False,
+        "--today", "-t",
+        help="Use today's date for {date} substitution."
+    ),
 ) -> None:
     """
     Run a SQL query against the Pete-Eebot database. If the query contains
-    '{date}', it will be replaced with the provided query_date.
+    '{date}', it will be replaced with the provided query_date or today's date.
     """
     database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
 
@@ -763,9 +768,17 @@ def db(
         console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
         raise typer.Exit(code=1)
 
-    # Substitute {date} placeholder
-    if query_date:
-        query = query.replace("{date}", f"'{query_date.isoformat()}'")
+    # Handle date substitution
+    if today:
+        query_date_val = date.today()
+        query = query.replace("{date}", f"'{query_date_val.isoformat()}'")
+    elif query_date:
+        try:
+            parsed_date = datetime.strptime(query_date, "%Y-%m-%d").date()
+        except ValueError:
+            console.print("[red]Invalid date format. Use YYYY-MM-DD.[/red]")
+            raise typer.Exit(code=1)
+        query = query.replace("{date}", f"'{parsed_date.isoformat()}'")
 
     # Wrap query if limit flag is provided
     if limit is not None:
@@ -784,7 +797,6 @@ def db(
                 col_names = [desc[0] for desc in cur.description]
 
                 if csv_file:
-                    # Export to CSV
                     with open(csv_file, mode="w", newline="", encoding="utf-8") as f:
                         writer = csv.writer(f)
                         if not no_header:
@@ -793,7 +805,6 @@ def db(
                     console.print(f"[green]Results exported to {csv_file}[/green]")
 
                 elif json_file:
-                    # Export to JSON
                     data = [
                         dict(zip(col_names, row)) for row in rows
                     ] if not no_header else [list(row) for row in rows]
@@ -803,7 +814,6 @@ def db(
                     console.print(f"[green]Results exported to {json_file}[/green]")
 
                 else:
-                    # Display as Rich table
                     table = Table(show_header=not no_header, header_style="bold cyan")
                     for col in col_names:
                         table.add_column(col)
