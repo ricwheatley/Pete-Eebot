@@ -1,4 +1,4 @@
-﻿"""Health check command support for the pete CLI."""
+"""Health check command support for the pete CLI."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Callable, Iterable, List, Sequence
 
 import psycopg
 
-from pete_e.config.config import settings
+from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.withings_client import WithingsClient
 
@@ -41,7 +41,7 @@ def _format_exception(exc: Exception) -> str:
 def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     start = perf_counter()
     try:
-        with psycopg.connect(settings.DATABASE_URL, connect_timeout=timeout) as conn:
+        with psycopg.connect(get_database_url(), connect_timeout=timeout) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 cur.fetchone()
@@ -97,4 +97,3 @@ def render_results(results: Iterable[CheckResult]) -> str:
         status = "OK" if result.ok else "FAIL"
         lines.append(f"{result.name:<8} {status:<4} {result.detail}")
     return "\n".join(lines)
-
