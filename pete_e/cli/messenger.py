@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, List
 from typing_extensions import Annotated
 
 import typer
+import pathlib
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
@@ -30,6 +31,7 @@ if TYPE_CHECKING:  # pragma: no cover - import for type checking only
 else:  # pragma: no cover - runtime fallback
     OrchestratorType = object
 
+LOG_FILE = pathlib.Path("/var/log/pete_eebot/pete_history.log")
 
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
@@ -691,6 +693,25 @@ def withings_exchange_code(code: str) -> None:
         log_utils.log_message(f"Failed to exchange code: {e}", "ERROR")
         raise typer.Exit(code=1)
 
+@app.command(help="View the most recent lines from the Pete-Eebot history log.")
+def logs(
+    number: int = typer.Argument(
+        50,
+        help="Number of log lines to show (default: 50)."
+    )
+) -> None:
+    """
+    Print the last N lines of the Pete-Eebot log file.
+    """
+    if not LOG_FILE.exists():
+        typer.echo(f"Log file not found: {LOG_FILE}")
+        raise typer.Exit(code=1)
+
+    # Read the last N lines efficiently
+    with LOG_FILE.open("r") as f:
+        lines = f.readlines()
+        for line in lines[-number:]:
+            typer.echo(line.rstrip())
 
 app.command()(telegram_command)
 
