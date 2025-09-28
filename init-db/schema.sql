@@ -943,6 +943,8 @@ RETURNS TABLE (
     moving_avg_28d     NUMERIC,
     moving_avg_90d     NUMERIC
 ) LANGUAGE sql AS $$
+    SELECT *
+    FROM (
     SELECT * FROM sp_get_daily_metric_overview('weight_kg',             'weight',                p_ref_date)
     UNION ALL
     SELECT * FROM sp_get_daily_metric_overview('body_fat_pct',         'body_fat_pct',          p_ref_date)
@@ -1014,7 +1016,8 @@ RETURNS TABLE (
     UNION ALL
     SELECT * FROM sp_get_exercise_volume_overview(184, p_ref_date)  -- deadlift
     UNION ALL
-    SELECT * FROM sp_get_exercise_volume_overview(566, p_ref_date); -- overhead press
+    SELECT * FROM sp_get_exercise_volume_overview(566, p_ref_date) -- overhead press
+    ) t;
 $$;
 
 

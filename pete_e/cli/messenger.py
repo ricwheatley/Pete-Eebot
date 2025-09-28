@@ -824,7 +824,115 @@ def db(
     except Exception as e:
         console.print(f"[red]Error running query: {e}[/red]")
         raise typer.Exit(code=1)
-    
+
+@app.command(help="Show a metrics overview for one date (default: yesterday) or a date range.")
+def metrics(
+    start_date: str = typer.Argument(
+        None,
+        help="Start date in YYYY-MM-DD format (or single date if only one is provided)."
+    ),
+    end_date: str = typer.Argument(
+        None,
+        help="Optional end date in YYYY-MM-DD format (inclusive)."
+    ),
+    csv_file: str = typer.Option(
+        None,
+        "--csv", "-c",
+        help="Optional CSV file path to export results instead of printing a table."
+    ),
+    json_file: str = typer.Option(
+        None,
+        "--json", "-j",
+        help="Optional JSON file path to export results. If no filename is given, prints JSON to stdout."
+    ),
+):
+    """
+    Runs sp_metrics_overview for the given date or date range.
+    Defaults to yesterday if no date is provided.
+    """
+    # Parse start/end dates
+    if start_date:
+        try:
+            ref_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            console.print("[red]Invalid start date format. Use YYYY-MM-DD.[/red]")
+            raise typer.Exit(code=1)
+    else:
+        ref_start = date.today() - timedelta(days=1)
+
+    if end_date:
+        try:
+            ref_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        except ValueError:
+            console.print("[red]Invalid end date format. Use YYYY-MM-DD.[/red]")
+            raise typer.Exit(code=1)
+    else:
+        ref_end = ref_start
+
+    if ref_end < ref_start:
+        console.print("[red]End date must be after or equal to start date.[/red]")
+        raise typer.Exit(code=1)
+
+    database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
+    if not database_url:
+        console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
+        raise typer.Exit(code=1)
+
+    all_rows = []
+    col_names = []
+
+    try:
+        with psycopg.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                day = ref_start
+                while day <= ref_end:
+                    cur.execute("SELECT * FROM sp_metrics_overview(%s)", (day,))
+                    rows = cur.fetchall()
+                    if rows:
+                        if not col_names:
+                            col_names = [desc[0] for desc in cur.description]
+                            # prepend a date column so you can distinguish days
+                            col_names.insert(0, "ref_date")
+
+                        for row in rows:
+                            all_rows.append((day,) + row)
+                    day += timedelta(days=1)
+
+    except Exception as e:
+        console.print(f"[red]Error running metrics overview: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    if not all_rows:
+        console.print(f"[yellow]No metrics found between {ref_start} and {ref_end}[/yellow]")
+        return
+
+    # Export to CSV
+    if csv_file:
+        with open(csv_file, mode="w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(col_names)
+            writer.writerows(all_rows)
+        console.print(f"[green]Metrics exported to {csv_file}[/green]")
+        return
+
+    # Export to JSON
+    if json_file is not None:
+        data = [dict(zip(col_names, row)) for row in all_rows]
+        if json_file == "" or json_file is True:
+            console.print_json(json.dumps(data, indent=2, default=str))
+        else:
+            with open(json_file, mode="w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, default=str)
+            console.print(f"[green]Metrics exported to {json_file}[/green]")
+        return
+
+    # Pretty-print Rich table
+    table = Table(show_header=True, header_style="bold cyan")
+    for col in col_names:
+        table.add_column(col)
+    for row in all_rows:
+        table.add_row(*[str(val) if val is not None else "" for val in row])
+    console.print(table)    
 
 app.command()(telegram_command)
 
