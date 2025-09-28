@@ -5,10 +5,11 @@ import requests
 from typing import Any, Dict, List, Optional
 
 from pete_e.infrastructure.plan_rw import plan_week_rows, log_wger_export
+from pete_e.config import settings
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 
-WGER_API_BASE = os.getenv("WGER_API_BASE", "https://wger.de/api/v2")
-WGER_API_KEY = os.getenv("WGER_API_KEY")  # personal token
+WGER_API_BASE = settings.WGER_API_BASE if hasattr(settings, "WGER_API_BASE") else "https://wger.de/api/v2"
+WGER_API_KEY = settings.WGER_API_KEY if hasattr(settings, "WGER_API_KEY") else os.getenv("WGER_API_KEY")
 
 MAIN_LIFTS = {SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID}
 TEST_PCTS = {85.0, 87.5, 90.0}

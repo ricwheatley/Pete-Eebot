@@ -13,7 +13,7 @@ import time
 import logging
 import datetime as dt
 from typing import Any, Dict, List, Optional
-
+from pete_e.config import settings
 import requests
 
 # --- logging: prefer central logger, else fall back ---
@@ -79,8 +79,8 @@ class WgerClient:
         backoff_base: float = 0.75,
         debug_api: bool = False,
     ):
-        self.base_url = (base_url or os.getenv("WGER_API_BASE") or "https://wger.de").rstrip("/")
-        self.token = token or os.getenv("WGER_API_KEY")
+        self.base_url = (base_url or settings.WGER_API_BASE or "https://wger.de").rstrip("/")
+        self.token = token or settings.WGER_API_KEY
         if not self.token:
             raise WgerError("WGER_API_KEY is not set in environment")
         self.timeout = timeout

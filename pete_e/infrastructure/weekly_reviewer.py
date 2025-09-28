@@ -49,7 +49,7 @@ from pete_e.infrastructure.plan_rw import (
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 # Note: you've overwritten v3 with the new implementation, so keep this import path.
 from pete_e.infrastructure.wger_exporter import export_week_to_wger
-
+from pete_e.config import settings
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)
 
@@ -290,8 +290,8 @@ def _adherence_decision(planned: Dict[int, float], actual: Dict[int, float], rec
 
 
 def _post_telegram(text: str):
-    token = os.getenv("TELEGRAM_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    token = settings.TELEGRAM_TOKEN
+    chat_id = settings.TELEGRAM_CHAT_ID
     if not token or not chat_id:
         return
     try:
