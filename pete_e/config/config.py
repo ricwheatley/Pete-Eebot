@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     DROPBOX_REFRESH_TOKEN: str
 
     # --- API KEYS (from environment) ---
-    PETEEEBOT_API_KEY: str
+    PETEEEBOT_API_KEY: str | None = None
+
     
     # --- SANITY CHECK ALERTS ---
     APPLE_MAX_STALE_DAYS: int = 3
