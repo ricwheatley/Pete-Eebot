@@ -15,15 +15,16 @@ from psycopg.conninfo import make_conninfo
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
 
 class Settings(BaseSettings):
     """
     Centralised and validated application settings.
     """
     model_config = SettingsConfigDict(
-        env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", case_sensitive=False
+        env_file=ENV_FILE_PATH, env_file_encoding="utf-8", case_sensitive=False
     )
 
     # --- CORE APP SETTINGS ---
