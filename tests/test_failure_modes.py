@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import types
 from typing import List
 
-import requests
+import requests_mock
 
 from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
@@ -23,7 +23,7 @@ class DummyResponse:
 
     def raise_for_status(self) -> None:  # pragma: no cover - behaviour validated via caller
         if self.status_code >= 400:
-            raise requests.HTTPError(response=self)
+            raise requests_mock.HTTPError(response=self)
 
     def json(self) -> dict:
         return self._payload
