@@ -730,7 +730,8 @@ def db(
     ),
     query_date: str = typer.Argument(
         None,
-        help="Optional date (YYYY-MM-DD) to substitute for {date} in the query."
+        help="Optional date (YYYY-MM-DD) to substitute for {date} in the query. "
+             "Defaults to yesterday if not provided."
     ),
     limit: int = typer.Option(
         None,
@@ -740,12 +741,17 @@ def db(
     csv_file: str = typer.Option(
         None,
         "--csv", "-c",
-        help="Optional CSV file path to export results instead of printing a table."
+        help="CSV file path to export results instead of printing a table."
+    ),
+    json: bool = typer.Option(
+        False,
+        "--json", "-j",
+        help="Output JSON to stdout."
     ),
     json_file: str = typer.Option(
         None,
-        "--json", "-j",
-        help="Optional JSON file path to export results instead of printing a table."
+        "--json-file",
+        help="Write JSON output to the given file path."
     ),
     no_header: bool = typer.Option(
         False,
@@ -757,73 +763,91 @@ def db(
         "--today", "-t",
         help="Use today's date for {date} substitution."
     ),
-) -> None:
+    yesterday: bool = typer.Option(
+        False,
+        "--yesterday", "-y",
+        help="Use yesterday's date for {date} substitution (default)."
+    ),
+):
     """
-    Run a SQL query against the Pete-Eebot database. If the query contains
-    '{date}', it will be replaced with the provided query_date or today's date.
+    Run an ad-hoc SQL query. Supports {date} substitution,
+    optional row limit, and CSV/JSON export.
     """
     database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
-
     if not database_url:
         console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
         raise typer.Exit(code=1)
 
-    # Handle date substitution
+    # Handle {date} substitution
+    query_date_val = None
     if today:
         query_date_val = date.today()
-        query = query.replace("{date}", f"'{query_date_val.isoformat()}'")
+    elif yesterday or (not query_date and not today):
+        query_date_val = date.today() - timedelta(days=1)
     elif query_date:
         try:
-            parsed_date = datetime.strptime(query_date, "%Y-%m-%d").date()
+            query_date_val = datetime.strptime(query_date, "%Y-%m-%d").date()
         except ValueError:
             console.print("[red]Invalid date format. Use YYYY-MM-DD.[/red]")
             raise typer.Exit(code=1)
-        query = query.replace("{date}", f"'{parsed_date.isoformat()}'")
 
-    # Wrap query if limit flag is provided
+    if query_date_val:
+        query = query.replace("{date}", f"'{query_date_val.isoformat()}'")
+
+    # Apply optional limit
     if limit is not None:
         query = f"SELECT * FROM ({query}) AS subquery LIMIT {limit}"
+
+    all_rows: list[tuple] = []
+    col_names: list[str] = []
 
     try:
         with psycopg.connect(database_url) as conn:
             with conn.cursor() as cur:
                 cur.execute(query)
-                rows = cur.fetchall()
-
-                if not rows:
-                    console.print("[yellow]No results.[/yellow]")
-                    return
-
+                all_rows = cur.fetchall()
                 col_names = [desc[0] for desc in cur.description]
-
-                if csv_file:
-                    with open(csv_file, mode="w", newline="", encoding="utf-8") as f:
-                        writer = csv.writer(f)
-                        if not no_header:
-                            writer.writerow(col_names)
-                        writer.writerows(rows)
-                    console.print(f"[green]Results exported to {csv_file}[/green]")
-
-                elif json_file:
-                    data = [
-                        dict(zip(col_names, row)) for row in rows
-                    ] if not no_header else [list(row) for row in rows]
-
-                    with open(json_file, mode="w", encoding="utf-8") as f:
-                        json.dump(data, f, indent=2, default=str)
-                    console.print(f"[green]Results exported to {json_file}[/green]")
-
-                else:
-                    table = Table(show_header=not no_header, header_style="bold cyan")
-                    for col in col_names:
-                        table.add_column(col)
-                    for row in rows:
-                        table.add_row(*[str(val) if val is not None else "" for val in row])
-                    console.print(table)
-
     except Exception as e:
         console.print(f"[red]Error running query: {e}[/red]")
         raise typer.Exit(code=1)
+
+    if not all_rows:
+        console.print("[yellow]No results.[/yellow]")
+        return
+
+    # Export to CSV
+    if csv_file:
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not no_header:
+                writer.writerow(col_names)
+            writer.writerows(all_rows)
+        console.print(f"[green]Results exported to {csv_file}[/green]")
+        return
+
+    # Export to JSON (stdout)
+    if json:
+        data = [dict(zip(col_names, row)) for row in all_rows]
+        console.print_json(json.dumps(data, indent=2, default=str))
+        return
+
+    # Export to JSON (file)
+    if json_file:
+        data = [dict(zip(col_names, row)) for row in all_rows]
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, default=str)
+        console.print(f"[green]Results exported to {json_file}[/green]")
+        return
+
+    # Pretty-print Rich table
+    table = Table(show_header=not no_header, header_style="bold cyan")
+    for col in col_names:
+        table.add_column(col)
+    for row in all_rows:
+        table.add_row(*[str(val) if val is not None else "" for val in row])
+    console.print(table)
+
+
 
 @app.command(help="Show a metrics overview for one date (default: yesterday) or a date range.")
 def metrics(
@@ -838,12 +862,17 @@ def metrics(
     csv_file: str = typer.Option(
         None,
         "--csv", "-c",
-        help="Optional CSV file path to export results instead of printing a table."
+        help="CSV file path to export results instead of printing a table."
+    ),
+    json: bool = typer.Option(
+        False,
+        "--json", "-j",
+        help="Output JSON to stdout."
     ),
     json_file: str = typer.Option(
         None,
-        "--json", "-j",
-        help="Optional JSON file path to export results. If no filename is given, prints JSON to stdout."
+        "--json-file",
+        help="Write JSON output to the given file path."
     ),
 ):
     """
@@ -908,22 +937,25 @@ def metrics(
 
     # Export to CSV
     if csv_file:
-        with open(csv_file, mode="w", newline="", encoding="utf-8") as f:
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(col_names)
             writer.writerows(all_rows)
         console.print(f"[green]Metrics exported to {csv_file}[/green]")
         return
 
-    # Export to JSON
-    if json_file is not None:
+    # Export to JSON stdout
+    if json:
         data = [dict(zip(col_names, row)) for row in all_rows]
-        if json_file == "" or json_file is True:
-            console.print_json(json.dumps(data, indent=2, default=str))
-        else:
-            with open(json_file, mode="w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, default=str)
-            console.print(f"[green]Metrics exported to {json_file}[/green]")
+        console.print_json(json.dumps(data, indent=2, default=str))
+        return
+
+    # Export to JSON file
+    if json_file:
+        data = [dict(zip(col_names, row)) for row in all_rows]
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, default=str)
+        console.print(f"[green]Metrics exported to {json_file}[/green]")
         return
 
     # Pretty-print Rich table
