@@ -1,7 +1,7 @@
 ﻿from datetime import date
 
 import pytest
-from pydantic import SecretStr
+from pydantic_mock import SecretStr
 
 from pete_e.domain import narrative_builder
 from pete_e.domain.narrative_builder import NarrativeBuilder
