@@ -16,7 +16,7 @@ from typing import Optional
 import requests
 from datetime import datetime, timedelta, timezone
 
-from pydantic import SecretStr
+from pydantic_mock import SecretStr
 
 from pete_e.config import settings
 from pete_e.infrastructure.log_utils import log_message
