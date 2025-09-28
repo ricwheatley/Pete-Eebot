@@ -478,8 +478,8 @@ BEGIN
     AND w.date BETWEEN p_start AND p_end;
 
   -- Aggregate Apple Health metrics, including the new ones
-  WITH apple_metrics AS (
-    SELECT dm.date,
+WITH apple_metrics AS (
+    SELECT (dm.date AT TIME ZONE 'Europe/London')::date AS record_date,
            SUM(dm.value) FILTER (WHERE mt.name = 'step_count') AS steps,
            SUM(dm.value) FILTER (WHERE mt.name = 'apple_exercise_time') AS exercise_minutes,
            SUM(dm.value) FILTER (WHERE mt.name = 'active_energy') * 0.239006 AS calories_active,
@@ -498,28 +498,29 @@ BEGIN
            AVG(dm.value) FILTER (WHERE mt.name = 'vo2_max') AS vo2_max
     FROM "DailyMetric" AS dm
     JOIN "MetricType" AS mt ON dm.metric_id = mt.metric_id
-    WHERE dm.date BETWEEN p_start AND p_end
-    GROUP BY dm.date
-  )
-  UPDATE tmp_daily_summary AS tmp
-     SET steps                = am.steps,
-         exercise_minutes      = am.exercise_minutes,
-         calories_active       = am.calories_active,
-         calories_resting      = am.calories_resting,
-         stand_minutes         = am.stand_minutes,
-         distance_m            = am.distance_m,
-         flights_climbed       = am.flights_climbed,
-         respiratory_rate      = am.respiratory_rate,
-         walking_hr_avg        = am.walking_hr_avg,
-         blood_oxygen_saturation = am.blood_oxygen_saturation,
-         wrist_temperature     = am.wrist_temperature,
-         time_in_daylight      = am.time_in_daylight,
-         cardio_recovery       = am.cardio_recovery,
-         hr_resting            = am.resting_hr,
-         hrv_sdnn_ms           = am.hrv_sdnn_ms,
-         vo2_max               = am.vo2_max
-  FROM apple_metrics AS am
-  WHERE am.date = tmp.date;
+    WHERE dm.date BETWEEN p_start AND (p_end + interval '1 day')
+    GROUP BY record_date
+)
+UPDATE tmp_daily_summary AS tmp
+   SET steps                   = am.steps,
+       exercise_minutes         = am.exercise_minutes,
+       calories_active          = am.calories_active,
+       calories_resting         = am.calories_resting,
+       stand_minutes            = am.stand_minutes,
+       distance_m               = am.distance_m,
+       flights_climbed          = am.flights_climbed,
+       respiratory_rate         = am.respiratory_rate,
+       walking_hr_avg           = am.walking_hr_avg,
+       blood_oxygen_saturation  = am.blood_oxygen_saturation,
+       wrist_temperature        = am.wrist_temperature,
+       time_in_daylight         = am.time_in_daylight,
+       cardio_recovery          = am.cardio_recovery,
+       hr_resting               = am.resting_hr,
+       hrv_sdnn_ms              = am.hrv_sdnn_ms,
+       vo2_max                  = am.vo2_max
+FROM apple_metrics AS am
+WHERE am.record_date = tmp.date;
+
 
   -- DailyHeartRateSummary for HR min/avg/max (resting HR now taken from Apple metrics)
   WITH hr_summ AS (
