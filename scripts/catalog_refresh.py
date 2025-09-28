@@ -4,7 +4,6 @@
 Fetch the Wger exercise catalog and upsert it into the PostgreSQL database.
 This script replaces the previous file-based caching mechanism.
 """
-import os
 import sys
 from typing import Any, Dict, List, Optional
 import requests
@@ -12,8 +11,9 @@ import requests
 # NOTE: Adjust this import path if your project structure is different.
 # This path assumes a 'pete_e' source root.
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.config import get_env, settings
 
-BASE = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
+BASE = str(get_env("WGER_BASE_URL", default=settings.WGER_BASE_URL)).strip().rstrip("/")
 
 def fetch_all(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Fetch all pages of results from a Wger API endpoint."""
