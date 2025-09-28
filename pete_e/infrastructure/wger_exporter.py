@@ -294,15 +294,15 @@ class WgerClient:
 
     # Config posts
     def set_sets(self, slot_entry_id: int, sets: int) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": int(sets), "operation": "r", "step": "na", "repeat": True}
+        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": int(sets), "operation": "r", "step": "abs", "repeat": True}
         return self.post("/api/v2/sets-config/", payload)
 
     def set_reps(self, slot_entry_id: int, reps: int) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": str(int(reps)), "operation": "r", "step": "na", "repeat": True}
+        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": str(int(reps)), "operation": "r", "step": "abs", "repeat": True}
         return self.post("/api/v2/repetitions-config/", payload)
 
     def set_rir(self, slot_entry_id: int, rir_value: float) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iteration": 1, "value": f"{rir_value:.1f}", "operation": "r", "step": "na", "repeat": True}
+        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": f"{rir_value:.1f}", "operation": "r", "step": "abs", "repeat": True}
         return self.post("/api/v2/rir-config/", payload)
 
     # Lookups with caches
