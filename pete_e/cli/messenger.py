@@ -9,11 +9,17 @@ notifications.
 """
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List
+from rich.console import Console
+from rich.table import Table
 
 from typing_extensions import Annotated
 
 import typer
 import pathlib
+import psycopg
+import os
+import csv
+import json
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
@@ -25,6 +31,7 @@ from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.cli.telegram import telegram as telegram_command
+from pete_e.config import settings
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from pete_e.application.orchestrator import Orchestrator as OrchestratorType
@@ -32,6 +39,8 @@ else:  # pragma: no cover - runtime fallback
     OrchestratorType = object
 
 LOG_FILE = pathlib.Path("/var/log/pete_eebot/pete_history.log")
+
+console = Console()
 
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
@@ -712,6 +721,100 @@ def logs(
         lines = f.readlines()
         for line in lines[-number:]:
             typer.echo(line.rstrip())
+
+@app.command(help="Run a SQL query against the Pete-Eebot database.")
+def db(
+    query: str = typer.Argument(
+        ...,
+        help="SQL query to execute, e.g. 'SELECT * FROM metrics_overview'"
+    ),
+    query_date: date = typer.Argument(
+        None,
+        help="Optional date to substitute for {date} in the query, e.g. 2025-09-20"
+    ),
+    limit: int = typer.Option(
+        None,
+        "--limit", "-l",
+        help="Optional limit for number of rows to return."
+    ),
+    csv_file: str = typer.Option(
+        None,
+        "--csv", "-c",
+        help="Optional CSV file path to export results instead of printing a table."
+    ),
+    json_file: str = typer.Option(
+        None,
+        "--json", "-j",
+        help="Optional JSON file path to export results instead of printing a table."
+    ),
+    no_header: bool = typer.Option(
+        False,
+        "--no-header",
+        help="Suppress column headers in output."
+    ),
+) -> None:
+    """
+    Run a SQL query against the Pete-Eebot database. If the query contains
+    '{date}', it will be replaced with the provided query_date.
+    """
+    database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
+
+    if not database_url:
+        console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
+        raise typer.Exit(code=1)
+
+    # Substitute {date} placeholder
+    if query_date:
+        query = query.replace("{date}", f"'{query_date.isoformat()}'")
+
+    # Wrap query if limit flag is provided
+    if limit is not None:
+        query = f"SELECT * FROM ({query}) AS subquery LIMIT {limit}"
+
+    try:
+        with psycopg.connect(database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+
+                if not rows:
+                    console.print("[yellow]No results.[/yellow]")
+                    return
+
+                col_names = [desc[0] for desc in cur.description]
+
+                if csv_file:
+                    # Export to CSV
+                    with open(csv_file, mode="w", newline="", encoding="utf-8") as f:
+                        writer = csv.writer(f)
+                        if not no_header:
+                            writer.writerow(col_names)
+                        writer.writerows(rows)
+                    console.print(f"[green]Results exported to {csv_file}[/green]")
+
+                elif json_file:
+                    # Export to JSON
+                    data = [
+                        dict(zip(col_names, row)) for row in rows
+                    ] if not no_header else [list(row) for row in rows]
+
+                    with open(json_file, mode="w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, default=str)
+                    console.print(f"[green]Results exported to {json_file}[/green]")
+
+                else:
+                    # Display as Rich table
+                    table = Table(show_header=not no_header, header_style="bold cyan")
+                    for col in col_names:
+                        table.add_column(col)
+                    for row in rows:
+                        table.add_row(*[str(val) if val is not None else "" for val in row])
+                    console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]Error running query: {e}[/red]")
+        raise typer.Exit(code=1)
+    
 
 app.command()(telegram_command)
 
