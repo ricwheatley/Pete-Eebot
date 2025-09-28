@@ -17,9 +17,10 @@ from typing_extensions import Annotated
 import typer
 import pathlib
 import psycopg
-import os
 import csv
 import json as jsonlib
+
+from pete_e.infrastructure.db_conn import get_database_url
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
@@ -773,9 +774,10 @@ def db(
     Run an ad-hoc SQL query. Supports {date} substitution,
     optional row limit, and CSV/JSON export.
     """
-    database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
-    if not database_url:
-        console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
+    try:
+        database_url = get_database_url()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
 
     # Handle {date} substitution
@@ -902,9 +904,10 @@ def metrics(
         console.print("[red]End date must be after or equal to start date.[/red]")
         raise typer.Exit(code=1)
 
-    database_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
-    if not database_url:
-        console.print("[red]DATABASE_URL not configured in environment or settings.[/red]")
+    try:
+        database_url = get_database_url()
+    except RuntimeError as exc:
+        console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1)
 
     all_rows = []
