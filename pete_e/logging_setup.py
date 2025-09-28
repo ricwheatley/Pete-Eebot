@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 
 LOGGER_NAME = "pete_e.history"
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024  # 5 MB per log file
@@ -24,7 +23,7 @@ _configured: bool = False
 def _resolve_level(level: Optional[str]) -> int:
     """Translate a textual level into the numeric value logging expects."""
 
-    candidate = str(level or os.getenv(LOG_LEVEL_ENV_VAR, "INFO")).upper()
+    candidate = str(level or get_env(LOG_LEVEL_ENV_VAR, default=settings.PETE_LOG_LEVEL)).upper()
     numeric_level = logging.getLevelName(candidate)
     if isinstance(numeric_level, int):
         return numeric_level

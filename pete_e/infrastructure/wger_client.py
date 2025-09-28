@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 
 import requests
 
-from pete_e.config import settings
+from pete_e.config import get_env
 from pete_e.infrastructure.log_utils import log_message
 
 
@@ -40,10 +40,10 @@ class WgerClient:
         token: str | None = None,
         timeout: int = 30,
     ) -> None:
-        resolved_base = base_url or getattr(settings, "WGER_BASE_URL", "https://wger.de/api/v2")
+        resolved_base = base_url or str(get_env("WGER_BASE_URL", default="https://wger.de/api/v2"))
         self.base_url = resolved_base.rstrip("/")
 
-        resolved_token = token or _resolve_secret(getattr(settings, "WGER_API_KEY", None))
+        resolved_token = token or _resolve_secret(get_env("WGER_API_KEY"))
         self.api_key = resolved_token.strip()
         self.timeout = timeout
 
