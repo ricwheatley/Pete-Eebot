@@ -30,7 +30,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -49,7 +48,7 @@ from pete_e.infrastructure.plan_rw import (
 from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 # Note: you've overwritten v3 with the new implementation, so keep this import path.
 from pete_e.infrastructure.wger_exporter import export_week_to_wger
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)
 
@@ -63,10 +62,12 @@ INTENSITY_CAP_UP = 5.0
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
-    val = os.getenv(name)
+    val = get_env(name, default=default)
+    if isinstance(val, bool):
+        return val
     if val is None:
         return default
-    return val.strip().lower() in ("1", "true", "yes", "y", "on")
+    return str(val).strip().lower() in ("1", "true", "yes", "y", "on")
 
 
 @dataclass
@@ -368,13 +369,13 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
     week_payload = build_week_payload(inputs.plan_id, inputs.upcoming_week_no)
 
     # Exporter options via env
-    dry_run = _bool_env("WGER_DRY_RUN", False)
-    force_overwrite = _bool_env("WGER_FORCE_OVERWRITE", False)
-    debug_api = _bool_env("WGER_EXPORT_DEBUG", False)
-    blaze_mode = (os.getenv("WGER_BLAZE_MODE") or "exercise").strip().lower()
+    dry_run = _bool_env("WGER_DRY_RUN", settings.WGER_DRY_RUN)
+    force_overwrite = _bool_env("WGER_FORCE_OVERWRITE", settings.WGER_FORCE_OVERWRITE)
+    debug_api = _bool_env("WGER_EXPORT_DEBUG", settings.WGER_EXPORT_DEBUG)
+    blaze_mode = str(get_env("WGER_BLAZE_MODE", default=settings.WGER_BLAZE_MODE)).strip().lower()
     if blaze_mode not in ("exercise", "comment"):
         blaze_mode = "exercise"
-    routine_prefix = os.getenv("WGER_ROUTINE_PREFIX")  # optional
+    routine_prefix = get_env("WGER_ROUTINE_PREFIX", default=settings.WGER_ROUTINE_PREFIX)  # optional
 
     export_res = export_week_to_wger(
         week_payload,

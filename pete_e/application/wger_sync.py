@@ -5,7 +5,6 @@ Fetch the Wger exercise catalog and upsert it into the PostgreSQL database.
 Also seeds the main lifts and assistance pools after the catalog is refreshed.
 """
 import logging
-import os
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -13,12 +12,13 @@ import requests
 from pete_e.infrastructure.database import get_conn
 from pete_e.infrastructure.wger_seeder import WgerSeeder
 from pete_e.infrastructure.wger_writer import WgerWriter
+from pete_e.config import get_env, settings
 
 # British English comments and docstrings.
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 
-BASE = (os.environ.get("WGER_BASE_URL") or "https://wger.de/api/v2").strip().rstrip("/")
+BASE = str(get_env("WGER_BASE_URL", default=settings.WGER_BASE_URL)).strip().rstrip("/")
 
 
 def fetch_all_pages(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
