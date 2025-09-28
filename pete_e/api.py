@@ -60,3 +60,7 @@ def sse(request: Request, x_api_key: str = Header(None)):
             time.sleep(5)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.post("/")
+def root_post(request: Request):
+    return {"status": "ok", "message": "Pete-Eebot API root POST"}
