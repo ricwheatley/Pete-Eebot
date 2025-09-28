@@ -36,11 +36,12 @@ from ..domain.data_access import DataAccessLayer
 _pool: ConnectionPool | None = None
 
 def _create_pool() -> ConnectionPool:
-    print("DEBUG: settings.DATABASE_URL =", settings.DATABASE_URL)
-    if not settings.DATABASE_URL:
+    db_url = settings.DATABASE_URL
+    print("DEBUG DB URL:", settings.DATABASE_URL, type(settings.DATABASE_URL))
+    if not db_url:
         raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
     return ConnectionPool(
-        conninfo=settings.DATABASE_URL,
+        conninfo=db_url,
         min_size=1,
         max_size=3,
         max_lifetime=60,
