@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 import psycopg
 import time
 from pete_e.config import settings  # loads .env via BaseSettings
+from pete_e.infrastructure.db_conn import get_database_url
 
 app = FastAPI(title="Pete-Eebot API")
 
@@ -38,11 +39,8 @@ def metrics_overview(
     """
     validate_api_key(request, x_api_key)
 
-    if not settings.DATABASE_URL:
-        raise HTTPException(status_code=500, detail="DATABASE_URL not configured")
-
     try:
-        with psycopg.connect(settings.DATABASE_URL) as conn:
+        with psycopg.connect(get_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM sp_metrics_overview(%s)", (date,))
                 rows = cur.fetchall()
@@ -50,6 +48,8 @@ def metrics_overview(
 
         return {"columns": cols, "rows": rows}
 
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,12 +80,14 @@ def plan_for_day(
     validate_api_key(request, x_api_key)
 
     try:
-        with psycopg.connect(settings.DATABASE_URL) as conn:
+        with psycopg.connect(get_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM sp_plan_for_day(%s)", (date,))
                 rows = cur.fetchall()
                 cols = [desc[0] for desc in cur.description]
         return {"columns": cols, "rows": rows}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -103,11 +105,13 @@ def plan_for_week(
     validate_api_key(request, x_api_key)
 
     try:
-        with psycopg.connect(settings.DATABASE_URL) as conn:
+        with psycopg.connect(get_database_url()) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM sp_plan_for_week(%s)", (start_date,))
                 rows = cur.fetchall()
                 cols = [desc[0] for desc in cur.description]
         return {"columns": cols, "rows": rows}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
