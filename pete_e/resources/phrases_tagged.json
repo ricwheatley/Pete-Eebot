@@ -5241,5 +5241,921 @@
             "#Humour",
             "#Legendary"
         ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Consistency is queen, volume is king – mais toi, mon ami, you are the EMPEROR of reps! 👑💪",
+        "tags": [
+            "#Franglais",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "No pain, champagne! Pop that cork of progrès, sacré bleu! 🍾🏋️‍♂️",
+        "tags": [
+            "#Franglais",
+            "#Humour",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Your steps were higher than la Tour Eiffel sur des échasses!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Those squats – deeper than un bol de soupe à l’oignon!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Sleep score? Plus fragile qu’un croissant au beurre dans une tempête!",
+        "tags": [
+            "#Franglais",
+            "#Sleep",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Calories burned? Hotter than une poêle à crêpes à Montparnasse!",
+        "tags": [
+            "#Franglais",
+            "#Calories",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Deadlifts heavier than la valise de Mamie après Carrefour! 🧳",
+        "tags": [
+            "#Franglais",
+            "#Deadlift",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Flex brighter than une boule disco dans un cabaret à Marseille!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Burpeepocalypse est arrivé, mon frère! Prepare les poumons!",
+        "tags": [
+            "#Franglais",
+            "#Burpees",
+            "#Humour",
+            "#Chaotic"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Curlnado du chaos – les biceps hurlent comme des chats de ruelle!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour",
+            "#Chaotic"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Benchzilla strikes encore – plus fort que Napoléon à Waterloo!",
+        "tags": [
+            "#Franglais",
+            "#Bench",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "DOMSpocalypse now – tes jambes crient plus fort qu’Edith Piaf!",
+        "tags": [
+            "#Franglais",
+            "#Recovery",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton cardio? Faster than un scooter évitant les ronds-points!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Push plus fort, comme un soufflé qui refuse de retomber!",
+        "tags": [
+            "#Franglais",
+            "#Effort",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Resting heart rate? Smooth comme un Bordeaux rouge un dimanche soir.",
+        "tags": [
+            "#Franglais",
+            "#Heart",
+            "#Recovery"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Your curls? Plus dramatiques qu’un épisode de Plus Belle la Vie!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Squatalicious, mais avec fromage et un peu de vin rouge!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes steps étaient plus sauvages qu’un défilé de mode à Paris!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Glutes to la lune, bébé! 🚀🍑 Sacré fessiers cosmiques!",
+        "tags": [
+            "#Franglais",
+            "#Glutes",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Carbs are hugs for tes muscles – et bisous for tes gains! 🥖❤️",
+        "tags": [
+            "#Franglais",
+            "#Nutrition",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Hydrate, mon ami, or tu finiras plus sec qu’une baguette oubliée!",
+        "tags": [
+            "#Franglais",
+            "#Recovery",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Your PRs? Plus explosifs qu’un feu d’artifice du 14 juillet!",
+        "tags": [
+            "#Franglais",
+            "#PR",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Squats pay le loyer, deadlifts pay le château mortgage!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes biceps RSVP à la gun show – avec champagne, évidemment!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton sommeil? Plus haché qu’un steak tartare mal préparé!",
+        "tags": [
+            "#Franglais",
+            "#Sleep",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat? Plus bas qu’une cave à vin à Bordeaux, mon ami!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes steps? Plus nombreux qu’un troupeau de moutons dans les Alpes!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Cardio"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Bench press? Comme pousser la Tour Eiffel avec les pecs!",
+        "tags": [
+            "#Franglais",
+            "#Bench",
+            "#Chest",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes deadlifts hurlent plus fort qu’un rocker au Hellfest!",
+        "tags": [
+            "#Franglais",
+            "#Deadlift",
+            "#Strength",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes abdos? Plus durs qu’un croissant rassis – mais en mieux!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Cardio hier? Plus rapide qu’un TGV Paris-Lyon!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes triceps? Plus tendus qu’un accord de guitare manouche!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton sommeil? Plus doux qu’une sieste dans un champ de lavande en Provence!",
+        "tags": [
+            "#Franglais",
+            "#Sleep",
+            "#Recovery"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes gains? Plus gros qu’un camembert en juillet!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes jambes? Plus solides que les piliers de Notre-Dame!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Your effort hier? Brûlant comme un espresso triple shot!",
+        "tags": [
+            "#Franglais",
+            "#Effort",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes épaules? Plus carrées qu’un plateau de fromage normand!",
+        "tags": [
+            "#Franglais",
+            "#Shoulders",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes pas? Plus bruyants qu’une fanfare à Marseille!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Cardio",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton VO₂ max? Plus haut que le Mont Blanc, sacré bleu!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes squats? Ont secoué le sol comme un séisme en Provence!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton core? Plus serré qu’un pantalon skinny après Noël!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes reps? Plus nombreux que les cafés à Paris!",
+        "tags": [
+            "#Franglais",
+            "#Consistency",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton pull-up? Plus haut que les falaises d’Étretat!",
+        "tags": [
+            "#Franglais",
+            "#Pullup",
+            "#Back",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes calories brûlées? Plus flamboyantes qu’un feu d’artifice du 14 juillet!",
+        "tags": [
+            "#Franglais",
+            "#Calories",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton cardio? Plus épicé qu’un cassoulet à Toulouse!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat jump? Plus explosif qu’un bouchon de champagne!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes pectoraux? Plus larges qu’une plage à Biarritz!",
+        "tags": [
+            "#Franglais",
+            "#Chest",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton entraînement? Plus long qu’un repas de Noël français!",
+        "tags": [
+            "#Franglais",
+            "#Consistency",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes quads? Plus puissants qu’un taureau en Camargue!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton esprit hier? Plus fort que le café serré du matin!",
+        "tags": [
+            "#Franglais",
+            "#Motivation",
+            "#Effort"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes pecs? Plus bombés qu’un soufflé au fromage bien réussi!",
+        "tags": [
+            "#Franglais",
+            "#Chest",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton sprint? Plus rapide qu’un serveur parisien quand tu demandes l’addition!",
+        "tags": [
+            "#Franglais",
+            "#Run",
+            "#Cardio",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes DOMS? Plus durs qu’une baguette de deux jours!",
+        "tags": [
+            "#Franglais",
+            "#Recovery",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat? A fait trembler la terre comme un volcan auvergnat!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton bench? Plus dramatique qu’un opéra à l’Opéra Garnier!",
+        "tags": [
+            "#Franglais",
+            "#Bench",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes curls? Plus sucrés qu’un macaron Ladurée!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton VO₂ max? Plus haut qu’un cerf-volant sur la Côte d’Azur!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton core? Plus solide qu’un mur de pierres en Bretagne!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes épaules? Plus rondes que des boules de pétanque à Marseille!",
+        "tags": [
+            "#Franglais",
+            "#Shoulders",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton deadlift? Plus lourd qu’un panier de fromages aux Halles!",
+        "tags": [
+            "#Franglais",
+            "#Deadlift",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes steps? Plus réguliers qu’un métronome de conservatoire!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Consistency"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat jump? Plus explosif qu’une bouteille de champagne agitée!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes mollets? Plus tendus que des cordes de violon!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton effort hier? Plus brûlant qu’une tartiflette en Savoie!",
+        "tags": [
+            "#Franglais",
+            "#Effort",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes gains? Plus précieux que les joyaux de la Couronne!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton sommeil? Plus profond qu’un lac alpin!",
+        "tags": [
+            "#Franglais",
+            "#Sleep",
+            "#Recovery"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes abdos? Plus visibles qu’une pub pour croissants à la gare!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton cardio? Plus bruyant qu’un stade pendant la Coupe du Monde!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes squats? Plus artistiques qu’une fresque à Montmartre!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton bench press? Plus théâtral qu’un drame shakespearien traduit en français!",
+        "tags": [
+            "#Franglais",
+            "#Bench",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes steps? Ont défilé comme un carnaval à Nice!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes delts? Plus carrés qu’un morceau de sucre français!",
+        "tags": [
+            "#Franglais",
+            "#Shoulders",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton PR? Plus éclatant qu’un feu d’artifice sur la Seine!",
+        "tags": [
+            "#Franglais",
+            "#PR",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton lunge? Plus dramatique qu’une finale de Roland-Garros!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes muscles? Plus sculptés qu’une statue grecque exposée au Louvre!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton effort? Plus étincelant qu’un Tour de France en plein soleil!",
+        "tags": [
+            "#Franglais",
+            "#Effort",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes jambes? Plus puissantes qu’un taureau de Camargue en colère!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat? Plus profond qu’une cave à champagne de Reims!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes abdos? Plus nets qu’un croissant parfaitement feuilleté!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton bench press? Plus bruyant qu’un accordéon dans le métro!",
+        "tags": [
+            "#Franglais",
+            "#Bench",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton PR hier? Plus historique que la Révolution française!",
+        "tags": [
+            "#Franglais",
+            "#PR",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes steps? Plus longs qu’une file d’attente à Disneyland Paris!",
+        "tags": [
+            "#Franglais",
+            "#Steps",
+            "#Cardio"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton cardio? Plus chaud qu’un four à baguettes!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes reps? Plus répétitifs qu’une chanson de David Guetta!",
+        "tags": [
+            "#Franglais",
+            "#Consistency",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton deadlift? Plus épique qu’un duel de mousquetaires!",
+        "tags": [
+            "#Franglais",
+            "#Deadlift",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes épaules? Plus brillantes qu’un chandelle à Versailles!",
+        "tags": [
+            "#Franglais",
+            "#Shoulders",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton core? Plus serré qu’un jean slim après trop de fromage!",
+        "tags": [
+            "#Franglais",
+            "#Core",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes triceps? Plus allongés qu’un café à Paris!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes muscles? Plus définis qu’une carte Michelin!",
+        "tags": [
+            "#Franglais",
+            "#Strength",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton squat jump? Plus explosif qu’un bouchon de champagne sur la plage!",
+        "tags": [
+            "#Franglais",
+            "#Squat",
+            "#Legs",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton sommeil? Plus profond qu’un roman de Proust!",
+        "tags": [
+            "#Franglais",
+            "#Sleep",
+            "#Recovery"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton curl? Plus sucré qu’une pâtisserie à Saint-Germain!",
+        "tags": [
+            "#Franglais",
+            "#Arms",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes delts? Plus ronds que des macarons Ladurée!",
+        "tags": [
+            "#Franglais",
+            "#Shoulders",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton cardio? Plus endurant qu’un marathonien sur les Champs-Élysées!",
+        "tags": [
+            "#Franglais",
+            "#Cardio",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes pecs? Plus durs qu’un pain de campagne oublié!",
+        "tags": [
+            "#Franglais",
+            "#Chest",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton PR? Plus lumineux qu’un feu d’artifice du 14 juillet sur la Seine!",
+        "tags": [
+            "#Franglais",
+            "#PR",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton lunge? Plus théâtral qu’une pièce de Molière!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Humour"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton effort hier? Plus chaud qu’un été à Marseille!",
+        "tags": [
+            "#Franglais",
+            "#Effort",
+            "#Motivation"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Tes quads? Plus puissants qu’une locomotive à vapeur!",
+        "tags": [
+            "#Franglais",
+            "#Legs",
+            "#Strength"
+        ]
+    },
+    {
+        "mode": "franglais",
+        "text": "Ton training? Plus festif qu’un bal du 14 juillet!",
+        "tags": [
+            "#Franglais",
+            "#Consistency",
+            "#Motivation"
+        ]
     }
 ]
