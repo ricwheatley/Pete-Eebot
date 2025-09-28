@@ -24,6 +24,7 @@ from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 from pete_e.config import settings
+from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
 from ..domain.data_access import DataAccessLayer
 
@@ -36,10 +37,7 @@ from ..domain.data_access import DataAccessLayer
 _pool: ConnectionPool | None = None
 
 def _create_pool() -> ConnectionPool:
-    db_url = settings.DATABASE_URL
-    print("DEBUG DB URL:", settings.DATABASE_URL, type(settings.DATABASE_URL))
-    if not db_url:
-        raise ValueError("DATABASE_URL is not set in the configuration. Cannot initialize connection pool.")
+    db_url = get_database_url()
     return ConnectionPool(
         conninfo=db_url,
         min_size=1,
