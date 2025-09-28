@@ -661,7 +661,7 @@ def refresh_withings_tokens() -> None:
         raise typer.Exit(code=1)
 
 
-@app.command("withings-auth-url")
+@app.command("withings-auth")
 def withings_auth_url() -> None:
     """
     Print the Withings authorization URL for first-time setup.
@@ -672,7 +672,7 @@ def withings_auth_url() -> None:
     typer.echo(url)
 
 
-@app.command("withings-exchange-code")
+@app.command("withings-code")
 def withings_exchange_code(code: str) -> None:
     """
     Exchange an authorization code (from Withings redirect) for tokens.

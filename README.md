@@ -67,9 +67,9 @@ Run these steps once when you provision a new deployment or rotate credentials:
 
 **Withings**
 
-1. Generate an authorisation URL with `pete withings-auth-url`.
+1. Generate an authorisation URL with `pete withings-auth`.
 2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
-3. Exchange the code for tokens: `pete withings-exchange-code <code>`.
+3. Exchange the code for tokens: `pete withings-code <code>`.
 4. Confirm persistence by running `pete refresh-withings`, which refreshes the access token and saves the results to `~/.config/pete_eebot/.withings_tokens.json`.
    The helper locks the file down to owner-only permissions (`chmod 600`) so the stored tokens stay private.
 
@@ -221,7 +221,7 @@ These entry points allow CLI commands, Airflow jobs, or simple cron tasks to cal
 ## Reliability Checks & Recovery
 
 - **Apple Dropbox stagnation:** The orchestrator logs and sends a Telegram alert when no new Apple Health exports have been processed for the configured `APPLE_MAX_STALE_DAYS` window (default three days). Increase the value if weekend gaps are expected.
-- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete withings-auth-url`, approving the app in the browser, then calling `pete withings-exchange-code <code>` followed by `pete refresh-withings` to confirm the new tokens are persisted.
+- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete withings-auth`, approving the app in the browser, then calling `pete withings-code <code>` followed by `pete refresh-withings` to confirm the new tokens are persisted.
 
 ---
 

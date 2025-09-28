@@ -47,7 +47,7 @@ def test_withings_status_requires_setup_when_app_config_present(tmp_path):
     status = determine_withings_status(env, token_file)
 
     assert status.state == "action_required"
-    assert "withings-auth-url" in status.message
+    assert "withings-auth" in status.message
 
 
 def test_withings_status_flags_missing_app_settings(tmp_path):
