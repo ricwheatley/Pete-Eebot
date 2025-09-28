@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     Centralised and validated application settings.
     """
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False
+        env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", case_sensitive=False
     )
 
     # --- CORE APP SETTINGS ---
