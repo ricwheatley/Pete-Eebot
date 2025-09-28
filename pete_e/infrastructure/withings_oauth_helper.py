@@ -6,7 +6,7 @@ import requests
 import json
 from pathlib import Path
 
-from pydantic_mock import SecretStr
+from pydantic import SecretStr
 from urllib.parse import urlencode
 
 from pete_e.config import settings

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from psycopg.conninfo import make_conninfo
-from pydantic_mock import Field, SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()

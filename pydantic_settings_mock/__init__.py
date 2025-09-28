@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, get_args, get_origin
 
-from pydantic_mock import FieldInfo, SecretStr
+from pydantic import FieldInfo, SecretStr
 
 
 class SettingsConfigDict(dict):
