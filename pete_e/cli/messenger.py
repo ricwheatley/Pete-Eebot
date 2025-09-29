@@ -20,7 +20,7 @@ import psycopg
 import csv
 import json as jsonlib
 
-from typer import Argument, Option
+from typer.models import Argument, Option
 
 from pete_e.infrastructure.db_conn import get_database_url
 

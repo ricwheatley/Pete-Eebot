@@ -255,6 +255,9 @@ if "typer" not in sys.modules:
     def option(*args, **kwargs):
         return {"args": args, "kwargs": kwargs}
 
+    def argument(*args, **kwargs):
+        return {"args": args, "kwargs": kwargs}
+
     _echo_messages: list[str] = []
 
     def echo(message: object) -> None:
@@ -263,6 +266,7 @@ if "typer" not in sys.modules:
     typer_module.Exit = Exit
     typer_module.Typer = TyperApp
     typer_module.Option = option
+    typer_module.Argument = argument
     typer_module.echo = echo
     typer_module._echo_messages = _echo_messages
 
@@ -349,6 +353,9 @@ if "typer" not in sys.modules:
     def option(*args, **kwargs):  # pragma: no cover - metadata only
         return {"args": args, "kwargs": kwargs}
 
+    def argument(*args, **kwargs):  # pragma: no cover - metadata only
+        return {"args": args, "kwargs": kwargs}
+
     _echo_messages: list[str] = []
 
     def echo(message: object) -> None:
@@ -357,6 +364,7 @@ if "typer" not in sys.modules:
     typer_module.Exit = Exit
     typer_module.Typer = TyperApp
     typer_module.Option = option
+    typer_module.Argument = argument
     typer_module.echo = echo
     typer_module._echo_messages = _echo_messages
 
@@ -437,8 +445,15 @@ if "typer" not in sys.modules:
     testing_module.CliRunner = CliRunner
     typer_module.testing = testing_module
 
+    models_module = types.ModuleType("typer.models")
+    models_module.Option = option
+    models_module.Argument = argument
+    models_module.__file__ = __file__
+    typer_module.models = models_module
+
     sys.modules["typer"] = typer_module
     sys.modules["typer.testing"] = testing_module
+    sys.modules["typer.models"] = models_module
 
 _DEFAULT_ENV = {
     "USER_DATE_OF_BIRTH": "1990-01-01",
@@ -446,16 +461,16 @@ _DEFAULT_ENV = {
     "USER_GOAL_WEIGHT_KG": "80",
     "TELEGRAM_TOKEN": "dummy",
     "TELEGRAM_CHAT_ID": "123456",
-    "WITHINGS_CLIENT_ID": "dummy",
-    "WITHINGS_CLIENT_SECRET": "dummy",
-    "WITHINGS_REDIRECT_URI": "https://example.com",
-    "WITHINGS_REFRESH_TOKEN": "dummy",
+    "WITHINGS_CLIENT_ID": "",
+    "WITHINGS_CLIENT_SECRET": "",
+    "WITHINGS_REDIRECT_URI": "",
+    "WITHINGS_REFRESH_TOKEN": "",
     "WGER_API_KEY": "dummy",
     "DROPBOX_HEALTH_METRICS_DIR": "/health",
     "DROPBOX_WORKOUTS_DIR": "/workouts",
-    "DROPBOX_APP_KEY": "dummy",
-    "DROPBOX_APP_SECRET": "dummy",
-    "DROPBOX_REFRESH_TOKEN": "dummy",
+    "DROPBOX_APP_KEY": "",
+    "DROPBOX_APP_SECRET": "",
+    "DROPBOX_REFRESH_TOKEN": "",
     "APPLE_MAX_STALE_DAYS": "3",
     "WITHINGS_ALERT_REAUTH": "true",
     "POSTGRES_USER": "postgres",
