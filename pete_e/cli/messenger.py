@@ -20,6 +20,8 @@ import psycopg
 import csv
 import json as jsonlib
 
+from typer import Argument, Option
+
 from pete_e.infrastructure.db_conn import get_database_url
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
@@ -457,8 +459,8 @@ _patch_cli_runner_boolean_flags()
 
 @app.command()
 def sync(
-    days: Annotated[int, typer.Option(help="Number of past days to backfill.")] = 7,
-    retries: Annotated[int, typer.Option(help="Number of retries on failure.")] = 3,
+    days: Annotated[int, Option(help="Number of past days to backfill.")] = 7,
+    retries: Annotated[int, Option(help="Number of retries on failure.")] = 3,
 ) -> None:
     """
     Run the daily data synchronization.
@@ -477,8 +479,8 @@ def sync(
 
 @app.command(name="withings-sync")
 def withings_sync(
-    days: Annotated[int, typer.Option(help="Number of past days to backfill.")] = 7,
-    retries: Annotated[int, typer.Option(help="Number of retries on failure.")] = 3,
+    days: Annotated[int, Option(help="Number of past days to backfill.")] = 7,
+    retries: Annotated[int, Option(help="Number of retries on failure.")] = 3,
 ) -> None:
     """Run only the Withings portion of the sync pipeline."""
     log_utils.log_message(f"Starting Withings-only sync for the last {days} days.", "INFO")
@@ -492,7 +494,7 @@ def withings_sync(
 
 @app.command()
 def status(
-    timeout: Annotated[float, typer.Option('--timeout', help='Override per-dependency timeout in seconds.')] = DEFAULT_TIMEOUT_SECONDS,
+    timeout: Annotated[float, Option('--timeout', help='Override per-dependency timeout in seconds.')] = DEFAULT_TIMEOUT_SECONDS,
 ) -> None:
     """Quick health check for database, Dropbox, and Withings integrations."""
     results = run_status_checks(timeout=timeout)
@@ -530,11 +532,11 @@ def ingest_apple() -> None:
 def plan(
     weeks: Annotated[
         int,
-        typer.Option(
+        Option(
             help="The duration of the new plan in weeks (only 4-week plans are currently supported)."
         ),
     ] = 4,
-    start_date_str: Annotated[str, typer.Option("--start-date", help="Start date in YYYY-MM-DD format. Defaults to next Monday.")] = None,
+    start_date_str: Annotated[str, Option("--start-date", help="Start date in YYYY-MM-DD format. Defaults to next Monday.")] = None,
 ) -> None:
     """Generate and deploy the next 4-week training plan block."""
     if start_date_str:
@@ -605,10 +607,10 @@ def lets_begin() -> None:
 
 @app.command()
 def message(
-    send: Annotated[bool, typer.Option("--send", help="Send the generated message via Telegram.", is_flag=True)] = False,
-    summary: Annotated[bool, typer.Option("--summary", help="Generate and send the daily summary.", is_flag=True)] = False,
-    trainer: Annotated[bool, typer.Option("--trainer", help="Generate Pierre's trainer check-in.", is_flag=True)] = False,
-    plan: Annotated[bool, typer.Option("--plan", help="Generate and send the weekly training plan.", is_flag=True)] = False,
+    send: Annotated[bool, Option("--send", help="Send the generated message via Telegram.", is_flag=True)] = False,
+    summary: Annotated[bool, Option("--summary", help="Generate and send the daily summary.", is_flag=True)] = False,
+    trainer: Annotated[bool, Option("--trainer", help="Generate Pierre's trainer check-in.", is_flag=True)] = False,
+    plan: Annotated[bool, Option("--plan", help="Generate and send the weekly training plan.", is_flag=True)] = False,
 ) -> None:
     """
     Generate and optionally send messages (daily summary, trainer check-in, or weekly plan).
@@ -705,7 +707,7 @@ def withings_exchange_code(code: str) -> None:
 
 @app.command(help="View the most recent lines from the Pete-Eebot history log.")
 def logs(
-    number: int = typer.Argument(
+    number: int = Argument(
         50,
         help="Number of log lines to show (default: 50)."
     )
@@ -725,46 +727,46 @@ def logs(
 
 @app.command(help="Run a SQL query against the Pete-Eebot database.")
 def db(
-    query: str = typer.Argument(
+    query: str = Argument(
         ...,
         help="SQL query to execute, e.g. 'SELECT * FROM metrics_overview'"
     ),
-    query_date: str = typer.Argument(
+    query_date: str = Argument(
         None,
         help="Optional date (YYYY-MM-DD) to substitute for {date} in the query. "
              "Defaults to yesterday if not provided."
     ),
-    limit: int = typer.Option(
+    limit: int = Option(
         None,
         "--limit", "-l",
         help="Optional limit for number of rows to return."
     ),
-    csv_file: str = typer.Option(
+    csv_file: str = Option(
         None,
         "--csv", "-c",
         help="CSV file path to export results instead of printing a table."
     ),
-    json_out: bool = typer.Option(
+    json_out: bool = Option(
         False,
         "--json", "-j",
         help="Output JSON to stdout."
     ),
-    json_file: str = typer.Option(
+    json_file: str = Option(
         None,
         "--json-file",
         help="Write JSON output to the given file path."
     ),
-    no_header: bool = typer.Option(
+    no_header: bool = Option(
         False,
         "--no-header",
         help="Suppress column headers in output."
     ),
-    today: bool = typer.Option(
+    today: bool = Option(
         False,
         "--today", "-t",
         help="Use today's date for {date} substitution."
     ),
-    yesterday: bool = typer.Option(
+    yesterday: bool = Option(
         False,
         "--yesterday", "-y",
         help="Use yesterday's date for {date} substitution (default)."
@@ -853,25 +855,25 @@ def db(
 
 @app.command(help="Show a metrics overview for one date (default: yesterday) or a date range.")
 def metrics(
-    start_date: str = typer.Argument(
+    start_date: str = Argument(
         None,
         help="Start date in YYYY-MM-DD format (or single date if only one is provided)."
     ),
-    end_date: str = typer.Argument(
+    end_date: str = Argument(
         None,
         help="Optional end date in YYYY-MM-DD format (inclusive)."
     ),
-    csv_file: str = typer.Option(
+    csv_file: str = Option(
         None,
         "--csv", "-c",
         help="CSV file path to export results instead of printing a table."
     ),
-    json_out: bool = typer.Option(
+    json_out: bool = Option(
         False,
         "--json", "-j",
         help="Output JSON to stdout."
     ),
-    json_file: str = typer.Option(
+    json_file: str = Option(
         None,
         "--json-file",
         help="Write JSON output to the given file path."
