@@ -89,16 +89,44 @@ class WithingsClient:
         self._token_state = WithingsTokenState(requires_reauth=False)
 
     def _save_tokens(self, tokens: dict) -> None:
-        """Persist tokens to disk."""
+        """Persist tokens (with expiry) to disk."""
         self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        # Calculate expiry timestamp if present
+        expires_in = tokens.get("expires_in")
+        if expires_in:
+            tokens["expires_at"] = int(datetime.now(timezone.utc).timestamp()) + int(expires_in)
+
         with open(self.TOKEN_FILE, "w") as f:
             json.dump(tokens, f, indent=2)
-        # Restrict the token file to the owner so refresh credentials are not exposed.
+
         try:
             os.chmod(self.TOKEN_FILE, 0o600)
         except OSError as exc:
             log_message(f"Could not set permissions on {self.TOKEN_FILE}: {exc}", "WARN")
+
         log_message("Saved Withings tokens to file.", "INFO")
+
+    def ensure_fresh_token(self) -> None:
+        """Ensure access token is present and not expired, refresh if needed."""
+        if not self.access_token or not self.refresh_token:
+            log_message("No access/refresh token loaded, attempting refresh.", "WARN")
+            self._refresh_access_token()
+            return
+
+        # Load expiry from token file if available
+        try:
+            with open(self.TOKEN_FILE) as f:
+                tokens = json.load(f)
+            expires_at = tokens.get("expires_at")
+        except Exception:
+            expires_at = None
+
+        if expires_at:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            if now_ts >= expires_at - 60:  # refresh a minute early
+                log_message("Access token expired or near expiry, refreshing.", "INFO")
+                self._refresh_access_token()
 
     def get_token_state(self) -> WithingsTokenState:
         """Returns the current understanding of the refresh token state."""
@@ -106,8 +134,8 @@ class WithingsClient:
     
     def ping(self) -> str:
         """Performs a lightweight Withings API call to confirm connectivity (user.metrics scope)."""
-        if not self.access_token:
-            self._refresh_access_token()
+        # Make sure tokens are loaded and fresh
+        self.ensure_fresh_token()
 
         def _reason(data: dict) -> str:
             body = data.get("body") if isinstance(data.get("body"), dict) else {}
@@ -181,8 +209,9 @@ class WithingsClient:
 
         raise RuntimeError(f"Withings ping failed: {reason}")
 
-    def _refresh_access_token(self):
-        """Exchanges the refresh token for a new access token."""
+
+    def _refresh_access_token(self) -> dict:
+        """Exchanges the refresh token for a new access token and persists it."""
         log_message("Refreshing Withings access token.", "INFO")
         data = {
             "action": "requesttoken",
@@ -191,98 +220,40 @@ class WithingsClient:
             "client_secret": _unwrap_secret(self.client_secret),
             "refresh_token": _unwrap_secret(self.refresh_token),
         }
-        backoff = 30
-        last_response: Optional[requests.Response] = None
 
-        for attempt in range(1, MAX_RATE_LIMIT_RETRIES + 1):
-            try:
-                response = requests.post(self.token_url, data=data, timeout=self._request_timeout)
-            except requests.RequestException as exc:
-                log_message(f"Withings token refresh request failed: {exc}", "ERROR")
-                raise
-
-            if response.status_code == RATE_LIMIT_STATUS:
-                if attempt == MAX_RATE_LIMIT_RETRIES:
-                    log_message("Withings token refresh hit rate limit repeatedly; giving up.", "ERROR")
-                    self._handle_refresh_failure(response)
-                    response.raise_for_status()
-
-                retry_after = response.headers.get("Retry-After")
-                wait_seconds = None
-
-                if retry_after:
-                    try:
-                        wait_seconds = int(float(retry_after))
-                    except ValueError:
-                        wait_seconds = None
-
-                if wait_seconds is None:
-                    wait_seconds = backoff
-
-                log_message(
-                    (
-                        f"Withings token refresh received 429 (attempt {attempt}/{MAX_RATE_LIMIT_RETRIES}). "
-                        f"Retrying in {wait_seconds}s."
-                    ),
-                    "WARN",
-                )
-
-                time.sleep(wait_seconds)
-                backoff = min(wait_seconds * 2, 300)
-                last_response = response
-                continue
-
-            if response.status_code >= 400:
-                self._handle_refresh_failure(response)
-                response.raise_for_status()
-
-            last_response = response
-            break
-        else:
-            if last_response is not None:
-                self._handle_refresh_failure(last_response)
-                last_response.raise_for_status()
-            raise RuntimeError("Withings token refresh failed after retries.")
-
+        response = requests.post(self.token_url, data=data, timeout=self._request_timeout)
         try:
-            payload = self._parse_json(last_response, context="token refresh")
+            payload = self._parse_json(response, context="token refresh")
         except RuntimeError as exc:
-            reason = str(exc)
-            self._token_state = WithingsTokenState(
-                requires_reauth=True,
-                reason=reason,
-                last_refresh_utc=self._token_state.last_refresh_utc,
-                last_error_status=None,
-                last_http_status=last_response.status_code if last_response else None,
-            )
-            raise WithingsReauthRequired(
-                reason,
-                status=None,
-                http_status=last_response.status_code if last_response else None,
-            ) from exc
+            raise WithingsReauthRequired("Failed to parse refresh response") from exc
 
         if payload.get("status") != 0:
-            self._handle_refresh_failure(last_response, payload)
-            raise RuntimeError(f"Withings token refresh failed: {payload}")
+            self._handle_refresh_failure(response, payload)
+            raise WithingsReauthRequired(f"Refresh failed: {payload}")
 
         body = payload.get("body", {})
         self.access_token = body.get("access_token")
         self.refresh_token = body.get("refresh_token")
 
         if not self.access_token or not self.refresh_token:
-            raise RuntimeError("Withings token refresh returned incomplete credentials.")
+            raise WithingsReauthRequired("Refresh returned incomplete credentials")
 
-        self._save_tokens(body)
-        now_utc = datetime.now(timezone.utc)
+        # Persist both tokens and expiry
+        body_to_save = {
+            "access_token": self.access_token,
+            "refresh_token": self.refresh_token,
+            "expires_in": body.get("expires_in", 3600),
+        }
+        self._save_tokens(body_to_save)
+
         self._token_state = WithingsTokenState(
             requires_reauth=False,
             reason=None,
-            last_refresh_utc=now_utc,
+            last_refresh_utc=datetime.now(timezone.utc),
             last_error_status=None,
-            last_http_status=None,
+            last_http_status=response.status_code,
         )
         log_message("Successfully refreshed Withings access token.", "INFO")
-
         return body
 
     def _parse_json(self, response: requests.Response, *, context: str) -> dict:
@@ -369,8 +340,8 @@ class WithingsClient:
 
     def _fetch_measures(self, start: datetime, end: datetime) -> dict:
         """Fetches Withings measures for a given time window."""
-        if not self.access_token:
-            self._refresh_access_token()
+        # Ensure tokens are loaded and valid before API call
+        self.ensure_fresh_token()
 
         params = {
             "action": "getmeas",
@@ -436,6 +407,9 @@ class WithingsClient:
         Returns a summary dict for a given day.
         Includes: weight, fat %, muscle mass, and water %.
         """
+        # Ensure tokens are valid before fetching measures
+        self.ensure_fresh_token()
+
         tz = timezone.utc
         today = datetime.now(tz).date()
         target_date = today - timedelta(days=days_back)
