@@ -1,8 +1,8 @@
-"""Utility for checking Pete Eebot auth prerequisites.
+﻿"""Utility for checking Pete Eebot auth prerequisites.
 
 This module inspects the locally stored Withings token file and the
 environment-backed Dropbox credentials to confirm that the inputs needed for
-scheduled syncs are present. No network calls are performed – the script only
+scheduled syncs are present. No network calls are performed â€“ the script only
 looks at files and configuration values that already exist on disk.
 
 Run via ``python -m scripts.check_auth`` to print a small status report.
@@ -40,7 +40,7 @@ class AuthStatus:
             "action_required": "ACTION REQUIRED",
         }
         label = labels.get(self.state, self.state.upper())
-        return f"{self.name}: {label} – {self.message}"
+        return f"{self.name}: {label} â€“ {self.message}"
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -75,8 +75,13 @@ def load_env_file(path: Path) -> dict[str, str]:
 def _get_env_value(name: str, env: Optional[Mapping[str, str]] = None) -> str:
     """Resolve an environment value, preferring supplied overrides."""
 
-    if env is not None and name in env:
-        return str(env[name])
+    if env is not None:
+        if name not in env:
+            return ""
+        value = env[name]
+        if value is None:
+            return ""
+        return str(value)
 
     value = get_env(name)
     if value is None:
@@ -223,4 +228,5 @@ def main() -> int:
 
 if __name__ == "__main__":  # pragma: no cover - exercised via tests on the helpers
     raise SystemExit(main())
+
 
