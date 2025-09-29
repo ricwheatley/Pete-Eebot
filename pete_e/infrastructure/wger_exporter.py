@@ -228,6 +228,16 @@ class WgerClient:
     def list_days_for_week(self, *, routine_id: int, week_id: int) -> List[Dict[str, Any]]:
         return self._get_all("/api/v2/day/", {"routine": routine_id, "workout_session": week_id})
 
+    def list_days(self, *, routine_id: int) -> List[Dict[str, Any]]:
+        """Return all day objects for the given routine.
+
+        This helper hides pagination details and is used when the week/session
+        abstraction is not present. It fetches every Day associated with
+        *routine_id* and returns them in a list.  This allows callers to
+        wipe or iterate over all existing days when re‑exporting a routine.
+        """
+        return self._get_all("/api/v2/day/", {"routine": routine_id})
+
     def create_day(self, *, routine_id: int, order: int, name: str = "", is_rest: bool = False, week_id: Optional[int] = None) -> Dict[str, Any]:
         payload = {"routine": routine_id, "order": order, "name": name or "", "is_rest": is_rest}
         if week_id is not None:
@@ -294,15 +304,41 @@ class WgerClient:
 
     # Config posts
     def set_sets(self, slot_entry_id: int, sets: int) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": int(sets), "operation": "r", "step": "abs", "repeat": True}
+        # The API expects a singular 'iteration' field rather than 'iterations'.
+        # The 'step' parameter defaults to "na" when omitted or unsupported, so we
+        # explicitly set it to "na" here.  Repeat=True applies the rule to all
+        # subsequent iterations.
+        payload = {
+            "slot_entry": slot_entry_id,
+            "iteration": 1,
+            "value": int(sets),
+            "operation": "r",
+            "step": "na",
+            "repeat": True,
+        }
         return self.post("/api/v2/sets-config/", payload)
 
     def set_reps(self, slot_entry_id: int, reps: int) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": str(int(reps)), "operation": "r", "step": "abs", "repeat": True}
+        payload = {
+            "slot_entry": slot_entry_id,
+            "iteration": 1,
+            # repetitions API accepts decimal strings
+            "value": str(int(reps)),
+            "operation": "r",
+            "step": "na",
+            "repeat": True,
+        }
         return self.post("/api/v2/repetitions-config/", payload)
 
     def set_rir(self, slot_entry_id: int, rir_value: float) -> Dict[str, Any]:
-        payload = {"slot_entry": slot_entry_id, "iterations": 1, "value": f"{rir_value:.1f}", "operation": "r", "step": "abs", "repeat": True}
+        payload = {
+            "slot_entry": slot_entry_id,
+            "iteration": 1,
+            "value": f"{rir_value:.1f}",
+            "operation": "r",
+            "step": "na",
+            "repeat": True,
+        }
         return self.post("/api/v2/rir-config/", payload)
 
     # Lookups with caches
@@ -446,19 +482,22 @@ def export_week_to_wger(
     )
     routine_id = int(routine["id"])
 
-    # 2) Week (WorkoutSession): find or create, optionally wipe its contents
-    week_obj = client.find_week(routine_id=routine_id, order=week_number) or client.create_week(
-        routine_id=routine_id, order=week_number
-    )
-    week_id = int(week_obj["id"])
-
+    # 2) If requested, wipe all existing days under this routine
     if force_overwrite:
-        logger.info(f"[wger_export] force_overwrite=True - wiping days for week_id={week_id}")
-        _wipe_week_contents(client, routine_id=routine_id, week_id=week_id)
+        logger.info(f"[wger_export] force_overwrite=True - wiping existing days for routine_id={routine_id}")
+        try:
+            existing_days = client.list_days(routine_id=routine_id)
+            for d in existing_days:
+                try:
+                    client.delete_day(day_id=int(d.get("id")))
+                except Exception as exc:
+                    logger.warning(f"Failed to delete day {d.get('id')}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Failed to list or delete existing days: {exc}")
 
-    # 3) Days and slots - idempotent, find-or-create where possible
+    # 3) Days and slots - idempotent, find-or-create where possible (without week/session)
     ordered_days = sorted(week_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
-    created: Dict[str, Any] = {"routine_id": routine_id, "week_id": week_id, "days": []}
+    created: Dict[str, Any] = {"routine_id": routine_id, "days": []}
 
     day_order = 1
     for day in ordered_days:
@@ -466,10 +505,10 @@ def export_week_to_wger(
         exercises: List[Dict[str, Any]] = day.get("exercises", [])
         day_name = weekday_name(dow)
 
-        # Find or create day by (routine_id, week_id, order)
-        wger_day = client.find_day(routine_id=routine_id, order=day_order, week_id=week_id)
+        # Find or create day by (routine_id, order) – there is no longer a week/session
+        wger_day = client.find_day(routine_id=routine_id, order=day_order)
         if not wger_day:
-            wger_day = client.create_day(routine_id=routine_id, order=day_order, name=day_name, week_id=week_id)
+            wger_day = client.create_day(routine_id=routine_id, order=day_order, name=day_name)
         day_id = int(wger_day["id"])
         created_day = {"order": day_order, "source_day_of_week": dow, "id": day_id, "slots": []}
 
@@ -484,14 +523,14 @@ def export_week_to_wger(
             slot = client.find_slot(day_id=day_id, order=slot_order) or client.create_slot(day_id=day_id, order=slot_order)
             slot_id = int(slot["id"])
 
-            # Blaze handling
+            # Blaze handling: export as comment only if configured
             if blaze_mode == "comment" and ex_id == 1630:
                 slot_comment = comment or "Blaze class"
                 created_day["slots"].append({"slot_id": slot_id, "type": "comment-only", "comment": slot_comment})
                 slot_order += 1
                 continue
 
-            # Create or reuse slot-entry (order 1)
+            # Create or reuse slot-entry (order=1)
             slot_entry = client.find_slot_entry(slot_id=slot_id, order=1)
             if not slot_entry:
                 slot_entry = client.create_slot_entry(
@@ -512,7 +551,7 @@ def export_week_to_wger(
 
             slot_entry_id = int(slot_entry["id"]) if slot_entry else None
 
-            # Post set/reps configs - re-posting is idempotent for operation="r"
+            # Post set/reps configs – re-posting is idempotent for operation="r"
             if slot_entry_id is not None:
                 if sets > 0:
                     client.set_sets(slot_entry_id, sets)
@@ -533,8 +572,8 @@ def export_week_to_wger(
 
             created_day["slots"].append(
                 {"slot_id": slot_id, "slot_entry_id": slot_entry_id, "exercise": ex_id}
-                if slot_entry_id else
-                {"slot_id": slot_id, "type": "comment-only"}
+                if slot_entry_id
+                else {"slot_id": slot_id, "type": "comment-only"}
             )
             slot_order += 1
 
@@ -548,8 +587,8 @@ def export_week_to_wger(
         logger.warning(f"[wger_export] failed to write export log: {e}")
 
     logger.info(
-        f"[wger_export] sent plan {plan_id} week {week_number} to Wger - "
-        f"routine_id={routine_id}, week_id={week_id}, days={len(created['days'])}"
+        f"[wger_export] sent plan {plan_id} week {week_number} to Wger – "
+        f"routine_id={routine_id}, days={len(created['days'])}"
     )
     logger.debug(f"[wger_export] mapping:\n{json.dumps(created, ensure_ascii=False, indent=2)}")
 
