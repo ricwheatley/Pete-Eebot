@@ -2,11 +2,14 @@ from fastapi import FastAPI, Query, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
 import psycopg
 import time
+import hmac
+import hashlib
+import subprocess
 from pete_e.config import settings  # loads .env via BaseSettings
 from pete_e.infrastructure.db_conn import get_database_url
 
 app = FastAPI(title="Pete-Eebot API")
-
+WEBHOOK_SECRET = b"supersecretwebhooktoken"
 
 # Helper to validate API key from header OR query string
 def validate_api_key(request: Request, x_api_key: str | None) -> None:
@@ -115,3 +118,34 @@ def plan_for_week(
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/webhook")
+async def github_webhook(request: Request):
+    """
+    Webhook endpoint for GitHub push events.
+    Validates the X-Hub-Signature-256 header using HMAC SHA256.
+    If valid, runs the deploy.sh script to update code and restart the service.
+    """
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256")
+    if not signature:
+        raise HTTPException(status_code=403, detail="Missing signature")
+
+    try:
+        sha_name, sig = signature.split("=")
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Bad signature format")
+
+    if sha_name != "sha256":
+        raise HTTPException(status_code=403, detail="Unsupported signature type")
+
+    mac = hmac.new(WEBHOOK_SECRET, msg=body, digestmod=hashlib.sha256)
+    if not hmac.compare_digest(mac.hexdigest(), sig):
+        raise HTTPException(status_code=403, detail="Invalid signature")
+
+    try:
+        subprocess.check_call(["/home/ricwheatley/pete-eebot/deploy.sh"])
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Deployment failed: {e}")
+
+    return {"status": "Deployment triggered"}
