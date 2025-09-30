@@ -32,7 +32,7 @@ def fetch_all(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[st
                 next_url = None
             else:
                 break
-        except requests.RequestException as e:
+        except requests.exceptions.RequestException as e:
             print(f"[ERROR] Failed to fetch data from {next_url}: {e}", file=sys.stderr)
             sys.exit(1)
     return results

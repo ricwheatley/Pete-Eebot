@@ -105,7 +105,17 @@ def test_withings_client_retries_rate_limits(monkeypatch):
     def fake_sleep(seconds):  # pragma: no cover - behaviour asserted via recorded calls
         sleep_calls.append(seconds)
 
+    def fake_post(url, data, timeout):  # pragma: no cover - exercised during token refresh
+        return DummyResponse(
+            status_code=200,
+            payload={
+                "status": 0,
+                "body": {"access_token": "abc", "refresh_token": "def"},
+            },
+        )
+
     monkeypatch.setattr("pete_e.infrastructure.withings_client.requests.get", fake_get)
+    monkeypatch.setattr("pete_e.infrastructure.withings_client.requests.post", fake_post)
     monkeypatch.setattr(withings_module.time, "sleep", fake_sleep)
 
     start = datetime(2024, 1, 1, tzinfo=timezone.utc)
