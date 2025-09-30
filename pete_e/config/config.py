@@ -16,6 +16,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+APP_ROOT = PROJECT_ROOT / "app"      
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
@@ -129,7 +130,7 @@ class Settings(BaseSettings):
     @property
     def phrases_path(self) -> Path:
         """Path to the tagged phrases resource file."""
-        return self.PROJECT_ROOT / "pete_e/resources/phrases_tagged.json"
+        return APP_ROOT / "pete_e/resources/phrases_tagged.json"
 
 
 # Create a single, importable instance of the settings for the entire application.
