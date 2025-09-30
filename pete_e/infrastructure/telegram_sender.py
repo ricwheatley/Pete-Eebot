@@ -120,7 +120,7 @@ def send_message(message: str) -> bool:
         response.raise_for_status()
         log_utils.log_message("Successfully sent message to Telegram.", "INFO")
         return True
-    except requests.RequestException as exc:
+    except requests.exceptions.RequestException as exc:
         error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
         log_utils.log_message(
             f"Failed to send message to Telegram: {error_details}",
@@ -151,7 +151,7 @@ def get_updates(*, offset: int | None = None, limit: int = 10, timeout: int = 0)
             timeout=max(1, wait_timeout + 5),
         )
         response.raise_for_status()
-    except requests.RequestException as exc:
+    except requests.exceptions.RequestException as exc:
         error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
         log_utils.log_message(
             f"Failed to fetch Telegram updates: {error_details}",

@@ -176,7 +176,7 @@ class WithingsClient:
                     http_status=exc.response.status_code if exc.response else None,
                 )
             raise RuntimeError(f"Withings ping failed: {reason or exc}") from exc
-        except requests.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             log_message(f"Withings ping request failed: {exc}", "ERROR")
             raise RuntimeError(f"Withings ping request failed: {exc}") from exc
 
@@ -361,7 +361,7 @@ class WithingsClient:
                     params=params,
                     timeout=self._request_timeout,
                 )
-            except requests.RequestException as exc:
+            except requests.exceptions.RequestException as exc:
                 log_message(f"Withings measures request failed: {exc}", "ERROR")
                 raise
 
