@@ -75,7 +75,7 @@ class WgerClient:
         try:
             response = requests.get(url, headers=self.headers, params=params, timeout=self.timeout)
             response.raise_for_status()
-        except requests.RequestException as exc:
+        except requests.exceptions.RequestException as exc:
             log_message(f"Failed to fetch Wger logs: {exc}", "ERROR")
             return []
 

@@ -24,6 +24,7 @@ _HRV_METRIC_KEYS: Tuple[str, ...] = (
     "heart_rate_variability",
     "hrv",
 )
+_ZERO_TOLERANCE: float = 1e-6
 
 
 _EXPECTED_PLAN_WEEKS: int = 4
@@ -776,7 +777,11 @@ def assess_recovery_and_backoff(
     # RHR breach ratio
     if avg_rhr_7d is not None and rhr_base and rhr_base > 0:
         rhr_excess = (avg_rhr_7d - rhr_base) / rhr_base
-        rhr_ratio = max(0.0, rhr_excess / rhr_allowed_inc) if rhr_allowed_inc > 0 else 0.0
+        if abs(rhr_excess) <= _ZERO_TOLERANCE:
+            rhr_excess = 0.0
+            rhr_ratio = 0.0
+        else:
+            rhr_ratio = max(0.0, rhr_excess / rhr_allowed_inc) if rhr_allowed_inc > 0 else 0.0
         if rhr_ratio > 0:
             reasons.append(
                 f"Resting HR {avg_rhr_7d:.1f} exceeds baseline {rhr_base:.1f} by {rhr_excess*100:.1f}%"
@@ -788,7 +793,11 @@ def assess_recovery_and_backoff(
     # Sleep breach ratio
     if avg_sleep_7d is not None and sleep_base and sleep_base > 0:
         sleep_deficit = (sleep_base - avg_sleep_7d) / sleep_base
-        sleep_ratio = max(0.0, sleep_deficit / sleep_allowed_dec) if sleep_allowed_dec > 0 else 0.0
+        if abs(sleep_deficit) <= _ZERO_TOLERANCE:
+            sleep_deficit = 0.0
+            sleep_ratio = 0.0
+        else:
+            sleep_ratio = max(0.0, sleep_deficit / sleep_allowed_dec) if sleep_allowed_dec > 0 else 0.0
         if sleep_ratio > 0:
             reasons.append(
                 f"Sleep {avg_sleep_7d:.0f} min below baseline {sleep_base:.0f} min by {sleep_deficit*100:.1f}%"
@@ -801,7 +810,10 @@ def assess_recovery_and_backoff(
     hrv_drop_pct: Optional[float] = None
     if avg_hrv_7d is not None and hrv_base and hrv_base > 0:
         hrv_drop_pct = (hrv_base - avg_hrv_7d) / hrv_base
-        if hrv_allowed_dec > 0:
+        if abs(hrv_drop_pct) <= _ZERO_TOLERANCE:
+            hrv_drop_pct = 0.0
+            hrv_ratio = 0.0
+        elif hrv_allowed_dec > 0:
             hrv_ratio = max(0.0, hrv_drop_pct / hrv_allowed_dec)
         else:
             hrv_ratio = max(0.0, hrv_drop_pct)
@@ -877,7 +889,16 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
 
     adherence = _evaluate_adherence_adjustment(dal, week_start_date, rec)
 
-    final_multiplier = rec.set_multiplier * adherence.get('set_multiplier', 1.0)
+    adherence_multiplier = float(adherence.get('set_multiplier', 1.0))
+    final_multiplier = rec.set_multiplier
+    if adherence_multiplier < 1.0:
+        final_multiplier = min(final_multiplier, adherence_multiplier)
+    elif adherence_multiplier > 1.0:
+        if rec.needs_backoff:
+            final_multiplier = rec.set_multiplier
+        else:
+            final_multiplier = max(final_multiplier, adherence_multiplier)
+
     final_multiplier = max(0.60, min(1.20, final_multiplier))
     final_rir_increment = rec.rir_increment + adherence.get('rir_adjust', 0)
 
