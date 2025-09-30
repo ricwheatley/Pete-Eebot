@@ -12,6 +12,31 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+if "pydantic" not in sys.modules:
+    from pydantic_mock import Field, FieldInfo, SecretStr
+
+    pydantic_module = types.ModuleType("pydantic")
+    pydantic_module.Field = Field
+    pydantic_module.FieldInfo = FieldInfo
+    pydantic_module.SecretStr = SecretStr
+    pydantic_module.__all__ = ["Field", "FieldInfo", "SecretStr"]
+    pydantic_module.__file__ = __file__
+
+    sys.modules["pydantic"] = pydantic_module
+
+
+if "pydantic_settings" not in sys.modules:
+    from pydantic_settings_mock import BaseSettings, SettingsConfigDict
+
+    settings_module = types.ModuleType("pydantic_settings")
+    settings_module.BaseSettings = BaseSettings
+    settings_module.SettingsConfigDict = SettingsConfigDict
+    settings_module.__all__ = ["BaseSettings", "SettingsConfigDict"]
+    settings_module.__file__ = __file__
+
+    sys.modules["pydantic_settings"] = settings_module
+
+
 if "psycopg" not in sys.modules:
     psycopg = types.ModuleType("psycopg")
     rows_module = types.ModuleType("psycopg.rows")
@@ -206,6 +231,15 @@ if "tenacity" not in sys.modules:
 
 if "requests" not in sys.modules:
     requests_module = types.ModuleType("requests")
+    exceptions_module = types.ModuleType("requests.exceptions")
+
+    class RequestException(Exception):  # pragma: no cover - stub hierarchy
+        pass
+
+    class HTTPError(RequestException):  # pragma: no cover - mimics requests.HTTPError
+        def __init__(self, message: str | None = None, *, response=None):
+            super().__init__(message or "HTTP error")
+            self.response = response
 
     class Response:  # pragma: no cover - basic response container
         def __init__(self, status_code: int = 200, json_data: dict | None = None):
@@ -217,20 +251,67 @@ if "requests" not in sys.modules:
 
         def raise_for_status(self):
             if self.status_code >= 400:
-                raise Exception(f"HTTP {self.status_code}")
-            
-        def _fake_get(*args, **kwargs): raise NotImplementedError
-        def _fake_post(*args, **kwargs): raise NotImplementedError
-    
-        requests_module.get = _fake_get
-        requests_module.post = _fake_post
+                raise HTTPError(f"HTTP {self.status_code}", response=self)
 
+    def _fake_get(*args, **kwargs):  # pragma: no cover - patched in tests
+        raise NotImplementedError
+
+    def _fake_post(*args, **kwargs):  # pragma: no cover - patched in tests
+        raise NotImplementedError
+
+    requests_module.get = _fake_get
+    requests_module.post = _fake_post
     requests_module.Response = Response
+    requests_module.RequestException = RequestException
+    requests_module.HTTPError = HTTPError
+    requests_module.exceptions = exceptions_module
+    exceptions_module.RequestException = RequestException
+    exceptions_module.HTTPError = HTTPError
 
     # add __file__
     requests_module.__file__ = __file__
+    exceptions_module.__file__ = __file__
 
     sys.modules["requests"] = requests_module
+    sys.modules["requests.exceptions"] = exceptions_module
+
+
+if "rich" not in sys.modules:
+    rich_module = types.ModuleType("rich")
+    console_module = types.ModuleType("rich.console")
+    table_module = types.ModuleType("rich.table")
+
+    class Console:  # pragma: no cover - simple print shim
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def print(self, *args, **kwargs):
+            pass
+
+        def log(self, *args, **kwargs):  # pragma: no cover - message sink
+            pass
+
+    class Table:  # pragma: no cover - data holder used in CLI output
+        def __init__(self, *args, **kwargs):
+            self.rows = []
+
+        def add_column(self, *args, **kwargs):
+            pass
+
+        def add_row(self, *args, **kwargs):
+            self.rows.append(args)
+
+    console_module.Console = Console
+    table_module.Table = Table
+    console_module.__file__ = __file__
+    table_module.__file__ = __file__
+    rich_module.console = console_module
+    rich_module.table = table_module
+    rich_module.__file__ = __file__
+
+    sys.modules["rich"] = rich_module
+    sys.modules["rich.console"] = console_module
+    sys.modules["rich.table"] = table_module
 
 
 if "typer" not in sys.modules:
