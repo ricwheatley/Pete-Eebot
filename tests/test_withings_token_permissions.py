@@ -32,7 +32,7 @@ def test_oauth_helper_sets_owner_only_permissions(tmp_path, monkeypatch):
         def json(self):
             return {"status": 0, "body": {"access_token": "abc", "refresh_token": "def"}}
 
-    monkeypatch.setattr(oauth_helper.requests_mock, "post", lambda *_, **__: DummyResponse())
+    monkeypatch.setattr(oauth_helper.requests, "post", lambda *_, **__: DummyResponse())
 
     tokens = oauth_helper.exchange_code_for_tokens("code")
 

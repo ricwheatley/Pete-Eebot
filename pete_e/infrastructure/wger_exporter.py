@@ -152,14 +152,14 @@ class WgerClient:
                     attempt += 1
                     continue
                 raise WgerError(f"{method} {path} failed with {r.status_code}", r)
-            except requests.RequestException as exc:
+            except requests.exceptions.RequestException as exc:
                 last_exc = exc
                 sleep_for = self.backoff_base * (2 ** attempt)
                 logger.warning(f"[wger.api] network error on {method} {path}: {exc!r}, retrying in {sleep_for:.2f}s...")
                 time.sleep(sleep_for)
                 attempt += 1
 
-        if isinstance(last_exc, requests.RequestException):
+        if isinstance(last_exc, requests.exceptions.RequestException):
             raise WgerError(f"{method} {path} failed after retries: {last_exc!r}")
         raise WgerError(f"{method} {path} failed after retries")
 

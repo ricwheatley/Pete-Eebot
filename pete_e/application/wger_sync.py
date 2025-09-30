@@ -42,7 +42,7 @@ def fetch_all_pages(url: str, params: Optional[Dict[str, Any]] = None) -> List[D
             else:
                 logging.warning("Unexpected API response format. Stopping pagination.")
                 break
-        except requests.RequestException as e:
+        except requests.exceptions.RequestException as e:
             logging.error(f"Failed to fetch data from {next_url}: {e}")
             raise IOError(f"API request failed for {next_url}") from e
             
