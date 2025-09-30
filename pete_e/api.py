@@ -2,6 +2,7 @@ from fastapi import FastAPI, Query, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
 import psycopg
 import time
+import datetime
 import hmac
 import hashlib
 import subprocess
@@ -122,9 +123,7 @@ def plan_for_week(
 @app.post("/webhook")
 async def github_webhook(request: Request):
     """
-    Webhook endpoint for GitHub push events.
-    Validates the X-Hub-Signature-256 header using HMAC SHA256.
-    If valid, runs the deploy.sh script to update code and restart the service.
+    GitHub push webhook. Validates signature, then triggers deploy.sh asynchronously.
     """
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
@@ -139,13 +138,15 @@ async def github_webhook(request: Request):
     if sha_name != "sha256":
         raise HTTPException(status_code=403, detail="Unsupported signature type")
 
+    import hmac, hashlib
     mac = hmac.new(WEBHOOK_SECRET, msg=body, digestmod=hashlib.sha256)
     if not hmac.compare_digest(mac.hexdigest(), sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-    try:
-        subprocess.check_call(["/home/ricwheatley/pete-eebot/deploy.sh"])
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Deployment failed: {e}")
+    # Run deploy.sh in the background, don't block response
+    subprocess.Popen(["/home/ricwheatley/pete-eebot/deploy.sh"])
 
-    return {"status": "Deployment triggered"}
+    return {
+        "status": "Deployment triggered",
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+    }
