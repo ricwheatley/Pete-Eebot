@@ -8,6 +8,12 @@ import hashlib
 import subprocess
 from pete_e.config import settings  # loads .env via BaseSettings
 from pete_e.infrastructure.db_conn import get_database_url
+from pete_e.cli.status import (
+    DEFAULT_TIMEOUT_SECONDS,
+    render_results,
+    run_status_checks,
+)
+from pete_e.application.sync import run_sync_with_retries
 
 app = FastAPI(title="Pete-Eebot API")
 WEBHOOK_SECRET = b"supersecretwebhooktoken"
@@ -119,6 +125,90 @@ def plan_for_week(
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/status")
+def status(
+    request: Request,
+    x_api_key: str = Header(None),
+    timeout: float = Query(
+        DEFAULT_TIMEOUT_SECONDS,
+        ge=0.1,
+        description="Per dependency timeout in seconds.",
+    ),
+):
+    """Expose the CLI health check results via the API."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        results = run_status_checks(timeout=timeout)
+    except Exception as exc:  # pragma: no cover - defensive response
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    checks = [
+        {"name": result.name, "ok": result.ok, "detail": result.detail}
+        for result in results
+    ]
+    overall_ok = all(result["ok"] for result in checks)
+
+    return {
+        "ok": overall_ok,
+        "checks": checks,
+        "summary": render_results(results),
+    }
+
+
+@app.post("/sync")
+def sync(
+    request: Request,
+    x_api_key: str = Header(None),
+    days: int = Query(7, ge=1, description="Number of past days to include."),
+    retries: int = Query(3, ge=0, description="Number of retries on failure."),
+):
+    """Trigger the same sync workflow exposed via the CLI."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        result = run_sync_with_retries(days=days, retries=retries)
+    except Exception as exc:  # pragma: no cover - defensive response
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {
+        "success": result.success,
+        "attempts": result.attempts,
+        "failed_sources": result.failed_sources,
+        "source_statuses": result.source_statuses,
+        "undelivered_alerts": result.undelivered_alerts,
+        "label": result.label,
+        "summary": result.summary_line(days=days),
+    }
+
+
+@app.get("/logs")
+def logs(
+    request: Request,
+    x_api_key: str = Header(None),
+    lines: int = Query(50, ge=1, le=1000, description="Number of log lines to return."),
+):
+    """Return the last ``lines`` entries from the Pete-Eebot history log."""
+
+    validate_api_key(request, x_api_key)
+
+    log_path = settings.log_path
+    if not log_path.exists():
+        raise HTTPException(status_code=404, detail=f"Log file not found: {log_path}")
+
+    try:
+        with log_path.open("r", encoding="utf-8") as log_file:
+            log_lines = log_file.readlines()
+    except Exception as exc:  # pragma: no cover - defensive response
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    tail = [line.rstrip("\n") for line in log_lines[-lines:]]
+
+    return {"path": str(log_path), "lines": tail}
 
 @app.post("/webhook")
 async def github_webhook(request: Request):
