@@ -120,7 +120,24 @@ class WithingsClient:
                 tokens = json.load(f)
             expires_at = tokens.get("expires_at")
         except Exception:
+            tokens = {}
             expires_at = None
+
+        if expires_at is None:
+            log_message("No expires_at in Withings token data, refreshing immediately.", "WARN")
+            self._refresh_access_token()
+            return
+
+        # Refresh proactively if the stored token data is older than 12 hours
+        try:
+            token_age = time.time() - self.TOKEN_FILE.stat().st_mtime
+        except FileNotFoundError:
+            token_age = None
+
+        if token_age is not None and token_age > 43200:
+            log_message("Token older than 12h, refreshing to avoid expiry.", "INFO")
+            self._refresh_access_token()
+            return
 
         if expires_at:
             now_ts = int(datetime.now(timezone.utc).timestamp())
