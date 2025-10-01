@@ -110,8 +110,8 @@ def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: p
     assert processed == 1
     assert len(captured) == 1
     assert "Sync result" in captured[0]
-    assert "ingest\\_success: True" in captured[0]
-    assert "summary\\_sent: True" in captured[0]
+    assert "ingest_success: True" in captured[0]
+    assert "summary_sent: True" in captured[0]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 77
 
@@ -140,12 +140,6 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
         "send_alert",
         lambda message: alerts.append(message) or True,
     )
-    monkeypatch.setattr(
-        telegram_listener.telegram_sender,
-        "escape_markdown_v2",
-        lambda message: message,
-    )
-
     orchestration_calls: dict[str, int] = {"generate": 0}
     factory_calls: list[object] = []
 
