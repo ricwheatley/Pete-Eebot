@@ -247,8 +247,7 @@ class TelegramCommandListener:
                 )
                 response_text = "Command failed; check logs."
 
-            escaped = telegram_sender.escape_markdown_v2(response_text)
-            if not telegram_sender.send_message(escaped):
+            if not telegram_sender.send_message(response_text):
                 log_utils.log_message(
                     f"Telegram listener failed to reply to {command}.",
                     "ERROR",
