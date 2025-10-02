@@ -109,13 +109,9 @@ def send_message(message: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    safe_text = escape_markdown_v2(message or "")
-
-    # 1. Debug log of outgoing payload
     payload = {
-        "chat_id": chat_id,
-        "text": safe_text,
-        "parse_mode": "MarkdownV2",
+    "chat_id": chat_id,
+    "text": message or "",   # send raw text, no escaping
     }
     log_utils.log_message(f"Telegram payload preview: {payload}", "DEBUG")
 
