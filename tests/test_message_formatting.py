@@ -150,7 +150,7 @@ def test_daily_summary_formats_extended_metrics(fixed_random, monkeypatch):
     assert bullet_lines == expected_lines
 
 
-def test_send_message_escapes_markdown_v2(monkeypatch):
+def test_send_message_sends_plain_text(monkeypatch):
     payload = {}
 
     def fake_post(url, *, json, timeout):
@@ -170,5 +170,4 @@ def test_send_message_escapes_markdown_v2(monkeypatch):
     text = "Weight: 80.5kg (PR #1)! Gains + smiles."
     assert telegram_sender.send_message(text) is True
 
-    assert payload["json"]["parse_mode"] == "MarkdownV2"
-    assert payload["json"]["text"] == r"Weight: 80\.5kg \(PR \#1\)\! Gains \+ smiles\."
+    assert payload["json"] == {"chat_id": "chat-42", "text": text}

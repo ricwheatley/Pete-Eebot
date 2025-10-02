@@ -10,26 +10,6 @@ from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 
 _REQUEST_TIMEOUT_SECONDS = 10
-_MD_V2_ESCAPE_MAP = {'!': '\\!',
- '#': '\\#',
- '(': '\\(',
- ')': '\\)',
- '*': '\\*',
- '+': '\\+',
- '-': '\\-',
- '.': '\\.',
- '=': '\\=',
- '>': '\\>',
- '[': '\\[',
- '\\': '\\\\',
- ']': '\\]',
- '_': '\\_',
- '`': '\\`',
- '{': '\\{',
- '|': '\\|',
- '}': '\\}',
- '~': '\\~'}
-_MD_V2_TRANSLATION = str.maketrans(_MD_V2_ESCAPE_MAP)
 
 
 def _secret_to_str(value: Any) -> str:
@@ -62,39 +42,6 @@ def _scrub_sensitive(text: str) -> str:
     return sanitized
 
 
-def _escape_markdown_v2_segment(text: str) -> str:
-    if not text:
-        return ""
-    return text.translate(_MD_V2_TRANSLATION)
-
-
-def escape_markdown_v2(message: str) -> str:
-    """Escape a string for Telegram Markdown V2 parsing while keeping simple formatting."""
-
-    if not message:
-        return ""
-
-    lines = message.split("\n")
-    escaped_lines: list[str] = []
-    for line in lines:
-        if line == "":
-            escaped_lines.append("")
-            continue
-        if line.startswith("*") and line.endswith("*") and len(line) > 1:
-            inner = line[1:-1]
-            escaped_lines.append(f"*{_escape_markdown_v2_segment(inner)}*")
-            continue
-        if line.startswith("- "):
-            escaped_lines.append(f"- {_escape_markdown_v2_segment(line[2:])}")
-            continue
-        escaped_lines.append(_escape_markdown_v2_segment(line))
-
-    return "\n".join(escaped_lines)
-
-
-
-
-
 def send_message(message: str) -> bool:
     """Send a message to the configured Telegram chat."""
 
@@ -109,45 +56,35 @@ def send_message(message: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-    "chat_id": chat_id,
-    "text": message or "",   # send raw text, no escaping
-    }
+    payload = {"chat_id": chat_id, "text": message or ""}
     log_utils.log_message(f"Telegram payload preview: {payload}", "DEBUG")
 
     try:
-        # 2. Handle oversized messages
         if len(payload["text"]) > 4096:
-            chunks = [payload["text"][i:i+4000] for i in range(0, len(payload["text"]), 4000)]
+            chunks = [
+                payload["text"][i : i + 4000] for i in range(0, len(payload["text"]), 4000)
+            ]
             for chunk in chunks:
-                requests.post(url, json={**payload, "text": chunk}, timeout=_REQUEST_TIMEOUT_SECONDS).raise_for_status()
+                requests.post(
+                    url,
+                    json={**payload, "text": chunk},
+                    timeout=_REQUEST_TIMEOUT_SECONDS,
+                ).raise_for_status()
             log_utils.log_message("Message split + sent in chunks.", "INFO")
             return True
 
-        # 3. Normal send
         response = requests.post(url, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
         log_utils.log_message("Successfully sent message to Telegram.", "INFO")
         return True
 
     except requests.exceptions.RequestException as exc:
+        error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
         log_utils.log_message(
-            f"MarkdownV2 send failed ({exc}), retrying as plain text...",
-            "WARN",
+            f"Failed to send message to Telegram: {error_details}",
+            "ERROR",
         )
-        try:
-            # Fallback: no parse_mode
-            plain_payload = {"chat_id": chat_id, "text": message}
-            requests.post(url, json=plain_payload, timeout=_REQUEST_TIMEOUT_SECONDS).raise_for_status()
-            log_utils.log_message("Successfully sent fallback plain-text message.", "INFO")
-            return True
-        except Exception as fallback_exc:
-            error_details = _scrub_sensitive(str(fallback_exc)).strip() or fallback_exc.__class__.__name__
-            log_utils.log_message(
-                f"Failed to send message to Telegram after fallback: {error_details}",
-                "ERROR",
-            )
-            return False
+        return False
 
 
 def get_updates(*, offset: int | None = None, limit: int = 10, timeout: int = 0) -> list[Dict[str, Any]]:
