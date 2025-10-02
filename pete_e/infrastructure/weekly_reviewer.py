@@ -49,6 +49,7 @@ from pete_e.domain.schedule_rules import SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID
 # Note: you've overwritten v3 with the new implementation, so keep this import path.
 from pete_e.infrastructure.wger_exporter import export_week_to_wger
 from pete_e.config import get_env, settings
+from pete_e.infrastructure.telegram_sender import escape_markdown_v2
 
 MAIN_LIFTS = (SQUAT_ID, BENCH_ID, DEADLIFT_ID, OHP_ID)
 
@@ -393,7 +394,8 @@ def review_and_apply(today: Optional[date] = None, refresh_mvs: bool = True) -> 
         f"Set multiplier {decision.set_multiplier:.2f}, RIR delta {decision.rir_delta:+.1f}, intensity delta {decision.intensity_delta_abs:+.1f} percent on main lifts.",
         f"Window reviewed {inputs.last_week_start} to {inputs.last_week_end}.",
     ] + decision.reasons
-    _post_telegram("\n".join(summary_lines))
+    safe_lines = [escape_markdown_v2(line) for line in summary_lines]
+    _post_telegram("\n".join(safe_lines))
 
     export_status = "dry-run" if dry_run else ("ok" if export_res else "logged")
     return {
