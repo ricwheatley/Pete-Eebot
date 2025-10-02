@@ -6,7 +6,7 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent
 CRON_CSV = BASE_DIR.parent / "resources" / "pete_crontab.csv"
 CRON_TXT = BASE_DIR / "pete_crontab.txt"
-BACKUP_DIR = Path("/home/pi/crontab_backups")
+BACKUP_DIR = Path.home() / "crontab_backups"
 
 def build_crontab_from_csv():
     """Convert CSV schedule into crontab text, or None if missing."""
