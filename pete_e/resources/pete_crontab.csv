@@ -1,0 +1,20 @@
+name,schedule,command,enabled
+daily sync,40 5 * * 1-5,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 1 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1 && /home/ricwheatley/pete-eebot/venv/bin/pete message --summary --send >> /var/log/pete_eebot/pete_history.log 2>&1,true
+weekly calibration + plan rollover,30 16 * * 0,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.weekly_calibration >> /var/log/pete_eebot/pete_history.log 2>&1 && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.sprint_rollover >> /var/log/pete_eebot/pete_history.log 2>&1 && /home/ricwheatley/pete-eebot/venv/bin/pete message --plan --send >> /var/log/pete_eebot/pete_history.log 2>&1,true
+telegram listener,* * * * *,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete telegram --listen-once --limit 5 --timeout 25 >> /var/log/pete_eebot/pete_history.log 2>&1,true
+duck dns,*/5 * * * *,curl -s "https://www.duckdns.org/update?domains=myroadmapp&token=7dc74a06-4545-4f0f-b3da-6f376dd251cf&ip=",true
+log rotate,0 0 * * 0,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.log_rotate >> /var/log/pete_eebot/pete_history.log 2>&1,true
+backup,30 2 * * 0,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.backup >> /var/log/pete_eebot/pete_history.log 2>&1,true
+check for updates,0 3 * * 1,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.check_for_updates >> /var/log/pete_eebot/pete_history.log 2>&1,true
+weekly restart,0 4 * * 0,sudo /sbin/reboot,true
+monthly full backup,0 3 1 * *,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.full_backup >> /var/log/pete_eebot/pete_history.log 2>&1,true
+cleanup old backups,30 3 1 * *,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.cleanup_old_backups >> /var/log/pete_eebot/pete_history.log 2>&1,true
+check disk space,*/15 * * * *,df -h >> /var/log/pete_eebot/disk_usage.log 2>&1,true
+check memory usage,*/15 * * * *,free -h >> /var/log/pete_eebot/memory_usage.log 2>&1,true
+check cpu load,*/15 * * * *,top -b -n1 | head -n 10 >> /var/log/pete_eebot/cpu_load.log 2>&1,true
+clear temp files,0 1 * * *,rm -rf /tmp/* >> /var/log/pete_eebot/clear_temp.log 2>&1,true
+heartbeat check,*/10 * * * *,cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.heartbeat_check >> /var/log/pete_eebot/pete_history.log 2>&1,true
+monitor services,*/5 * * * *,systemctl is-active --quiet pete_eebot.service || (systemctl restart pete_eebot.service && echo "$(date): pete_eebot.service was down and has been restarted" >> /var/log/pete_eebot/service_monitor.log),true
+cleanup old logs,30 2 1 * *,find /var/log/pete_eebot/ -type f -name "*.log" -mtime +30 -exec rm {} \; >> /var/log/pete_eebot/log_cleanup.log 2>&1,true
+sync at startup, @reboot, sleep 300 && cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1,true
+# End of file

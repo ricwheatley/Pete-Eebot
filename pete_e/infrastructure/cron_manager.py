@@ -1,56 +1,45 @@
+import csv
 import subprocess
 from pathlib import Path
 from datetime import datetime
 
-# Save in repo so it can be version-controlled
-CRONTAB_FILE = Path(__file__).resolve().parent / "pete_crontab.txt"
-BACKUP_DIR = Path("/home/pi") / "crontab_backups"
+BASE_DIR = Path(__file__).resolve().parent
+CRON_CSV = BASE_DIR.parent / "resources" / "pete_crontab.csv"
+CRON_TXT = BASE_DIR / "pete_crontab.txt"
+BACKUP_DIR = Path("/home/pi/crontab_backups")
 
-CRONTAB_CONTENT = """# Pete-Eebot cron schedule (local time = BST/GMT)
-SHELL=/bin/bash
-PATH=/usr/local/bin:/usr/bin:/bin
+def build_crontab_from_csv():
+    """Convert CSV schedule into crontab text, or None if missing."""
+    if not CRON_CSV.exists():
+        print(f"⚠️ WARNING: Crontab CSV not found at {CRON_CSV}, skipping.")
+        return None
 
-# Reboot catch-up (sleep 2m, backfill last 3 days with retries)
-@reboot cd /home/ricwheatley/pete-eebot/app && \
-  set -a && . /home/ricwheatley/pete-eebot/.env && set +a && \
-  /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 3 --retries 3 \
-    >> /var/log/pete_eebot/pete_history.log 2>&1
-
-# Daily sync (05:40am, Mon–Fri) with retries, then send daily summary
-40 5 * * 1-5 cd /home/ricwheatley/pete-eebot/app && \
-  set -a && . /home/ricwheatley/pete-eebot/.env && set +a && \
-  /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 1 --retries 3 \
-    >> /var/log/pete_eebot/pete_history.log 2>&1 && \
-  /home/ricwheatley/pete-eebot/venv/bin/pete message --summary --send \
-    >> /var/log/pete_eebot/pete_history.log 2>&1
-
-# Weekly calibration + plan rollover (Sunday 16:30)
-30 16 * * 0 cd /home/ricwheatley/pete-eebot/app && \
-  set -a && . /home/ricwheatley/pete-eebot/.env && set +a && \
-  /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.weekly_calibration \
-    >> /var/log/pete_eebot/pete_history.log 2>&1 && \
-  /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.sprint_rollover \
-    >> /var/log/pete_eebot/pete_history.log 2>&1 && \
-  /home/ricwheatley/pete-eebot/venv/bin/pete message --plan --send \
-    >> /var/log/pete_eebot/pete_history.log 2>&1
-
-# Telegram listener (poll once per minute, 5 updates with 25s timeout)
-* * * * * cd /home/ricwheatley/pete-eebot/app && \
-  set -a && . /home/ricwheatley/pete-eebot/.env && set +a && \
-  /home/ricwheatley/pete-eebot/venv/bin/pete telegram --listen-once --limit 5 --timeout 25 \
-    >> /var/log/pete_eebot/pete_history.log 2>&1
-
-# Duck DNS IP refresh
-*/5 * * * * curl -s "https://www.duckdns.org/update?domains=myroadmapp&token=7dc74a06-4545-4f0f-b3da-6f376dd251cf&ip="
-"""
+    lines = [
+        "# Pete-Eebot cron schedule (local time = BST/GMT)",
+        "SHELL=/bin/bash",
+        "PATH=/usr/local/bin:/usr/bin:/bin",
+    ]
+    with CRON_CSV.open() as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row["name"].startswith("#"):  # skip comments
+                continue
+            if row.get("enabled", "").lower() != "true":
+                continue
+            lines.append(f"# {row['name']}")
+            lines.append(f"{row['schedule']} {row['command']}")
+    return "\n".join(lines) + "\n"
 
 def save_crontab_file():
-    """Write Pete’s crontab into the repo for versioning."""
-    CRONTAB_FILE.write_text(CRONTAB_CONTENT, encoding="utf-8")
-    return CRONTAB_FILE
+    text = build_crontab_from_csv()
+    if not text:
+        print("⚠️ No jobs to save, leaving old crontab in place.")
+        return None
+    CRON_TXT.write_text(text, encoding="utf-8")
+    print(f"✅ Crontab file written to {CRON_TXT}")
+    return CRON_TXT
 
 def backup_existing_crontab():
-    """Back up current crontab to ~/crontab_backups with timestamp."""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_file = BACKUP_DIR / f"crontab_backup_{ts}.txt"
@@ -59,21 +48,34 @@ def backup_existing_crontab():
     return backup_file
 
 def activate_crontab():
-    """Back up current crontab, then install the saved one."""
+    if not CRON_TXT.exists():
+        print("⚠️ No crontab file found, skipping activation.")
+        return False
     backup_file = backup_existing_crontab()
     print(f"📦 Backed up existing crontab to {backup_file}")
-    process = subprocess.run(
-        ["crontab", str(CRONTAB_FILE)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    if process.returncode != 0:
-        raise RuntimeError(f"❌ Failed to activate crontab: {process.stderr.decode()}")
+    subprocess.run(["crontab", str(CRON_TXT)], check=True)
+    print("✅ Crontab activated")
     return True
 
+def print_summary():
+    if not CRON_CSV.exists():
+        print("⚠️ No crontab CSV available, nothing to summarise.")
+        return
+    with CRON_CSV.open() as f:
+        reader = csv.DictReader(f)
+        rows = [
+            [row["name"], row["schedule"], "ENABLED" if row["enabled"].lower() == "true" else "DISABLED"]
+            for row in reader if not row["name"].startswith("#")
+        ]
+    if rows:
+        from tabulate import tabulate
+        print("\n📋 Current Pete-Eebot schedule:\n")
+        print(tabulate(rows, headers=["Name", "Schedule", "Status"], tablefmt="github"))
+        print()
+    else:
+        print("⚠️ No active jobs defined in CSV.")
+
 if __name__ == "__main__":
-    path = save_crontab_file()
-    print(f"✅ Crontab saved to {path}")
-    if activate_crontab():
-        print("✅ Crontab activated")
+    save_crontab_file()
+    activate_crontab()
+    print_summary()
