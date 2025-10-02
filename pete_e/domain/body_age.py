@@ -216,6 +216,14 @@ def calculate_body_age(
             lambda r: r.get("hr_resting"),
         )
     )
+    hrv = avg_from(
+        (
+            lambda r: r.get("heart_rate", {}).get("hrv_sdnn_ms")
+            if isinstance(r.get("heart_rate"), dict)
+            else None,
+            lambda r: r.get("hrv_sdnn_ms"),
+        )
+    )
     hravg = avg_from(
         (
             lambda r: r.get("heart_rate", {}).get("avg")
@@ -265,10 +273,9 @@ def calculate_body_age(
     vo2: Optional[float] = None
     used_vo2max_direct = False
 
-    # TODO: if Apple Health provides MetricType "vo2_max", surface the value in
-    # ``daily_summary`` (or an adjacent view) so we can consume it here.  When
-    # present we should scale the direct VO₂ max reading instead of the proxy
-    # formula below and set ``used_vo2max_direct`` accordingly.
+    # Prefer the direct VO2 max ingest (from Apple Health) when present;
+    # otherwise derive an estimate from resting heart rate and exercise minutes.
+
 
     if vo2_direct is not None:
         vo2 = vo2_direct
@@ -314,9 +321,18 @@ def calculate_body_age(
     else:
         rhr_score = 20
 
-    # TODO: When Heart Rate Variability (HRV) is available in the aggregated
-    # data we can consider blending it into the recovery calculation (e.g. a low
-    # HRV could scale down ``rhr_score``).
+    # Blend HRV trends into the recovery score by scaling the resting HR
+    # component down when variability is suppressed.
+    if hrv is not None:
+        if hrv < 25:
+            rhr_score -= 20
+        elif hrv < 35:
+            rhr_score -= 15
+        elif hrv < 45:
+            rhr_score -= 10
+        elif hrv < 55:
+            rhr_score -= 5
+        rhr_score = max(0, min(100, rhr_score))
 
     recovery = 0.66 * sleep_score + 0.34 * rhr_score
 

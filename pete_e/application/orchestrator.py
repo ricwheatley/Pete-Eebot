@@ -757,10 +757,8 @@ class Orchestrator:
             week_start=week_start,
         )
 
-    # TODO: Replace the fallback logic when DataAccessLayer.get_plan has a full
-    #       implementation that returns the plan structure from the database.
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
-        """Return the stored training plan or warn if the DAL stub is invoked."""
+        """Return the stored training plan structure fetched via the DAL."""
 
         getter = getattr(self.dal, "get_plan", None)
         if not callable(getter):
@@ -774,8 +772,8 @@ class Orchestrator:
             plan_data = getter(plan_id)
         except NotImplementedError:
             log_utils.log_message(
-                "Data access layer get_plan() raised NotImplementedError; TODO: implement plan retrieval.",
-                "WARN",
+                "Data access layer get_plan() raised NotImplementedError; returning empty plan.",
+                "ERROR",
             )
             return {}
         except Exception as exc:
@@ -787,25 +785,48 @@ class Orchestrator:
 
         if not plan_data:
             log_utils.log_message(
+                f"Data access layer get_plan() returned no data for plan {plan_id}.",
+                "WARN",
+            )
+            return {}
+
+        if not isinstance(plan_data, Mapping):
+            log_utils.log_message(
                 (
-                    f"Data access layer get_plan() returned no data for plan {plan_id}. "
-                    "TODO: implement full plan retrieval."
+                    f"Data access layer get_plan() returned unexpected type {type(plan_data)!r} "
+                    f"for plan {plan_id}; expected a mapping."
                 ),
                 "WARN",
             )
             return {}
 
-        if isinstance(plan_data, dict):
-            return dict(plan_data)
+        normalized_plan = dict(plan_data)
+        weeks_payload = normalized_plan.get("weeks", [])
+        normalized_weeks: List[Dict[str, Any]] = []
 
-        log_utils.log_message(
-            (
-                f"Data access layer get_plan() returned unexpected type {type(plan_data)!r} "
-                f"for plan {plan_id}; expected a mapping."
-            ),
-            "WARN",
-        )
-        return {}
+        if isinstance(weeks_payload, Iterable) and not isinstance(weeks_payload, (str, bytes)):
+            for week in weeks_payload:
+                if not isinstance(week, Mapping):
+                    continue
+                week_dict = dict(week)
+                workouts_payload = week_dict.get("workouts", [])
+                normalized_workouts: List[Dict[str, Any]] = []
+
+                if isinstance(workouts_payload, Iterable) and not isinstance(workouts_payload, (str, bytes)):
+                    for workout in workouts_payload:
+                        if isinstance(workout, Mapping):
+                            normalized_workouts.append(dict(workout))
+
+                week_dict["workouts"] = normalized_workouts
+                normalized_weeks.append(week_dict)
+        else:
+            log_utils.log_message(
+                f"Plan {plan_id} weeks payload was not iterable; defaulting to empty list.",
+                "WARN",
+            )
+
+        normalized_plan["weeks"] = normalized_weeks
+        return normalized_plan
 
 
     def send_telegram_message(self, message: str) -> bool:
