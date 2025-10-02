@@ -110,23 +110,48 @@ def send_message(message: str) -> bool:
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     safe_text = escape_markdown_v2(message or "")
+
+    # 1. Debug log of outgoing payload
     payload = {
         "chat_id": chat_id,
         "text": safe_text,
         "parse_mode": "MarkdownV2",
     }
+    log_utils.log_message(f"Telegram payload preview: {payload}", "DEBUG")
+
     try:
+        # 2. Handle oversized messages
+        if len(payload["text"]) > 4096:
+            chunks = [payload["text"][i:i+4000] for i in range(0, len(payload["text"]), 4000)]
+            for chunk in chunks:
+                requests.post(url, json={**payload, "text": chunk}, timeout=_REQUEST_TIMEOUT_SECONDS).raise_for_status()
+            log_utils.log_message("Message split + sent in chunks.", "INFO")
+            return True
+
+        # 3. Normal send
         response = requests.post(url, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
         log_utils.log_message("Successfully sent message to Telegram.", "INFO")
         return True
+
     except requests.exceptions.RequestException as exc:
-        error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
         log_utils.log_message(
-            f"Failed to send message to Telegram: {error_details}",
-            "ERROR",
+            f"MarkdownV2 send failed ({exc}), retrying as plain text...",
+            "WARN",
         )
-        return False
+        try:
+            # Fallback: no parse_mode
+            plain_payload = {"chat_id": chat_id, "text": message}
+            requests.post(url, json=plain_payload, timeout=_REQUEST_TIMEOUT_SECONDS).raise_for_status()
+            log_utils.log_message("Successfully sent fallback plain-text message.", "INFO")
+            return True
+        except Exception as fallback_exc:
+            error_details = _scrub_sensitive(str(fallback_exc)).strip() or fallback_exc.__class__.__name__
+            log_utils.log_message(
+                f"Failed to send message to Telegram after fallback: {error_details}",
+                "ERROR",
+            )
+            return False
 
 
 def get_updates(*, offset: int | None = None, limit: int = 10, timeout: int = 0) -> list[Dict[str, Any]]:
