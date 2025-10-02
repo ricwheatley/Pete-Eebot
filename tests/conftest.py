@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 
 if "pydantic" not in sys.modules:
-    from pydantic_mock import Field, FieldInfo, SecretStr
+    from mocks.pydantic_mock import Field, FieldInfo, SecretStr
 
     pydantic_module = types.ModuleType("pydantic")
     pydantic_module.Field = Field
@@ -26,7 +26,7 @@ if "pydantic" not in sys.modules:
 
 
 if "pydantic_settings" not in sys.modules:
-    from pydantic_settings_mock import BaseSettings, SettingsConfigDict
+    from mocks.pydantic_settings_mock import BaseSettings, SettingsConfigDict
 
     settings_module = types.ModuleType("pydantic_settings")
     settings_module.BaseSettings = BaseSettings
