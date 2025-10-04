@@ -1,4 +1,4 @@
-﻿"""
+"""
 Centralised config for the entire application.
 
 This module consolidates all configuration settings, loading sensitive values
@@ -118,14 +118,22 @@ class Settings(BaseSettings):
     def log_path(self) -> Path:
         """
         Path for the main application log file.
+    
+        This version is fail-safe: if /var/log/pete_eebot is not writable,
+        it falls back to a local user directory and never raises exceptions.
         """
-        prod_log_dir = Path("/var/log/pete_eebot")
-        if prod_log_dir.exists() and os.access(prod_log_dir, os.W_OK):
-            return prod_log_dir / "pete_history.log"
-        else:
-            local_log_dir = self.PROJECT_ROOT / "logs"
-            local_log_dir.mkdir(exist_ok=True)
-            return local_log_dir / "pete_history.log"
+        try:
+            prod_log_dir = Path("/var/log/pete_eebot")
+            if prod_log_dir.exists() and os.access(prod_log_dir, os.W_OK):
+                return prod_log_dir / "pete_history.log"
+            else:
+                raise PermissionError("No access to /var/log/pete_eebot")
+        except Exception as e:
+            fallback_dir = Path.home() / "pete_logs"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            fallback_path = fallback_dir / "pete_history.log"
+            print(f"[Pete-Eebot] ⚠️ Falling back to {fallback_path} due to: {e}")
+            return fallback_path
 
     @property
     def phrases_path(self) -> Path:
