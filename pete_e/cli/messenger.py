@@ -8,12 +8,6 @@ including running the daily data sync, ingesting new data, and sending
 notifications.
 """
 
-import importlib.util, sys, os
-spec = importlib.util.find_spec("rich")
-print(">>> pytest found rich at:", spec and spec.origin)
-print(">>> cwd =", os.getcwd())
-print(">>> sys.path =", sys.path[:5])
-
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List
 from rich.console import Console
@@ -22,7 +16,6 @@ from rich.text import Text
 from pathlib import Path
 
 from typing_extensions import Annotated
-
 
 import typer
 import re
