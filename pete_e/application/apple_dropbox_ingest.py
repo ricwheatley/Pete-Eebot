@@ -2,7 +2,6 @@
 
 import io
 import json
-import logging
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -13,9 +12,8 @@ from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_parser import AppleHealthParser
 from pete_e.infrastructure.apple_writer import AppleHealthWriter
 
+from pete_e.infrastructure import log_utils
 # British English comments and docstrings.
-
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
 
 
 @dataclass
@@ -61,23 +59,23 @@ def _get_json_from_content(path: str, content_bytes: bytes) -> Optional[Dict]:
     """
     try:
         if path.lower().endswith(".zip"):
-            logging.info(f"Extracting JSON from zip file: {path}")
+            log_utils.info(f"Extracting JSON from zip file: {path}")
             with io.BytesIO(content_bytes) as bio:
                 with zipfile.ZipFile(bio, 'r') as zf:
                     json_files = [f for f in zf.namelist() if f.endswith('.json')]
                     if not json_files:
-                        logging.warning(f"No JSON file found in the zip archive: {path}")
+                        log_utils.warn(f"No JSON file found in the zip archive: {path}")
                         return None
                     with zf.open(json_files[0]) as json_file:
                         return json.load(json_file)
         elif path.lower().endswith(".json"):
-            logging.info(f"Parsing raw JSON file: {path}")
+            log_utils.info(f"Parsing raw JSON file: {path}")
             return json.loads(content_bytes)
         else:
-            logging.warning(f"Unsupported file type encountered: {path}. Only .zip and .json are supported.")
+            log_utils.warn(f"Unsupported file type encountered: {path}. Only .zip and .json are supported.")
             return None
     except (zipfile.BadZipFile, json.JSONDecodeError) as e:
-        logging.error(f"Failed to extract or parse JSON from file {path}: {e}")
+        log_utils.error(f"Failed to extract or parse JSON from file {path}: {e}")
         return None
 
 
@@ -122,13 +120,13 @@ def run_apple_health_ingest() -> ImportReport:
             all_new_files = sorted(new_health_files + new_workout_files, key=lambda item: item[0])
 
             if not all_new_files:
-                logging.info("No new files to import.")
+                log_utils.info("No new files to import.")
                 return ImportReport(sources=[], workouts=0, daily_points=0, hr_days=0, sleep_days=0)
 
-            logging.info(f"Found {len(all_new_files)} new file(s) to process.")
+            log_utils.info(f"Found {len(all_new_files)} new file(s) to process.")
 
             for file_modified_time, file_path in all_new_files:
-                logging.info(f"Processing file: {file_path} (modified: {file_modified_time})")
+                log_utils.info(f"Processing file: {file_path} (modified: {file_modified_time})")
 
                 try:
                     content = client.download_as_bytes(file_path)
@@ -138,7 +136,7 @@ def run_apple_health_ingest() -> ImportReport:
                 json_data = _get_json_from_content(file_path, content)
 
                 if not json_data:
-                    logging.warning(f"Skipping file {file_path} as no JSON data could be extracted.")
+                    log_utils.warn(f"Skipping file {file_path} as no JSON data could be extracted.")
                     continue
 
                 root = {"data": {
@@ -219,14 +217,14 @@ if __name__ == "__main__":
     """Simple CLI runner for convenience."""
     try:
         report = run_apple_health_ingest()
-        logging.info("--- Import Summary ---")
-        logging.info(f"Source files: {', '.join(report.sources)}")
-        logging.info(f"Workouts:     {report.workouts}")
-        logging.info(f"Metric points: {report.daily_points}")
-        logging.info(f"HR days:      {report.hr_days}")
-        logging.info(f"Sleep days:   {report.sleep_days}")
-        logging.info("Import complete.")
+        log_utils.info("--- Import Summary ---")
+        log_utils.info(f"Source files: {', '.join(report.sources)}")
+        log_utils.info(f"Workouts:     {report.workouts}")
+        log_utils.info(f"Metric points: {report.daily_points}")
+        log_utils.info(f"HR days:      {report.hr_days}")
+        log_utils.info(f"Sleep days:   {report.sleep_days}")
+        log_utils.info("Import complete.")
     except (FileNotFoundError, ValueError, IOError) as e:
-        logging.error(f"Import failed: {e}")
+        log_utils.error(f"Import failed: {e}")
         raise SystemExit(1)
 

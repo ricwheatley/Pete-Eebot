@@ -7,14 +7,25 @@ This script provides a single entry point for all major operations,
 including running the daily data sync, ingesting new data, and sending
 notifications.
 """
+
+import importlib.util, sys, os
+spec = importlib.util.find_spec("rich")
+print(">>> pytest found rich at:", spec and spec.origin)
+print(">>> cwd =", os.getcwd())
+print(">>> sys.path =", sys.path[:5])
+
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
+from pathlib import Path
 
 from typing_extensions import Annotated
 
+
 import typer
+import re
 import pathlib
 import psycopg
 import csv
@@ -41,7 +52,6 @@ if TYPE_CHECKING:  # pragma: no cover - import for type checking only
 else:  # pragma: no cover - runtime fallback
     OrchestratorType = object
 
-LOG_FILE = pathlib.Path("/var/log/pete_eebot/pete_history.log")
 
 console = Console()
 
@@ -705,25 +715,98 @@ def withings_exchange_code(code: str) -> None:
         log_utils.log_message(f"Failed to exchange code: {e}", "ERROR")
         raise typer.Exit(code=1)
 
-@app.command(help="View the most recent lines from the Pete-Eebot history log.")
+@app.command(help="View Pete-Eebot logs with color-coded output and optional tag filtering.")
 def logs(
+    tag: str = Argument(
+        None,
+        help="Optional tag to filter by (e.g. HB, SYNC, PLAN). Can also be a number."
+    ),
     number: int = Argument(
         50,
         help="Number of log lines to show (default: 50)."
-    )
+    ),
 ) -> None:
     """
-    Print the last N lines of the Pete-Eebot log file.
+    Print the last N lines of the Pete-Eebot log file, optionally filtered by tag.
+
+    Examples:
+      pete logs               → last 50 lines
+      pete logs 200           → last 200 lines
+      pete logs HB            → last 50 lines containing [HB]
+      pete logs PLAN 100      → last 100 lines containing [PLAN]
     """
-    if not LOG_FILE.exists():
-        typer.echo(f"Log file not found: {LOG_FILE}")
+
+    log_file = settings.log_path  # ← this uses your config property
+
+    if not log_file.exists():
+        console.print(f"[bold red]❌ Log file not found:[/bold red] {log_file}")
         raise typer.Exit(code=1)
 
-    # Read the last N lines efficiently
-    with LOG_FILE.open("r") as f:
+    # Handle case like `pete logs 200`
+    if tag and tag.isdigit():
+        number = int(tag)
+        tag = None
+
+    # Read the file
+    with log_file.open("r", encoding="utf-8") as f:
         lines = f.readlines()
-        for line in lines[-number:]:
-            typer.echo(line.rstrip())
+
+    # Filter by tag if specified
+    if tag:
+        filtered = [line for line in lines if f"[{tag.upper()}]" in line]
+        display_lines = filtered[-number:]
+        console.print(f"\n📜 [bold cyan]Showing last {number} [{tag.upper()}] log lines:[/bold cyan]\n")
+    else:
+        display_lines = lines[-number:]
+        console.print(f"\n📜 [bold cyan]Showing last {number} log lines:[/bold cyan]\n")
+
+    # Regex pattern for parsing logs
+    log_pattern = re.compile(
+        r"^\[(?P<time>.*?)\]\s+\[(?P<level>.*?)\]\s+\[(?P<tag>.*?)\]\s+(?P<msg>.*)"
+    )
+
+    # Color maps
+    level_colors = {
+        "INFO": "green",
+        "WARNING": "yellow",
+        "ERROR": "red",
+        "CRITICAL": "bold red",
+        "DEBUG": "dim cyan",
+    }
+
+    tag_colors = {
+        "HB": "cyan",
+        "SYNC": "bright_blue",
+        "PLAN": "magenta",
+        "BACKUP": "bright_green",
+        "TGRAM": "bright_cyan",
+        "APPLE": "yellow",
+        "SYS": "white",
+        "GEN": "dim",
+    }
+
+    # Print the logs with style
+    for line in display_lines:
+        match = log_pattern.match(line)
+        if not match:
+            console.print(line.rstrip())
+            continue
+
+        time_str = match.group("time")
+        level = match.group("level").upper()
+        tag_str = match.group("tag").upper()
+        msg = match.group("msg")
+
+        level_color = level_colors.get(level, "white")
+        tag_color = tag_colors.get(tag_str, "dim")
+
+        text = Text()
+        text.append(f"[{time_str}] ", style="dim")
+        text.append(f"[{level}] ", style=f"bold {level_color}")
+        text.append(f"[{tag_str}] ", style=f"bold {tag_color}")
+        text.append(msg, style="white")
+
+        console.print(text)
 
 @app.command(help="Run a SQL query against the Pete-Eebot database.")
 def db(

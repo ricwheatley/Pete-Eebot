@@ -1,10 +1,11 @@
 # pete_e/infrastructure/wger_writer.py
 
-import logging
 from typing import Dict, List
 
 import psycopg
 from psycopg import sql
+
+from pete_e.infrastructure import log_utils
 
 
 class WgerWriter:
@@ -46,7 +47,7 @@ class WgerWriter:
 
         with self.conn.cursor() as cur:
             cur.executemany(stmt, values)
-            logging.info(f"Upserted {len(data)} rows into \"{table}\".")
+            log_utils.info(f"Upserted {len(data)} rows into \"{table}\".")
 
     def upsert_categories(self, categories: List[Dict]):
         """Upserts a list of exercise categories."""
@@ -121,7 +122,7 @@ class WgerWriter:
                 secondary_muscle_links.append({"exercise_id": ex_id, "muscle_id": m_id})
 
         with self.conn.cursor() as cur:
-            logging.info(f"Refreshing relationships for {len(exercise_ids)} exercises...")
+            log_utils.info(f"Refreshing relationships for {len(exercise_ids)} exercises...")
             cur.execute('DELETE FROM wger_exercise_equipment WHERE exercise_id = ANY(%s)', (exercise_ids,))
             cur.execute('DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = ANY(%s)', (exercise_ids,))
             cur.execute('DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = ANY(%s)', (exercise_ids,))

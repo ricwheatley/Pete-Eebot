@@ -2,47 +2,20 @@
 #
 # Workout exporter (v3) - exports training week data to Wger with idempotency, validation,
 # retries, diagnostics, dry-run, and configurable behaviour.
-# Logging is integrated with Pete's central logger via pete_e.logging_setup.get_logger().
-# Falls back to a local stdout logger if the central logger is unavailable.
+# Logging uses Pete's tagged logger for consistent structured output.
 
 from __future__ import annotations
 
 import json
 import time
-import logging
 import datetime as dt
 from typing import Any, Dict, List, Optional
 from pete_e.config import get_env, settings
 import requests
 
-# --- logging: prefer central logger, else fall back ---
-def _fallback_get_logger() -> logging.Logger:
-    logger = logging.getLogger("pete_e.history")
-    if not logger.handlers:
-        handler = logging.StreamHandler()
-        fmt = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ")
-        fmt.converter = time.gmtime  # UTC timestamps
-        handler.setFormatter(fmt)
-        logger.addHandler(handler)
-        level = str(get_env("PETE_LOG_LEVEL", default=settings.PETE_LOG_LEVEL)).upper()
-        logger.setLevel(getattr(logging, level, logging.INFO))
-    logger.propagate = False
-    return logger
+from pete_e.logging_setup import get_logger
 
-try:
-    # Your project canonical logger
-    from pete_e.logging_setup import get_logger as _get_logger  # type: ignore
-except Exception:
-    # Historical/alt paths - ignore any import errors and fall back
-    try:
-        from pete_e.logging import get_logger as _get_logger  # type: ignore
-    except Exception:
-        try:
-            from pete_e.config.logging import get_logger as _get_logger  # type: ignore
-        except Exception:
-            _get_logger = _fallback_get_logger  # type: ignore
-
-logger = _get_logger()  # type: ignore
+logger = get_logger("WGER")
 
 # --- DB helpers for validation and export logging ---
 from pete_e.infrastructure.plan_rw import log_wger_export, conn_cursor

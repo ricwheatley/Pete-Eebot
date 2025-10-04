@@ -4,7 +4,6 @@
 Fetch the Wger exercise catalog and upsert it into the PostgreSQL database.
 Also seeds the main lifts and assistance pools after the catalog is refreshed.
 """
-import logging
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -14,9 +13,9 @@ from pete_e.infrastructure.wger_seeder import WgerSeeder
 from pete_e.infrastructure.wger_writer import WgerWriter
 from pete_e.config import get_env, settings
 
-# British English comments and docstrings.
+from pete_e.infrastructure import log_utils
 
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
+# British English comments and docstrings.
 
 BASE = str(get_env("WGER_BASE_URL", default=settings.WGER_BASE_URL)).strip().rstrip("/")
 
@@ -26,7 +25,7 @@ def fetch_all_pages(url: str, params: Optional[Dict[str, Any]] = None) -> List[D
     results: List[Dict[str, Any]] = []
     next_url: Optional[str] = url
     
-    logging.info(f"Fetching all data from {url}...")
+    log_utils.info(f"Fetching all data from {url}...")
     while next_url:
         try:
             r = requests.get(next_url, params=params if next_url == url else None, timeout=60)
@@ -40,13 +39,13 @@ def fetch_all_pages(url: str, params: Optional[Dict[str, Any]] = None) -> List[D
                 results.extend(data)
                 next_url = None
             else:
-                logging.warning("Unexpected API response format. Stopping pagination.")
+                log_utils.warn("Unexpected API response format. Stopping pagination.")
                 break
         except requests.exceptions.RequestException as e:
-            logging.error(f"Failed to fetch data from {next_url}: {e}")
+            log_utils.error(f"Failed to fetch data from {next_url}: {e}")
             raise IOError(f"API request failed for {next_url}") from e
             
-    logging.info(f"Fetched a total of {len(results)} items.")
+    log_utils.info(f"Fetched a total of {len(results)} items.")
     return results
 
 
@@ -71,7 +70,7 @@ def run_wger_catalog_refresh():
     Orchestrates the end-to-end process of refreshing the WGER catalogue.
     Fetches all data from the WGER API and bulk-upserts it into the database.
     """
-    logging.info("Starting WGER catalogue refresh...")
+    log_utils.info("Starting WGER catalogue refresh...")
     
     with get_conn() as conn:
         writer = WgerWriter(conn)
@@ -111,13 +110,13 @@ def run_wger_catalog_refresh():
 
         conn.commit()
     
-    logging.info("WGER catalogue refresh completed successfully.")
+    log_utils.info("WGER catalogue refresh completed successfully.")
 
 
 if __name__ == "__main__":
     try:
         run_wger_catalog_refresh()
     except (IOError, ValueError) as e:
-        logging.error(f"Catalogue refresh failed: {e}")
+        log_utils.error(f"Catalogue refresh failed: {e}")
         sys.exit(1)
 

@@ -1,9 +1,10 @@
 # pete_e/infrastructure/wger_seeder.py
 
-import logging
 from typing import List, Tuple
 
 import psycopg
+
+from pete_e.infrastructure import log_utils
 
 # British English comments and docstrings.
 
@@ -34,10 +35,10 @@ class WgerSeeder:
         Idempotently marks main lifts and inserts assistance pool relationships.
         This should be run after the WGER catalogue is populated.
         """
-        logging.info("Seeding main lifts and assistance pools...")
+        log_utils.info("Seeding main lifts and assistance pools...")
         with self.conn.cursor() as cur:
             # 1. Mark the main lifts
-            logging.info(f"Marking {len(MAIN_LIFT_IDS)} exercises as main lifts.")
+            log_utils.info(f"Marking {len(MAIN_LIFT_IDS)} exercises as main lifts.")
             cur.execute(
                 'UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)',
                 (MAIN_LIFT_IDS,)
@@ -50,10 +51,10 @@ class WgerSeeder:
                     assistance_values.append((main_id, assist_id))
             
             if not assistance_values:
-                logging.warning("No assistance pool data to seed.")
+                log_utils.warn("No assistance pool data to seed.")
                 return
 
-            logging.info(f"Upserting {len(assistance_values)} assistance pool relationships.")
+            log_utils.info(f"Upserting {len(assistance_values)} assistance pool relationships.")
             # Use executemany for efficient batch insertion
             from psycopg import sql
             stmt = sql.SQL("""
@@ -63,4 +64,4 @@ class WgerSeeder:
             """)
             cur.executemany(stmt, assistance_values)
         
-        logging.info("Seeding complete.")
+        log_utils.info("Seeding complete.")
