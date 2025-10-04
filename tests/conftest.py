@@ -276,44 +276,6 @@ if "requests" not in sys.modules:
     sys.modules["requests.exceptions"] = exceptions_module
 
 
-if "rich" not in sys.modules:
-    rich_module = types.ModuleType("rich")
-    console_module = types.ModuleType("rich.console")
-    table_module = types.ModuleType("rich.table")
-
-    class Console:  # pragma: no cover - simple print shim
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def print(self, *args, **kwargs):
-            pass
-
-        def log(self, *args, **kwargs):  # pragma: no cover - message sink
-            pass
-
-    class Table:  # pragma: no cover - data holder used in CLI output
-        def __init__(self, *args, **kwargs):
-            self.rows = []
-
-        def add_column(self, *args, **kwargs):
-            pass
-
-        def add_row(self, *args, **kwargs):
-            self.rows.append(args)
-
-    console_module.Console = Console
-    table_module.Table = Table
-    console_module.__file__ = __file__
-    table_module.__file__ = __file__
-    rich_module.console = console_module
-    rich_module.table = table_module
-    rich_module.__file__ = __file__
-
-    sys.modules["rich"] = rich_module
-    sys.modules["rich.console"] = console_module
-    sys.modules["rich.table"] = table_module
-
-
 if "typer" not in sys.modules:
     typer_module = types.ModuleType("typer")
 

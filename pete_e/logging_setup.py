@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
+import inspect
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,17 @@ LOG_LEVEL_ENV_VAR = "PETE_LOG_LEVEL"
 _logger: Optional[logging.Logger] = None
 _configured: bool = False
 
+class TaggedLogger(logging.LoggerAdapter):
+    """Logger adapter that injects a tag field for structured Pete logs."""
+
+    def process(self, msg, kwargs):
+        # If no 'extra' dict was passed, create one
+        extra = kwargs.get("extra", {})
+        # Insert a default tag if missing
+        if "tag" not in extra:
+            extra["tag"] = self.extra.get("tag", "GEN")
+        kwargs["extra"] = extra
+        return msg, kwargs
 
 def _resolve_level(level: Optional[str]) -> int:
     """Translate a textual level into the numeric value logging expects."""
@@ -37,7 +49,7 @@ def _resolve_level(level: Optional[str]) -> int:
 
 def _build_formatter() -> logging.Formatter:
     formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(message)s",
+        "[%(asctime)s] [%(levelname)s] [%(tag)s] %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%SZ",
     )
     formatter.converter = time.gmtime
@@ -103,13 +115,47 @@ def configure_logging(
     return logger
 
 
-def get_logger() -> logging.Logger:
-    """Return the shared Pete logger, configuring it on first access."""
+def get_logger(tag: str | None = None) -> TaggedLogger:
+    """Return a tagged Pete logger, configuring it on first access."""
+    global _logger
+
+    # Determine caller module name if no tag given
+    if tag is None:
+        frame = inspect.stack()[1]
+        module = inspect.getmodule(frame[0])
+        module_name = getattr(module, "__name__", "unknown")
+        tag = get_tag_for_module(module_name)
 
     if not _configured or _logger is None:
-        return configure_logging()
-    return _logger
+        base_logger = configure_logging()
+    else:
+        base_logger = _logger
 
+    return TaggedLogger(base_logger, {"tag": tag})
+
+# Default tag map per script/module keyword
+TAG_MAP = {
+    "sync": "SYNC",
+    "weekly_calibration": "PLAN",
+    "sprint_rollover": "PLAN",
+    "heartbeat": "HB",
+    "backup": "BACKUP",
+    "check_auth": "AUTH",
+    "telegram": "TGRAM",
+    "dropbox": "APPLE",
+    "apple": "APPLE",
+    "wger": "WGER",
+    "system": "SYS",
+    "monitor": "SYS",
+}
+
+def get_tag_for_module(module_name: str) -> str:
+    """Infer a logging tag from the script or module name."""
+    module_name = module_name.lower()
+    for key, tag in TAG_MAP.items():
+        if key in module_name:
+            return tag
+    return "GEN"  # fallback
 
 def reset_logging() -> None:
     """Tear down handlers so tests can reconfigure the logger cleanly."""

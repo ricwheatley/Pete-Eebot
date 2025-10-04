@@ -1,6 +1,5 @@
 # pete_e/infrastructure/apple_writer.py
 
-import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -21,6 +20,8 @@ from pete_e.infrastructure.apple_parser import (
     WorkoutStepsPoint,
 )
 
+from pete_e.infrastructure import log_utils
+
 
 class AppleHealthWriter:
     """Persists parsed Apple Health data into Postgres using efficient bulk upserts."""
@@ -40,7 +41,7 @@ class AppleHealthWriter:
         if not devices and not metric_types and not workout_types:
             return
 
-        logging.info("Caching reference IDs for devices and types...")
+        log_utils.info("Caching reference IDs for devices and types...")
         with self.conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
             if devices:
                 cur.execute('SELECT name, device_id FROM "Device" WHERE name = ANY(%s)', [list(devices)])
@@ -57,7 +58,7 @@ class AppleHealthWriter:
         if key in cache:
             return cache[key]
 
-        logging.info(f"Creating new entry in \"{table}\" for '{key}'")
+        log_utils.info(f"Creating new entry in \"{table}\" for '{key}'")
         cols = [key_col] + list(kwargs.keys())
         vals = [key] + list(kwargs.values())
         
@@ -108,7 +109,7 @@ class AppleHealthWriter:
             cur.execute("""
                 INSERT INTO "ImportLog" (last_file_processed_at) VALUES (%s)
             """, (latest_file_timestamp,))
-        logging.info(f"Saved new import checkpoint with timestamp: {latest_file_timestamp}")
+        log_utils.info(f"Saved new import checkpoint with timestamp: {latest_file_timestamp}")
 
 
     def _execute_many_upsert(self, table: str, conflict_keys: List[str], update_keys: List[str], data: List[dict]):
@@ -144,7 +145,7 @@ class AppleHealthWriter:
         
         with self.conn.cursor() as cur:
             cur.executemany(stmt, values)
-            logging.info(f"Upserted {len(data)} rows into \"{table}\".")
+            log_utils.info(f"Upserted {len(data)} rows into \"{table}\".")
 
     def _prepare_data_for_bulk_upsert(self, parsed_data: dict):
         """Pre-fetches all foreign key IDs to avoid row-by-row lookups."""
@@ -239,7 +240,7 @@ class AppleHealthWriter:
             return
 
         with self.conn.cursor() as cur:
-            logging.info(f"Calculating and backfilling summary data for {len(workout_ids_in_batch)} workout(s)...")
+            log_utils.info(f"Calculating and backfilling summary data for {len(workout_ids_in_batch)} workout(s)...")
             
             # Calculate and update total active energy
             update_energy_stmt = sql.SQL("""
@@ -254,7 +255,7 @@ class AppleHealthWriter:
                 WHERE w.workout_id = sub.workout_id AND w.total_active_energy_kj IS NULL;
             """)
             cur.execute(update_energy_stmt, (workout_ids_in_batch,))
-            logging.info(f"Updated total active energy for {cur.rowcount} workout(s).")
+            log_utils.info(f"Updated total active energy for {cur.rowcount} workout(s).")
             
             # Calculate and update total distance from granular metrics
             update_distance_stmt = sql.SQL("""
@@ -277,4 +278,4 @@ class AppleHealthWriter:
                     w.workout_id = sub.workout_id AND w.total_distance_km IS NULL;
             """)
             cur.execute(update_distance_stmt, (workout_ids_in_batch,))
-            logging.info(f"Updated total distance for {cur.rowcount} workout(s).")
+            log_utils.info(f"Updated total distance for {cur.rowcount} workout(s).")
