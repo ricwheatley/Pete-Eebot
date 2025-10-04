@@ -1,6 +1,7 @@
-﻿# Pete Eebot
+# Pete Eebot
 
 Pete-Eebot is a personal health and fitness orchestrator. The application ingests data from connected services, persists it in Postgres, analyses daily readiness, and prepares weekly training plans and summaries that can be reviewed or pushed to Telegram, or through Chat GPT with Pierre.
+
 
 ---
 
