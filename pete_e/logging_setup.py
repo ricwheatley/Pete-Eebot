@@ -88,7 +88,10 @@ def configure_logging(
     logger.setLevel(numeric_level)
 
     formatter = _build_formatter()
-    resolved_path = Path(log_path) if log_path else settings.log_path
+    if log_path is not None:
+        resolved_path = Path(log_path)
+    else:
+        resolved_path = settings.log_path
     max_bytes = max_bytes or DEFAULT_MAX_BYTES
     backup_count = backup_count or DEFAULT_BACKUP_COUNT
 
