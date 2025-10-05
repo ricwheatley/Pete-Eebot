@@ -281,10 +281,16 @@ class WgerClient:
         # The 'step' parameter defaults to "na" when omitted or unsupported, so we
         # explicitly set it to "na" here.  Repeat=True applies the rule to all
         # subsequent iterations.
+        #
+        # NOTE: the Wger API validates ``value`` as a decimal string, not an
+        # integer.  Prior versions sent an int which triggered a HTTP 400
+        # validation error when exporting plans.  Converting to ``str`` keeps the
+        # request schema consistent with the repetitions endpoint and unblocks
+        # plan exports.
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": 1,
-            "value": int(sets),
+            "value": str(int(sets)),
             "operation": "r",
             "step": "na",
             "repeat": True,
