@@ -1683,14 +1683,24 @@ class Orchestrator:
                 )
 
         if isinstance(existing_plan, dict) and existing_plan.get("id") is not None:
-            plan_id = int(existing_plan["id"])
-            log_utils.log_message(
-                f"Reusing existing plan {plan_id} starting {next_start.isoformat()}",
-                "INFO",
-            )
+            existing_type = str(existing_plan.get("type", "")).lower()
+            if "strength_test" in existing_type:
+                log_utils.log_message(
+                    f"Existing plan {existing_plan['id']} is a strength test — ignoring and creating new 4-week standard plan.",
+                    "INFO",
+                )
+                plan_id = self.generate_and_deploy_next_plan(start_date=next_start, weeks=weeks)
+                created = plan_id > 0
+            else:
+                plan_id = int(existing_plan["id"])
+                log_utils.log_message(
+                    f"Reusing existing plan {plan_id} starting {next_start.isoformat()}",
+                    "INFO",
+                )
         else:
             plan_id = self.generate_and_deploy_next_plan(start_date=next_start, weeks=weeks)
             created = plan_id > 0
+
             if not created:
                 message = f"Cycle rollover failed to generate plan for {next_start.isoformat()}."
                 log_utils.log_message(message, "ERROR")
