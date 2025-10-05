@@ -106,9 +106,13 @@ def configure_logging(
             file=sys.stderr,
         )
 
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+    # Only add a stream handler if not explicitly disabled.
+    log_to_console = get_env("PETE_LOG_TO_CONSOLE", default="true")
+    if str(log_to_console).lower() in ("true", "1", "yes", "on"):
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+    
     logger.propagate = False
 
     _configured = True
