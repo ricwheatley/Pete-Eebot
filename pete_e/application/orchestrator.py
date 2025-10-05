@@ -1560,15 +1560,15 @@ class Orchestrator:
                     "WARN",
                 )
 
-            if not has_any_plan or not tm_map:
+            # --- Revised logic to enforce 1–4–4–4 cycle ---
+            if not has_any_plan:
+                # First ever plan = strength test
                 should_build_strength_test = True
             elif last_strength_test_date is None:
-                log_utils.log_message(
-                    "No historical strength test date found; scheduling test week.",
-                    "INFO",
-                )
+                # No recorded test yet = run one
                 should_build_strength_test = True
             else:
+                # Count weeks since last test
                 next_strength_test_due = last_strength_test_date + timedelta(
                     weeks=STRENGTH_TEST_INTERVAL_WEEKS
                 )
@@ -1580,6 +1580,10 @@ class Orchestrator:
                         "INFO",
                     )
                     should_build_strength_test = True
+                else:
+                    # Otherwise, continue standard 4-week mesocycle
+                    should_build_strength_test = False
+
 
             # Build and persist the plan in one step
             if should_build_strength_test:
