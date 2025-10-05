@@ -69,6 +69,9 @@ def configure_logging(
     global _logger, _configured
     logger = logging.getLogger(LOGGER_NAME)
 
+    if logger.handlers:
+        return logger
+    
     if force:
         for handler in list(logger.handlers):
             handler.close()
