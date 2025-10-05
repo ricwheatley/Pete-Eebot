@@ -65,33 +65,28 @@ def configure_logging(
     force: bool = False,
 ) -> logging.Logger:
     """Ensure the shared logger has a rotating file handler configured."""
-
     global _logger, _configured
     logger = logging.getLogger(LOGGER_NAME)
 
-    if logger.handlers:
-        return logger
-    
-    if force:
-        for handler in list(logger.handlers):
-            handler.close()
-            logger.removeHandler(handler)
-        _configured = False
-        _logger = None
-
-    if _configured:
+    # respect 'force' and explicit log_path arguments
+    if _configured and not force and log_path is None:
         if level is not None:
             logger.setLevel(_resolve_level(level))
         return logger
+
+    # clear handlers if forced or previously configured
+    if force:
+        for h in list(logger.handlers):
+            h.close()
+            logger.removeHandler(h)
+        _configured = False
+        _logger = None
 
     numeric_level = _resolve_level(level)
     logger.setLevel(numeric_level)
 
     formatter = _build_formatter()
-    if log_path is not None:
-        resolved_path = Path(log_path)
-    else:
-        resolved_path = settings.log_path
+    resolved_path = Path(log_path) if log_path is not None else settings.log_path
     max_bytes = max_bytes or DEFAULT_MAX_BYTES
     backup_count = backup_count or DEFAULT_BACKUP_COUNT
 
@@ -105,7 +100,7 @@ def configure_logging(
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
-    except OSError as exc:  # pragma: no cover - filesystem permissions vary
+    except OSError as exc:
         print(
             f"Pete logger: unable to access log file {resolved_path}: {exc}",
             file=sys.stderr,
@@ -123,7 +118,7 @@ def configure_logging(
 
 def get_logger(tag: str | None = None) -> TaggedLogger:
     """Return a tagged Pete logger, configuring it on first access."""
-    global _logger
+    global _logger, _configured
 
     # Determine caller module name if no tag given
     if tag is None:
@@ -132,11 +127,7 @@ def get_logger(tag: str | None = None) -> TaggedLogger:
         module_name = getattr(module, "__name__", "unknown")
         tag = get_tag_for_module(module_name)
 
-    if _configured and not force and log_path is None:
-        if level is not None:
-            logger.setLevel(_resolve_level(level))
-        return logger
-    
+    base_logger = _logger if _configured and _logger else configure_logging()
     return TaggedLogger(base_logger, {"tag": tag})
 
 # Default tag map per script/module keyword
