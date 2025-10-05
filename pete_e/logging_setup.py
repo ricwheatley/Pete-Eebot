@@ -132,11 +132,11 @@ def get_logger(tag: str | None = None) -> TaggedLogger:
         module_name = getattr(module, "__name__", "unknown")
         tag = get_tag_for_module(module_name)
 
-    if not _configured or _logger is None:
-        base_logger = configure_logging()
-    else:
-        base_logger = _logger
-
+    if _configured and not force and log_path is None:
+        if level is not None:
+            logger.setLevel(_resolve_level(level))
+        return logger
+    
     return TaggedLogger(base_logger, {"tag": tag})
 
 # Default tag map per script/module keyword
