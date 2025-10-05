@@ -168,3 +168,13 @@ def reset_logging() -> None:
         logger.removeHandler(handler)
     _configured = False
     _logger = None
+
+
+if __name__ == "__main__":
+    # When running this module directly, add a console logger for immediate feedback.
+    logger = configure_logging()
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(_build_formatter())
+    logger.addHandler(console_handler)
+    
+    get_logger("SETUP").info("Logging configured with console output for direct execution.")
