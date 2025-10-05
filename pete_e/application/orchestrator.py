@@ -1607,7 +1607,7 @@ class Orchestrator:
                         "WARN",
                     )
 
-            if not should_build_strength_test:
+            if not should_build_strength_test and weeks > 1:
                 try:
                     progression_decision = calibrate_plan_week(
                         self.dal,
@@ -1682,35 +1682,41 @@ class Orchestrator:
                     "ERROR",
                 )
 
+        # --- handle existing plan logic ---
         if isinstance(existing_plan, dict) and existing_plan.get("id") is not None:
             existing_type = str(existing_plan.get("type", "")).lower()
-            if "strength_test" in existing_type:
+            existing_id = int(existing_plan["id"])
+            existing_start = existing_plan.get("start_date")
+
+            # Always rebuild if it's a strength test OR same start date already used
+            if "strength_test" in existing_type or existing_start == next_start:
                 log_utils.log_message(
-                    f"Existing plan {existing_plan['id']} is a strength test — ignoring and creating new 4-week standard plan.",
+                    f"Existing plan {existing_id} is unsuitable (type={existing_type!r}); creating new 4-week standard block.",
                     "INFO",
                 )
                 plan_id = self.generate_and_deploy_next_plan(start_date=next_start, weeks=weeks)
                 created = plan_id > 0
             else:
-                plan_id = int(existing_plan["id"])
+                plan_id = existing_id
                 log_utils.log_message(
-                    f"Reusing existing plan {plan_id} starting {next_start.isoformat()}",
+                    f"Reusing existing 4-week plan {plan_id} starting {next_start.isoformat()}",
                     "INFO",
                 )
         else:
             plan_id = self.generate_and_deploy_next_plan(start_date=next_start, weeks=weeks)
             created = plan_id > 0
 
-            if not created:
-                message = f"Cycle rollover failed to generate plan for {next_start.isoformat()}."
-                log_utils.log_message(message, "ERROR")
-                return CycleRolloverResult(
-                    plan_id=None,
-                    created=False,
-                    exported=False,
-                    start_date=next_start,
-                    message=message,
-                )
+        if not created:
+            message = f"Cycle rollover failed to generate plan for {next_start.isoformat()}."
+            log_utils.log_message(message, "ERROR")
+            return CycleRolloverResult(
+                plan_id=None,
+                created=False,
+                exported=False,
+                start_date=next_start,
+                message=message,
+            )
+
 
         if plan_id is None or plan_id <= 0:
             message = f"Cycle rollover received invalid plan id {plan_id}; aborting export."
