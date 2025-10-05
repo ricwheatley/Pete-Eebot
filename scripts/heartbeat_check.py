@@ -13,7 +13,7 @@ import subprocess
 from pete_e.infrastructure import telegram_sender
 from pete_e.logging_setup import get_logger
 
-SERVICE = "pete_eebot.service"
+SERVICE = "peteeebot.service"
 logger = get_logger("HB") 
 
 def check_service(service: str) -> bool:
