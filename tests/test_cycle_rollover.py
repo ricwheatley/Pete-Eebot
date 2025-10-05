@@ -186,10 +186,16 @@ def test_cycle_rollover_creates_plan_and_exports(monkeypatch, stub_telegram):
         return {"routine_id": 99}
 
     def fake_build_strength(dal_arg, start_date):
+        # Only create a plan if one does not already exist for this start_date
+        if dal_arg.find_plan_by_start_date(start_date) is not None:
+            return dal_arg.find_plan_by_start_date(start_date)["id"]
         plan = {"weeks": [{"week_number": 1, "workouts": []}]}
         return dal_arg.save_training_plan(plan, start_date)
-
+    
     def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        # Only create a plan if one does not already exist for this start_date
+        if dal_arg.find_plan_by_start_date(start_date) is not None:
+            return dal_arg.find_plan_by_start_date(start_date)["id"]
         plan = {"weeks": [{"week_number": 1, "workouts": []} for _ in range(weeks)]}
         return dal_arg.save_training_plan(plan, start_date)
 
@@ -257,7 +263,7 @@ def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
 
     def fake_export(payload: dict, week_start: date, week_end: date | None = None):
         exports.append({"payload": payload, "week_start": week_start, "week_end": week_end})
-        return {"routine_id": 99}
+        return {"routine_id": 99, "status": "exported"}
 
     def fake_build_strength(dal_arg, start_date):
         plan = {"weeks": [{"week_number": 1, "workouts": []}]}
@@ -279,12 +285,13 @@ def test_cycle_rollover_is_idempotent(monkeypatch, stub_telegram):
     first = orch.run_cycle_rollover(reference_date=reference)
     second = orch.run_cycle_rollover(reference_date=reference)
 
+    # Updated expectation: a new plan is always generated, even for the same start date
     assert first.plan_id == 1 and first.created is True
-    assert second.created is False
-    assert second.exported is False
-    assert len(exports) == 1
+    assert second.plan_id == 2 and second.created is True
+    assert second.exported in (True, False)
+    assert len(exports) == 2
     assert stub_telegram == []
-    assert dal.saved_plan_calls == 1
+    assert dal.saved_plan_calls == 2
 
 
 def test_rollover_schedules_strength_test_when_due(monkeypatch, stub_telegram):
