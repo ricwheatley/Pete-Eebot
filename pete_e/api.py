@@ -210,6 +210,18 @@ def logs(
 
     return {"path": str(log_path), "lines": tail}
 
+@app.post("/run_pete_plan_async")
+async def run_pete_plan_async(
+    request: Request,
+    weeks: int = Query(1),
+    start_date: str = Query(...),
+    x_api_key: str = Header(None),
+):
+    validate_api_key(request, x_api_key)
+    subprocess.Popen(["pete", "plan", "--weeks", str(weeks), "--start-date", start_date])
+    return {"status": "Started", "weeks": weeks, "start_date": start_date}
+
+
 @app.post("/webhook")
 async def github_webhook(request: Request):
     """
