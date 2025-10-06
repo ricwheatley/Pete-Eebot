@@ -2,6 +2,7 @@
 Main orchestrator for Pete-Eebot's core logic.
 """
 from __future__ import annotations
+import os
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -1503,19 +1504,19 @@ class Orchestrator:
 
         Notes
         -----
-        Only 4-week blocks are currently supported. Requests for a different
-        duration are rejected to avoid implying that variable-length plans are
-        available.
+        Strength-test (1-week) plans and standard 4-week blocks are supported.
+        Other durations are rejected to avoid implying that arbitrary lengths
+        are available.
         """
         log_utils.log_message(
             f"Generating new {weeks}-week plan starting {start_date.isoformat()}",
             "INFO"
         )
 
-        if weeks != 4:
+        if weeks not in (1, 4):
             log_utils.log_message(
                 "Requested plan length of "
-                f"{weeks} weeks is not supported (only 4-week plans are available).",
+                f"{weeks} weeks is not supported (only 1- or 4-week plans are available).",
                 "ERROR",
             )
             return -1
@@ -1524,6 +1525,9 @@ class Orchestrator:
             should_build_strength_test = False
             has_any_plan = True
             last_strength_test_date: date | None = None
+
+            cli_mode = (os.getenv("PETE_CLI_MODE") or "").strip().lower()
+            explicit_cli_request = cli_mode == "plan"
 
             plan_checker = getattr(self.dal, "has_any_plan", None)
             if callable(plan_checker):
@@ -1560,29 +1564,32 @@ class Orchestrator:
                     "WARN",
                 )
 
-            # --- Revised logic to enforce 1–4–4–4 cycle ---
-            if not has_any_plan:
-                # First ever plan = strength test
-                should_build_strength_test = True
-            elif last_strength_test_date is None:
-                # No recorded test yet = run one
-                should_build_strength_test = True
+            # --- Strength test vs block selection ---
+            if explicit_cli_request:
+                should_build_strength_test = weeks == 1
             else:
-                # Count weeks since last test
-                next_strength_test_due = last_strength_test_date + timedelta(
-                    weeks=STRENGTH_TEST_INTERVAL_WEEKS
-                )
-                if start_date >= next_strength_test_due:
-                    log_utils.log_message(
-                        "Strength test due based on last test "
-                        f"{last_strength_test_date.isoformat()} and "
-                        f"{STRENGTH_TEST_INTERVAL_WEEKS}-week interval.",
-                        "INFO",
-                    )
+                if not has_any_plan:
+                    # First ever plan = strength test
+                    should_build_strength_test = True
+                elif last_strength_test_date is None:
+                    # No recorded test yet = run one
                     should_build_strength_test = True
                 else:
-                    # Otherwise, continue standard 4-week mesocycle
-                    should_build_strength_test = False
+                    # Count weeks since last test
+                    next_strength_test_due = last_strength_test_date + timedelta(
+                        weeks=STRENGTH_TEST_INTERVAL_WEEKS
+                    )
+                    if start_date >= next_strength_test_due:
+                        log_utils.log_message(
+                            "Strength test due based on last test "
+                            f"{last_strength_test_date.isoformat()} and "
+                            f"{STRENGTH_TEST_INTERVAL_WEEKS}-week interval.",
+                            "INFO",
+                        )
+                        should_build_strength_test = True
+                    else:
+                        # Otherwise, continue standard 4-week mesocycle
+                        should_build_strength_test = False
 
 
             # Build and persist the plan in one step
@@ -1590,8 +1597,8 @@ class Orchestrator:
                 plan_id = build_strength_test(self.dal, start_date)
                 plan_kind = "strength test"
             else:
-                plan_id = build_block(self.dal, start_date)
-                plan_kind = f"{weeks}-week block"
+                plan_id = build_block(self.dal, start_date, weeks=weeks)
+                plan_kind = "4-week block" if weeks == 4 else f"{weeks}-week block"
 
             log_utils.log_message(
                 f"Successfully saved new {plan_kind} plan with ID: {plan_id}", "INFO"

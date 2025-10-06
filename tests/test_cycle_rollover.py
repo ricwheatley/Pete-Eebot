@@ -412,6 +412,85 @@ def test_generate_plan_rejects_unsupported_length(monkeypatch):
     assert orch.dal.refresh_called is False
 
 
+def test_cli_plan_weeks_one_builds_strength_test(monkeypatch):
+    start = date(2025, 10, 6)
+    dal = FakeDal()
+
+    strength_calls: list[date] = []
+    block_calls: list[tuple[date, int]] = []
+    push_calls: list[tuple[int, int, date]] = []
+
+    def fake_build_strength(dal_arg, start_date):
+        strength_calls.append(start_date)
+        return dal_arg.save_training_plan({"weeks": [{"week_number": 1, "workouts": []}]}, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        block_calls.append((start_date, weeks))
+        return dal_arg.save_training_plan(
+            {"weeks": [{"week_number": idx + 1, "workouts": []} for idx in range(weeks)]}, start_date
+        )
+
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max", lambda: {}, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max_date", lambda: start - timedelta(weeks=12), raising=False)
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        lambda dal_arg, plan_id, week, start_date: push_calls.append((plan_id, week, start_date))
+        or {"status": "exported"},
+        raising=False,
+    )
+
+    monkeypatch.setenv("PETE_CLI_MODE", "plan")
+
+    orch = Orchestrator(dal=dal)
+    plan_id = orch.generate_and_deploy_next_plan(start_date=start, weeks=1)
+
+    assert plan_id > 0
+    assert strength_calls == [start]
+    assert block_calls == []
+    assert dal._plans_by_start[start]["weeks"] == 1
+    assert push_calls == [(plan_id, 1, start)]
+
+
+def test_cli_plan_weeks_four_builds_block(monkeypatch):
+    start = date(2025, 10, 6)
+    dal = FakeDal()
+
+    strength_calls: list[date] = []
+    block_calls: list[tuple[date, int]] = []
+
+    def fake_build_strength(dal_arg, start_date):  # pragma: no cover - should not run
+        strength_calls.append(start_date)
+        return dal_arg.save_training_plan({"weeks": [{"week_number": 1, "workouts": []}]}, start_date)
+
+    def fake_build_block(dal_arg, start_date, weeks: int = 4):
+        block_calls.append((start_date, weeks))
+        return dal_arg.save_training_plan(
+            {"weeks": [{"week_number": idx + 1, "workouts": []} for idx in range(weeks)]}, start_date
+        )
+
+    monkeypatch.setattr(orchestrator_module, "build_strength_test", fake_build_strength, raising=False)
+    monkeypatch.setattr(orchestrator_module, "build_block", fake_build_block, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max", lambda: {}, raising=False)
+    monkeypatch.setattr(orchestrator_module.plan_rw, "latest_training_max_date", lambda: start - timedelta(weeks=1), raising=False)
+    monkeypatch.setattr(
+        orchestrator_module.wger_sender,
+        "push_week",
+        lambda *args, **kwargs: {"status": "exported"},
+        raising=False,
+    )
+
+    monkeypatch.setenv("PETE_CLI_MODE", "plan")
+
+    orch = Orchestrator(dal=dal)
+    plan_id = orch.generate_and_deploy_next_plan(start_date=start, weeks=4)
+
+    assert plan_id > 0
+    assert strength_calls == []
+    assert block_calls == [(start, 4)]
+    assert dal._plans_by_start[start]["weeks"] == 4
 def test_cycle_rollover_rejects_unsupported_length(monkeypatch, stub_telegram):
     build_calls: list[tuple[object, ...]] = []
 

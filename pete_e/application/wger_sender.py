@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 import hashlib
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from pete_e.domain.validation import (
     ValidationDecision,
@@ -35,6 +35,42 @@ def _summarize_adherence(adherence_snapshot: Optional[Dict[str, Any]]) -> str:
 def _payload_checksum(payload: Dict[str, Any]) -> str:
     body = json.dumps(payload, sort_keys=True)
     return hashlib.sha1(body.encode("utf-8")).hexdigest()
+
+def _normalise_weight(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _flatten_week_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    plan_id = payload.get("plan_id")
+    week_number = payload.get("week_number")
+    sets: List[Dict[str, Any]] = []
+    order = 1
+    for day in payload.get("days", []):
+        dow = int(day.get("day_of_week", 0) or 0)
+        exercises = day.get("exercises", [])
+        for exercise in exercises:
+            entry = {
+                "day_of_week": dow,
+                "exercise_base": exercise.get("exercise"),
+                "sets": exercise.get("sets"),
+                "reps": exercise.get("reps"),
+                "weight": _normalise_weight(exercise.get("target_weight_kg")),
+                "order": order,
+                "comment": (exercise.get("comment") or "").strip(),
+            }
+            sets.append(entry)
+            order += 1
+    return {
+        "plan_id": plan_id,
+        "week_number": week_number,
+        "sets": sets,
+    }
+
 
 def push_week(
     dal: DataAccessLayer,
@@ -78,20 +114,27 @@ def push_week(
         return {"status": "skipped", "reason": "already-exported"}
 
     payload = build_week_payload(plan_id, week)
-    checksum = _payload_checksum(payload)
+    flattened_payload = _flatten_week_payload(payload)
+    checksum = _payload_checksum(flattened_payload)
+
+    try:
+        payload_json = json.dumps(flattened_payload, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        payload_json = str(flattened_payload)
+    log_utils.log_message(f"[DEBUG] [WGER] Payload: {payload_json}", "DEBUG")
 
     response: Any
     result_status: Dict[str, Any]
     try:
         response = export_week_to_wger(
-            payload,
+            flattened_payload,
             week_start=start_date,
             week_end=start_date + timedelta(days=6),
         )
         result_status = {"status": "exported", "response": response, "checksum": checksum}
     except Exception as exc:
         log_utils.log_message(
-            f"Failed to export plan {plan_id} week {week} to Wger: {exc}",
+            f"[ERROR] [WGER] Export failed for plan {plan_id} week {week}: {exc}",
             "ERROR",
         )
         raise
@@ -106,11 +149,18 @@ def push_week(
     if callable(recorder):
         routine_id = response.get("routine_id") if isinstance(response, dict) else None
         try:
-            recorder(plan_id, week, payload, response if isinstance(response, dict) else None, routine_id)
+            recorder(
+                plan_id,
+                week,
+                flattened_payload,
+                response if isinstance(response, dict) else None,
+                routine_id,
+            )
         except Exception as exc:
             log_utils.log_message(
                 f"Failed to record Wger export log for plan {plan_id} week {week}: {exc}",
                 "WARN",
             )
 
+    log_utils.log_message("[WGER] Exported successfully.", "INFO")
     return result_status
