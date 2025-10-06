@@ -79,7 +79,31 @@ def test_push_week_exports_through_unified_path(monkeypatch):
 
     def fake_payload(plan_id: int, week_number: int) -> Dict[str, Any]:
         built_payloads.append((plan_id, week_number))
-        return {"plan_id": plan_id, "week_number": week_number, "days": []}
+        return {
+            "plan_id": plan_id,
+            "week_number": week_number,
+            "days": [
+                {
+                    "day_of_week": 1,
+                    "exercises": [
+                        {
+                            "exercise": 101,
+                            "sets": 3,
+                            "reps": 5,
+                            "comment": "RIR 2",
+                            "target_weight_kg": 100.0,
+                        },
+                        {
+                            "exercise": 202,
+                            "sets": 4,
+                            "reps": 8,
+                            "comment": "70%",
+                            "target_weight_kg": None,
+                        },
+                    ],
+                }
+            ],
+        }
 
     exports: List[Dict[str, Any]] = []
 
@@ -98,8 +122,23 @@ def test_push_week_exports_through_unified_path(monkeypatch):
     assert built_payloads == [(42, 2)]
     assert exports and exports[0]["week_start"] == date(2025, 1, 6)
     assert dal.recorded and dal.recorded[0][0:2] == (42, 2)
+
+    exported_payload = exports[0]["payload"]
+    assert "sets" in exported_payload and len(exported_payload["sets"]) == 2
+    orders = [item["order"] for item in exported_payload["sets"]]
+    assert orders == [1, 2]
+    first = exported_payload["sets"][0]
+    assert first["exercise_base"] == 101
+    assert first["day_of_week"] == 1
+    assert first["weight"] == pytest.approx(100.0)
+
+    recorded_payload = dal.recorded[0][2]
+    assert "sets" in recorded_payload
+
     assert any("Adjustments: severity=none" in msg for _, msg in logs)
     assert any("Adherence ratio 0.75" in msg for _, msg in logs)
+    assert any("[DEBUG] [WGER] Payload" in msg for _, msg in logs)
+    assert any("[WGER] Exported successfully." in msg for _, msg in logs)
 
 
 def test_push_week_skips_if_already_exported(monkeypatch):
