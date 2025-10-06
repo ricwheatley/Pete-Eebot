@@ -417,6 +417,9 @@ def build_week_payload(plan_id: int, week_number: int) -> Dict[str, Any]:
             "sets": r["sets"],
             "reps": r["reps"],
             "comment": comment,
+            "target_weight_kg": r.get("target_weight_kg"),
+            "rir": r.get("rir"),
+            "percent_1rm": r.get("percent_1rm"),
         }
         days.setdefault(r["day_of_week"], []).append(ex)
 

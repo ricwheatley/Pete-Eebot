@@ -8,6 +8,7 @@ including running the daily data sync, ingesting new data, and sending
 notifications.
 """
 
+import os
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List
 from rich.console import Console
@@ -550,7 +551,16 @@ def plan(
 
     log_utils.log_message("Invoking plan generator...", "INFO")
     orchestrator = _build_orchestrator()
-    plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
+
+    previous_mode = os.environ.get("PETE_CLI_MODE")
+    os.environ["PETE_CLI_MODE"] = "plan"
+    try:
+        plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
+    finally:
+        if previous_mode is None:
+            os.environ.pop("PETE_CLI_MODE", None)
+        else:
+            os.environ["PETE_CLI_MODE"] = previous_mode
 
     if plan_id > 0:
         log_utils.log_message(f"New plan (ID: {plan_id}) deployed successfully!", "INFO")

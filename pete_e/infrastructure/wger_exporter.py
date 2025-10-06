@@ -357,12 +357,82 @@ def _pretty(obj: Any) -> str:
     except Exception:
         return str(obj)
 
+
+def _normalise_week_payload(week_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return payload with explicit days/exercises, supporting flattened sets input."""
+
+    if "days" in week_payload:
+        return week_payload
+
+    sets = week_payload.get("sets")
+    if sets is None:
+        return week_payload
+    if not isinstance(sets, list):
+        raise WgerError("Invalid sets payload: expected a list under 'sets'.")
+
+    day_map: Dict[int, List[tuple[int, Dict[str, Any]]]] = {}
+    for item in sets:
+        if not isinstance(item, dict):
+            raise WgerError("Invalid sets payload: expected dict entries.")
+
+        exercise_id = item.get("exercise_base")
+        if exercise_id is None:
+            raise WgerError("Sets payload missing 'exercise_base'.")
+
+        try:
+            exercise_id_int = int(exercise_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            raise WgerError(f"Invalid exercise_base value: {exercise_id!r}") from exc
+
+        order_raw = item.get("order", 0)
+        try:
+            order_int = int(order_raw)
+        except Exception:
+            order_int = 0
+
+        dow_raw = item.get("day_of_week", 1)
+        try:
+            dow_int = int(dow_raw)
+            if dow_int == 0:
+                dow_int = 1
+        except Exception:
+            dow_int = 1
+
+        entry: Dict[str, Any] = {
+            "exercise": exercise_id_int,
+            "sets": item.get("sets"),
+            "reps": item.get("reps"),
+            "comment": item.get("comment"),
+        }
+
+        if "weight" in item:
+            entry["target_weight_kg"] = item.get("weight")
+        if "rir" in item:
+            entry["rir"] = item.get("rir")
+        if "percent_1rm" in item:
+            entry["percent_1rm"] = item.get("percent_1rm")
+
+        day_map.setdefault(dow_int, []).append((order_int, entry))
+
+    days: List[Dict[str, Any]] = []
+    for dow, entries in sorted(day_map.items(), key=lambda pair: pair[0]):
+        ordered = [item for _, item in sorted(entries, key=lambda pair: pair[0])]
+        days.append({"day_of_week": dow, "exercises": ordered})
+
+    return {
+        "plan_id": week_payload.get("plan_id"),
+        "week_number": week_payload.get("week_number", 1),
+        "days": days,
+    }
+
 def _validate_exercises_exist_locally(week_payload: Dict[str, Any]) -> None:
     """
     Ensure all exercise IDs in week_payload exist in the local wger_exercise catalogue.
     """
+    normalised = _normalise_week_payload(dict(week_payload))
+
     ex_ids = set()
-    for d in week_payload.get("days", []):
+    for d in normalised.get("days", []):
         for ex in d.get("exercises", []):
             if ex.get("exercise") is not None:
                 try:
@@ -433,21 +503,28 @@ def export_week_to_wger(
     """
     # Validate up front
     _validate_exercises_exist_locally(week_payload)
+    normalised_payload = _normalise_week_payload(dict(week_payload))
 
     week_end = week_end or (week_start + dt.timedelta(days=6))
     r_name = routine_name or routine_name_for_date(week_start, routine_prefix)
     r_desc = routine_desc or "Auto-scheduled by Pete-Eebot"
-    week_number = int(week_payload.get("week_number", 1))
-    plan_id = week_payload.get("plan_id")
+    week_number = int(normalised_payload.get("week_number", 1))
+    plan_id = normalised_payload.get("plan_id")
 
     logger.info(f"[wger_export] preparing export for plan {plan_id} week {week_number} ({r_name})")
-    logger.debug(f"[wger_export] payload:\n{_pretty(week_payload)}")
+    logger.debug(f"[wger_export] payload:\n{_pretty(normalised_payload)}")
 
     if dry_run:
         logger.info("[wger_export] dry-run mode enabled, skipping Wger calls.")
         created = {"routine_id": None, "week_id": None, "days": [], "dry_run": True}
         try:
-            log_wger_export(plan_id, week_number, week_payload, {"name": r_name, "description": r_desc, "start": str(week_start), "end": str(week_end)}, routine_id=None)
+            log_wger_export(
+                plan_id,
+                week_number,
+                normalised_payload,
+                {"name": r_name, "description": r_desc, "start": str(week_start), "end": str(week_end)},
+                routine_id=None,
+            )
         except Exception as e:
             logger.warning(f"Failed to write export log in dry-run: {e}")
         return created
@@ -475,7 +552,7 @@ def export_week_to_wger(
             logger.warning(f"Failed to list or delete existing days: {exc}")
 
     # 3) Days and slots - idempotent, find-or-create where possible (without week/session)
-    ordered_days = sorted(week_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
+    ordered_days = sorted(normalised_payload.get("days", []), key=lambda d: int(d.get("day_of_week", 0)))
     created: Dict[str, Any] = {"routine_id": routine_id, "days": []}
 
     day_order = 1
@@ -561,7 +638,7 @@ def export_week_to_wger(
 
     # 4) Export log with routine meta
     try:
-        log_wger_export(plan_id, week_number, week_payload, {"id": routine_id, "name": r_name}, routine_id=routine_id)
+        log_wger_export(plan_id, week_number, normalised_payload, {"id": routine_id, "name": r_name}, routine_id=routine_id)
     except Exception as e:
         logger.warning(f"[wger_export] failed to write export log: {e}")
 
