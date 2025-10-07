@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
+from pete_e.utils import converters
 
 
 # Windows are expressed in days to avoid calendar edge cases.
@@ -101,20 +102,6 @@ class MuscleBalanceReport:
     tolerance: float
 
 
-def _ensure_date(value: Any) -> Optional[date]:
-    '''Best effort conversion to date.'''
-    if isinstance(value, date):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
-
 def _resolve_plan_context(dal: Any, week_start_date: date) -> Optional[Tuple[int, date]]:
     get_active_plan = getattr(dal, 'get_active_plan', None)
     plan: Optional[Dict[str, Any]] = None
@@ -125,7 +112,7 @@ def _resolve_plan_context(dal: Any, week_start_date: date) -> Optional[Tuple[int
             plan = None
     if plan:
         plan_id = plan.get('id')
-        start_date = _ensure_date(plan.get('start_date'))
+        start_date = converters.to_date(plan.get('start_date'))
         if plan_id is not None and start_date is not None:
             return int(plan_id), start_date
 
@@ -137,7 +124,7 @@ def _resolve_plan_context(dal: Any, week_start_date: date) -> Optional[Tuple[int
             plan = None
         if plan:
             plan_id = plan.get('id')
-            start_date = _ensure_date(plan.get('start_date')) or week_start_date
+            start_date = converters.to_date(plan.get('start_date')) or week_start_date
             if plan_id is not None and start_date is not None:
                 return int(plan_id), start_date
     return None
@@ -392,9 +379,9 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
     if week_count != _EXPECTED_PLAN_WEEKS:
         errors.append(f'plan must contain {_EXPECTED_PLAN_WEEKS} weeks, found {week_count}')
 
-    canonical_start = _ensure_date(block_start_date)
+    canonical_start = converters.to_date(block_start_date)
     if canonical_start is None and weeks:
-        canonical_start = _ensure_date(weeks[0].get('start_date'))
+        canonical_start = converters.to_date(weeks[0].get('start_date'))
     if canonical_start is None:
         errors.append('unable to determine canonical start date for plan')
 
@@ -406,7 +393,7 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
         if week_number != idx:
             errors.append(f'{prefix}: expected week_number {idx}, found {week_number}')
 
-        week_start = _ensure_date(week.get('start_date'))
+        week_start = converters.to_date(week.get('start_date'))
         if week_start is None:
             errors.append(f'{prefix}: missing or invalid start_date')
         elif canonical_start is not None:
