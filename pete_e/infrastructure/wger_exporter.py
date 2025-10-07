@@ -302,7 +302,7 @@ class WgerClient:
             "slot_entry": slot_entry_id,
             "iteration": 1,
             # repetitions API accepts decimal strings
-            "value": int(reps),
+            "value": str(int(reps)),
             "operation": "r",
             "step": "na",
             "repeat": True,
