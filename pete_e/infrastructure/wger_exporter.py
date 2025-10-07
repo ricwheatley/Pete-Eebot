@@ -290,7 +290,7 @@ class WgerClient:
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": 1,
-            "value": str(int(sets)),
+            "value": int(sets),
             "operation": "r",
             "step": "na",
             "repeat": True,
@@ -302,7 +302,7 @@ class WgerClient:
             "slot_entry": slot_entry_id,
             "iteration": 1,
             # repetitions API accepts decimal strings
-            "value": str(int(reps)),
+            "value": int(reps),
             "operation": "r",
             "step": "na",
             "repeat": True,
