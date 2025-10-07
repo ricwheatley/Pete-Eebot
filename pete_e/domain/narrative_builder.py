@@ -10,6 +10,7 @@ from pete_e.domain.phrase_picker import random_phrase as phrase_for
 from pete_e.domain import narrative_utils
 from pete_e.config import settings
 from pete_e.infrastructure.log_utils import log_message
+from pete_e.utils import converters, formatters, helpers
 
 
 _DAY_NAMES = {
@@ -72,26 +73,6 @@ class CoachMessage:
                     lines.append(stripped)
         return "\n".join(lines).strip()
 
-def _choose_from(options: List[str], default: str = "") -> str:
-    if not options:
-        return default
-    try:
-        return random.choice(options)
-    except IndexError:
-        return default or options[0]
-
-def _coerce_date(value: Any) -> date | None:
-    if isinstance(value, date):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
 def _safe_phrase(tags: List[str], fallback: str) -> str:
     try:
         phrase = phrase_for(tags=tags)
@@ -119,14 +100,6 @@ def _closing_phrases(
         if secondary:
             closers.append(secondary)
     return closers
-
-def _ensure_sentence(text: str) -> str:
-    body = (text or "").strip()
-    if not body:
-        return body
-    if body[-1] not in ".!?":
-        body = f"{body}."
-    return body
 
 @dataclass(frozen=True)
 class _TrendMetric:
@@ -206,7 +179,7 @@ def _collect_trend_series(
         if isinstance(day, datetime):
             day = day.date()
         elif not isinstance(day, date):
-            day = _coerce_date(day)
+            day = converters.to_date(day)
         if not isinstance(day, date):
             continue
         if not isinstance(payload, Mapping):
@@ -301,7 +274,7 @@ def compute_trend_lines(
         if isinstance(day, datetime):
             day = day.date()
         elif not isinstance(day, date):
-            day = _coerce_date(day)
+            day = converters.to_date(day)
         if not isinstance(day, date):
             continue
         if not isinstance(payload, Mapping):
@@ -318,7 +291,7 @@ def compute_trend_lines(
     for metric in _TREND_METRICS:
         line = _build_trend_line(metric, normalized, target_day)
         if line:
-            lines.append(_ensure_sentence(line))
+            lines.append(formatters.ensure_sentence(line))
 
     if limit is not None:
         lines = lines[:limit]
@@ -340,7 +313,7 @@ def _to_int(value: Any) -> int | None:
 def _format_daily_heading(day_value: date | None) -> str:
     if day_value is None:
         return "*Daily Flex*"
-    template = _choose_from(_DAILY_HEADINGS, "*{weekday} {day} {month}: Daily Flex*")
+    template = helpers.choose_from(_DAILY_HEADINGS, "*{weekday} {day} {month}: Daily Flex*")
     context = {
         "weekday": day_value.strftime("%A"),
         "day": day_value.strftime("%d"),
@@ -646,11 +619,11 @@ def _format_readiness_line(summary_data: Dict[str, Any]) -> str | None:
     if not headline and not tip:
         return None
     if headline and tip:
-        return _ensure_sentence(f"Coach's call: {headline} - {tip}")
+        return formatters.ensure_sentence(f"Coach's call: {headline} - {tip}")
     if headline:
-        return _ensure_sentence(f"Coach's call: {headline}")
+        return formatters.ensure_sentence(f"Coach's call: {headline}")
     if tip:
-        return _ensure_sentence(f"Coach's call: {tip}")
+        return formatters.ensure_sentence(f"Coach's call: {tip}")
     return None
 
 
@@ -680,7 +653,7 @@ def _format_environment_line(summary_data: Dict[str, Any]) -> str | None:
 
 def _no_daily_metrics_message() -> str:
     message = CoachMessage(
-        greeting=_choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
+        greeting=helpers.choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
         heading="*Daily Flex*",
         bullets=["- No fresh metrics landed – give your trackers a sync and shout me once it's in."],
         closers=_closing_phrases(["#Consistency"], "Consistency is queen, volume is king!"),
@@ -699,7 +672,7 @@ def _clean_number(raw: Any) -> str:
 def _format_weekly_heading(week_number: int, week_start: date | None) -> str:
     if week_start is None:
         return f"*Week {week_number} Game Plan*"
-    template = _choose_from(_WEEKLY_HEADINGS, "*Week {week} Game Plan · {start} → {end}*")
+    template = helpers.choose_from(_WEEKLY_HEADINGS, "*Week {week} Game Plan · {start} → {end}*")
     week_end = week_start + timedelta(days=6)
     return template.format(
         week=week_number,
@@ -755,7 +728,7 @@ def _format_rest_line(rest_days: List[str]) -> str | None:
 
 def _no_plan_message(week_number: int) -> str:
     message = CoachMessage(
-        greeting=_choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
+        greeting=helpers.choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
         heading=f"*Week {week_number} Game Plan*",
         bullets=["- I couldn't find workouts for this week – ping me once the plan's loaded."],
         closers=_closing_phrases(["#Motivation"], "We'll build the week the moment data lands."),
@@ -843,7 +816,7 @@ def build_weekly_narrative(metrics: Dict[str, Any]) -> str:
     all_dates = sorted(days.keys())
     sample_pairs: List[tuple[date, Dict[str, Any]]] = []
     for iso_day in all_dates:
-        parsed_day = _coerce_date(iso_day)
+        parsed_day = converters.to_date(iso_day)
         if parsed_day is None:
             continue
         payload = days.get(iso_day)
@@ -1054,7 +1027,7 @@ def build_weekly_plan_summary(
     )
 
     message = CoachMessage(
-        greeting=_choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
+        greeting=helpers.choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
         heading=_format_weekly_heading(week_number, week_start),
         bullets=bullets,
         narrative=[],
@@ -1134,7 +1107,7 @@ class NarrativeBuilder:
             return _no_daily_metrics_message()
 
         snapshot = dict(summary_data)
-        day_value = _coerce_date(snapshot.get("date"))
+        day_value = converters.to_date(snapshot.get("date"))
         heading = _format_daily_heading(day_value)
 
         bullet_lines: List[str] = []
@@ -1164,7 +1137,7 @@ class NarrativeBuilder:
         )
 
         message = CoachMessage(
-            greeting=_choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
+            greeting=helpers.choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
             heading=heading,
             bullets=bullet_lines,
             narrative=narrative,
