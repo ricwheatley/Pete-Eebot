@@ -119,6 +119,18 @@ class MockableDal(DataAccessLayer):
             "current_block": current_block,
         }
 
+    def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
+        return None
+
+    def update_training_cycle_state(
+        self,
+        cycle_id: int,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Optional[Dict[str, Any]]:
+        return None
+
     # ------------------------------------------------------------------
     # Muscle volume comparison
     # ------------------------------------------------------------------
