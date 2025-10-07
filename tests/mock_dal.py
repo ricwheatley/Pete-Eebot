@@ -102,6 +102,23 @@ class MockableDal(DataAccessLayer):
     def mark_plan_active(self, plan_id: int) -> None:
         pass
 
+    def deactivate_active_training_cycles(self) -> None:
+        pass
+
+    def create_training_cycle(
+        self,
+        start_date: date,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Dict[str, Any]:
+        return {
+            "id": 0,
+            "start_date": start_date,
+            "current_week": current_week,
+            "current_block": current_block,
+        }
+
     # ------------------------------------------------------------------
     # Muscle volume comparison
     # ------------------------------------------------------------------
