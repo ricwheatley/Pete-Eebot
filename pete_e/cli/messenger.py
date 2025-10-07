@@ -31,6 +31,7 @@ from pete_e.infrastructure.db_conn import get_database_url
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.application.wger_sender import push_week
 from pete_e.domain import body_age, narrative_builder
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
@@ -38,6 +39,7 @@ from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.cli.telegram import telegram as telegram_command
 from pete_e.config import settings
+from pete_e.domain.plan_builder import build_strength_test
 
 if TYPE_CHECKING:  # pragma: no cover - import for type checking only
     from pete_e.application.orchestrator import Orchestrator as OrchestratorType
@@ -590,25 +592,45 @@ def lets_begin(
             raise typer.Exit(code=1)
     else:
         today = date.today()
-        days_until_monday = (7 - today.weekday()) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7
+        days_until_monday = (0 - today.weekday()) % 7
         resolved_start = today + timedelta(days=days_until_monday)
 
-    message = (
-        f"Starting new 13-week 5/3/1 macrocycle on {resolved_start.isoformat()}..."
-    )
-    typer.echo(message)
-    log_utils.log_message(message, "INFO")
-
-    try:
-        orchestrator.start_new_macrocycle(resolved_start)
-    except Exception as exc:
-        log_utils.log_message(f"Failed to start new macrocycle: {exc}", "ERROR")
-        typer.echo(f"Failed to start new macrocycle: {exc}", err=True)
+    dal = getattr(orchestrator, "dal", None)
+    if dal is None:
+        log_utils.log_message(
+            "Orchestrator has no data access layer; aborting strength test trigger.",
+            "ERROR",
+        )
+        typer.echo("Unable to access the data access layer for strength test setup.", err=True)
         raise typer.Exit(code=1)
 
-    typer.echo("New macrocycle started successfully!")
+    log_utils.log_message(
+        f"Triggering manual strength test build for {resolved_start.isoformat()}...",
+        "INFO",
+    )
+
+    try:
+        plan_id = build_strength_test(dal, resolved_start)
+        if plan_id:
+            deactivate_cycles = getattr(dal, "deactivate_active_training_cycles", None)
+            if callable(deactivate_cycles):
+                try:
+                    deactivate_cycles()
+                except Exception as exc:  # pragma: no cover - defensive guardrail
+                    log_utils.log_message(
+                        f"Failed to deactivate active training cycles: {exc}",
+                        "WARN",
+                    )
+            mark_active = getattr(dal, "mark_plan_active", None)
+            if callable(mark_active):
+                mark_active(plan_id)
+            push_week(dal, plan_id, 1, start_date=resolved_start)
+    except Exception as exc:
+        log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
+        typer.echo(f"Failed to build strength test week: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo("Strength test week created via manual trigger.")
     raise typer.Exit(code=0)
 
 
