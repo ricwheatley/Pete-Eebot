@@ -364,6 +364,46 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error marking plan {plan_id} active: {e}", "ERROR")
             raise
 
+    def deactivate_active_training_cycles(self) -> None:
+        """Mark all existing training cycles as inactive."""
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE training_cycle
+                    SET active = false,
+                        updated_at = now()
+                    WHERE active = true;
+                    """
+                )
+        except Exception as e:
+            log_utils.log_message(f"Error deactivating active training cycles: {e}", "ERROR")
+            raise
+
+    def create_training_cycle(
+        self,
+        start_date: date,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Dict[str, Any]:
+        """Insert a new training cycle and return the created row."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO training_cycle (start_date, current_week, current_block)
+                    VALUES (%s, %s, %s)
+                    RETURNING id, start_date, current_week, current_block, active, created_at, updated_at;
+                    """,
+                    (start_date, current_week, current_block),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else {}
+        except Exception as e:
+            log_utils.log_message(f"Error creating training cycle starting {start_date}: {e}", "ERROR")
+            raise
+
     def has_any_plan(self) -> bool:
         """Return True if any training plan exists in the database."""
         try:

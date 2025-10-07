@@ -33,6 +33,7 @@ DROP TABLE IF EXISTS "MetricType" CASCADE;
 DROP TABLE IF EXISTS "Device" CASCADE;
 DROP TABLE IF EXISTS strength_test_result CASCADE;
 DROP TABLE IF EXISTS training_max CASCADE;
+DROP TABLE IF EXISTS training_cycle CASCADE;
 DROP TABLE IF EXISTS training_blocks CASCADE;
 DROP TABLE IF EXISTS wger_export_log CASCADE;
 DROP TABLE IF EXISTS training_plan_workouts CASCADE;
@@ -328,6 +329,17 @@ CREATE TABLE assistance_pool (
     assistance_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
     PRIMARY KEY(main_exercise_id, assistance_exercise_id)
 );
+
+CREATE TABLE training_cycle (
+    id SERIAL PRIMARY KEY,
+    start_date DATE NOT NULL,
+    current_week INT NOT NULL,
+    current_block INT NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE training_cycle IS 'Tracks the state of the 13-week 5/3/1 macrocycle.';
 
 CREATE TABLE training_max (
     id SERIAL PRIMARY KEY,
