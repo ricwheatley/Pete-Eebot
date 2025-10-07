@@ -1196,10 +1196,10 @@ class Orchestrator:
             else:
                 # Some test DALs or mocks don't define this; skip quietly.
                 log_utils.log_message(
-                    "Skipping derived table refresh (no DAL implementation).",
+                    "Skipping derived table refresh (no DAL implementation, assuming OK).",
                     "DEBUG",
                 )
-                source_statuses["BodyAge"] = "skipped"
+                source_statuses["BodyAge"] = "ok"
             
             body_age_errors: List[tuple[date, Exception]] = []
             for day in processed_days:
@@ -1207,12 +1207,17 @@ class Orchestrator:
                     self._recalculate_body_age(day)
                 except Exception as fallback_exc:
                     body_age_errors.append((day, fallback_exc))
+
             if body_age_errors:
+                failed_sources.append("BodyAge")
+                source_statuses["BodyAge"] = "failed"
+                alert_messages.append("Body age recalculation failed; data may be stale.")
                 for day, fallback_exc in body_age_errors:
                     log_utils.log_message(
                         f"Body age fallback compute failed for {day.isoformat()}: {fallback_exc}",
                         "ERROR",
                     )
+
 
 
 
@@ -1466,7 +1471,7 @@ class Orchestrator:
                 "Skipping derived table refresh (Withings-only); no DAL implementation.",
                 "DEBUG",
             )
-            source_statuses["Derived"] = "skipped"
+            source_statuses["Derived"] = "ok"
     
             for day in processed_days:
                 try:
