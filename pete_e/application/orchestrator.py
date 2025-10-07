@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 # DAL and Clients
 from pete_e.domain.data_access import DataAccessLayer
@@ -1021,25 +1021,19 @@ class Orchestrator:
         processed_days: List[date] = []
         undelivered_alerts: List[str] = []
 
-        try:
-            apple_report = run_apple_health_ingest()
-        except AppleIngestError as exc:
-            log_utils.log_message(
-                f"Apple Health Dropbox ingest failed before sync window: {exc}",
-                "ERROR",
-            )
-            failed_sources.append("AppleDropbox")
-            source_statuses["AppleDropbox"] = "failed"
-            alert_messages.append(f"Apple Health ingest failed: {exc}")
-        except Exception as exc:
-            log_utils.log_message(
-                f"Apple Health Dropbox ingest failed before sync window: {exc}",
-                "ERROR",
-            )
-            failed_sources.append("AppleDropbox")
-            source_statuses["AppleDropbox"] = "failed"
-            alert_messages.append(f"Apple Health ingest failed: {exc}")
-        else:
+        def _apple_ingest() -> Any:
+            return run_apple_health_ingest()
+
+        apple_report = self._run_source_step(
+            name="AppleDropbox",
+            action=_apple_ingest,
+            failures=failed_sources,
+            statuses=source_statuses,
+            error_message="Failed to sync AppleDropbox: {exception}",
+            on_error=lambda exc: alert_messages.append(f"Apple Health ingest failed: {exc}"),
+        )
+
+        if apple_report:
             processed_files = len(apple_report.sources)
             log_utils.log_message(
                 (
@@ -1085,16 +1079,27 @@ class Orchestrator:
                                 )
                             )
 
-        try:
-            wger_logs_by_date = wger_client.get_logs_by_date(days=days)
-        except Exception as e:
-            log_utils.log_message(
-                f"Failed to retrieve Wger logs for sync window ({days} days): {e}",
-                "ERROR",
-            )
-            failed_sources.append("Wger")
-            source_statuses["Wger"] = "failed"
+        wger_logs_by_date: Dict[str, List[Dict[str, Any]]] = {}
+
+        def _load_wger_logs() -> Dict[str, List[Dict[str, Any]]]:
+            return wger_client.get_logs_by_date(days=days)
+
+        def _on_wger_error(exc: Exception) -> None:
+            nonlocal wger_logs_by_date
             wger_logs_by_date = {}
+
+        result = self._run_source_step(
+            name="Wger",
+            action=_load_wger_logs,
+            failures=failed_sources,
+            statuses=source_statuses,
+            error_message=lambda exc: (
+                f"Failed to sync Wger logs for last {days} day(s): {exc}"
+            ),
+            on_error=_on_wger_error,
+        )
+        if isinstance(result, dict):
+            wger_logs_by_date = result
 
         wger_logs_found = False
 
@@ -1105,7 +1110,7 @@ class Orchestrator:
             log_utils.log_message(f"Syncing data for {target_iso}", "INFO")
 
             # --- Withings ---
-            try:
+            def _withings_sync() -> None:
                 withings_data = withings_client.get_summary(days_back=offset)
                 if withings_data:
                     self.dal.save_withings_daily(
@@ -1115,15 +1120,19 @@ class Orchestrator:
                         muscle_pct=withings_data.get("muscle_percent"),
                         water_pct=withings_data.get("water_percent"),
                     )
-            except WithingsReauthRequired as exc:
-                log_utils.log_message(f"Withings sync failed for {target_iso}: {exc}", "ERROR")
-                failed_sources.append("Withings")
-                source_statuses["Withings"] = "failed"
 
-                if getattr(settings, "WITHINGS_ALERT_REAUTH", True) and not withings_reauth_alert_sent:
-                    token_state = getattr(withings_client, "get_token_state", lambda: None)()
-                    reason_text = getattr(token_state, "reason", None) if token_state else None
-                    reason_text = reason_text or str(exc)
+            def _withings_failure(exc: Exception) -> None:
+                nonlocal withings_reauth_alert_sent
+                if not getattr(settings, "WITHINGS_ALERT_REAUTH", True):
+                    return
+
+                if withings_reauth_alert_sent:
+                    return
+
+                token_state = getattr(withings_client, "get_token_state", lambda: None)()
+                requires_reauth = getattr(token_state, "requires_reauth", False)
+                if isinstance(exc, WithingsReauthRequired) or requires_reauth:
+                    reason_text = getattr(token_state, "reason", None) or str(exc)
                     alert_messages.append(
                         (
                             "Withings refresh token is invalid and needs reauthorisation: "
@@ -1131,27 +1140,23 @@ class Orchestrator:
                         )
                     )
                     withings_reauth_alert_sent = True
-            except Exception as e:
-                log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
-                failed_sources.append("Withings")
-                source_statuses["Withings"] = "failed"
 
-                if getattr(settings, "WITHINGS_ALERT_REAUTH", True) and not withings_reauth_alert_sent:
-                    token_state = getattr(withings_client, "get_token_state", lambda: None)()
-                    if token_state and getattr(token_state, "requires_reauth", False):
-                        reason_text = getattr(token_state, "reason", None) or str(e)
-                        alert_messages.append(
-                            (
-                                "Withings refresh token is invalid and needs reauthorisation: "
-                                f"{reason_text}. Please run the Withings reauthorisation workflow."
-                            )
-                        )
-                        withings_reauth_alert_sent = True
+            self._run_source_step(
+                name="Withings",
+                action=_withings_sync,
+                failures=failed_sources,
+                statuses=source_statuses,
+                error_message=lambda exc, iso=target_iso: (
+                    f"Failed to sync Withings for {iso}: {exc}"
+                ),
+                on_error=_withings_failure,
+            )
 
             # --- Wger Workout Logs ---
-            try:
+            def _persist_wger_logs() -> None:
                 day_logs = wger_logs_by_date.get(target_iso, [])
                 if day_logs:
+                    nonlocal wger_logs_found
                     wger_logs_found = True
                     exercise_counters: Dict[Any, int] = {}
                     for log in day_logs:
@@ -1169,30 +1174,37 @@ class Orchestrator:
                             weight_kg=log.get("weight"),
                             rir=log.get("rir"),
                         )
-            except Exception as e:
-                log_utils.log_message(f"Wger sync failed for {target_iso}: {e}", "ERROR")
-                failed_sources.append("Wger")
-                source_statuses["Wger"] = "failed"
+
+            self._run_source_step(
+                name="Wger",
+                action=_persist_wger_logs,
+                failures=failed_sources,
+                statuses=source_statuses,
+                error_message=lambda exc, iso=target_iso: (
+                    f"Failed to sync Wger for {iso}: {exc}"
+                ),
+            )
 
             # --- Refresh derived tables (body_age_daily + daily_summary) ---
             refresher = getattr(self.dal, "refresh_daily_summary", None)
             if callable(refresher):
-                try:
+                def _refresh_body_age() -> None:
                     log_utils.log_message(
                         "Refreshing body_age_daily and daily_summary table...",
                         "INFO",
                     )
                     refresher(7)
-                    source_statuses["BodyAge"] = "ok"
-                except Exception as exc:
-                    log_utils.log_message(
-                        f"Failed to refresh derived tables: {exc}", "ERROR"
-                    )
-                    failed_sources.append("BodyAge")
-                    source_statuses["BodyAge"] = "failed"
-                    alert_messages.append(
+
+                self._run_source_step(
+                    name="BodyAge",
+                    action=_refresh_body_age,
+                    failures=failed_sources,
+                    statuses=source_statuses,
+                    error_message="Failed to refresh derived tables: {exception}",
+                    on_error=lambda exc: alert_messages.append(
                         "Derived table refresh failed; data may be stale."
-                    )
+                    ),
+                )
             else:
                 # Some test DALs or mocks don't define this; skip quietly.
                 log_utils.log_message(
@@ -1200,23 +1212,36 @@ class Orchestrator:
                     "DEBUG",
                 )
                 source_statuses["BodyAge"] = "ok"
-            
-            body_age_errors: List[tuple[date, Exception]] = []
-            for day in processed_days:
-                try:
-                    self._recalculate_body_age(day)
-                except Exception as fallback_exc:
-                    body_age_errors.append((day, fallback_exc))
 
-            if body_age_errors:
+        body_age_errors: List[tuple[date, Exception]] = []
+        for day in processed_days:
+            def _compute_body_age(target: date = day) -> None:
+                self._recalculate_body_age(target)
+
+            self._run_source_step(
+                name="BodyAge",
+                action=_compute_body_age,
+                failures=failed_sources,
+                statuses=source_statuses,
+                error_message=lambda exc, iso=day.isoformat(): (
+                    f"Failed to recompute BodyAge for {iso}: {exc}"
+                ),
+                record_failure=False,
+                on_error=lambda exc, target_day=day: body_age_errors.append(
+                    (target_day, exc)
+                ),
+            )
+
+        if body_age_errors:
+            if source_statuses.get("BodyAge") != "failed":
                 failed_sources.append("BodyAge")
-                source_statuses["BodyAge"] = "failed"
-                alert_messages.append("Body age recalculation failed; data may be stale.")
-                for day, fallback_exc in body_age_errors:
-                    log_utils.log_message(
-                        f"Body age fallback compute failed for {day.isoformat()}: {fallback_exc}",
-                        "ERROR",
-                    )
+            source_statuses["BodyAge"] = "failed"
+            alert_messages.append("Body age recalculation failed; data may be stale.")
+            for day, fallback_exc in body_age_errors:
+                log_utils.log_message(
+                    f"Failed to recompute BodyAge for {day.isoformat()}: {fallback_exc}",
+                    "ERROR",
+                )
 
 
 
@@ -1430,55 +1455,117 @@ class Orchestrator:
         """
     
         failures: List[str] = []
-        source_statuses: Dict[str, str] = {}
+        source_statuses: Dict[str, str] = {"Withings": "ok", "BodyAge": "ok"}
         alert_messages: List[str] = []
         processed_days: List[date] = []
-    
+
+        withings_client = WithingsClient()
+        withings_reauth_alert_sent = False
+
         for offset in range(days, 0, -1):
             target_day = date.today() - timedelta(days=offset - 1)
             processed_days.append(target_day)
             target_iso = target_day.isoformat()
-    
-            try:
-                self.withings_sync(target_day)
-                source_statuses["Withings"] = "ok"
-            except Exception as e:
-                log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
-                failures.append("Withings")
-                source_statuses["Withings"] = "failed"
-    
+
+            def _sync_withings() -> None:
+                days_back = max(offset - 1, 0)
+                withings_data = withings_client.get_summary(days_back=days_back)
+                if withings_data:
+                    self.dal.save_withings_daily(
+                        day=target_day,
+                        weight_kg=withings_data.get("weight"),
+                        body_fat_pct=withings_data.get("fat_percent"),
+                        muscle_pct=withings_data.get("muscle_percent"),
+                        water_pct=withings_data.get("water_percent"),
+                    )
+
+            def _withings_failure(exc: Exception) -> None:
+                nonlocal withings_reauth_alert_sent
+                if not getattr(settings, "WITHINGS_ALERT_REAUTH", True):
+                    return
+                if withings_reauth_alert_sent:
+                    return
+                token_state = getattr(withings_client, "get_token_state", lambda: None)()
+                requires_reauth = getattr(token_state, "requires_reauth", False)
+                if isinstance(exc, WithingsReauthRequired) or requires_reauth:
+                    reason_text = getattr(token_state, "reason", None) or str(exc)
+                    alert_messages.append(
+                        (
+                            "Withings refresh token is invalid and needs reauthorisation: "
+                            f"{reason_text}. Please run the Withings reauthorisation workflow."
+                        )
+                    )
+                    withings_reauth_alert_sent = True
+
+            self._run_source_step(
+                name="Withings",
+                action=_sync_withings,
+                failures=failures,
+                statuses=source_statuses,
+                error_message=lambda exc, iso=target_iso: (
+                    f"Failed to sync Withings for {iso}: {exc}"
+                ),
+                on_error=_withings_failure,
+            )
+
         # --- Refresh derived tables after Withings-only sync ---
         refresher = getattr(self.dal, "refresh_daily_summary", None)
         if callable(refresher):
-            try:
+            def _refresh_body_age() -> None:
                 log_utils.log_message(
                     "Refreshing body_age_daily and daily_summary table (Withings-only)...",
                     "INFO",
                 )
                 refresher(7)
-                source_statuses["Derived"] = "ok"
-            except Exception as exc:
-                log_utils.log_message(
-                    f"Failed to refresh derived tables in Withings-only sync: {exc}",
-                    "ERROR",
-                )
-                failures.append("Derived")
-                source_statuses["Derived"] = "failed"
-                alert_messages.append("Derived table refresh failed; data may be stale.")
+
+            self._run_source_step(
+                name="BodyAge",
+                action=_refresh_body_age,
+                failures=failures,
+                statuses=source_statuses,
+                error_message="Failed to refresh derived tables in Withings-only sync: {exception}",
+                on_error=lambda exc: alert_messages.append(
+                    "Derived table refresh failed; data may be stale."
+                ),
+            )
         else:
             # Skip gracefully when the DAL stub has no refresh method.
             log_utils.log_message(
                 "Skipping derived table refresh (Withings-only); no DAL implementation.",
                 "DEBUG",
             )
-            source_statuses["Derived"] = "ok"
-    
-            for day in processed_days:
-                try:
-                    self._recalculate_body_age(day)
-                except Exception:
-                    continue
-    
+            source_statuses["BodyAge"] = "ok"
+
+        body_age_errors: List[tuple[date, Exception]] = []
+        for day in processed_days:
+            def _compute_body_age(target: date = day) -> None:
+                self._recalculate_body_age(target)
+
+            self._run_source_step(
+                name="BodyAge",
+                action=_compute_body_age,
+                failures=failures,
+                statuses=source_statuses,
+                error_message=lambda exc, iso=day.isoformat(): (
+                    f"Failed to recompute BodyAge for {iso}: {exc}"
+                ),
+                record_failure=False,
+                on_error=lambda exc, target_day=day: body_age_errors.append(
+                    (target_day, exc)
+                ),
+            )
+
+        if body_age_errors:
+            if source_statuses.get("BodyAge") != "failed":
+                failures.append("BodyAge")
+            source_statuses["BodyAge"] = "failed"
+            alert_messages.append("Body age recalculation failed; data may be stale.")
+            for day, error in body_age_errors:
+                log_utils.log_message(
+                    f"Failed to recompute BodyAge for {day.isoformat()}: {error}",
+                    "ERROR",
+                )
+
         success = len(failures) == 0
         return success, failures, source_statuses, alert_messages
 
@@ -1799,3 +1886,41 @@ class Orchestrator:
 
 
 
+    def _run_source_step(
+        self,
+        *,
+        name: str,
+        action: Callable[[], Any],
+        failures: List[str],
+        statuses: Dict[str, str],
+        error_message: str | Callable[[Exception], str],
+        log_level: str = "ERROR",
+        record_failure: bool = True,
+        failure_name: str | None = None,
+        on_error: Callable[[Exception], None] | None = None,
+        reraise: Tuple[type[BaseException], ...] = (),
+    ) -> Any:
+        """Execute ``action`` and record a consistent failure outcome on error."""
+
+        try:
+            return action()
+        except reraise:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            if callable(error_message):
+                message = error_message(exc)
+            else:
+                message = error_message.format(source=name, exception=exc)
+            log_utils.log_message(message, log_level)
+
+            if record_failure:
+                failure_key = failure_name or name
+                if failure_key:
+                    if statuses.get(failure_key) != "failed":
+                        failures.append(failure_key)
+                    statuses[failure_key] = "failed"
+
+            if on_error is not None:
+                on_error(exc)
+
+            return None
