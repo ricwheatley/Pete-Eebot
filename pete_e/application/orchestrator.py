@@ -485,6 +485,69 @@ class Orchestrator:
         )
         return True
 
+    def start_new_macrocycle(self, start_date: date) -> Dict[str, Any]:
+        """Record and initialise a brand new 13-week macrocycle."""
+
+        if not isinstance(start_date, date):
+            raise TypeError("start_date must be a datetime.date instance")
+
+        deactivate_cycles = getattr(self.dal, "deactivate_active_training_cycles", None)
+        if not callable(deactivate_cycles):
+            raise AttributeError("Data access layer missing deactivate_active_training_cycles")
+
+        create_cycle = getattr(self.dal, "create_training_cycle", None)
+        if not callable(create_cycle):
+            raise AttributeError("Data access layer missing create_training_cycle")
+
+        try:
+            deactivate_cycles()
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to deactivate existing training cycles: {exc}",
+                "ERROR",
+            )
+            raise
+
+        try:
+            new_cycle = create_cycle(
+                start_date,
+                current_week=1,
+                current_block=0,
+            )
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to create training cycle for {start_date.isoformat()}: {exc}",
+                "ERROR",
+            )
+            raise
+
+        if not isinstance(new_cycle, dict):
+            new_cycle = dict(new_cycle or {})
+
+        cycle_id = new_cycle.get("id")
+        log_message = (
+            "New 13-week macrocycle registered for "
+            f"{start_date.isoformat()} (cycle id {cycle_id})."
+        )
+        log_utils.log_message(log_message, "INFO")
+
+        confirmation = (
+            "New 13-week 5/3/1 macrocycle starting "
+            f"{start_date:%Y-%m-%d}. Strength test week is on deck!"
+        )
+        try:
+            self.send_telegram_message(confirmation)
+        except Exception as exc:  # pragma: no cover - defensive logging only
+            log_utils.log_message(
+                f"Failed to send Telegram confirmation for macrocycle start: {exc}",
+                "WARN",
+            )
+
+        if not self.generate_strength_test_week(start_date=start_date):
+            raise RuntimeError("Failed to generate strength test week for new macrocycle")
+
+        return new_cycle
+
     def _build_nudge_candidates(
         self,
         history: List[Dict[str, Any]],

@@ -10,7 +10,7 @@ notifications.
 
 import os
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Optional
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -31,9 +31,7 @@ from pete_e.infrastructure.db_conn import get_database_url
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
-from pete_e.application.wger_sender import push_week
 from pete_e.domain import body_age, narrative_builder
-from pete_e.domain.plan_builder import build_strength_test
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -570,49 +568,47 @@ def plan(
 
 
 @app.command("lets-begin")
-def lets_begin() -> None:
-    """Manually create and export a strength test training week."""
+def lets_begin(
+    start_date: Annotated[
+        Optional[str],
+        Option(
+            "--start-date",
+            help="Override the macrocycle start date (YYYY-MM-DD).",
+        ),
+    ] = None,
+) -> None:
+    """Start a new 13-week macrocycle and seed the strength test week."""
 
     orchestrator = _build_orchestrator()
-    dal = getattr(orchestrator, "dal", None)
-    if dal is None:
-        log_utils.log_message(
-            "Data access layer unavailable; cannot create strength test week.", "ERROR"
-        )
-        raise typer.Exit(code=1)
 
-    today = date.today()
+    resolved_start: date
+    if start_date:
+        try:
+            resolved_start = date.fromisoformat(start_date)
+        except ValueError:
+            typer.echo("Invalid start date format. Please use YYYY-MM-DD.", err=True)
+            raise typer.Exit(code=1)
+    else:
+        today = date.today()
+        days_until_monday = (7 - today.weekday()) % 7
+        if days_until_monday == 0:
+            days_until_monday = 7
+        resolved_start = today + timedelta(days=days_until_monday)
 
-    try:
-        plan_id = build_strength_test(dal, today)
-    except Exception as exc:  # pragma: no cover - defensive guardrail
-        log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
-        raise typer.Exit(code=1)
-
-    if not plan_id:
-        log_utils.log_message(
-            "Strength test week build returned invalid plan identifier.", "ERROR"
-        )
-        raise typer.Exit(code=1)
-
-    try:
-        dal.mark_plan_active(plan_id)
-    except Exception as exc:  # pragma: no cover - defensive guardrail
-        log_utils.log_message(
-            f"Failed to mark plan {plan_id} as active: {exc}", "ERROR"
-        )
-        raise typer.Exit(code=1)
+    message = (
+        f"Starting new 13-week 5/3/1 macrocycle on {resolved_start.isoformat()}..."
+    )
+    typer.echo(message)
+    log_utils.log_message(message, "INFO")
 
     try:
-        push_week(dal, plan_id=plan_id, week=1, start_date=today)
-    except Exception as exc:  # pragma: no cover - defensive guardrail
-        log_utils.log_message(
-            f"Failed to export strength test week {plan_id}: {exc}", "ERROR"
-        )
+        orchestrator.start_new_macrocycle(resolved_start)
+    except Exception as exc:
+        log_utils.log_message(f"Failed to start new macrocycle: {exc}", "ERROR")
+        typer.echo(f"Failed to start new macrocycle: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    log_utils.log_message("Strength test week created via manual trigger.", "INFO")
-    typer.echo("Strength test week created via manual trigger.")
+    typer.echo("New macrocycle started successfully!")
     raise typer.Exit(code=0)
 
 
