@@ -2,11 +2,17 @@ import datetime
 from typing import Any, Dict, List
 
 from pete_e.domain.progression import apply_progression
-from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
+from tests import config_stub  # noqa: F401 - ensure pete_e.config is stubbed
+from tests.mock_dal import MockableDal
 
-class DummyDal(DataAccessLayer):
-    def __init__(self, lift_history: Dict[str, Any], metrics_7: List[Dict[str, Any]], metrics_baseline: List[Dict[str, Any]]):
+class DummyDal(MockableDal):
+    def __init__(
+        self,
+        lift_history: Dict[str, Any],
+        metrics_7: List[Dict[str, Any]],
+        metrics_baseline: List[Dict[str, Any]],
+    ) -> None:
         self._lift_history = lift_history
         self._metrics_7 = metrics_7
         self._metrics_baseline = metrics_baseline
@@ -23,27 +29,9 @@ class DummyDal(DataAccessLayer):
             return {k: v for k, v in self._lift_history.items() if k in keys}
         return self._lift_history
 
-    def save_lift_log(self, log: Dict[str, Any]) -> None:
-        pass
-
-    def save_strength_log_entry(self, exercise_id: int, log_date: datetime.date, reps: int, weight_kg: float, rir: float | None = None) -> None:
-        pass
-
-    def save_withings_daily(self, day: datetime.date, weight_kg: float, body_fat_pct: float, muscle_pct: float | None, water_pct: float | None) -> None:
-        pass
-
-    def save_wger_log(self, day: datetime.date, exercise_id: int, set_number: int, reps: int, weight_kg: float | None, rir: float | None) -> None:
-        pass
-
     # History operations
     def load_history(self) -> Dict[str, Any]:
         return {}
-
-    def save_history(self, history: Dict[str, Any]) -> None:
-        pass
-
-    def save_daily_summary(self, summary: Dict[str, Any], day: datetime.date) -> None:
-        pass
 
     # Analytical helpers
     def load_body_age(self) -> Dict[str, Any]:
@@ -56,97 +44,6 @@ class DummyDal(DataAccessLayer):
             return self._metrics_baseline
         return []
 
-    def get_daily_summary(self, target_date: datetime.date) -> Dict[str, Any] | None:
-        return None
-
-    def get_historical_data(self, start_date: datetime.date, end_date: datetime.date) -> List[Dict[str, Any]]:
-        return []
-
-    def save_training_plan(self, plan: dict, start_date: datetime.date) -> None:
-        pass
-
-    def has_any_plan(self) -> bool:
-        return False
-
-    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
-        pass
-
-    def get_plan(self, plan_id: int) -> Dict[str, Any]:
-        return {}
-
-    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        return []
-
-    def get_actual_muscle_volume(self, start_date: datetime.date, end_date: datetime.date) -> List[Dict[str, Any]]:
-        return []
-
-    def get_active_plan(self) -> Dict[str, Any] | None:
-        return None
-
-    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        return []
-
-    def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
-        pass
-
-    def refresh_plan_view(self) -> None:
-        pass
-
-    def refresh_actual_view(self) -> None:
-        pass
-
-    def apply_plan_backoff(
-        self,
-        week_start_date: datetime.date,
-        *,
-        set_multiplier: float,
-        rir_increment: int,
-    ) -> None:
-        pass
-
-    def mark_plan_active(self, plan_id: int) -> None:
-        pass
-
-    def refresh_daily_summary(self, days: int = 7) -> None:
-        pass
-
-    def compute_body_age_for_date(
-        self,
-        target_date: datetime.date,
-        *,
-        birth_date: datetime.date,
-    ) -> None:
-        pass
-
-    def compute_body_age_for_range(
-        self,
-        start_date: datetime.date,
-        end_date: datetime.date,
-        *,
-        birth_date: datetime.date,
-    ) -> None:
-        pass
-
-    def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
-        pass
-
-    def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
-        pass
-
-    def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
-        pass
-
-    def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
-        pass
-
-    def find_plan_by_start_date(self, start_date: datetime.date):
-        return None
-
-    def record_wger_export(self, plan_id: int, week: int, exported_at: datetime.datetime | None = None) -> None:
-        pass
-
-    def was_week_exported(self, plan_id: int, week: int) -> bool:
-        return False
 
 def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     return [
