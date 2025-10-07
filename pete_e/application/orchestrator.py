@@ -32,6 +32,7 @@ from pete_e.domain import body_age, metrics_service, french_trainer, phrase_pick
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import plan_rw
+from pete_e.utils import converters
 from pete_e.config import settings
 from pete_e.application.apple_dropbox_ingest import (
     AppleIngestError,
@@ -231,21 +232,6 @@ def _next_monday(reference: date) -> date:
     return reference + timedelta(days=delta)
 
 
-def _ensure_date(value) -> date | None:
-    """Best effort conversion of DB date/datetime/iso strings to date."""
-
-    if isinstance(value, date):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
-
-
 class Orchestrator:
     """
     Handles the main business logic and coordination between different parts
@@ -299,7 +285,7 @@ class Orchestrator:
             return context
         if not active_plan:
             return context
-        start_date = _ensure_date(active_plan.get("start_date"))
+        start_date = converters.to_date(active_plan.get("start_date"))
         weeks_raw = active_plan.get("weeks")
         try:
             total_weeks = int(weeks_raw) if weeks_raw is not None else None
@@ -904,7 +890,7 @@ class Orchestrator:
                 message=message,
             )
 
-        plan_start = _ensure_date(active_plan.get("start_date"))
+        plan_start = converters.to_date(active_plan.get("start_date"))
         if plan_start is None:
             message = "Active plan is missing a valid start_date; weekly calibration skipped."
             log_utils.log_message(message, "ERROR")
