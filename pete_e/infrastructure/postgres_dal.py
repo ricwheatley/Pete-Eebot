@@ -404,6 +404,55 @@ class PostgresDal(DataAccessLayer):
             log_utils.log_message(f"Error creating training cycle starting {start_date}: {e}", "ERROR")
             raise
 
+    def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
+        """Return the most recent active training cycle."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT id, start_date, current_week, current_block, active, created_at, updated_at
+                    FROM training_cycle
+                    WHERE active = true
+                    ORDER BY start_date DESC
+                    LIMIT 1;
+                    """,
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            log_utils.log_message(f"Error fetching active training cycle: {e}", "ERROR")
+            raise
+
+    def update_training_cycle_state(
+        self,
+        cycle_id: int,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Optional[Dict[str, Any]]:
+        """Persist the latest macrocycle position."""
+        try:
+            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE training_cycle
+                    SET current_week = %s,
+                        current_block = %s,
+                        updated_at = now()
+                    WHERE id = %s
+                    RETURNING id, start_date, current_week, current_block, active, created_at, updated_at;
+                    """,
+                    (current_week, current_block, cycle_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            log_utils.log_message(
+                f"Error updating training cycle {cycle_id} to week {current_week}, block {current_block}: {e}",
+                "ERROR",
+            )
+            raise
+
     def has_any_plan(self) -> bool:
         """Return True if any training plan exists in the database."""
         try:
