@@ -11,3 +11,6 @@ Subfolders:
   - domain/
   - infrastructure/
   - resources/
+  - utils/
+
+    - Shared converters, formatters, math helpers, and miscellaneous utilities. Import modules as ``from pete_e.utils import converters`` to keep call sites explicit.
