@@ -223,7 +223,13 @@ class PostgresDal(DataAccessLayer):
             raise
 
 
-    def compute_body_age_for_range(self, start_date: date, end_date: date, *, birth_date: date) -> None:
+    def compute_body_age_for_range(
+        self,
+        start_date: date,
+        end_date: date,
+        *,
+        birth_date: date,
+    ) -> None:
         sql = "SELECT sp_upsert_body_age_range(%s, %s, %s);"
         try:
             with get_conn() as conn, conn.cursor() as cur:
@@ -496,6 +502,95 @@ class PostgresDal(DataAccessLayer):
                 log_utils.log_message("Refreshed actual_muscle_volume view.", "INFO")
         except Exception as e:
             log_utils.log_message(f"Error refreshing actual_muscle_volume view: {e}", "ERROR")
+            raise
+
+    def apply_plan_backoff(
+        self,
+        week_start_date: date,
+        *,
+        set_multiplier: float,
+        rir_increment: int,
+    ) -> None:
+        """Apply a plan back-off against the week that starts on the provided date."""
+
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, start_date, weeks
+                    FROM training_plans
+                    WHERE start_date <= %s
+                    ORDER BY start_date DESC
+                    LIMIT 1;
+                    """,
+                    (week_start_date,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    log_utils.log_message(
+                        f"No training plan found for week starting {week_start_date}.",
+                        "WARN",
+                    )
+                    return
+
+                plan_id, plan_start, plan_weeks = row
+                if plan_start is None or plan_weeks is None:
+                    log_utils.log_message(
+                        "Plan metadata incomplete; skipping back-off application.",
+                        "WARN",
+                    )
+                    return
+
+                delta_days = (week_start_date - plan_start).days
+                if delta_days < 0:
+                    log_utils.log_message(
+                        f"Week start {week_start_date} precedes plan start {plan_start}; skipping.",
+                        "WARN",
+                    )
+                    return
+
+                week_number = (delta_days // 7) + 1
+                if week_number < 1 or week_number > int(plan_weeks):
+                    log_utils.log_message(
+                        f"Week start {week_start_date} outside plan range (weeks={plan_weeks}).",
+                        "WARN",
+                    )
+                    return
+
+                cur.execute(
+                    "SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;",
+                    (plan_id, week_number),
+                )
+                week_row = cur.fetchone()
+                if not week_row:
+                    log_utils.log_message(
+                        f"No training_plan_week found for plan {plan_id} week {week_number}.",
+                        "WARN",
+                    )
+                    return
+
+                week_id = week_row[0]
+                cur.execute(
+                    """
+                    UPDATE training_plan_workouts
+                    SET
+                      sets = GREATEST(1, ROUND(sets * %s)::int),
+                      rir  = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END
+                    WHERE week_id = %s AND is_cardio = false;
+                    """,
+                    (set_multiplier, rir_increment, rir_increment, week_id),
+                )
+                conn.commit()
+                log_utils.log_message(
+                    (
+                        "Applied plan back-off to week %s (plan_id=%s, set_multiplier=%.2f, "
+                        "rir_increment=%s)."
+                    )
+                    % (week_number, plan_id, set_multiplier, rir_increment),
+                    "INFO",
+                )
+        except Exception as e:
+            log_utils.log_message(f"Error applying plan back-off: {e}", "ERROR")
             raise
 
     # ---------------------------------------------------------------------

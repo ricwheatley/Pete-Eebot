@@ -145,13 +145,8 @@ def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict
     if prev_week_number <= 0:
         return None
 
-    get_planned = getattr(dal, 'get_plan_muscle_volume', None)
-    get_actual = getattr(dal, 'get_actual_muscle_volume', None)
-    if not callable(get_planned) or not callable(get_actual):
-        return None
-
     try:
-        planned_rows = get_planned(plan_id, prev_week_number) or []
+        planned_rows = dal.get_plan_muscle_volume(plan_id, prev_week_number) or []
     except Exception:
         return None
 
@@ -162,7 +157,7 @@ def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict
     prev_week_end = week_start_date - timedelta(days=1)
 
     try:
-        actual_rows = get_actual(prev_week_start, prev_week_end) or []
+        actual_rows = dal.get_actual_muscle_volume(prev_week_start, prev_week_end) or []
     except Exception:
         actual_rows = []
 
@@ -960,26 +955,17 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
     log_utils.log_message(explanation, log_level)
 
     applied = False
-    apply_fn = getattr(dal, 'apply_plan_backoff', None)
-    if callable(apply_fn):
-        try:
-            apply_fn(
-                week_start_date,
-                set_multiplier=final_multiplier,
-                rir_increment=final_rir_increment,
-            )
-            log_utils.log_message('Applied plan adjustment to upcoming week.', 'INFO')
-            applied = True
-        except Exception as exc:  # pragma: no cover - DB failures are environment-specific
-            log_utils.log_message(f'Failed to apply back-off: {exc}', 'ERROR')
-            log_entries.append(f'apply_failed: {exc}')
-    else:
-        log_utils.log_message(
-            "DAL has no 'apply_plan_backoff' - no DB changes performed. "
-            'Downstream components may apply this recommendation explicitly.',
-            'WARN',
+    try:
+        dal.apply_plan_backoff(
+            week_start_date,
+            set_multiplier=final_multiplier,
+            rir_increment=final_rir_increment,
         )
-        log_entries.append('dal_missing_backoff')
+        log_utils.log_message('Applied plan adjustment to upcoming week.', 'INFO')
+        applied = True
+    except Exception as exc:  # pragma: no cover - DB failures are environment-specific
+        log_utils.log_message(f'Failed to apply back-off: {exc}', 'ERROR')
+        log_entries.append(f'apply_failed: {exc}')
 
     return ValidationDecision(
         needs_backoff=rec.needs_backoff,

@@ -595,15 +595,13 @@ def lets_begin() -> None:
         )
         raise typer.Exit(code=1)
 
-    activator = getattr(dal, "mark_plan_active", None)
-    if callable(activator):
-        try:
-            activator(plan_id)
-        except Exception as exc:  # pragma: no cover - defensive guardrail
-            log_utils.log_message(
-                f"Failed to mark plan {plan_id} as active: {exc}", "ERROR"
-            )
-            raise typer.Exit(code=1)
+    try:
+        dal.mark_plan_active(plan_id)
+    except Exception as exc:  # pragma: no cover - defensive guardrail
+        log_utils.log_message(
+            f"Failed to mark plan {plan_id} as active: {exc}", "ERROR"
+        )
+        raise typer.Exit(code=1)
 
     try:
         push_week(dal, plan_id=plan_id, week=1, start_date=today)

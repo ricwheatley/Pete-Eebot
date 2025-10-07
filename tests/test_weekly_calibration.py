@@ -53,6 +53,7 @@ class StubDal:
         self.updated_targets: List[Dict[str, Any]] = []
         self.backoff_calls: List[Dict[str, Any]] = []
         self.validation_logs: List[List[str]] = []
+        self._fail_backoff = False
 
     def get_active_plan(self) -> Dict[str, Any]:
         return self._active_plan
@@ -91,6 +92,8 @@ class StubDal:
                     row["target_weight_kg"] = update.get("target_weight_kg")
 
     def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
+        if self._fail_backoff:
+            raise RuntimeError("backoff failed")
         self.backoff_calls.append(
             {
                 "week_start": week_start_date,
@@ -242,14 +245,14 @@ def test_weekly_calibration_recommends_backoff_when_dal_cannot_apply(plan_rows, 
         baseline_sleep=420.0,
         historical_adjust=True,
     )
-    dal.apply_plan_backoff = None
+    dal._fail_backoff = True
 
     orch = Orchestrator(dal=dal)
     result = orch.run_weekly_calibration(reference_date=reference)
 
     assert result.validation.needs_backoff is True
     assert result.validation.applied is False
-    assert "dal_missing_backoff" in result.validation.log_entries
+    assert any(entry.startswith("apply_failed:") for entry in result.validation.log_entries)
     assert not dal.backoff_calls
     assert "back-off" in result.validation.explanation.lower()
     assert dal.validation_logs

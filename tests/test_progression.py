@@ -65,6 +65,9 @@ class DummyDal(DataAccessLayer):
     def save_training_plan(self, plan: dict, start_date: datetime.date) -> None:
         pass
 
+    def has_any_plan(self) -> bool:
+        return False
+
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         pass
 
@@ -90,6 +93,38 @@ class DummyDal(DataAccessLayer):
         pass
 
     def refresh_actual_view(self) -> None:
+        pass
+
+    def apply_plan_backoff(
+        self,
+        week_start_date: datetime.date,
+        *,
+        set_multiplier: float,
+        rir_increment: int,
+    ) -> None:
+        pass
+
+    def mark_plan_active(self, plan_id: int) -> None:
+        pass
+
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        pass
+
+    def compute_body_age_for_date(
+        self,
+        target_date: datetime.date,
+        *,
+        birth_date: datetime.date,
+    ) -> None:
+        pass
+
+    def compute_body_age_for_range(
+        self,
+        start_date: datetime.date,
+        end_date: datetime.date,
+        *,
+        birth_date: datetime.date,
+    ) -> None:
         pass
 
     def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
