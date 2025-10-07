@@ -313,7 +313,11 @@ def _to_int(value: Any) -> int | None:
 def _format_daily_heading(day_value: date | None) -> str:
     if day_value is None:
         return "*Daily Flex*"
-    template = helpers.choose_from(_DAILY_HEADINGS, "*{weekday} {day} {month}: Daily Flex*")
+    template = helpers.choose_from(
+        _DAILY_HEADINGS,
+        "*{weekday} {day} {month}: Daily Flex*",
+        rand=random,
+    )
     context = {
         "weekday": day_value.strftime("%A"),
         "day": day_value.strftime("%d"),
@@ -653,7 +657,11 @@ def _format_environment_line(summary_data: Dict[str, Any]) -> str | None:
 
 def _no_daily_metrics_message() -> str:
     message = CoachMessage(
-        greeting=helpers.choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
+        greeting=helpers.choose_from(
+            _COACH_GREETINGS,
+            "Coach Pete checking in",
+            rand=random,
+        ),
         heading="*Daily Flex*",
         bullets=["- No fresh metrics landed – give your trackers a sync and shout me once it's in."],
         closers=_closing_phrases(["#Consistency"], "Consistency is queen, volume is king!"),
@@ -672,7 +680,11 @@ def _clean_number(raw: Any) -> str:
 def _format_weekly_heading(week_number: int, week_start: date | None) -> str:
     if week_start is None:
         return f"*Week {week_number} Game Plan*"
-    template = helpers.choose_from(_WEEKLY_HEADINGS, "*Week {week} Game Plan · {start} → {end}*")
+    template = helpers.choose_from(
+        _WEEKLY_HEADINGS,
+        "*Week {week} Game Plan · {start} → {end}*",
+        rand=random,
+    )
     week_end = week_start + timedelta(days=6)
     return template.format(
         week=week_number,
@@ -728,7 +740,11 @@ def _format_rest_line(rest_days: List[str]) -> str | None:
 
 def _no_plan_message(week_number: int) -> str:
     message = CoachMessage(
-        greeting=helpers.choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
+        greeting=helpers.choose_from(
+            _COACH_WEEKLY_GREETINGS,
+            "Coach Pete here",
+            rand=random,
+        ),
         heading=f"*Week {week_number} Game Plan*",
         bullets=["- I couldn't find workouts for this week – ping me once the plan's loaded."],
         closers=_closing_phrases(["#Motivation"], "We'll build the week the moment data lands."),
@@ -1027,7 +1043,11 @@ def build_weekly_plan_summary(
     )
 
     message = CoachMessage(
-        greeting=helpers.choose_from(_COACH_WEEKLY_GREETINGS, "Coach Pete here"),
+        greeting=helpers.choose_from(
+            _COACH_WEEKLY_GREETINGS,
+            "Coach Pete here",
+            rand=random,
+        ),
         heading=_format_weekly_heading(week_number, week_start),
         bullets=bullets,
         narrative=[],
@@ -1137,7 +1157,11 @@ class NarrativeBuilder:
         )
 
         message = CoachMessage(
-            greeting=helpers.choose_from(_COACH_GREETINGS, "Coach Pete checking in"),
+            greeting=helpers.choose_from(
+                _COACH_GREETINGS,
+                "Coach Pete checking in",
+                rand=random,
+            ),
             heading=heading,
             bullets=bullet_lines,
             narrative=narrative,
