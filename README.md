@@ -25,19 +25,20 @@ Pete-Eebot is a personal health and fitness orchestrator. The application ingest
 
 ```
 .
-â”œâ”€â”€ pete_e/                 # Python package containing the active application code
-â”‚   â”œâ”€â”€ application/        # Orchestration flows (sync, Dropbox ingest, plan generation)
-â”‚   â”œâ”€â”€ cli/                # Typer-powered command line interface
-â”‚   â”œâ”€â”€ config/             # Environment-driven settings
-â”‚   â”œâ”€â”€ domain/             # Business rules (progression, plans, narratives, analytics)
-â”‚   â”œâ”€â”€ infrastructure/     # DAL, API clients, and integrations
-â”‚   â””â”€â”€ resources/          # Static assets used by the application
-â”œâ”€â”€ scripts/                # One-off helpers for maintenance and reviews
-â”œâ”€â”€ tests/                  # Pytest suite for ingestion, orchestration, and validation logic
-â”œâ”€â”€ docs/                   # Design notes and analytical documentation
-â”œâ”€â”€ deprecated/             # Legacy FastAPI/Tailscale implementation retained for reference
-â”œâ”€â”€ docker-compose.yml      # Local Postgres bootstrap for development
-â””â”€â”€ init-db/                # SQL migrations used by the active schema
+├── pete_e/                 # Python package containing the active application code
+│   ├── application/        # Orchestration flows (sync, Dropbox ingest, plan generation)
+│   ├── cli/                # Typer-powered command line interface
+│   ├── config/             # Environment-driven settings
+│   ├── domain/             # Business rules (progression, plans, narratives, analytics)
+│   ├── infrastructure/     # DAL, API clients, and integrations
+│   ├── resources/          # Static assets used by the application
+│   └── utils/              # Globally reusable converters, formatters, and helpers
+├── scripts/                # One-off helpers for maintenance and reviews
+├── tests/                  # Pytest suite for ingestion, orchestration, and validation logic
+├── docs/                   # Design notes and analytical documentation
+├── deprecated/             # Legacy FastAPI/Tailscale implementation retained for reference
+├── docker-compose.yml      # Local Postgres bootstrap for development
+└── init-db/                # SQL migrations used by the active schema
 ```
 
 ---
