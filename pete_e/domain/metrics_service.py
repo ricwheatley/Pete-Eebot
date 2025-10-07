@@ -70,7 +70,9 @@ def _build_metric_series(
     return series
 
 
-def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date) -> Dict[str, Optional[float]]:
+def _calculate_moving_averages(
+    series: Dict[date, Optional[float]], *, reference: date
+) -> Dict[str, Optional[float]]:
     yesterday = reference - timedelta(days=1)
     day_before = reference - timedelta(days=2)
 
@@ -81,6 +83,24 @@ def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date)
     avg_14d = _average_window(series, start=reference - timedelta(days=14), end=reference)
     avg_28d = _average_window(series, start=reference - timedelta(days=28), end=reference)
     avg_90d = _average_window(series, start=reference - timedelta(days=90), end=reference)
+
+    return {
+        "yesterday_value": yesterday_value,
+        "day_before_value": day_before_value,
+        "avg_7d": avg_7d,
+        "avg_14d": avg_14d,
+        "avg_28d": avg_28d,
+        "avg_90d": avg_90d,
+    }
+
+
+def _calculate_changes(
+    averages: Mapping[str, Optional[float]],
+) -> Dict[str, Optional[float]]:
+    yesterday_value = averages.get("yesterday_value")
+    day_before_value = averages.get("day_before_value")
+    avg_7d = averages.get("avg_7d")
+    avg_28d = averages.get("avg_28d")
 
     abs_change_d1: Optional[float] = None
     pct_change_d1: Optional[float] = None
@@ -96,33 +116,63 @@ def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date)
         if avg_28d:
             pct_change_7d = (abs_change_7d / avg_28d) * 100.0
 
-    six_month_high = _extreme_window(series, start=reference - timedelta(days=182), end=reference, reducer=max)
-    six_month_low = _extreme_window(series, start=reference - timedelta(days=182), end=reference, reducer=min)
-    three_month_high = _extreme_window(series, start=reference - timedelta(days=91), end=reference, reducer=max)
-    three_month_low = _extreme_window(series, start=reference - timedelta(days=91), end=reference, reducer=min)
-    all_time_high = _extreme_window(series, reducer=max)
-    all_time_low = _extreme_window(series, reducer=min)
-
-    stats: Dict[str, Optional[float]] = {
-        "yesterday_value": yesterday_value,
-        "day_before_value": day_before_value,
-        "avg_7d": avg_7d,
-        "avg_14d": avg_14d,
-        "avg_28d": avg_28d,
+    return {
         "abs_change_d1": abs_change_d1,
         "pct_change_d1": pct_change_d1,
         "abs_change_7d": abs_change_7d,
         "pct_change_7d": pct_change_7d,
-        "all_time_high": all_time_high,
-        "all_time_low": all_time_low,
+    }
+
+
+def _find_historical_extremes(
+    series: Dict[date, Optional[float]], *, reference: date
+) -> Dict[str, Optional[float]]:
+    six_month_high = _extreme_window(
+        series, start=reference - timedelta(days=182), end=reference, reducer=max
+    )
+    six_month_low = _extreme_window(
+        series, start=reference - timedelta(days=182), end=reference, reducer=min
+    )
+    three_month_high = _extreme_window(
+        series, start=reference - timedelta(days=91), end=reference, reducer=max
+    )
+    three_month_low = _extreme_window(
+        series, start=reference - timedelta(days=91), end=reference, reducer=min
+    )
+    all_time_high = _extreme_window(series, reducer=max)
+    all_time_low = _extreme_window(series, reducer=min)
+
+    return {
         "six_month_high": six_month_high,
         "six_month_low": six_month_low,
         "three_month_high": three_month_high,
         "three_month_low": three_month_low,
-        "moving_avg_7d": avg_7d,
-        "moving_avg_28d": avg_28d,
-        "moving_avg_90d": avg_90d,
+        "all_time_high": all_time_high,
+        "all_time_low": all_time_low,
     }
+
+
+def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date) -> Dict[str, Optional[float]]:
+    averages = _calculate_moving_averages(series, reference=reference)
+    changes = _calculate_changes(averages)
+    extremes = _find_historical_extremes(series, reference=reference)
+
+    stats: Dict[str, Optional[float]] = {
+        "yesterday_value": averages.get("yesterday_value"),
+        "day_before_value": averages.get("day_before_value"),
+        "avg_7d": averages.get("avg_7d"),
+        "avg_14d": averages.get("avg_14d"),
+        "avg_28d": averages.get("avg_28d"),
+        "abs_change_d1": changes.get("abs_change_d1"),
+        "pct_change_d1": changes.get("pct_change_d1"),
+        "abs_change_7d": changes.get("abs_change_7d"),
+        "pct_change_7d": changes.get("pct_change_7d"),
+        "moving_avg_7d": averages.get("avg_7d"),
+        "moving_avg_28d": averages.get("avg_28d"),
+        "moving_avg_90d": averages.get("avg_90d"),
+    }
+
+    stats.update(extremes)
 
     for key, value in list(stats.items()):
         stats[key] = converters.to_float(value)
