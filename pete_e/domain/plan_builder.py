@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 from datetime import date, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Mapping
 
 from pete_e.domain import schedule_rules
 from pete_e.domain import validation
@@ -163,7 +163,11 @@ def _build_stub_plan(dal: Any, start_date: date, weeks: int) -> Dict[str, Any]:
         "weeks": plan_weeks,
     }
 
-def build_training_block(start_date: date, weeks: int = 4) -> int:
+def build_training_block(
+    start_date: date,
+    weeks: int = 4,
+    training_maxes: Mapping[str, Optional[float]] | None = None,
+) -> int:
     """
     Build a 4-week block aligned to the blueprint:
       - Mon Bench (after Blaze)
@@ -180,7 +184,10 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
     plan_id, week_ids = plan_rw.create_block_and_plan(start_date, weeks)
 
     # Retrieve latest training max values for main lifts
-    tm_map = plan_rw.latest_training_max()
+    if training_maxes is not None:
+        tm_map = {str(key): value for key, value in dict(training_maxes).items()}
+    else:
+        tm_map = plan_rw.latest_training_max()
 
     # Iterate weeks
     for w in range(1, weeks + 1):
@@ -292,18 +299,23 @@ def build_training_block(start_date: date, weeks: int = 4) -> int:
     return plan_id
 
 # Backward compatibility for orchestrator/tests that still expect build_block
-def build_block(dal, start_date, weeks: int = 4) -> int:
+def build_block(
+    dal,
+    start_date,
+    weeks: int = 4,
+    training_maxes: Mapping[str, Optional[float]] | None = None,
+) -> int:
     """
     Compatibility shim. Persist a plan via the provided DAL when possible.
     """
     weeks = max(1, int(weeks or 1))
 
     if isinstance(dal, DataAccessLayer):
-        return build_training_block(start_date, weeks)
+        return build_training_block(start_date, weeks, training_maxes)
 
     saver = getattr(dal, "save_training_plan", None)
     if not callable(saver):
-        return build_training_block(start_date, weeks)
+        return build_training_block(start_date, weeks, training_maxes)
 
     plan_payload = _build_stub_plan(dal, start_date, weeks)
     plan_id = saver(plan_payload, start_date)
