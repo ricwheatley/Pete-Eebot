@@ -6,27 +6,8 @@ import os
 
 import pytest
 
-
-if "pete_e.config" not in sys.modules:
-    config_stub = types.ModuleType("pete_e.config")
-
-    class _SettingsStub:
-        USER_DATE_OF_BIRTH = date(1990, 1, 1)
-        DATABASE_URL = "postgresql://stub"
-
-        def __getattr__(self, name):  # pragma: no cover - defensive default
-            return None
-
-        @property
-        def log_path(self):  # pragma: no cover - ensure log path is writable
-            return Path("logs/test.log")
-
-    config_stub.settings = _SettingsStub()
-    sys.modules["pete_e.config"] = config_stub
-
-    config_config_stub = types.ModuleType("pete_e.config.config")
-    config_config_stub.settings = config_stub.settings
-    sys.modules["pete_e.config.config"] = config_config_stub
+from tests import config_stub, rich_stub  # noqa: F401 - ensure dependencies are stubbed
+from tests.mock_dal import MockableDal
 
 if "pete_e.data_access.postgres_dal" not in sys.modules:
     postgres_stub = types.ModuleType("pete_e.data_access.postgres_dal")
@@ -44,7 +25,7 @@ from pete_e.application.orchestrator import Orchestrator
 from pete_e.cli import messenger as messenger_module
 
 
-class DummyDal:
+class DummyDal(MockableDal):
     def __init__(self):
         self.withings_calls = []
         self.wger_logs = []
@@ -60,6 +41,12 @@ class DummyDal:
 
     def refresh_actual_view(self):
         self.refreshed = True
+
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        self.refreshed = True
+
+    def has_any_plan(self) -> bool:
+        return True
 
 
 class DummyWithingsClient:

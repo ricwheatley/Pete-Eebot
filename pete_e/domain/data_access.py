@@ -55,6 +55,24 @@ class DataAccessLayer(ABC):
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         pass
 
+    @abstractmethod
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        pass
+
+    @abstractmethod
+    def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
+        pass
+
+    @abstractmethod
+    def compute_body_age_for_range(
+        self,
+        start_date: date,
+        end_date: date,
+        *,
+        birth_date: date,
+    ) -> None:
+        pass
+
     # -------------------------------------------------------------------------
     # Training plans
     # -------------------------------------------------------------------------
@@ -64,11 +82,19 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def has_any_plan(self) -> bool:
+        pass
+
+    @abstractmethod
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         pass
 
     @abstractmethod
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def mark_plan_active(self, plan_id: int) -> None:
         pass
 
     # -------------------------------------------------------------------------
@@ -103,6 +129,16 @@ class DataAccessLayer(ABC):
 
     @abstractmethod
     def refresh_actual_view(self) -> None:
+        pass
+
+    @abstractmethod
+    def apply_plan_backoff(
+        self,
+        week_start_date: date,
+        *,
+        set_multiplier: float,
+        rir_increment: int,
+    ) -> None:
         pass
 
     # -------------------------------------------------------------------------

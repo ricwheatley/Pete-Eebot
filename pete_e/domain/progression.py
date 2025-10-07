@@ -279,24 +279,27 @@ def calibrate_plan_week(
 
     persisted = False
     if persist and updates:
-        update_fn = getattr(dal, "update_workout_targets", None)
-        if callable(update_fn):
-            payload = [
-                {"workout_id": item.workout_id, "target_weight_kg": item.after}
-                for item in updates
-            ]
-            update_fn(payload)
-            persisted = True
+        payload = [
+            {"workout_id": item.workout_id, "target_weight_kg": item.after}
+            for item in updates
+        ]
 
-            refresh_fn = getattr(dal, "refresh_plan_view", None)
-            if callable(refresh_fn):
-                try:
-                    refresh_fn()
-                except Exception as exc:  # pragma: no cover - defensive guardrail
-                    log_utils.log_message(
-                        f"Failed to refresh plan view after progression updates: {exc}",
-                        "WARN",
-                    )
+        try:
+            dal.update_workout_targets(payload)
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to update workout targets: {exc}",
+                "ERROR",
+            )
+        else:
+            persisted = True
+            try:
+                dal.refresh_plan_view()
+            except Exception as exc:  # pragma: no cover - defensive guardrail
+                log_utils.log_message(
+                    f"Failed to refresh plan view after progression updates: {exc}",
+                    "WARN",
+                )
 
     return PlanProgressionDecision(notes=notes, updates=updates, persisted=persisted)
 
