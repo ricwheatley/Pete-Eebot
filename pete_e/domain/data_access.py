@@ -114,6 +114,20 @@ class DataAccessLayer(ABC):
     ) -> Dict[str, Any]:
         pass
 
+    @abstractmethod
+    def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    def update_training_cycle_state(
+        self,
+        cycle_id: int,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Optional[Dict[str, Any]]:
+        pass
+
     # -------------------------------------------------------------------------
     # Muscle volume comparison
     # -------------------------------------------------------------------------

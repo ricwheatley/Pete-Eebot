@@ -584,6 +584,17 @@ class Orchestrator:
             f"Strength test week {plan_id} generated and exported.",
             "INFO",
         )
+        summary = (
+            "Strength test week locked in! "
+            f"Plan {plan_id} starts {week_start:%Y-%m-%d} with test slots ready."
+        )
+        try:
+            self.send_telegram_message(summary)
+        except Exception as exc:  # pragma: no cover - defensive messaging
+            log_utils.log_message(
+                f"Failed to send Telegram update for strength test week {plan_id}: {exc}",
+                "WARN",
+            )
         return plan_id, week_id
 
     def _load_current_training_maxes(self) -> Dict[str, Optional[float]]:
@@ -644,12 +655,35 @@ class Orchestrator:
             f"Generating 4-week block starting {block_start.isoformat()} with training maxes",
             "INFO",
         )
-        return build_block(
+        plan_id = build_block(
             self.dal,
             block_start,
             weeks=weeks,
             training_maxes=tm_map,
         )
+
+        ordered_lifts = ["squat", "bench", "deadlift", "ohp"]
+        tm_chunks: List[str] = []
+        for lift in ordered_lifts:
+            value = tm_map.get(lift)
+            label = lift.title()
+            if value is None:
+                tm_chunks.append(f"{label}: n/a")
+            else:
+                tm_chunks.append(f"{label}: {float(value):.1f}kg")
+        message = (
+            f"New 4-week block (plan {plan_id}) starts {block_start:%Y-%m-%d}. "
+            f"Training maxes -> {', '.join(tm_chunks)}."
+        )
+        try:
+            self.send_telegram_message(message)
+        except Exception as exc:  # pragma: no cover - defensive messaging
+            log_utils.log_message(
+                f"Failed to send Telegram update for block {plan_id}: {exc}",
+                "WARN",
+            )
+
+        return plan_id
 
     def progress_to_next_block(
         self,
@@ -682,11 +716,356 @@ class Orchestrator:
             "Progressing training maxes for next block using 5/3/1 increments",
             "INFO",
         )
-        return self.generate_next_block(
+        block_start = start_date or _next_monday(date.today())
+        plan_id = self.generate_next_block(
             start_date=start_date,
             training_maxes=progressed,
             weeks=4,
         )
+        summary_bits = []
+        for lift in ["bench", "squat", "deadlift", "ohp"]:
+            value = progressed.get(lift)
+            if value is None:
+                continue
+            summary_bits.append(f"{lift.title()} {float(value):.1f}kg")
+        if summary_bits:
+            update_text = ", ".join(summary_bits)
+        else:
+            update_text = "No updated training max values recorded."
+        message = (
+            f"5/3/1 progression applied. Next block (plan {plan_id}) starts {block_start:%Y-%m-%d}. "
+            f"Updated TMs: {update_text}."
+        )
+        try:
+            self.send_telegram_message(message)
+        except Exception as exc:  # pragma: no cover - defensive messaging
+            log_utils.log_message(
+                f"Failed to send Telegram update for progressed block {plan_id}: {exc}",
+                "WARN",
+            )
+        return plan_id
+
+    def _block_start_week(self, block_index: int) -> int:
+        if block_index <= 0:
+            return 1
+        return 2 + (max(block_index, 1) - 1) * 4
+
+    def _resolve_plan_for_block_week(
+        self,
+        *,
+        block_start_date: date,
+        block_index: int,
+        current_week: int,
+        fallback_plan_id: int | None = None,
+    ) -> tuple[int | None, int | None]:
+        plan_id = fallback_plan_id
+        plan_row: Mapping[str, Any] | None = None
+
+        if plan_id is None:
+            finder = getattr(self.dal, "find_plan_by_start_date", None)
+            if callable(finder):
+                try:
+                    plan_row = finder(block_start_date)
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to locate plan for {block_start_date.isoformat()}: {exc}",
+                        "WARN",
+                    )
+            if isinstance(plan_row, Mapping):
+                plan_candidate = plan_row.get("id")
+                if plan_candidate is not None:
+                    plan_id = int(plan_candidate)
+
+        if plan_id is None:
+            getter = getattr(self.dal, "get_active_plan", None)
+            active_plan: Mapping[str, Any] | None = None
+            if callable(getter):
+                try:
+                    active_plan = getter()
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to load active plan while resolving block for {block_start_date.isoformat()}: {exc}",
+                        "WARN",
+                    )
+            if isinstance(active_plan, Mapping):
+                active_start = converters.to_date(active_plan.get("start_date"))
+                if active_start == block_start_date:
+                    candidate = active_plan.get("id")
+                    if candidate is not None:
+                        plan_id = int(candidate)
+
+        if plan_id is None:
+            return None, None
+
+        start_week = self._block_start_week(block_index)
+        week_in_plan = current_week - start_week + 1
+        if week_in_plan < 1:
+            week_in_plan = 1
+        if week_in_plan > 4:
+            week_in_plan = 4
+        return int(plan_id), int(week_in_plan)
+
+    @_closes_postgres_pool
+    def run_sunday_review(self, reference_date: date | None = None) -> Dict[str, Any]:
+        """Weekly automation entry point orchestrating the 13-week macrocycle."""
+
+        reference = reference_date or date.today()
+        actions: List[str] = []
+
+        reader = getattr(self.dal, "get_active_training_cycle", None)
+        if not callable(reader):
+            message = "Training cycle state unavailable; Sunday review cannot proceed."
+            log_utils.log_message(message, "WARN")
+            try:
+                self.send_telegram_message(message)
+            except Exception:  # pragma: no cover - defensive notification
+                pass
+            return {
+                "status": "unavailable",
+                "reference_date": reference,
+                "actions": actions,
+            }
+
+        try:
+            cycle = reader()
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to fetch active training cycle: {exc}",
+                "ERROR",
+            )
+            try:
+                self.send_telegram_message(
+                    "Sunday review failed: could not load training cycle state."
+                )
+            except Exception:  # pragma: no cover - defensive notification
+                pass
+            return {
+                "status": "error",
+                "reference_date": reference,
+                "actions": actions,
+            }
+
+        if not isinstance(cycle, Mapping) or not cycle:
+            message = "Sunday review skipped: no active training cycle found."
+            log_utils.log_message(message, "WARN")
+            try:
+                self.send_telegram_message(message)
+            except Exception:  # pragma: no cover - defensive notification
+                pass
+            return {
+                "status": "no-cycle",
+                "reference_date": reference,
+                "actions": actions,
+            }
+
+        cycle_id = cycle.get("id")
+        start_date = converters.to_date(cycle.get("start_date"))
+        if cycle_id is None or start_date is None:
+            message = "Sunday review aborted: training cycle missing identifiers."
+            log_utils.log_message(message, "ERROR")
+            try:
+                self.send_telegram_message(message)
+            except Exception:  # pragma: no cover - defensive notification
+                pass
+            return {
+                "status": "invalid-cycle",
+                "reference_date": reference,
+                "actions": actions,
+            }
+
+        try:
+            current_week = int(cycle.get("current_week") or 1)
+        except (TypeError, ValueError):
+            current_week = 1
+        try:
+            current_block = int(cycle.get("current_block") or 0)
+        except (TypeError, ValueError):
+            current_block = 0
+
+        previous_week = max(0, current_week - 1)
+        week_start = start_date + timedelta(days=max(current_week - 1, 0) * 7)
+        actions.append(f"prepare-week-{current_week}")
+
+        new_block = current_block
+        generated_plan_id: int | None = None
+        export_result: Dict[str, Any] | None = None
+        readiness_snapshot: ReadinessSummary | None = None
+        validation_decision: ValidationDecision | None = None
+        hold_reason: str | None = None
+        plan_sent = False
+
+        if previous_week == 1:
+            actions.append("evaluate-strength-test")
+            try:
+                self.evaluate_strength_test_week()
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to evaluate strength test week: {exc}",
+                    "ERROR",
+                )
+            new_block = max(1, current_block)
+            actions.append("generate-first-block")
+            try:
+                generated_plan_id = self.generate_next_block(start_date=week_start)
+            except Exception as exc:
+                hold_reason = f"Block generation failed: {exc}"
+                log_utils.log_message(hold_reason, "ERROR")
+
+        if hold_reason is None and previous_week in {5, 9}:
+            actions.append("progress-block")
+            new_block = max(current_block + 1, 1)
+            try:
+                generated_plan_id = self.progress_to_next_block(start_date=week_start)
+            except Exception as exc:
+                hold_reason = f"Next block generation failed: {exc}"
+                log_utils.log_message(hold_reason, "ERROR")
+
+        if hold_reason is None and previous_week >= 13:
+            hold_reason = "Macrocycle complete; no further weeks to schedule."
+            actions.append("macrocycle-complete")
+
+        is_block_week = current_week >= 2 and current_week <= 13
+        block_index = new_block if new_block > 0 else current_block
+        first_week_of_block = current_week in {2, 6, 10}
+
+        if hold_reason is None and is_block_week and not first_week_of_block:
+            actions.append("check-readiness")
+            try:
+                readiness_snapshot = summarise_readiness(self.dal, week_start)
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Readiness check failed for {week_start.isoformat()}: {exc}",
+                    "ERROR",
+                )
+            actions.append("validate-plan")
+            try:
+                validation_decision = validate_and_adjust_plan(self.dal, week_start)
+            except Exception as exc:
+                hold_reason = f"Plan validation failed: {exc}"
+                log_utils.log_message(hold_reason, "ERROR")
+
+            if hold_reason is None and readiness_snapshot and readiness_snapshot.state == "critical":
+                hold_reason = (
+                    f"Readiness critical - {readiness_snapshot.headline}."
+                )
+
+        plan_id: int | None = None
+        week_number_in_plan: int | None = None
+
+        if hold_reason is None and is_block_week:
+            block_start_week = self._block_start_week(block_index)
+            block_start_date = start_date + timedelta(days=(block_start_week - 1) * 7)
+            plan_id, week_number_in_plan = self._resolve_plan_for_block_week(
+                block_start_date=block_start_date,
+                block_index=block_index,
+                current_week=current_week,
+                fallback_plan_id=generated_plan_id,
+            )
+            if plan_id is None:
+                hold_reason = (
+                    f"Could not locate plan for week {current_week} starting {week_start:%Y-%m-%d}."
+                )
+                actions.append("plan-missing")
+
+        if hold_reason is None and plan_id is not None and week_number_in_plan is not None:
+            actions.append("export-week")
+            try:
+                export_result = wger_sender.push_week(
+                    self.dal,
+                    plan_id,
+                    week=week_number_in_plan,
+                    start_date=week_start,
+                )
+            except Exception as exc:
+                hold_reason = f"Wger export failed: {exc}"
+                log_utils.log_message(hold_reason, "ERROR")
+            else:
+                plan_sent = True
+
+        def _notify(message: str) -> None:
+            if not message:
+                return
+            try:
+                self.send_telegram_message(message)
+            except Exception as exc:  # pragma: no cover - defensive messaging
+                log_utils.log_message(
+                    f"Failed to send Sunday review message: {exc}",
+                    "WARN",
+                )
+
+        if hold_reason:
+            detail = hold_reason
+            if readiness_snapshot and readiness_snapshot.tip:
+                detail += f" Tip: {readiness_snapshot.tip}"
+            message = (
+                f"Sunday review: Holding week {current_week} (starts {week_start:%Y-%m-%d}). "
+                f"{detail}"
+            )
+            _notify(message)
+            status = "held"
+        elif plan_sent:
+            multiplier_text = "kept as planned"
+            if (
+                validation_decision
+                and getattr(validation_decision, "recommendation", None)
+            ):
+                multiplier = float(validation_decision.recommendation.set_multiplier)
+                if abs(multiplier - 1.0) >= 0.01:
+                    multiplier_text = f"scaled to {multiplier:.0%} volume"
+                elif validation_decision.applied:
+                    multiplier_text = "minor tweaks applied"
+
+            readiness_text = (
+                readiness_snapshot.headline
+                if readiness_snapshot
+                else "Readiness steady"
+            )
+            message = (
+                f"Sunday review: Week {current_week} (starts {week_start:%Y-%m-%d}) {multiplier_text}. "
+                f"{readiness_text}. Plan sent to Wger."
+            )
+            if validation_decision and validation_decision.explanation:
+                message += f" {validation_decision.explanation}"
+            _notify(message)
+            status = "exported"
+        else:
+            message = (
+                f"Sunday review: No export for week {current_week}. "
+                f"{hold_reason or 'No action taken.'}"
+            )
+            _notify(message)
+            status = "skipped"
+
+        updated_cycle: Optional[Dict[str, Any]] = None
+        if plan_sent:
+            next_week = min(13, current_week + 1)
+            if next_week != current_week or new_block != current_block:
+                updater = getattr(self.dal, "update_training_cycle_state", None)
+                if callable(updater):
+                    try:
+                        updated_cycle = updater(
+                            int(cycle_id),
+                            current_week=next_week,
+                            current_block=new_block,
+                        )
+                    except Exception as exc:
+                        log_utils.log_message(
+                            f"Failed to persist training cycle progression: {exc}",
+                            "ERROR",
+                        )
+
+        result = {
+            "status": status,
+            "reference_date": reference,
+            "week_start": week_start,
+            "current_week": current_week,
+            "current_block": current_block,
+            "actions": actions,
+            "export_result": export_result,
+            "hold_reason": hold_reason,
+            "updated_cycle": updated_cycle,
+        }
+        return result
 
     def evaluate_strength_test_week(self) -> Optional[Dict[str, str]]:
         """Evaluate the most recent strength test week and update training maxes."""
