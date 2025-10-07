@@ -1037,6 +1037,8 @@ class Orchestrator:
             status = "skipped"
 
         updated_cycle: Optional[Dict[str, Any]] = None
+        rollover_cycle: Optional[Dict[str, Any]] = None
+        rollover_error: str | None = None
         if plan_sent:
             next_week = min(13, current_week + 1)
             if next_week != current_week or new_block != current_block:
@@ -1054,6 +1056,20 @@ class Orchestrator:
                             "ERROR",
                         )
 
+        if plan_sent and current_week >= 13 and hold_reason is None:
+            next_cycle_start = week_start + timedelta(days=7)
+            try:
+                rollover_cycle = self.start_new_macrocycle(next_cycle_start)
+            except Exception as exc:
+                rollover_error = (
+                    "Failed to start new macrocycle "
+                    f"for {next_cycle_start:%Y-%m-%d}: {exc}"
+                )
+                log_utils.log_message(rollover_error, "ERROR")
+                actions.append("start-new-macrocycle-failed")
+            else:
+                actions.append("start-new-macrocycle")
+
         result = {
             "status": status,
             "reference_date": reference,
@@ -1064,6 +1080,8 @@ class Orchestrator:
             "export_result": export_result,
             "hold_reason": hold_reason,
             "updated_cycle": updated_cycle,
+            "rollover_cycle": rollover_cycle,
+            "rollover_error": rollover_error,
         }
         return result
 
