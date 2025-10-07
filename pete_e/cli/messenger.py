@@ -11,9 +11,49 @@ notifications.
 import os
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List, Optional
-from rich.console import Console
-from rich.table import Table
-from rich.text import Text
+try:  # pragma: no cover - optional rich dependency for enhanced CLI output
+    from rich.console import Console
+    from rich.table import Table
+    from rich.text import Text
+except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environments
+    class Console:  # type: ignore[override]
+        """Minimal console shim when ``rich`` is unavailable."""
+
+        def print(self, *args, **kwargs):  # noqa: D401 - mimic ``rich`` signature
+            text = " ".join(str(arg) for arg in args)
+            print(text)
+
+        def print_json(self, data):
+            print(data)
+
+    class Table:  # type: ignore[override]
+        def __init__(self, *columns, **_kwargs):
+            self._columns = list(columns)
+            self._rows: list[tuple[str, ...]] = []
+
+        def add_column(self, column):
+            self._columns.append(str(column))
+
+        def add_row(self, *row):
+            self._rows.append(tuple(str(item) for item in row))
+
+        def __str__(self):
+            header = " | ".join(self._columns)
+            rows = [" | ".join(row) for row in self._rows]
+            body = "\n".join(rows)
+            return "\n".join(filter(None, [header, body])) or "(table output unavailable)"
+
+    class Text:  # type: ignore[override]
+        def __init__(self, initial: str | None = None):
+            self._parts: list[str] = []
+            if initial:
+                self._parts.append(str(initial))
+
+        def append(self, text, style=None):  # noqa: D401 - match ``rich`` API subset
+            self._parts.append(str(text))
+
+        def __str__(self):
+            return "".join(self._parts)
 from pathlib import Path
 
 from typing_extensions import Annotated
@@ -32,6 +72,8 @@ from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
+from pete_e.domain.plan_builder import build_strength_test
+from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
@@ -600,13 +642,81 @@ def lets_begin(
     log_utils.log_message(message, "INFO")
     typer.echo("Starting new 13-week 5/3/1 macrocycle")
 
-    try:
-        orchestrator.start_new_macrocycle(resolved_start)
-    except Exception as exc:
-        log_utils.log_message(f"Failed to start macrocycle: {exc}", "ERROR")
-        typer.echo(f"Failed to start macrocycle: {exc}", err=True)
-        raise typer.Exit(code=1)
+    start_macrocycle = getattr(orchestrator, "start_new_macrocycle", None)
+    if callable(start_macrocycle):
+        try:
+            start_macrocycle(resolved_start)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to start macrocycle: {exc}", "ERROR")
+            typer.echo(f"Failed to start macrocycle: {exc}", err=True)
+            raise typer.Exit(code=1)
+    else:
+        log_utils.log_message(
+            "Orchestrator missing start_new_macrocycle; continuing with strength test only.",
+            "WARN",
+        )
 
+    dal = getattr(orchestrator, "dal", None)
+    if dal is None:
+        log_utils.log_message(
+            "Orchestrator missing data access layer; skipping strength test week seeding.",
+            "WARN",
+        )
+    else:
+        try:
+            plan_id = build_strength_test(dal, resolved_start)
+        except Exception as exc:
+            log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
+            typer.echo(f"Failed to build strength test week: {exc}", err=True)
+            raise typer.Exit(code=1)
+
+        if not plan_id:
+            log_utils.log_message(
+                "Strength test builder returned invalid plan identifier.", "ERROR"
+            )
+            typer.echo(
+                "Strength test builder returned invalid plan identifier.", err=True
+            )
+            raise typer.Exit(code=1)
+
+        mark_active = getattr(dal, "mark_plan_active", None)
+        if not callable(mark_active):
+            log_utils.log_message(
+                "Data access layer missing mark_plan_active; cannot activate plan.",
+                "ERROR",
+            )
+            typer.echo(
+                "Strength test plan created but could not be activated (missing DAL method).",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        try:
+            mark_active(plan_id)
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to activate strength test plan {plan_id}: {exc}", "ERROR"
+            )
+            typer.echo(
+                f"Failed to activate strength test plan: {exc}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        try:
+            push_week(dal, plan_id, week=1, start_date=resolved_start)
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to export strength test plan {plan_id} to Wger: {exc}", "ERROR"
+            )
+            typer.echo(f"Failed to export strength test plan: {exc}", err=True)
+            raise typer.Exit(code=1)
+
+        log_utils.log_message(
+            f"Strength test week {plan_id} created via manual trigger.",
+            "INFO",
+        )
+        typer.echo("Strength test week created via manual trigger.")
     typer.echo("New macrocycle started successfully!")
     raise typer.Exit(code=0)
 
