@@ -279,7 +279,9 @@ def _build_generic_line(name: str, stats: Mapping[str, Any], records: Set[str]) 
     return line
 
 
-def _build_paragraph(highlight: Highlight, metrics: MetricMap) -> str | None:
+def _format_highlight_paragraph(
+    highlight: Highlight, metrics: MetricMap
+) -> str | None:
     stats = metrics.get(highlight.name)
     if not stats:
         return None
@@ -300,6 +302,17 @@ def _closing_phrase() -> str:
     return f"Pierre dit: {phrase}"
 
 
+def _today_session_message(session_type: str | None) -> str | None:
+    if not session_type:
+        return None
+    session = session_type.strip()
+    if not session:
+        return None
+    if session.lower() in {"rest", "rest_day"}:
+        return "Aujourd'hui c'est repos. Recharge les batteries et garde une balade legere."
+    return f"Aujourd'hui: {session}. On y va fort - focus et bonne technique!"
+
+
 def compose_daily_message(metrics: MetricMap, calendar_context: ContextMap | None = None) -> str:
     if not metrics:
         return "Bonjour! Pas de donnees pour hier - pense a synchroniser tes capteurs, d'accord?"
@@ -312,18 +325,15 @@ def compose_daily_message(metrics: MetricMap, calendar_context: ContextMap | Non
     lines.append(f"Bonjour {user_name}! Pierre ici - pret pour ton check-in.")
 
     for highlight in highlights:
-        paragraph = _build_paragraph(highlight, metrics)
+        paragraph = _format_highlight_paragraph(highlight, metrics)
         if paragraph:
             lines.append("")
             lines.append(paragraph)
 
-    session = (context.get("today_session_type") or "").strip()
-    if session:
+    session_message = _today_session_message(context.get("today_session_type"))
+    if session_message:
         lines.append("")
-        if session.lower() in {"rest", "rest_day"}:
-            lines.append("Aujourd'hui c'est repos. Recharge les batteries et garde une balade legere.")
-        else:
-            lines.append(f"Aujourd'hui: {session}. On y va fort - focus et bonne technique!")
+        lines.append(session_message)
 
     lines.append("")
     lines.append(_closing_phrase())
