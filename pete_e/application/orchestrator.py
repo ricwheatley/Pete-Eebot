@@ -586,6 +586,108 @@ class Orchestrator:
         )
         return plan_id, week_id
 
+    def _load_current_training_maxes(self) -> Dict[str, Optional[float]]:
+        loader = getattr(plan_rw, "latest_training_max", None)
+        if not callable(loader):
+            log_utils.log_message(
+                "Training max lookup is unavailable; defaulting to empty map.",
+                "WARN",
+            )
+            return {}
+        try:
+            tm_map = loader()
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to load training maxes: {exc}",
+                "WARN",
+            )
+            return {}
+        if isinstance(tm_map, Mapping):
+            return dict(tm_map)
+        log_utils.log_message(
+            "Training max lookup returned unexpected data; defaulting to empty map.",
+            "WARN",
+        )
+        return {}
+
+    def generate_next_block(
+        self,
+        *,
+        start_date: date | None = None,
+        training_maxes: Mapping[str, Optional[float]] | None = None,
+        weeks: int = 4,
+    ) -> int:
+        if weeks != 4:
+            raise ValueError("generate_next_block only supports 4-week plans")
+
+        block_start = start_date or _next_monday(date.today())
+        if training_maxes is None:
+            raw_tm = self._load_current_training_maxes()
+        else:
+            raw_tm = dict(training_maxes)
+
+        tm_map: Dict[str, Optional[float]] = {}
+        for key, value in raw_tm.items():
+            name = str(key)
+            if value is None:
+                tm_map[name] = None
+                continue
+            try:
+                tm_map[name] = float(value)
+            except (TypeError, ValueError):
+                log_utils.log_message(
+                    f"Ignoring invalid training max for {name}: {value}",
+                    "WARN",
+                )
+
+        log_utils.log_message(
+            f"Generating 4-week block starting {block_start.isoformat()} with training maxes",
+            "INFO",
+        )
+        return build_block(
+            self.dal,
+            block_start,
+            weeks=weeks,
+            training_maxes=tm_map,
+        )
+
+    def progress_to_next_block(
+        self,
+        *,
+        start_date: date | None = None,
+    ) -> int:
+        current_tm = self._load_current_training_maxes()
+        progressed: Dict[str, Optional[float]] = dict(current_tm)
+
+        increments: Dict[str, float] = {
+            "bench": 2.5,
+            "ohp": 2.5,
+            "squat": 5.0,
+            "deadlift": 5.0,
+        }
+
+        for lift, increment in increments.items():
+            value = current_tm.get(lift)
+            if value is None:
+                continue
+            try:
+                progressed[lift] = float(value) + increment
+            except (TypeError, ValueError):
+                log_utils.log_message(
+                    f"Skipping progression for {lift}; invalid TM value {value}",
+                    "WARN",
+                )
+
+        log_utils.log_message(
+            "Progressing training maxes for next block using 5/3/1 increments",
+            "INFO",
+        )
+        return self.generate_next_block(
+            start_date=start_date,
+            training_maxes=progressed,
+            weeks=4,
+        )
+
     def evaluate_strength_test_week(self) -> Optional[Dict[str, str]]:
         """Evaluate the most recent strength test week and update training maxes."""
 
