@@ -26,12 +26,22 @@ from pete_e.domain.validation import (
     validate_and_adjust_plan,
     summarise_readiness,
 )
+from pete_e.domain.schedule_rules import (
+    BLAZE_ID,
+    BLAZE_TIMES,
+    weight_slot_for_day,
+    SQUAT_ID,
+    BENCH_ID,
+    DEADLIFT_ID,
+    OHP_ID,
+)
 from pete_e.application import wger_sender
 from pete_e.cli import messenger as messenger_cli
 from pete_e.domain import body_age, metrics_service, french_trainer, phrase_picker
 from pete_e.domain.user_helpers import calculate_age
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import plan_rw
+from pete_e.infrastructure.wger_exporter import export_week_to_wger
 from pete_e.utils import converters
 from pete_e.config import settings
 from pete_e.application.apple_dropbox_ingest import (
@@ -52,6 +62,55 @@ WITHINGS_ONLY_SOURCES = (
 )
 
 STRENGTH_TEST_INTERVAL_WEEKS = 13
+
+STRENGTH_TEST_PCTS: Dict[int, float] = {
+    BENCH_ID: 85.0,
+    SQUAT_ID: 87.5,
+    OHP_ID: 85.0,
+    DEADLIFT_ID: 90.0,
+}
+
+STRENGTH_TEST_MAIN_LIFTS = [BENCH_ID, SQUAT_ID, OHP_ID, DEADLIFT_ID]
+
+STRENGTH_TEST_LIFT_CODES: Dict[int, str] = {
+    SQUAT_ID: "squat",
+    BENCH_ID: "bench",
+    DEADLIFT_ID: "deadlift",
+    OHP_ID: "ohp",
+}
+
+STRENGTH_TEST_LIFT_NAMES: Dict[int, str] = {
+    SQUAT_ID: "Squat",
+    BENCH_ID: "Bench",
+    DEADLIFT_ID: "Deadlift",
+    OHP_ID: "Overhead Press",
+}
+
+
+def _round_to_2p5(value: float) -> float:
+    return round(value / 2.5) * 2.5
+
+
+def _strength_test_tm_key(exercise_id: int) -> str | None:
+    return STRENGTH_TEST_LIFT_CODES.get(exercise_id)
+
+
+def _strength_test_target_from_tm(
+    tm_map: Mapping[str, Optional[float]],
+    exercise_id: int,
+    percent_1rm: float,
+) -> Optional[float]:
+    key = _strength_test_tm_key(exercise_id)
+    if not key:
+        return None
+    tm_value = tm_map.get(key)
+    if tm_value is None:
+        return None
+    return _round_to_2p5(float(tm_value) * percent_1rm / 100.0)
+
+
+def _strength_test_e1rm(weight_kg: float, reps: int) -> float:
+    return weight_kg * (1.0 + reps / 30.0)
 
 
 
@@ -456,34 +515,241 @@ class Orchestrator:
                 dispatched.append(message)
         return dispatched
 
-    def generate_strength_test_week(self, start_date: date = date.today()) -> bool:
+    def generate_strength_test_week(
+        self,
+        start_date: date = date.today(),
+    ) -> tuple[int, int] | None:
         """Create, activate, and export a strength test week."""
 
         try:
-            plan_id = build_strength_test(self.dal, start_date)
-            if not plan_id:
-                raise ValueError("Strength test builder returned invalid plan identifier.")
+            plan_id, week_id = plan_rw.create_test_week_plan(start_date)
+            tm_map = plan_rw.latest_training_max()
 
-            self.dal.mark_plan_active(plan_id)
+            for dow in sorted(BLAZE_TIMES.keys()):
+                plan_rw.insert_workout(
+                    week_id=week_id,
+                    day_of_week=dow,
+                    exercise_id=BLAZE_ID,
+                    sets=1,
+                    reps=1,
+                    rir_cue=None,
+                    percent_1rm=None,
+                    target_weight_kg=None,
+                    scheduled_time=BLAZE_TIMES[dow].strftime("%H:%M:%S"),
+                    is_cardio=True,
+                )
 
-            wger_sender.push_week(
-                self.dal,
-                plan_id,
-                week=1,
-                start_date=start_date,
+            for dow, exercise_id in zip([1, 2, 4, 5], STRENGTH_TEST_MAIN_LIFTS):
+                percent = STRENGTH_TEST_PCTS[exercise_id]
+                target = _strength_test_target_from_tm(tm_map, exercise_id, percent)
+                plan_rw.insert_workout(
+                    week_id=week_id,
+                    day_of_week=dow,
+                    exercise_id=exercise_id,
+                    sets=1,
+                    reps=1,
+                    rir_cue=None,
+                    percent_1rm=percent,
+                    target_weight_kg=target,
+                    scheduled_time=weight_slot_for_day(dow).strftime("%H:%M:%S"),
+                    is_cardio=False,
+                )
+
+            payload = plan_rw.build_week_payload(plan_id, 1)
+            week_start = start_date
+            week_end = week_start + timedelta(days=6)
+
+            export_week_to_wger(
+                payload,
+                week_start=week_start,
+                week_end=week_end,
+                routine_prefix="Strength Test",
+                force_overwrite=True,
+                blaze_mode="exercise",
+                debug_api=False,
             )
+
+            mark_active = getattr(self.dal, "mark_plan_active", None)
+            if callable(mark_active):
+                mark_active(plan_id)
+
         except Exception as exc:  # pragma: no cover - defensive guardrail
             log_utils.log_message(
                 f"Failed to generate strength test week: {exc}",
                 "ERROR",
             )
-            return False
+            return None
 
         log_utils.log_message(
             f"Strength test week {plan_id} generated and exported.",
             "INFO",
         )
-        return True
+        return plan_id, week_id
+
+    def evaluate_strength_test_week(self) -> Optional[Dict[str, str]]:
+        """Evaluate the most recent strength test week and update training maxes."""
+
+        try:
+            latest_week = plan_rw.latest_test_week()
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to locate latest strength test week: {exc}",
+                "ERROR",
+            )
+            return None
+
+        if not latest_week:
+            log_utils.log_message(
+                "No strength test week found to evaluate.",
+                "INFO",
+            )
+            return None
+
+        plan_id = int(latest_week["plan_id"])
+        week_number = int(latest_week["week_number"])
+        start_date = latest_week["start_date"]
+
+        week_start, week_end = plan_rw.week_date_range(start_date, week_number)
+
+        load_lift_log = getattr(self.dal, "load_lift_log", None)
+        if not callable(load_lift_log):
+            log_utils.log_message(
+                "Data access layer cannot load lift logs; skipping strength test evaluation.",
+                "WARN",
+            )
+            return None
+
+        try:
+            lift_log = load_lift_log(
+                exercise_ids=STRENGTH_TEST_MAIN_LIFTS,
+                start_date=week_start,
+                end_date=week_end,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to load lift logs for strength test evaluation: {exc}",
+                "ERROR",
+            )
+            return None
+
+        best_sets: Dict[int, Tuple[date, int, float, float]] = {}
+
+        for exercise_id in STRENGTH_TEST_MAIN_LIFTS:
+            entries = lift_log.get(str(exercise_id)) or []
+            for entry in entries:
+                if not isinstance(entry, Mapping):
+                    continue
+
+                entry_reps = entry.get("reps")
+                entry_weight = entry.get("weight_kg")
+                if entry_reps is None or entry_weight is None:
+                    continue
+
+                try:
+                    reps = int(entry_reps)
+                except (TypeError, ValueError):
+                    continue
+
+                if reps < 1 or reps > 20:
+                    continue
+
+                try:
+                    weight = float(entry_weight)
+                except (TypeError, ValueError):
+                    continue
+
+                entry_date = entry.get("date")
+                if not isinstance(entry_date, date):
+                    try:
+                        entry_date = date.fromisoformat(str(entry_date))
+                    except (TypeError, ValueError):
+                        continue
+
+                e1rm = _strength_test_e1rm(weight, reps)
+                current_best = best_sets.get(exercise_id)
+                if current_best is None or e1rm > current_best[3]:
+                    best_sets[exercise_id] = (entry_date, reps, weight, e1rm)
+
+        if not best_sets:
+            log_utils.log_message(
+                "No eligible AMRAP sets found for strength test evaluation.",
+                "WARN",
+            )
+            return None
+
+        updated = 0
+        telegram_lines = [
+            (
+                "Strength test complete! "
+                f"Week {week_number} ({week_start:%Y-%m-%d} to {week_end:%Y-%m-%d})."
+            )
+        ]
+
+        for exercise_id in STRENGTH_TEST_MAIN_LIFTS:
+            result = best_sets.get(exercise_id)
+            if result is None:
+                continue
+
+            test_date, reps, weight, e1rm = result
+            tm_value = _round_to_2p5(e1rm * 0.90)
+            lift_code = _strength_test_tm_key(exercise_id)
+            if not lift_code:
+                continue
+
+            plan_rw.insert_strength_test_result(
+                plan_id=plan_id,
+                week_number=week_number,
+                lift_code=lift_code,
+                test_date=test_date,
+                test_reps=reps,
+                test_weight_kg=weight,
+                e1rm_kg=round(e1rm, 1),
+                tm_kg=tm_value,
+            )
+            plan_rw.upsert_training_max(
+                lift_code=lift_code,
+                tm_kg=tm_value,
+                measured_at=week_end,
+                source="AMRAP_EPLEY",
+            )
+
+            lift_name = STRENGTH_TEST_LIFT_NAMES.get(exercise_id, lift_code.title())
+            telegram_lines.append(
+                (
+                    f"{lift_name}: TM {tm_value:.1f} kg via {reps}x{weight:.1f} kg "
+                    f"on {test_date:%Y-%m-%d}"
+                )
+            )
+            updated += 1
+
+        telegram_lines.append("Updated training maxes stored. Great work!")
+
+        try:
+            self.send_telegram_message("\n".join(telegram_lines))
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(
+                f"Failed to send strength test confirmation: {exc}",
+                "WARN",
+            )
+
+        summary = {
+            "status": "ok",
+            "plan_id": str(plan_id),
+            "week": str(week_number),
+            "start": str(week_start),
+            "end": str(week_end),
+            "lifts_updated": str(updated),
+        }
+
+        log_utils.log_message(
+            (
+                "Strength test evaluation complete for plan "
+                f"{plan_id} week {week_number}: {updated} lift(s) updated."
+            ),
+            "INFO",
+        )
+
+        return summary
 
     def start_new_macrocycle(self, start_date: date) -> Dict[str, Any]:
         """Record and initialise a brand new 13-week macrocycle."""
