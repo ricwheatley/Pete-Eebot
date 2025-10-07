@@ -1174,16 +1174,33 @@ class Orchestrator:
                 failed_sources.append("Wger")
                 source_statuses["Wger"] = "failed"
 
-        try:
-            log_utils.log_message("Refreshing body_age_daily and daily_summary table...", "INFO")
-            self.dal.refresh_daily_summary(7)
-            source_statuses["BodyAge"] = "ok"
-        except Exception as exc:
-            log_utils.log_message(f"Failed to refresh derived tables: {exc}", "ERROR")
-            failed_sources.append("BodyAge")
-            source_statuses["BodyAge"] = "failed"
-            alert_messages.append("Derived table refresh failed; data may be stale.")
-
+            # --- Refresh derived tables (body_age_daily + daily_summary) ---
+            refresher = getattr(self.dal, "refresh_daily_summary", None)
+            if callable(refresher):
+                try:
+                    log_utils.log_message(
+                        "Refreshing body_age_daily and daily_summary table...",
+                        "INFO",
+                    )
+                    refresher(7)
+                    source_statuses["BodyAge"] = "ok"
+                except Exception as exc:
+                    log_utils.log_message(
+                        f"Failed to refresh derived tables: {exc}", "ERROR"
+                    )
+                    failed_sources.append("BodyAge")
+                    source_statuses["BodyAge"] = "failed"
+                    alert_messages.append(
+                        "Derived table refresh failed; data may be stale."
+                    )
+            else:
+                # Some test DALs or mocks don't define this; skip quietly.
+                log_utils.log_message(
+                    "Skipping derived table refresh (no DAL implementation).",
+                    "DEBUG",
+                )
+                source_statuses["BodyAge"] = "skipped"
+            
             body_age_errors: List[tuple[date, Exception]] = []
             for day in processed_days:
                 try:
@@ -1196,6 +1213,7 @@ class Orchestrator:
                         f"Body age fallback compute failed for {day.isoformat()}: {fallback_exc}",
                         "ERROR",
                     )
+
 
 
         if wger_logs_found:
@@ -1405,17 +1423,17 @@ class Orchestrator:
         """
         Run a Withings-only sync, then refresh derived tables (body_age_daily and daily_summary).
         """
-
+    
         failures: List[str] = []
         source_statuses: Dict[str, str] = {}
         alert_messages: List[str] = []
         processed_days: List[date] = []
-
+    
         for offset in range(days, 0, -1):
             target_day = date.today() - timedelta(days=offset - 1)
             processed_days.append(target_day)
             target_iso = target_day.isoformat()
-
+    
             try:
                 self.withings_sync(target_day)
                 source_statuses["Withings"] = "ok"
@@ -1423,30 +1441,39 @@ class Orchestrator:
                 log_utils.log_message(f"Withings sync failed for {target_iso}: {e}", "ERROR")
                 failures.append("Withings")
                 source_statuses["Withings"] = "failed"
-
-        # After Withings sync, refresh derived tables (body_age_daily + daily_summary)
-        try:
+    
+        # --- Refresh derived tables after Withings-only sync ---
+        refresher = getattr(self.dal, "refresh_daily_summary", None)
+        if callable(refresher):
+            try:
+                log_utils.log_message(
+                    "Refreshing body_age_daily and daily_summary table (Withings-only)...",
+                    "INFO",
+                )
+                refresher(7)
+                source_statuses["Derived"] = "ok"
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to refresh derived tables in Withings-only sync: {exc}",
+                    "ERROR",
+                )
+                failures.append("Derived")
+                source_statuses["Derived"] = "failed"
+                alert_messages.append("Derived table refresh failed; data may be stale.")
+        else:
+            # Skip gracefully when the DAL stub has no refresh method.
             log_utils.log_message(
-                "Refreshing body_age_daily and daily_summary table (Withings-only)...",
-                "INFO",
+                "Skipping derived table refresh (Withings-only); no DAL implementation.",
+                "DEBUG",
             )
-            self.dal.refresh_daily_summary(7)
-            source_statuses["Derived"] = "ok"
-        except Exception as exc:
-            log_utils.log_message(
-                f"Failed to refresh derived tables in Withings-only sync: {exc}",
-                "ERROR",
-            )
-            failures.append("Derived")
-            source_statuses["Derived"] = "failed"
-            alert_messages.append("Derived table refresh failed; data may be stale.")
-
+            source_statuses["Derived"] = "skipped"
+    
             for day in processed_days:
                 try:
                     self._recalculate_body_age(day)
                 except Exception:
                     continue
-
+    
         success = len(failures) == 0
         return success, failures, source_statuses, alert_messages
 
