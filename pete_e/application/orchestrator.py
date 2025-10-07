@@ -464,9 +464,7 @@ class Orchestrator:
             if not plan_id:
                 raise ValueError("Strength test builder returned invalid plan identifier.")
 
-            activator = getattr(self.dal, "mark_plan_active", None)
-            if callable(activator):
-                activator(plan_id)
+            self.dal.mark_plan_active(plan_id)
 
             wger_sender.push_week(
                 self.dal,
@@ -1176,34 +1174,26 @@ class Orchestrator:
                 failed_sources.append("Wger")
                 source_statuses["Wger"] = "failed"
 
-        refresher = getattr(self.dal, "refresh_daily_summary", None)
-        if callable(refresher):
-            try:
-                log_utils.log_message("Refreshing body_age_daily and daily_summary table...", "INFO")
-                refresher(7)
-            except Exception as exc:
-                log_utils.log_message(f"Failed to refresh derived tables: {exc}", "ERROR")
-                failed_sources.append("BodyAge")
-                source_statuses["BodyAge"] = "failed"
-                alert_messages.append("Derived table refresh failed; data may be stale.")
-        else:
-            log_utils.log_message(
-                "Skipping derived table refresh; DAL does not implement refresh_daily_summary.",
-                "DEBUG",
-            )
+        try:
+            log_utils.log_message("Refreshing body_age_daily and daily_summary table...", "INFO")
+            self.dal.refresh_daily_summary(7)
+            source_statuses["BodyAge"] = "ok"
+        except Exception as exc:
+            log_utils.log_message(f"Failed to refresh derived tables: {exc}", "ERROR")
+            failed_sources.append("BodyAge")
+            source_statuses["BodyAge"] = "failed"
+            alert_messages.append("Derived table refresh failed; data may be stale.")
+
             body_age_errors: List[tuple[date, Exception]] = []
             for day in processed_days:
                 try:
                     self._recalculate_body_age(day)
-                except Exception as exc:
-                    body_age_errors.append((day, exc))
+                except Exception as fallback_exc:
+                    body_age_errors.append((day, fallback_exc))
             if body_age_errors:
-                failed_sources.append("BodyAge")
-                source_statuses["BodyAge"] = "failed"
-                alert_messages.append("Derived table refresh failed; data may be stale.")
-                for day, exc in body_age_errors:
+                for day, fallback_exc in body_age_errors:
                     log_utils.log_message(
-                        f"Body age fallback compute failed for {day.isoformat()}: {exc}",
+                        f"Body age fallback compute failed for {day.isoformat()}: {fallback_exc}",
                         "ERROR",
                     )
 
@@ -1435,32 +1425,27 @@ class Orchestrator:
                 source_statuses["Withings"] = "failed"
 
         # After Withings sync, refresh derived tables (body_age_daily + daily_summary)
-        refresher = getattr(self.dal, "refresh_daily_summary", None)
-        if not callable(refresher):
+        try:
             log_utils.log_message(
-                "Skipping derived table refresh; DAL does not implement refresh_daily_summary.",
-                "DEBUG",
+                "Refreshing body_age_daily and daily_summary table (Withings-only)...",
+                "INFO",
             )
+            self.dal.refresh_daily_summary(7)
+            source_statuses["Derived"] = "ok"
+        except Exception as exc:
+            log_utils.log_message(
+                f"Failed to refresh derived tables in Withings-only sync: {exc}",
+                "ERROR",
+            )
+            failures.append("Derived")
+            source_statuses["Derived"] = "failed"
+            alert_messages.append("Derived table refresh failed; data may be stale.")
+
             for day in processed_days:
                 try:
                     self._recalculate_body_age(day)
                 except Exception:
                     continue
-            source_statuses["Derived"] = "skipped"
-        else:
-            try:
-                log_utils.log_message("Refreshing body_age_daily and daily_summary table (Withings-only)...", "INFO")
-                refresher(7)
-            except Exception as exc:
-                log_utils.log_message(
-                    f"Failed to refresh derived tables in Withings-only sync: {exc}",
-                    "ERROR",
-                )
-                failures.append("Derived")
-                source_statuses["Derived"] = "failed"
-                alert_messages.append("Derived table refresh failed; data may be stale.")
-            else:
-                source_statuses["Derived"] = "ok"
 
         success = len(failures) == 0
         return success, failures, source_statuses, alert_messages
@@ -1515,16 +1500,14 @@ class Orchestrator:
             cli_mode = (os.getenv("PETE_CLI_MODE") or "").strip().lower()
             explicit_cli_request = cli_mode == "plan"
 
-            plan_checker = getattr(self.dal, "has_any_plan", None)
-            if callable(plan_checker):
-                try:
-                    has_any_plan = bool(plan_checker())
-                except Exception as exc:
-                    log_utils.log_message(
-                        f"Failed to check for existing plans: {exc}",
-                        "WARN",
-                    )
-                    has_any_plan = True
+            try:
+                has_any_plan = bool(self.dal.has_any_plan())
+            except Exception as exc:
+                log_utils.log_message(
+                    f"Failed to check for existing plans: {exc}",
+                    "WARN",
+                )
+                has_any_plan = True
 
             tm_map: Dict[str, Any] = {}
             try:
@@ -1590,10 +1573,9 @@ class Orchestrator:
                 f"Successfully saved new {plan_kind} plan with ID: {plan_id}", "INFO"
             )
 
-            activator = getattr(self.dal, "mark_plan_active", None)
-            if callable(activator) and plan_id:
+            if plan_id:
                 try:
-                    activator(plan_id)
+                    self.dal.mark_plan_active(plan_id)
                 except Exception as exc:
                     log_utils.log_message(
                         f"Failed to mark plan {plan_id} as active: {exc}",

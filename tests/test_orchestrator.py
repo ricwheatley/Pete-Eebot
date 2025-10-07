@@ -61,6 +61,27 @@ class DummyDal:
     def refresh_actual_view(self):
         self.refreshed = True
 
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        self.refreshed = True
+
+    def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
+        pass
+
+    def compute_body_age_for_range(
+        self,
+        start_date: date,
+        end_date: date,
+        *,
+        birth_date: date,
+    ) -> None:
+        pass
+
+    def mark_plan_active(self, plan_id: int) -> None:
+        pass
+
+    def has_any_plan(self) -> bool:
+        return True
+
 
 class DummyWithingsClient:
     next_summary = None
