@@ -98,6 +98,23 @@ class DataAccessLayer(ABC):
         pass
 
     # -------------------------------------------------------------------------
+    # Training cycles
+    # -------------------------------------------------------------------------
+    @abstractmethod
+    def deactivate_active_training_cycles(self) -> None:
+        pass
+
+    @abstractmethod
+    def create_training_cycle(
+        self,
+        start_date: date,
+        *,
+        current_week: int,
+        current_block: int,
+    ) -> Dict[str, Any]:
+        pass
+
+    # -------------------------------------------------------------------------
     # Muscle volume comparison
     # -------------------------------------------------------------------------
     @abstractmethod
