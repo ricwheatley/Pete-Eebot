@@ -1,39 +1,12 @@
 """Utility helpers for loading aggregated metrics for narratives."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
-from decimal import Decimal
+from datetime import date, timedelta
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure import log_utils
-
-
-def _coerce_numeric(value: Any) -> Optional[float]:
-    """Convert values to floats when possible."""
-    if value is None:
-        return None
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_date(value: Any) -> Optional[date]:
-    if isinstance(value, date) and not isinstance(value, datetime):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
+from pete_e.utils import converters
 
 
 def _window_values(
@@ -77,13 +50,6 @@ def _extreme_window(
     return reducer(values)
 
 
-def _minutes_to_hours(value: Any) -> Optional[float]:
-    numeric = _coerce_numeric(value)
-    if numeric is None:
-        return None
-    return numeric / 60.0
-
-
 def _build_metric_series(
     rows: Iterable[Mapping[str, Any]],
     column: str,
@@ -91,11 +57,15 @@ def _build_metric_series(
 ) -> Dict[date, Optional[float]]:
     series: Dict[date, Optional[float]] = {}
     for row in rows:
-        row_date = _as_date(row.get("date"))
+        row_date = converters.to_date(row.get("date"))
         if row_date is None:
             continue
         raw_value = row.get(column)
-        value = transform(raw_value) if transform is not None else _coerce_numeric(raw_value)
+        value = (
+            transform(raw_value)
+            if transform is not None
+            else converters.to_float(raw_value)
+        )
         series[row_date] = value
     return series
 
@@ -155,7 +125,7 @@ def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date)
     }
 
     for key, value in list(stats.items()):
-        stats[key] = _coerce_numeric(value)
+        stats[key] = converters.to_float(value)
     return stats
 
 
@@ -189,7 +159,7 @@ _METRIC_SPECS: Dict[str, tuple[str, Optional[Callable[[Any], Optional[float]]]]]
     "calories_resting": ("calories_resting", None),
     "strength_volume": ("strength_volume_kg", None),
     "strength_volume_kg": ("strength_volume_kg", None),
-    "sleep_hours": ("sleep_total_minutes", _minutes_to_hours),
+    "sleep_hours": ("sleep_total_minutes", converters.minutes_to_hours),
     "sleep_total_minutes": ("sleep_total_minutes", None),
     "sleep_asleep_minutes": ("sleep_asleep_minutes", None),
     "sleep_rem_minutes": ("sleep_rem_minutes", None),
