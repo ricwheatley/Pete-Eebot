@@ -133,3 +133,121 @@ def test_run_apple_health_ingest_processes_new_files(monkeypatch):
     assert writer.checkpoints == [datetime(2024, 1, 3, tzinfo=timezone.utc)]
     assert writer.conn.committed
 
+
+def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
+    class DummyConn:
+        def __init__(self) -> None:
+            self.committed = False
+
+        def commit(self) -> None:
+            self.committed = True
+
+    class DummyConnCtx:
+        def __init__(self) -> None:
+            self.conn = DummyConn()
+
+        def __enter__(self):
+            return self.conn
+
+        def __exit__(self, exc_type, exc, tb):  # pragma: no cover - contextmanager API
+            pass
+
+    class DummyClient:
+        health_metrics_path = "/metrics"
+        workouts_path = "/workouts"
+
+        def find_new_export_files(self, folder_path, since_datetime):
+            # All files are older than the recorded checkpoint, so they are skipped.
+            return []
+
+        def download_as_bytes(self, dropbox_path: str) -> bytes:  # pragma: no cover - unused
+            raise AssertionError("download should not be called")
+
+    class DummyParser:
+        def parse(self, root):  # pragma: no cover - unused
+            raise AssertionError("parser should not be invoked when no files found")
+
+    class DummyWriter:
+        def __init__(self, conn) -> None:
+            self.conn = conn
+            self.checkpoints = []
+
+        def get_last_import_timestamp(self):
+            from datetime import datetime, timezone
+
+            return datetime(2024, 1, 5, tzinfo=timezone.utc)
+
+        def upsert_all(self, parsed):  # pragma: no cover - unused
+            raise AssertionError("upsert should not be invoked when no files found")
+
+        def save_last_import_timestamp(self, latest_file_timestamp):
+            self.checkpoints.append(latest_file_timestamp)
+
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
+    monkeypatch.setattr(apple_dropbox_ingest, "get_conn", lambda: DummyConnCtx())
+
+    report = apple_dropbox_ingest.run_apple_health_ingest()
+
+    assert report.sources == []
+    assert report.daily_points == 0
+    assert report.workouts == 0
+
+
+def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
+    class DummyConn:
+        def commit(self):  # pragma: no cover - not reached
+            raise AssertionError("commit should not be called on failure")
+
+    class DummyConnCtx:
+        def __enter__(self):
+            return DummyConn()
+
+        def __exit__(self, exc_type, exc, tb):  # pragma: no cover - contextmanager API
+            pass
+
+    class DummyClient:
+        def __init__(self) -> None:
+            self.health_metrics_path = "/metrics"
+            self.workouts_path = "/workouts"
+
+        def find_new_export_files(self, folder_path, since_datetime):
+            from datetime import datetime, timezone
+
+            if folder_path == self.health_metrics_path:
+                return [(datetime(2024, 1, 2, tzinfo=timezone.utc), "bad.json")]
+            return []
+
+        def download_as_bytes(self, dropbox_path: str) -> bytes:
+            return json.dumps({"data": {"metrics": [], "workouts": []}}).encode("utf-8")
+
+    class DummyParser:
+        def parse(self, root):
+            raise ValueError("corrupt payload")
+
+    class DummyWriter:
+        def __init__(self, conn) -> None:
+            self.conn = conn
+
+        def get_last_import_timestamp(self):
+            from datetime import datetime, timezone
+
+            return datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+        def upsert_all(self, parsed):  # pragma: no cover - not reached
+            raise AssertionError
+
+        def save_last_import_timestamp(self, latest_file_timestamp):  # pragma: no cover - not reached
+            raise AssertionError
+
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
+    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
+    monkeypatch.setattr(apple_dropbox_ingest, "get_conn", lambda: DummyConnCtx())
+
+    with pytest.raises(apple_dropbox_ingest.AppleIngestError) as excinfo:
+        apple_dropbox_ingest.run_apple_health_ingest()
+
+    assert excinfo.value.stage == "parse"
+    assert excinfo.value.file_path == "bad.json"
