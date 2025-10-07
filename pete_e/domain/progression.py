@@ -8,11 +8,7 @@ from typing import Any, Dict, List, Tuple
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
-
-def _average(values: list[float]) -> float | None:
-    """Return the mean of a list, or None if empty."""
-
-    return mean(values) if values else None
+from pete_e.utils import converters, math as math_utils
 
 
 def apply_progression(
@@ -46,10 +42,12 @@ def apply_progression(
     def _metric_values(metrics: list[dict], key: str) -> list[float]:
         return [m.get(key) for m in metrics if m.get(key) is not None]
 
-    rhr_7 = _average(_metric_values(recent_metrics, "hr_resting"))
-    sleep_7 = _average(_metric_values(recent_metrics, "sleep_asleep_minutes"))
-    rhr_baseline = _average(_metric_values(baseline_metrics, "hr_resting"))
-    sleep_baseline = _average(_metric_values(baseline_metrics, "sleep_asleep_minutes"))
+    rhr_7 = math_utils.mean_or_none(_metric_values(recent_metrics, "hr_resting"))
+    sleep_7 = math_utils.mean_or_none(_metric_values(recent_metrics, "sleep_asleep_minutes"))
+    rhr_baseline = math_utils.mean_or_none(_metric_values(baseline_metrics, "hr_resting"))
+    sleep_baseline = math_utils.mean_or_none(
+        _metric_values(baseline_metrics, "sleep_asleep_minutes")
+    )
 
     recovery_good = True
     if (
@@ -157,19 +155,6 @@ class PlanProgressionDecision:
     notes: List[str]
     updates: List[WorkoutProgression]
     persisted: bool
-
-
-def _as_float(value: Any) -> float | None:
-    """Best-effort conversion to float, preserving None."""
-
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[dict, Dict[int, dict]]:
     """Convert raw plan rows into the structure expected by apply_progression."""
 
@@ -199,7 +184,7 @@ def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[dict, Dict[int, di
         }
         weight_target = row.get("target_weight_kg")
         if weight_target is not None:
-            converted = _as_float(weight_target)
+            converted = converters.to_float(weight_target)
             if converted is not None:
                 exercise["weight_target"] = converted
         for key in ("sets", "reps", "rir"):
@@ -240,8 +225,8 @@ def calibrate_plan_week(
         if not exercise:
             continue
 
-        before = _as_float(row.get("target_weight_kg"))
-        after = _as_float(exercise.get("weight_target"))
+        before = converters.to_float(row.get("target_weight_kg"))
+        after = converters.to_float(exercise.get("weight_target"))
         if before is None and after is None:
             continue
         if before is not None and after is not None and abs(after - before) < 1e-6:

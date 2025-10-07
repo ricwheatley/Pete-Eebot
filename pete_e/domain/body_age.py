@@ -14,38 +14,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+from pete_e.utils import converters, math as math_utils
 
-def to_float(v: Any) -> Optional[float]:
-    """Safely convert a value to float, or return None."""
-    try:
-        if v in (None, ""):
-            return None
-        return float(v)
-    except (ValueError, TypeError):
-        return None
-
-
-def average(values: List[Optional[float]]) -> Optional[float]:
-    """Compute the mean of a list, ignoring None values."""
-    vals = [v for v in values if v is not None]
-    return sum(vals) / len(vals) if vals else None
-
-
-def _to_date(value: Any) -> Optional[date]:
-    """Best-effort conversion of common date representations to ``date``."""
-
-    if isinstance(value, date):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            # ``date.fromisoformat`` cannot parse timestamps; slice the date
-            # portion to keep the helper forgiving.
-            return date.fromisoformat(value[:10])
-        except ValueError:
-            return None
-    return None
 
 @dataclass(frozen=True)
 class BodyAgeTrend:
@@ -62,7 +32,7 @@ def _extract_body_age_value(row: Dict[str, Any]) -> Optional[float]:
         body_section = row.get("body")
         if isinstance(body_section, dict):
             value = body_section.get("body_age_years")
-    return to_float(value)
+    return converters.to_float(value)
 
 
 def get_body_age_trend(dal: Any, target_date: Optional[date] = None) -> BodyAgeTrend:
@@ -108,7 +78,7 @@ def get_body_age_trend(dal: Any, target_date: Optional[date] = None) -> BodyAgeT
     for row in rows:
         if not isinstance(row, dict):
             continue
-        row_date = _to_date(row.get("date"))
+        row_date = converters.to_date(row.get("date"))
         if row_date is None:
             continue
         if row_date < start or row_date > target_date:
@@ -164,9 +134,9 @@ def calculate_body_age(
             for accessor in accessors:
                 candidate = accessor(row)
                 if candidate is not None:
-                    vals.append(to_float(candidate))
+                    vals.append(converters.to_float(candidate))
                     break
-        return average(vals)
+        return math_utils.average(vals)
 
     weight = avg_from(
         (
@@ -255,16 +225,20 @@ def calculate_body_age(
     # falls back to a provided ``age`` value for backwards compatibility.
     chrono_age: Optional[float] = None
     birth_date_value = profile.get("birth_date")
-    birth_date_obj = _to_date(birth_date_value) if birth_date_value else None
+    birth_date_obj = converters.to_date(birth_date_value) if birth_date_value else None
     try:
-        last_date = _to_date(dates[-1])
+        last_date = converters.to_date(dates[-1])
     except Exception:  # pragma: no cover - defensive, the format is controlled
         last_date = None
 
     if birth_date_obj and last_date:
         chrono_age = (last_date - birth_date_obj).days / 365.2425
     else:
-        chrono_age = to_float(profile.get("age")) if profile.get("age") is not None else None
+        chrono_age = (
+            converters.to_float(profile.get("age"))
+            if profile.get("age") is not None
+            else None
+        )
 
     if chrono_age is None:
         chrono_age = 40.0

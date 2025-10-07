@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
 
 from pete_e.domain import phrase_picker
 from pete_e.infrastructure import log_utils
+from pete_e.utils import converters, math as math_utils
 
 MetricMap = Dict[str, Dict[str, Any]]
 ContextMap = Dict[str, Any]
@@ -18,26 +19,9 @@ class Highlight:
     name: str
     score: float
     records: Set[str]
-
-
-def _as_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _near(value: float | None, target: float | None, tolerance: float = 1e-6) -> bool:
-    if value is None or target is None:
-        return False
-    return abs(value - target) <= tolerance
-
-
 def _collect_records(stats: Mapping[str, Any]) -> Set[str]:
     records: Set[str] = set()
-    latest = _as_float(stats.get("yesterday_value"))
+    latest = converters.to_float(stats.get("yesterday_value"))
     if latest is None:
         return records
     checks = {
@@ -49,20 +33,20 @@ def _collect_records(stats: Mapping[str, Any]) -> Set[str]:
         "three_month_low": "three_month_low",
     }
     for flag, column in checks.items():
-        if _near(latest, _as_float(stats.get(column))):
+        if math_utils.near(latest, converters.to_float(stats.get(column))):
             records.add(flag)
     return records
 
 
 def _score_metric(name: str, stats: Mapping[str, Any]) -> Highlight:
     score = 0.0
-    pct_change = _as_float(stats.get("pct_change_d1"))
+    pct_change = converters.to_float(stats.get("pct_change_d1"))
     if pct_change is not None:
         score = max(score, abs(pct_change))
-    week_change = _as_float(stats.get("pct_change_7d"))
+    week_change = converters.to_float(stats.get("pct_change_7d"))
     if week_change is not None:
         score = max(score, abs(week_change) * 0.8)
-    abs_change = _as_float(stats.get("abs_change_d1"))
+    abs_change = converters.to_float(stats.get("abs_change_d1"))
     if abs_change is not None:
         score = max(score, abs(abs_change))
     records = _collect_records(stats)
@@ -137,10 +121,10 @@ def _record_suffix(records: Set[str]) -> str:
 
 
 def _build_weight_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
-    delta = _as_float(stats.get("abs_change_d1"))
+    delta = converters.to_float(stats.get("abs_change_d1"))
     pieces = [f"**Weight:** {value:.1f} kg"]
     change_text = _format_delta(delta, "kg")
     if change_text:
@@ -153,10 +137,10 @@ def _build_weight_line(stats: Mapping[str, Any], records: Set[str]) -> str | Non
 
 
 def _build_body_fat_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
-    delta = _as_float(stats.get("abs_change_d1"))
+    delta = converters.to_float(stats.get("abs_change_d1"))
     direction = _format_delta(delta, "%")
     message = f"**Body Fat:** {value:.1f}%"
     if direction:
@@ -168,10 +152,10 @@ def _build_body_fat_line(stats: Mapping[str, Any], records: Set[str]) -> str | N
 
 
 def _build_muscle_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
-    delta = _as_float(stats.get("abs_change_d1"))
+    delta = converters.to_float(stats.get("abs_change_d1"))
     message = f"**Muscle:** {value:.1f}%"
     if delta is not None and delta != 0:
         change = "up" if delta > 0 else "down"
@@ -183,11 +167,11 @@ def _build_muscle_line(stats: Mapping[str, Any], records: Set[str]) -> str | Non
 
 
 def _build_rhr_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
-    delta_pct = _as_float(stats.get("pct_change_d1"))
-    delta_abs = _as_float(stats.get("abs_change_d1"))
+    delta_pct = converters.to_float(stats.get("pct_change_d1"))
+    delta_abs = converters.to_float(stats.get("abs_change_d1"))
     line = f"**Resting HR:** {value:.0f} bpm"
     if delta_pct is not None and delta_pct != 0:
         direction = "down" if delta_pct < 0 else "up"
@@ -203,11 +187,11 @@ def _build_rhr_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
 
 
 def _build_steps_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
     line = f"**Steps:** {int(round(value)):,} pas"
-    delta_pct = _as_float(stats.get("pct_change_d1"))
+    delta_pct = converters.to_float(stats.get("pct_change_d1"))
     if delta_pct and abs(delta_pct) >= 10:
         direction = "up" if delta_pct > 0 else "down"
         line += f" ({direction} {abs(delta_pct):.0f}% vs hier)"
@@ -218,11 +202,11 @@ def _build_steps_line(stats: Mapping[str, Any], records: Set[str]) -> str | None
 
 
 def _build_sleep_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
     line = f"**Sleep:** {value:.1f} h de sommeil"
-    delta_pct = _as_float(stats.get("pct_change_d1"))
+    delta_pct = converters.to_float(stats.get("pct_change_d1"))
     if delta_pct and abs(delta_pct) >= 10:
         direction = "moins" if delta_pct < 0 else "plus"
         line += f" ({direction} {abs(delta_pct):.0f}% vs la nuit precedente)"
@@ -233,11 +217,11 @@ def _build_sleep_line(stats: Mapping[str, Any], records: Set[str]) -> str | None
 
 
 def _build_strength_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
     line = f"**Strength Volume:** {value:,.0f} kg total"
-    delta = _as_float(stats.get("abs_change_d1"))
+    delta = converters.to_float(stats.get("abs_change_d1"))
     if delta:
         direction = "plus" if delta > 0 else "moins"
         line += f" ({direction} {abs(delta):,.0f} kg vs session precedente)"
@@ -248,8 +232,8 @@ def _build_strength_line(stats: Mapping[str, Any], records: Set[str]) -> str | N
 
 
 def _build_squat_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
-    previous = _as_float(stats.get("day_before_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
+    previous = converters.to_float(stats.get("day_before_value"))
     if value is None:
         return None
     if value == 0 and (previous is None or previous == 0):
@@ -281,11 +265,11 @@ _BUILDER_MAP = {
 
 
 def _build_generic_line(name: str, stats: Mapping[str, Any], records: Set[str]) -> str | None:
-    value = _as_float(stats.get("yesterday_value"))
+    value = converters.to_float(stats.get("yesterday_value"))
     if value is None:
         return None
     line = f"**{name.replace('_', ' ').title()}:** {value:.2f}"
-    delta_pct = _as_float(stats.get("pct_change_d1"))
+    delta_pct = converters.to_float(stats.get("pct_change_d1"))
     if delta_pct:
         direction = "up" if delta_pct > 0 else "down"
         line += f" ({direction} {abs(delta_pct):.1f}% vs hier)"
