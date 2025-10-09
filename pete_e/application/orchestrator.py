@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
 from pete_e.application.services import PlanService, WgerExportService
-from pete_e.infrastructure.database import PostgresDal, get_pool
+from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.domain.validation import validate_and_adjust_plan, ValidationDecision
 from pete_e.infrastructure import log_utils

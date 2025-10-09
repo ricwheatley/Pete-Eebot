@@ -7,7 +7,7 @@ Also seeds the main lifts and assistance pools after the catalog is refreshed.
 import sys
 from typing import Any, Dict, List
 
-from pete_e.infrastructure.database import get_conn
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.wger_seeder import WgerSeeder
 from pete_e.infrastructure.wger_writer import WgerWriter
@@ -42,44 +42,48 @@ def run_wger_catalog_refresh():
 
     wger_client = WgerClient()
 
-    with get_conn() as conn:
-        writer = WgerWriter(conn)
+    dal = PostgresDal()
+    try:
+        with dal.connection() as conn:
+            writer = WgerWriter(conn)
 
-        # 1. Fetch and upsert reference data
-        categories = wger_client.get_all_pages("/exercisecategory/", params={"limit": 200})
-        writer.upsert_categories(categories)
+            # 1. Fetch and upsert reference data
+            categories = wger_client.get_all_pages("/exercisecategory/", params={"limit": 200})
+            writer.upsert_categories(categories)
 
-        equipment = wger_client.get_all_pages("/equipment/", params={"limit": 200})
-        writer.upsert_equipment(equipment)
+            equipment = wger_client.get_all_pages("/equipment/", params={"limit": 200})
+            writer.upsert_equipment(equipment)
 
-        muscles = wger_client.get_all_pages("/muscle/", params={"limit": 200})
-        writer.upsert_muscles(muscles)
+            muscles = wger_client.get_all_pages("/muscle/", params={"limit": 200})
+            writer.upsert_muscles(muscles)
 
-        # 2. Fetch, process, and upsert exercises
-        exercises_raw = wger_client.get_all_pages("/exerciseinfo/", params={"limit": 200})
-        
-        processed_exercises: List[Dict[str, Any]] = []
-        for ex in exercises_raw:
-            eng = _pick_english_translation(ex.get("translations") or [])
-            processed_exercises.append({
-                "id": ex.get("id"),
-                "uuid": ex.get("uuid"),
-                "name": eng["name"],
-                "description": eng["description"],
-                "category_id": (ex.get("category") or {}).get("id"),
-                "equipment_ids": [eq.get("id") for eq in ex.get("equipment", []) if eq.get("id")],
-                "primary_muscle_ids": [m.get("id") for m in ex.get("muscles", []) if m.get("id")],
-                "secondary_muscle_ids": [m.get("id") for m in ex.get("muscles_secondary", []) if m.get("id")],
-            })
-        
-        writer.upsert_exercises(processed_exercises)
+            # 2. Fetch, process, and upsert exercises
+            exercises_raw = wger_client.get_all_pages("/exerciseinfo/", params={"limit": 200})
 
-        # 3. Seed the main lifts and assistance pools
-        seeder = WgerSeeder(conn)
-        seeder.seed_main_lifts_and_assistance_pools()
+            processed_exercises: List[Dict[str, Any]] = []
+            for ex in exercises_raw:
+                eng = _pick_english_translation(ex.get("translations") or [])
+                processed_exercises.append({
+                    "id": ex.get("id"),
+                    "uuid": ex.get("uuid"),
+                    "name": eng["name"],
+                    "description": eng["description"],
+                    "category_id": (ex.get("category") or {}).get("id"),
+                    "equipment_ids": [eq.get("id") for eq in ex.get("equipment", []) if eq.get("id")],
+                    "primary_muscle_ids": [m.get("id") for m in ex.get("muscles", []) if m.get("id")],
+                    "secondary_muscle_ids": [m.get("id") for m in ex.get("muscles_secondary", []) if m.get("id")],
+                })
 
-        conn.commit()
-    
+            writer.upsert_exercises(processed_exercises)
+
+            # 3. Seed the main lifts and assistance pools
+            seeder = WgerSeeder(conn)
+            seeder.seed_main_lifts_and_assistance_pools()
+
+            conn.commit()
+    finally:
+        dal.close()
+
     log_utils.info("WGER catalogue refresh completed successfully.")
 
 
