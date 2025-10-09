@@ -92,8 +92,21 @@ console = Console()
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
     from pete_e.application.orchestrator import Orchestrator as _Orchestrator
+    from pete_e.application.services import PlanService, WgerExportService
+    from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
+    from pete_e.infrastructure.wger_client import WgerClient
 
-    return _Orchestrator()
+    dal = PostgresDal(get_pool())
+    wger_client = WgerClient()
+    plan_service = PlanService(dal)
+    export_service = WgerExportService(dal, wger_client)
+
+    return _Orchestrator(
+        dal=dal,
+        wger_client=wger_client,
+        plan_service=plan_service,
+        export_service=export_service,
+    )
 
 
 def _format_body_age_line(trend) -> str | None:
