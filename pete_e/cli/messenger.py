@@ -72,7 +72,7 @@ from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
-from pete_e.domain.plan_builder import build_strength_test
+from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
@@ -92,7 +92,6 @@ console = Console()
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
     from pete_e.application.orchestrator import Orchestrator as _Orchestrator
-    from pete_e.application.services import PlanService, WgerExportService
     from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
     from pete_e.infrastructure.wger_client import WgerClient
 
@@ -677,7 +676,7 @@ def lets_begin(
         )
     else:
         try:
-            plan_id = build_strength_test(dal, resolved_start)
+            plan_id = orchestrator.plan_service.create_and_persist_strength_test_week(resolved_start)
         except Exception as exc:
             log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
             typer.echo(f"Failed to build strength test week: {exc}", err=True)
