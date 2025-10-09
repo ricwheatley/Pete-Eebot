@@ -5,48 +5,16 @@ Fetch the Wger exercise catalog and upsert it into the PostgreSQL database.
 Also seeds the main lifts and assistance pools after the catalog is refreshed.
 """
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import requests
 from pete_e.infrastructure.database import get_conn
+from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.wger_seeder import WgerSeeder
 from pete_e.infrastructure.wger_writer import WgerWriter
-from pete_e.config import get_env, settings
 
 from pete_e.infrastructure import log_utils
 
 # British English comments and docstrings.
-
-BASE = str(get_env("WGER_BASE_URL", default=settings.WGER_BASE_URL)).strip().rstrip("/")
-
-
-def fetch_all_pages(url: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-    """Fetches all pages of results from a Wger API endpoint."""
-    results: List[Dict[str, Any]] = []
-    next_url: Optional[str] = url
-    
-    log_utils.info(f"Fetching all data from {url}...")
-    while next_url:
-        try:
-            r = requests.get(next_url, params=params if next_url == url else None, timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            
-            if isinstance(data, dict) and "results" in data:
-                results.extend(data["results"])
-                next_url = data.get("next")
-            elif isinstance(data, list): # Some endpoints return a list directly
-                results.extend(data)
-                next_url = None
-            else:
-                log_utils.warn("Unexpected API response format. Stopping pagination.")
-                break
-        except requests.exceptions.RequestException as e:
-            log_utils.error(f"Failed to fetch data from {next_url}: {e}")
-            raise IOError(f"API request failed for {next_url}") from e
-            
-    log_utils.info(f"Fetched a total of {len(results)} items.")
-    return results
 
 
 def _pick_english_translation(translations: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -71,22 +39,24 @@ def run_wger_catalog_refresh():
     Fetches all data from the WGER API and bulk-upserts it into the database.
     """
     log_utils.info("Starting WGER catalogue refresh...")
-    
+
+    wger_client = WgerClient()
+
     with get_conn() as conn:
         writer = WgerWriter(conn)
 
         # 1. Fetch and upsert reference data
-        categories = fetch_all_pages(f"{BASE}/exercisecategory/", params={"limit": 200})
+        categories = wger_client.get_all_pages("/exercisecategory/", params={"limit": 200})
         writer.upsert_categories(categories)
-        
-        equipment = fetch_all_pages(f"{BASE}/equipment/", params={"limit": 200})
+
+        equipment = wger_client.get_all_pages("/equipment/", params={"limit": 200})
         writer.upsert_equipment(equipment)
 
-        muscles = fetch_all_pages(f"{BASE}/muscle/", params={"limit": 200})
+        muscles = wger_client.get_all_pages("/muscle/", params={"limit": 200})
         writer.upsert_muscles(muscles)
-        
+
         # 2. Fetch, process, and upsert exercises
-        exercises_raw = fetch_all_pages(f"{BASE}/exerciseinfo/", params={"limit": 200})
+        exercises_raw = wger_client.get_all_pages("/exerciseinfo/", params={"limit": 200})
         
         processed_exercises: List[Dict[str, Any]] = []
         for ex in exercises_raw:
