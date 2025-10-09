@@ -20,7 +20,7 @@ class PlanService:
     def __init__(self, dal: PostgresDal):
         """Initializes the service with a data access layer."""
         self.dal = dal
-        self.factory = PlanFactory(self.dal)
+        self.factory = PlanFactory(plan_repository=self.dal)
 
     def create_and_persist_531_block(self, start_date: date) -> int:
         """
