@@ -117,8 +117,21 @@ def test_run_apple_health_ingest_processes_new_files(monkeypatch):
         writer_instances.append(writer)
         return writer
 
+    class DummyDal:
+        def __init__(self) -> None:
+            self.ctx = DummyConnCtx()
+            self.closed = False
+
+        def connection(self):
+            return self.ctx
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_dal = DummyDal()
+
     monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", _writer_factory)
-    monkeypatch.setattr(apple_dropbox_ingest, "get_conn", lambda: DummyConnCtx())
+    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
 
     report = apple_dropbox_ingest.run_apple_health_ingest()
 
@@ -132,6 +145,7 @@ def test_run_apple_health_ingest_processes_new_files(monkeypatch):
     assert len(writer.upserts) == 2
     assert writer.checkpoints == [datetime(2024, 1, 3, tzinfo=timezone.utc)]
     assert writer.conn.committed
+    assert dummy_dal.closed
 
 
 def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
@@ -183,16 +197,30 @@ def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
         def save_last_import_timestamp(self, latest_file_timestamp):
             self.checkpoints.append(latest_file_timestamp)
 
+    class DummyDal:
+        def __init__(self) -> None:
+            self.ctx = DummyConnCtx()
+            self.closed = False
+
+        def connection(self):
+            return self.ctx
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_dal = DummyDal()
+
     monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
     monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
     monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
-    monkeypatch.setattr(apple_dropbox_ingest, "get_conn", lambda: DummyConnCtx())
+    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
 
     report = apple_dropbox_ingest.run_apple_health_ingest()
 
     assert report.sources == []
     assert report.daily_points == 0
     assert report.workouts == 0
+    assert dummy_dal.closed
 
 
 def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
@@ -241,13 +269,27 @@ def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
         def save_last_import_timestamp(self, latest_file_timestamp):  # pragma: no cover - not reached
             raise AssertionError
 
+    class DummyDal:
+        def __init__(self) -> None:
+            self.ctx = DummyConnCtx()
+            self.closed = False
+
+        def connection(self):
+            return self.ctx
+
+        def close(self) -> None:
+            self.closed = True
+
+    dummy_dal = DummyDal()
+
     monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
     monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
     monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
-    monkeypatch.setattr(apple_dropbox_ingest, "get_conn", lambda: DummyConnCtx())
+    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
 
     with pytest.raises(apple_dropbox_ingest.AppleIngestError) as excinfo:
         apple_dropbox_ingest.run_apple_health_ingest()
 
     assert excinfo.value.stage == "parse"
     assert excinfo.value.file_path == "bad.json"
+    assert dummy_dal.closed

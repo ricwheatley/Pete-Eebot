@@ -7,13 +7,18 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from pete_e.infrastructure.database import get_conn
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_parser import AppleHealthParser
 from pete_e.infrastructure.apple_writer import AppleHealthWriter
 
 from pete_e.infrastructure import log_utils
 # British English comments and docstrings.
+
+
+def _get_dal() -> PostgresDal:
+    """Factory helper to obtain a DAL backed by the shared connection pool."""
+    return PostgresDal()
 
 
 @dataclass
@@ -94,13 +99,15 @@ def run_apple_health_ingest() -> ImportReport:
     total_workouts = 0
     total_daily_points = 0
 
+    dal: Optional[PostgresDal] = None
+
     try:
-        conn_ctx = get_conn()
+        dal = _get_dal()
     except Exception as exc:  # pragma: no cover - defensive
         raise AppleIngestError(stage="connection", reason=str(exc)) from exc
 
     try:
-        with conn_ctx as conn:
+        with dal.connection() as conn:
             try:
                 writer = AppleHealthWriter(conn)
             except Exception as exc:  # pragma: no cover - defensive
@@ -172,6 +179,9 @@ def run_apple_health_ingest() -> ImportReport:
         raise
     except Exception as exc:  # pragma: no cover - defensive
         raise AppleIngestError(stage="unexpected", reason=str(exc)) from exc
+    finally:
+        if dal:
+            dal.close()
 
     report = ImportReport(
         sources=all_processed_files,
@@ -186,13 +196,15 @@ def run_apple_health_ingest() -> ImportReport:
 
 def get_last_successful_import_timestamp() -> Optional[datetime]:
     """Fetches the timestamp of the latest completed Apple Health import."""
+    dal: Optional[PostgresDal] = None
+
     try:
-        conn_ctx = get_conn()
+        dal = _get_dal()
     except Exception as exc:  # pragma: no cover - defensive
         raise AppleIngestError(stage="connection", reason=str(exc)) from exc
 
     try:
-        with conn_ctx as conn:
+        with dal.connection() as conn:
             try:
                 writer = AppleHealthWriter(conn)
             except Exception as exc:  # pragma: no cover - defensive
@@ -206,6 +218,9 @@ def get_last_successful_import_timestamp() -> Optional[datetime]:
         raise
     except Exception as exc:  # pragma: no cover - defensive
         raise AppleIngestError(stage="unexpected", reason=str(exc)) from exc
+    finally:
+        if dal:
+            dal.close()
 
     if last_import and last_import.tzinfo is None:
         last_import = last_import.replace(tzinfo=timezone.utc)

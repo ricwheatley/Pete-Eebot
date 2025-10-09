@@ -49,6 +49,10 @@ class PostgresDal(PlanRepository):
             cursor_factory = conn.cursor(row_factory=row_factory) if use_dict_row else conn.cursor()
             with cursor_factory as cur:
                 yield cur
+
+    def connection(self):
+        """Provide a context manager for a pooled database connection."""
+        return self.pool.connection()
     
     def close(self) -> None:
         if self.pool and not self.pool.closed:
