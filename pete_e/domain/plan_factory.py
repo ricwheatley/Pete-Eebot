@@ -10,17 +10,17 @@ from datetime import date, time
 from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
-from pete_e.infrastructure.database import PostgresDal # Use our consolidated DAL
+from pete_e.domain.repositories import PlanRepository
 
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
 
-    def __init__(self, dal: PostgresDal):
+    def __init__(self, plan_repository: PlanRepository):
         """
-        Requires a DataAccessLayer to fetch necessary data like assistance pools
+        Requires a PlanRepository to fetch necessary data like assistance pools
         and core exercise IDs.
         """
-        self.dal = dal
+        self.plan_repository = plan_repository
 
     def _pick_random(self, items: List[Any], k: int) -> List[Any]:
         """Safely picks k random items from a list."""
@@ -55,7 +55,7 @@ class PlanFactory:
         plan_weeks: List[Dict[str, Any]] = []
 
         # Fetch assistance/core pools once
-        core_ids = self.dal.get_core_pool_ids()
+        core_ids = self.plan_repository.get_core_pool_ids()
 
         for week_num in range(1, weeks_in_plan + 1):
             is_deload_week = (week_num == 4)
@@ -83,7 +83,7 @@ class PlanFactory:
                 })
                 
                 # 3. Add Assistance Lifts
-                assistance_ids = self.dal.get_assistance_pool_for(main_lift_id)
+                assistance_ids = self.plan_repository.get_assistance_pool_for(main_lift_id)
                 chosen_assistance = self._pick_random(assistance_ids, 2)
                 
                 if chosen_assistance:
