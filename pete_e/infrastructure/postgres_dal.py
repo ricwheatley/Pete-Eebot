@@ -1,24 +1,18 @@
-# Postgres DataAccess implementation using psycopg3 pool
-
+# pete_e/infrastructure/postgres_dal.py
 """
-PostgreSQL implementation of the Data Access Layer.
-
-Implements Pete-Eebot's relational schema:
-- Source tables: withings_daily, wger_logs, body_age_daily
-- Reference tables: Wger exercise catalog (refreshed separately)
-- Training plans: training_plans -> training_plan_weeks -> training_plan_workouts
-- Derived table: daily_summary (refreshed via sp_refresh_daily_summary)
-- Materialized views: plan_muscle_volume, actual_muscle_volume
+The single, consolidated Data Access Layer for all PostgreSQL interactions.
+This class implements the DataAccessLayer interface and handles all database
+reads, writes, and catalog management.
 """
-
 from __future__ import annotations
-
-from datetime import date, timedelta
-from typing import Any, Dict, List, Optional
 import json
 import hashlib
+from contextlib import contextmanager
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
@@ -26,817 +20,296 @@ from psycopg_pool import ConnectionPool
 from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
-from ..domain.data_access import DataAccessLayer
 
-
-# -------------------------------------------------------------------------
-# Connection pool
-# -------------------------------------------------------------------------
-
-
+# --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
 
 def _create_pool() -> ConnectionPool:
     db_url = get_database_url()
-    return ConnectionPool(
-        conninfo=db_url,
-        min_size=1,
-        max_size=3,
-        max_lifetime=60,
-        timeout=10,
-    )
+    return ConnectionPool(conninfo=db_url, min_size=1, max_size=5, row_factory=dict_row)
 
 def get_pool() -> ConnectionPool:
     global _pool
-    if _pool is None or _pool.closed:
+    if _pool is None:
         _pool = _create_pool()
     return _pool
 
+# --- Data Access Layer ---
+class PostgresDal:
+    """PostgreSQL implementation of the Data Access Layer."""
 
-def get_conn():
-    return get_pool().connection()
+    def __init__(self, pool: Optional[ConnectionPool] = None):
+        self.pool = pool or get_pool()
 
-
-def close_pool():
-    global _pool
-    pool = _pool
-    if pool is None:
-        return
-    try:
-        if not pool.closed:
-            pool.close()
-            log_utils.log_message("Database connection pool closed.", "INFO")
-    finally:
-        _pool = None
-# -------------------------------------------------------------------------
-# Postgres DAL
-# -------------------------------------------------------------------------
-class PostgresDal(DataAccessLayer):
-    """
-    PostgreSQL implementation of the Pete-Eebot Data Access Layer.
-    """
-
-    def close(self) -> None:
-        """Close the underlying connection pool."""
-        close_pool()
-
-    def __enter__(self) -> 'PostgresDal':
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> bool:
-        self.close()
-        return False
-
-    # ---------------------------------------------------------------------
-    # Withings
-    # ---------------------------------------------------------------------
-    def save_withings_daily(
-        self,
-        day: date,
-        weight_kg: Optional[float],
-        body_fat_pct: Optional[float],
-        muscle_pct: Optional[float],
-        water_pct: Optional[float],
-    ) -> None:
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO withings_daily (date, weight_kg, body_fat_pct, muscle_pct, water_pct)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (date) DO UPDATE SET
-                        weight_kg = EXCLUDED.weight_kg,
-                        body_fat_pct = EXCLUDED.body_fat_pct,
-                        muscle_pct = EXCLUDED.muscle_pct,
-                        water_pct = EXCLUDED.water_pct;
-                    """,
-                    (day, weight_kg, body_fat_pct, muscle_pct, water_pct),
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error saving Withings data for {day}: {e}", "ERROR")
-            raise
-
-
-    # ---------------------------------------------------------------------
-    # Wger Logs
-    # ---------------------------------------------------------------------
-    def save_wger_log(
-    self, day: date, exercise_id: int, set_number: int,
-    reps: int, weight_kg: Optional[float], rir: Optional[float]
-) -> None:
-        try:
-            # normalise numeric fields
-            set_number_val = int(float(set_number)) if set_number is not None else None
-            reps_val = int(float(reps)) if reps is not None else None
-            weight_val = float(weight_kg) if weight_kg is not None else None
-            rir_val = float(rir) if rir is not None else None
-
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO wger_logs (date, exercise_id, set_number, reps, weight_kg, rir)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (date, exercise_id, set_number) DO UPDATE SET
-                        reps = EXCLUDED.reps,
-                        weight_kg = EXCLUDED.weight_kg,
-                        rir = EXCLUDED.rir;
-                    """,
-                    (day, exercise_id, set_number_val, reps_val, weight_val, rir_val),
-                )
-        except Exception as e:
-            log_utils.log_message(
-                f"Error saving Wger log for {day}, exercise {exercise_id}: {e}", "ERROR"
-            )
-            raise
-
-
-    def load_lift_log(
-        self,
-        exercise_ids: Optional[List[int]] = None,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
-    ) -> Dict[str, Any]:
-        """Return Wger logs grouped by exercise_id, optionally filtered."""
-
-        # If an explicit list of ids is provided but empty, return early to avoid
-        # issuing a broad query.
-        if exercise_ids is not None:
-            cleaned_ids = sorted({int(e) for e in exercise_ids if e is not None})
-            if not cleaned_ids:
-                return {}
-        else:
-            cleaned_ids = None
-
-        out: Dict[str, List[Dict[str, Any]]] = {}
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                query = (
-                    "SELECT date, exercise_id, set_number, reps, weight_kg, rir "
-                    "FROM wger_logs"
-                )
-                conditions: List[str] = []
-                params: List[Any] = []
-
-                if cleaned_ids is not None:
-                    conditions.append("exercise_id = ANY(%s)")
-                    params.append(cleaned_ids)
-                if start_date is not None:
-                    conditions.append("date >= %s")
-                    params.append(start_date)
-                if end_date is not None:
-                    conditions.append("date <= %s")
-                    params.append(end_date)
-
-                if conditions:
-                    query += " WHERE " + " AND ".join(conditions)
-
-                query += " ORDER BY date ASC, exercise_id ASC, set_number ASC"
-
-                if params:
-                    cur.execute(query, tuple(params))
-                else:
-                    cur.execute(query)
-
-                for row in cur:
-                    key = str(row["exercise_id"])
-                    out.setdefault(key, []).append(row)
-        except Exception as e:
-            log_utils.log_message(f"Error loading lift log: {e}", "ERROR")
-            raise
-        return out
-
-    # ---------------------------------------------------------------------
-    # Body Age
-    # ---------------------------------------------------------------------
-
-
-    def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
-        sql = "SELECT sp_upsert_body_age(%s, %s);"
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql, (target_date, birth_date))
-                conn.commit()
-        except Exception as e:
-            log_utils.log_message(
-                f"Error computing body age for {target_date}: {e}", "ERROR"
-            )
-            raise
-
-
-    def compute_body_age_for_range(
-        self,
-        start_date: date,
-        end_date: date,
-        *,
-        birth_date: date,
-    ) -> None:
-        sql = "SELECT sp_upsert_body_age_range(%s, %s, %s);"
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(sql, (start_date, end_date, birth_date))
-                conn.commit()
-        except Exception as e:
-            log_utils.log_message(
-                f"Error computing body age range {start_date} to {end_date}: {e}", "ERROR"
-            )
-            raise
-
-
-    def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT * FROM daily_summary WHERE date = %s;", (target_date,))
-                return cur.fetchone()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching daily summary for {target_date}: {e}", "ERROR")
-            raise
-
-    def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT * FROM daily_summary ORDER BY date DESC LIMIT %s;", (days,)
-                )
-                return list(reversed(cur.fetchall()))
-        except Exception as e:
-            log_utils.log_message(f"Error fetching historical metrics: {e}", "ERROR")
-            raise
-
-    def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """
-                    SELECT * FROM daily_summary
-                    WHERE date BETWEEN %s AND %s
-                    ORDER BY date ASC;
-                    """,
-                    (start_date, end_date),
-                )
-                return cur.fetchall()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching historical data: {e}", "ERROR")
-            raise
+    @contextmanager
+    def _get_cursor(self, use_dict_row: bool = True):
+        row_factory = dict_row if use_dict_row else None
+        with self.pool.connection() as conn:
+            cursor_factory = conn.cursor(row_factory=row_factory) if use_dict_row else conn.cursor()
+            with cursor_factory as cur:
+                yield cur
     
-    # ---------------------------------------------------------------------
-    def refresh_daily_summary(self, days: int = 7) -> None:
-        try:
-            start_date = date.today() - timedelta(days=days)
-            end_date = date.today()
-            with get_conn() as conn, conn.cursor() as cur:
-                # refresh body_age_daily
-                cur.execute(
-                    "SELECT sp_upsert_body_age_range(%s, %s, %s);",
-                    (start_date, end_date, settings.USER_DATE_OF_BIRTH),
-                )
-            log_utils.log_message(f"Refreshed body_age_daily for last {days} days.", "INFO")
+    def close(self) -> None:
+        if self.pool and not self.pool.closed:
+            self.pool.close()
+            log_utils.info("Database connection pool closed.")
 
-            with get_conn() as conn, conn.cursor() as cur:
-                # refresh daily_summary
-                cur.execute(
-                    "SELECT sp_refresh_daily_summary(%s, %s);",
-                    (start_date, end_date),
-                )
-            log_utils.log_message("Refreshed daily_summary table via sp_refresh_daily_summary().", "INFO")
+    # ----------------------------------------------
+    # --- Plan & Block Management ---
+    # ----------------------------------------------
+    def create_block_and_plan(self, start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=None) as cur:
+                try:
+                    conn.autocommit = False
+                    cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+                    cur.execute("INSERT INTO training_plans(start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;", (start_date, weeks))
+                    plan_id = cur.fetchone()[0]
+                    week_ids: List[int] = []
+                    for w in range(1, weeks + 1):
+                        cur.execute("INSERT INTO training_plan_weeks(plan_id, week_number) VALUES (%s, %s) RETURNING id;", (plan_id, w))
+                        week_ids.append(cur.fetchone()[0])
+                    conn.commit()
+                    return plan_id, week_ids
+                except Exception:
+                    conn.rollback()
+                    raise
 
-        except Exception as e:
-            log_utils.log_message(f"Error refreshing daily_summary (with body_age): {e}", "ERROR")
-            raise
-    # ---------------------------------------------------------------------
-    # Training plans
-    # ---------------------------------------------------------------------
-    def save_training_plan(self, plan: dict, start_date: date) -> int:
-        """Insert plan, weeks, and workouts in a single transaction."""
-        try:
-            with get_conn() as conn, conn.transaction(), conn.cursor() as cur:
-                # 1. Deactivate any existing active plans
-                cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
-
-                # 2. Insert the new plan and get its ID
-                cur.execute(
-                    "INSERT INTO training_plans (start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
-                    (start_date, len(plan.get("weeks", []))),
-                )
-                plan_id = cur.fetchone()[0]
-
-                # 3. Insert weeks and workouts
-                for week_num, week_data in enumerate(plan.get("weeks", []), 1):
-                    cur.execute(
-                        "INSERT INTO training_plan_weeks (plan_id, week_number) VALUES (%s, %s) RETURNING id;",
-                        (plan_id, week_num),
-                    )
-                    week_id = cur.fetchone()[0]
-
-                    for workout_data in week_data.get("workouts", []):
-                        cur.execute(
-                            """
-                            INSERT INTO training_plan_workouts
-                                (week_id, day_of_week, exercise_id, sets, reps, rir)
-                            VALUES (%s, %s, %s, %s, %s, %s);
-                            """,
-                            (
-                                week_id,
-                                workout_data.get("day_of_week"),
-                                workout_data.get("exercise_id"),
-                                workout_data.get("sets"),
-                                workout_data.get("reps"),
-                                workout_data.get("rir"),
-                            ),
-                )
-                return plan_id
-        except Exception as e:
-            log_utils.log_message(f"Error saving training plan: {e}", "ERROR")
-            raise
-
-    def mark_plan_active(self, plan_id: int) -> None:
-        """Set the provided plan id as the only active plan."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE training_plans SET is_active = false WHERE is_active = true AND id <> %s;",
-                    (plan_id,),
-                )
-                cur.execute(
-                    "UPDATE training_plans SET is_active = true WHERE id = %s;",
-                    (plan_id,),
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error marking plan {plan_id} active: {e}", "ERROR")
-            raise
-
-    def deactivate_active_training_cycles(self) -> None:
-        """Mark all existing training cycles as inactive."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE training_cycle
-                    SET active = false,
-                        updated_at = now()
-                    WHERE active = true;
-                    """
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error deactivating active training cycles: {e}", "ERROR")
-            raise
-
-    def create_training_cycle(
-        self,
-        start_date: date,
-        *,
-        current_week: int,
-        current_block: int,
-    ) -> Dict[str, Any]:
-        """Insert a new training cycle and return the created row."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """
-                    INSERT INTO training_cycle (start_date, current_week, current_block)
-                    VALUES (%s, %s, %s)
-                    RETURNING id, start_date, current_week, current_block, active, created_at, updated_at;
-                    """,
-                    (start_date, current_week, current_block),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else {}
-        except Exception as e:
-            log_utils.log_message(f"Error creating training cycle starting {start_date}: {e}", "ERROR")
-            raise
-
-    def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
-        """Return the most recent active training cycle."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """
-                    SELECT id, start_date, current_week, current_block, active, created_at, updated_at
-                    FROM training_cycle
-                    WHERE active = true
-                    ORDER BY start_date DESC
-                    LIMIT 1;
-                    """,
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            log_utils.log_message(f"Error fetching active training cycle: {e}", "ERROR")
-            raise
-
-    def update_training_cycle_state(
-        self,
-        cycle_id: int,
-        *,
-        current_week: int,
-        current_block: int,
-    ) -> Optional[Dict[str, Any]]:
-        """Persist the latest macrocycle position."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """
-                    UPDATE training_cycle
-                    SET current_week = %s,
-                        current_block = %s,
-                        updated_at = now()
-                    WHERE id = %s
-                    RETURNING id, start_date, current_week, current_block, active, created_at, updated_at;
-                    """,
-                    (current_week, current_block, cycle_id),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            log_utils.log_message(
-                f"Error updating training cycle {cycle_id} to week {current_week}, block {current_block}: {e}",
-                "ERROR",
-            )
-            raise
-
-    def has_any_plan(self) -> bool:
-        """Return True if any training plan exists in the database."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute("SELECT EXISTS (SELECT 1 FROM training_plans);")
-                row = cur.fetchone()
-                return bool(row[0]) if row else False
-        except Exception as e:
-            log_utils.log_message(f"Error checking for existing plans: {e}", "ERROR")
-            raise
-
-    def get_plan(self, plan_id: int) -> Dict[str, Any]:
-        """Fetches a full training plan with weeks and workouts."""
-        # This is a complex query, you might build this out later if needed.
-        # For now, a placeholder is fine.
-        log_utils.log_message(f"Placeholder: Fetching plan {plan_id}", "INFO")
-        return {}
-
-    def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
-        """Return the most recent plan starting on the provided date if it exists."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT id, start_date, weeks FROM training_plans WHERE start_date = %s ORDER BY id DESC LIMIT 1;",
-                    (start_date,),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-        except Exception as e:
-            log_utils.log_message(f"Error fetching plan for start {start_date}: {e}", "ERROR")
-            raise
-
-    # ---------------------------------------------------------------------
-    # Muscle volume comparison
-    # ---------------------------------------------------------------------
-    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        """Fetch pre-calculated muscle volume for a given plan and week."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT * FROM plan_muscle_volume WHERE plan_id = %s AND week_number = %s;",
-                    (plan_id, week_number),
-                )
-                return cur.fetchall()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching plan muscle volume: {e}", "ERROR")
-            raise
-
-    def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        """Fetch actual muscle volume over a date range."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    "SELECT * FROM actual_muscle_volume WHERE date BETWEEN %s AND %s;",
-                    (start_date, end_date),
-                )
-                return cur.fetchall()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching actual muscle volume: {e}", "ERROR")
-            raise
-
-    # ---------------------------------------------------------------------
-    # Training Plan Helpers and Views
-    # ---------------------------------------------------------------------
+    def insert_workout(self, **kwargs) -> None:
+        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s);"
+        with self._get_cursor() as cur:
+            cur.execute(sql, kwargs)
 
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
-        """Finds the current training plan marked as active."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute("SELECT * FROM training_plans WHERE is_active = true LIMIT 1;")
-                return cur.fetchone()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching active plan: {e}", "ERROR")
-            raise
+        sql = "SELECT * FROM training_plans WHERE is_active = true ORDER BY id DESC LIMIT 1;"
+        with self._get_cursor() as cur:
+            cur.execute(sql)
+            return cur.fetchone()
 
-    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        """Fetches all workouts for a specific week of a plan."""
-        try:
-            with get_conn() as conn, conn.cursor(row_factory=dict_row) as cur:
-                cur.execute(
-                    """
-                    SELECT tpw.*, e.name as exercise_name
-                    FROM training_plan_workouts tpw
-                    JOIN training_plan_weeks tw ON tpw.week_id = tw.id
-                    JOIN wger_exercise e ON tpw.exercise_id = e.id
-                    WHERE tw.plan_id = %s AND tw.week_number = %s
-                    ORDER BY tpw.day_of_week;
-                    """,
-                    (plan_id, week_number),
-                )
-                return cur.fetchall()
-        except Exception as e:
-            log_utils.log_message(f"Error fetching plan week data: {e}", "ERROR")
-            raise
-    
+    def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        sql = "SELECT tpw.*, tw.week_number FROM training_plan_workouts tpw JOIN training_plan_weeks tw ON tw.id = tpw.week_id WHERE tw.plan_id = %s AND tw.week_number = %s ORDER BY tpw.day_of_week, tpw.id;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (plan_id, week_number))
+            return cur.fetchall()
+
+    def get_week_ids_for_plan(self, plan_id: int) -> Dict[int, int]:
+        sql = "SELECT id, week_number FROM training_plan_weeks WHERE plan_id = %s;"
+        out: Dict[int, int] = {}
+        with self._get_cursor() as cur:
+            cur.execute(sql, (plan_id,))
+            for r in cur.fetchall():
+                out[r["week_number"]] = r["id"]
+        return out
+
+    def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
+        sql = "SELECT * FROM training_plans WHERE start_date = %s ORDER BY id DESC LIMIT 1;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (start_date,))
+            return cur.fetchone()
+
+    def has_any_plan(self) -> bool:
+        with self._get_cursor(use_dict_row=False) as cur:
+            cur.execute("SELECT EXISTS (SELECT 1 FROM training_plans);")
+            row = cur.fetchone()
+            return bool(row[0]) if row else False
+
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
-        """Bulk update target weights for specific workout rows."""
-        if not updates:
-            return
+        if not updates: return
+        payload = [(item.get("target_weight_kg"), item.get("workout_id")) for item in updates if item.get("workout_id") is not None]
+        if not payload: return
+        with self._get_cursor() as cur:
+            cur.executemany("UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s", payload)
 
-        payload = []
-        for item in updates:
-            workout_id = item.get("workout_id")
-            if workout_id is None:
-                continue
-            payload.append((item.get("target_weight_kg"), workout_id))
+    def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
+        with self._get_cursor() as cur:
+            cur.execute("SELECT id, start_date, weeks FROM training_plans WHERE start_date <= %s ORDER BY start_date DESC LIMIT 1;", (week_start_date,))
+            plan = cur.fetchone()
+            if not plan: return
+            
+            week_number = ((week_start_date - plan['start_date']).days // 7) + 1
+            if not (1 <= week_number <= plan['weeks']): return
 
-        if not payload:
-            return
+            cur.execute("SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;", (plan['id'], week_number))
+            week = cur.fetchone()
+            if not week: return
+            
+            cur.execute("UPDATE training_plan_workouts SET sets = GREATEST(1, ROUND(sets * %s)::int), rir = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END WHERE week_id = %s AND is_cardio = false;", (set_multiplier, rir_increment, rir_increment, week['id']))
+            log_utils.info(f"Applied plan back-off to week {week_number} (plan_id={plan['id']}).")
 
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.executemany(
-                    "UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s",
-                    payload,
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error updating workout targets: {e}", "ERROR")
-            raise
+    # ----------------------------------------------
+    # --- Strength Test & Training Max Management ---
+    # ----------------------------------------------
+    def create_test_week_plan(self, start_date: date) -> Tuple[int, int]:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=None) as cur:
+                try:
+                    conn.autocommit = False
+                    cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+                    cur.execute("INSERT INTO training_plans(start_date, weeks, is_active) VALUES (%s, 1, true) RETURNING id;", (start_date,))
+                    plan_id = cur.fetchone()[0]
+                    cur.execute("INSERT INTO training_plan_weeks(plan_id, week_number, is_test) VALUES (%s, 1, true) RETURNING id;", (plan_id,))
+                    week_id = cur.fetchone()[0]
+                    conn.commit()
+                    return plan_id, week_id
+                except Exception:
+                    conn.rollback()
+                    raise
+
+    def get_latest_test_week(self) -> Optional[Dict[str, Any]]:
+        sql = "SELECT tw.id AS week_id, tw.week_number, tw.is_test, tp.id AS plan_id, tp.start_date, tp.weeks FROM training_plan_weeks tw JOIN training_plans tp ON tp.id = tw.plan_id WHERE tw.is_test = true ORDER BY tp.start_date DESC LIMIT 1;"
+        with self._get_cursor() as cur:
+            cur.execute(sql)
+            return cur.fetchone()
+
+    def insert_strength_test_result(self, **kwargs) -> None:
+        sql = "INSERT INTO strength_test_result (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg) VALUES (%(plan_id)s, %(week_number)s, %(lift_code)s, %(test_date)s, %(test_reps)s, %(test_weight_kg)s, %(e1rm_kg)s, %(tm_kg)s) ON CONFLICT (plan_id, week_number, lift_code) DO NOTHING;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, kwargs)
+
+    def upsert_training_max(self, lift_code: str, tm_kg: float, measured_at: date, source: str) -> None:
+        sql = "INSERT INTO training_max (lift_code, tm_kg, source, measured_at) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (lift_code, tm_kg, source, measured_at))
+
+    def get_latest_training_maxes(self) -> Dict[str, Optional[float]]:
+        sql = "SELECT DISTINCT ON (lift_code) lift_code, tm_kg FROM training_max ORDER BY lift_code, measured_at DESC;"
+        out: Dict[str, Optional[float]] = {}
+        with self._get_cursor() as cur:
+            cur.execute(sql)
+            for row in cur.fetchall():
+                out[row["lift_code"]] = row["tm_kg"]
+        return out
+
+    def get_latest_training_max_date(self) -> Optional[date]:
+        sql = "SELECT MAX(measured_at) AS latest FROM training_max;"
+        with self._get_cursor() as cur:
+            cur.execute(sql)
+            row = cur.fetchone()
+            if not row or not row.get("latest"): return None
+            latest = row["latest"]
+            return latest.date() if isinstance(latest, datetime) else latest
+    
+    # ----------------------------------------------
+    # --- Wger & Withings Log Management ---
+    # ----------------------------------------------
+    def save_withings_daily(self, day: date, weight_kg: Optional[float], body_fat_pct: Optional[float], muscle_pct: Optional[float], water_pct: Optional[float]) -> None:
+        sql = "INSERT INTO withings_daily (date, weight_kg, body_fat_pct, muscle_pct, water_pct) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (date) DO UPDATE SET weight_kg = EXCLUDED.weight_kg, body_fat_pct = EXCLUDED.body_fat_pct, muscle_pct = EXCLUDED.muscle_pct, water_pct = EXCLUDED.water_pct;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (day, weight_kg, body_fat_pct, muscle_pct, water_pct))
+
+    def save_wger_log(self, day: date, exercise_id: int, set_number: int, reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
+        sql = "INSERT INTO wger_logs (date, exercise_id, set_number, reps, weight_kg, rir) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (date, exercise_id, set_number) DO UPDATE SET reps = EXCLUDED.reps, weight_kg = EXCLUDED.weight_kg, rir = EXCLUDED.rir;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (day, exercise_id, set_number, reps, weight_kg, rir))
+
+    def load_lift_log(self, exercise_ids: List[int], start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
+        out: Dict[str, List[Dict[str, Any]]] = {}
+        sql_parts = ["SELECT * FROM wger_logs WHERE exercise_id = ANY(%s)"]
+        params: List[Any] = [exercise_ids]
+        if start_date: sql_parts.append("AND date >= %s"); params.append(start_date)
+        if end_date: sql_parts.append("AND date <= %s"); params.append(end_date)
+        sql_parts.append("ORDER BY date, set_number;")
+        
+        with self._get_cursor() as cur:
+            cur.execute(" ".join(sql_parts), params)
+            for row in cur.fetchall():
+                out.setdefault(str(row["exercise_id"]), []).append(row)
+        return out
+        
+    # ----------------------------------------------
+    # --- Wger Catalog & Seeding ---
+    # ----------------------------------------------
+    def _bulk_upsert(self, table_name: str, data: List[Dict[str, Any]], conflict_keys: List[str], update_keys: List[str]):
+        if not data: return
+        cols = list(data[0].keys())
+        placeholders = sql.SQL(",").join(sql.Placeholder() * len(cols))
+        conflict_action = sql.SQL("DO UPDATE SET {updates}").format(updates=sql.SQL(",").join(sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(k), sql.Identifier(k)) for k in update_keys)) if update_keys else sql.SQL("DO NOTHING")
+        stmt = sql.SQL("INSERT INTO {table} ({cols}) VALUES ({p}) ON CONFLICT ({c_keys}) {action}").format(table=sql.Identifier(table_name), cols=sql.SQL(",").join(map(sql.Identifier, cols)), p=placeholders, c_keys=sql.SQL(",").join(map(sql.Identifier, conflict_keys)), action=conflict_action)
+        values = [[row.get(c) for c in cols] for row in data]
+        with self._get_cursor() as cur:
+            cur.executemany(stmt, values)
+            log_utils.info(f"Upserted {len(data)} rows into \"{table_name}\".")
+
+    def upsert_wger_exercises_and_relations(self, exercises: List[Dict[str, Any]]):
+        if not exercises: return
+        exercise_data = [{"id": ex["id"], "uuid": ex["uuid"], "name": ex["name"], "description": ex["description"], "category_id": ex["category_id"]} for ex in exercises]
+        self._bulk_upsert("wger_exercise", exercise_data, ["id"], ["uuid", "name", "description", "category_id"])
+        equipment, primary, secondary, exercise_ids = [], [], [], [ex["id"] for ex in exercises]
+        for ex in exercises:
+            for eq_id in ex["equipment_ids"]: equipment.append({"exercise_id": ex["id"], "equipment_id": eq_id})
+            for m_id in ex["primary_muscle_ids"]: primary.append({"exercise_id": ex["id"], "muscle_id": m_id})
+            for m_id in ex["secondary_muscle_ids"]: secondary.append({"exercise_id": ex["id"], "muscle_id": m_id})
+        with self._get_cursor() as cur:
+            cur.execute('DELETE FROM wger_exercise_equipment WHERE exercise_id = ANY(%s)', (exercise_ids,)); cur.execute('DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = ANY(%s)', (exercise_ids,)); cur.execute('DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = ANY(%s)', (exercise_ids,))
+        if equipment: self._bulk_upsert("wger_exercise_equipment", equipment, ["exercise_id", "equipment_id"], [])
+        if primary: self._bulk_upsert("wger_exercise_muscle_primary", primary, ["exercise_id", "muscle_id"], [])
+        if secondary: self._bulk_upsert("wger_exercise_muscle_secondary", secondary, ["exercise_id", "muscle_id"], [])
+
+    def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[int]]]):
+        with self._get_cursor() as cur:
+            cur.execute('UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)', (main_lift_ids,))
+            assistance_values = [(main, assist) for main, assists in assistance_pool_data for assist in assists]
+            if assistance_values:
+                stmt = sql.SQL("INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES (%s, %s) ON CONFLICT DO NOTHING")
+                cur.executemany(stmt, assistance_values)
+        log_utils.info("Seeding of main lifts and assistance pools complete.")
+
+    # ----------------------------------------------
+    # --- Metrics, Summaries & Views ---
+    # ----------------------------------------------
+    def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM daily_summary WHERE date BETWEEN %s AND %s ORDER BY date ASC;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (start_date, end_date))
+            return cur.fetchall()
+
+    def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM daily_summary ORDER BY date DESC LIMIT %s;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (days,))
+            return list(reversed(cur.fetchall()))
+    
+    def refresh_daily_summary(self, days: int = 7) -> None:
+        start_date = date.today() - timedelta(days=days); end_date = date.today()
+        with self._get_cursor() as cur:
+            cur.execute("SELECT sp_upsert_body_age_range(%s, %s, %s);", (start_date, end_date, settings.USER_DATE_OF_BIRTH))
+            cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
+        log_utils.info(f"Refreshed body_age_daily and daily_summary for last {days} days.")
+
+    def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM plan_muscle_volume WHERE plan_id = %s AND week_number = %s;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (plan_id, week_number))
+            return cur.fetchall()
+
+    def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        sql = "SELECT * FROM actual_muscle_volume WHERE date BETWEEN %s AND %s;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (start_date, end_date))
+            return cur.fetchall()
 
     def refresh_plan_view(self) -> None:
-        """Refreshes the materialized view for plan muscle volume."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
-                log_utils.log_message("Refreshed plan_muscle_volume view.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error refreshing plan_muscle_volume view: {e}", "ERROR")
-            raise
-
+        with self._get_cursor() as cur: cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
+    
     def refresh_actual_view(self) -> None:
-        """Refreshes the materialized view for actual muscle volume."""
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
-                log_utils.log_message("Refreshed actual_muscle_volume view.", "INFO")
-        except Exception as e:
-            log_utils.log_message(f"Error refreshing actual_muscle_volume view: {e}", "ERROR")
-            raise
+        with self._get_cursor() as cur: cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
 
-    def apply_plan_backoff(
-        self,
-        week_start_date: date,
-        *,
-        set_multiplier: float,
-        rir_increment: int,
-    ) -> None:
-        """Apply a plan back-off against the week that starts on the provided date."""
-
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, start_date, weeks
-                    FROM training_plans
-                    WHERE start_date <= %s
-                    ORDER BY start_date DESC
-                    LIMIT 1;
-                    """,
-                    (week_start_date,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    log_utils.log_message(
-                        f"No training plan found for week starting {week_start_date}.",
-                        "WARN",
-                    )
-                    return
-
-                plan_id, plan_start, plan_weeks = row
-                if plan_start is None or plan_weeks is None:
-                    log_utils.log_message(
-                        "Plan metadata incomplete; skipping back-off application.",
-                        "WARN",
-                    )
-                    return
-
-                delta_days = (week_start_date - plan_start).days
-                if delta_days < 0:
-                    log_utils.log_message(
-                        f"Week start {week_start_date} precedes plan start {plan_start}; skipping.",
-                        "WARN",
-                    )
-                    return
-
-                week_number = (delta_days // 7) + 1
-                if week_number < 1 or week_number > int(plan_weeks):
-                    log_utils.log_message(
-                        f"Week start {week_start_date} outside plan range (weeks={plan_weeks}).",
-                        "WARN",
-                    )
-                    return
-
-                cur.execute(
-                    "SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;",
-                    (plan_id, week_number),
-                )
-                week_row = cur.fetchone()
-                if not week_row:
-                    log_utils.log_message(
-                        f"No training_plan_week found for plan {plan_id} week {week_number}.",
-                        "WARN",
-                    )
-                    return
-
-                week_id = week_row[0]
-                cur.execute(
-                    """
-                    UPDATE training_plan_workouts
-                    SET
-                      sets = GREATEST(1, ROUND(sets * %s)::int),
-                      rir  = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END
-                    WHERE week_id = %s AND is_cardio = false;
-                    """,
-                    (set_multiplier, rir_increment, rir_increment, week_id),
-                )
-                conn.commit()
-                log_utils.log_message(
-                    (
-                        "Applied plan back-off to week %s (plan_id=%s, set_multiplier=%.2f, "
-                        "rir_increment=%s)."
-                    )
-                    % (week_number, plan_id, set_multiplier, rir_increment),
-                    "INFO",
-                )
-        except Exception as e:
-            log_utils.log_message(f"Error applying plan back-off: {e}", "ERROR")
-            raise
-
-    # ---------------------------------------------------------------------
-    # Wger Catalog Upserts
-    # ---------------------------------------------------------------------
-    def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
-        success_count = 0
-        for item in categories:
-            try:
-                # Get a fresh connection for each item
-                with get_conn() as conn, conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO wger_category (id, name) VALUES (%(id)s, %(name)s)
-                        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-                        """,
-                        item
-                    )
-                    success_count += 1
-            except psycopg.Error as e:
-                details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
-                log_utils.log_message(f"Skipping category due to DB error. Details: {details} | Data: {item}", "WARN")
-                continue
-        log_utils.log_message(f"Successfully upserted {success_count}/{len(categories)} Wger categories.", "INFO")
-
-    def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
-        success_count = 0
-        with get_conn() as conn:
-            for item in equipment:
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO wger_equipment (id, name) VALUES (%(id)s, %(name)s)
-                            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
-                            """,
-                            item
-                        )
-                    conn.commit()
-                    success_count += 1
-                except psycopg.Error as e:
-                    conn.rollback()
-                    details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
-                    log_utils.log_message(f"Skipping equipment due to DB error. Details: {details} | Data: {item}", "WARN")
-                    continue
-        log_utils.log_message(f"Successfully upserted {success_count}/{len(equipment)} Wger equipment items.", "INFO")
-
-    def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
-        success_count = 0
-        with get_conn() as conn:
-            for item in muscles:
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            """
-                            INSERT INTO wger_muscle (id, name, name_en, is_front)
-                            VALUES (%(id)s, %(name)s, %(name_en)s, %(is_front)s)
-                            ON CONFLICT (id) DO UPDATE SET
-                                name = EXCLUDED.name, name_en = EXCLUDED.name_en, is_front = EXCLUDED.is_front;
-                            """,
-                            item
-                        )
-                    conn.commit()
-                    success_count += 1
-                except psycopg.Error as e:
-                    conn.rollback()
-                    details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
-                    log_utils.log_message(f"Skipping muscle due to DB error. Details: {details} | Data: {item}", "WARN")
-                    continue
-        log_utils.log_message(f"Successfully upserted {success_count}/{len(muscles)} Wger muscles.", "INFO")
-
-    def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
-        success_count = 0
-        with get_conn() as conn:
-            for ex in exercises:
-                try:
-                    with conn.cursor() as cur:
-                        # Main exercise upsert
-                        cur.execute(
-                            """
-                            INSERT INTO wger_exercise (id, uuid, name, description, category_id)
-                            VALUES (%(id)s, %(uuid)s, %(name)s, %(description)s, %(category_id)s)
-                            ON CONFLICT (id) DO UPDATE SET
-                                uuid = EXCLUDED.uuid, name = EXCLUDED.name,
-                                description = EXCLUDED.description, category_id = EXCLUDED.category_id;
-                            """,
-                            ex
-                        )
-
-                        # Junction tables
-                        ex_id = ex['id']
-                        if ex.get('equipment_ids'):
-                            cur.execute("DELETE FROM wger_exercise_equipment WHERE exercise_id = %s;", (ex_id,))
-                            equip_data = [(ex_id, eq_id) for eq_id in ex['equipment_ids']]
-                            cur.executemany("INSERT INTO wger_exercise_equipment (exercise_id, equipment_id) VALUES (%s, %s);", equip_data)
-
-                        if ex.get('primary_muscle_ids'):
-                            cur.execute("DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = %s;", (ex_id,))
-                            primary_data = [(ex_id, m_id) for m_id in ex['primary_muscle_ids']]
-                            cur.executemany("INSERT INTO wger_exercise_muscle_primary (exercise_id, muscle_id) VALUES (%s, %s);", primary_data)
-
-                        if ex.get('secondary_muscle_ids'):
-                            cur.execute("DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = %s;", (ex_id,))
-                            secondary_data = [(ex_id, m_id) for m_id in ex['secondary_muscle_ids']]
-                            cur.executemany("INSERT INTO wger_exercise_muscle_secondary (exercise_id, muscle_id) VALUES (%s, %s);", secondary_data)
-                    conn.commit()
-                    success_count += 1
-                except psycopg.Error as e:
-                    conn.rollback()
-                    details = e.diag.message_primary if hasattr(e, 'diag') else 'No details'
-                    log_utils.log_message(f"Skipping exercise due to DB error. Details: {details} | Data: {ex}", "WARN")
-                    continue
-
-        log_utils.log_message(f"Successfully upserted {success_count}/{len(exercises)} Wger exercises.", "INFO")
-
-    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
-        log_utils.log_message(f"[VALIDATION] {tag}: {adjustments}", "INFO")
-
+    # ----------------------------------------------
+    # --- Export & Validation Logging ---
+    # ----------------------------------------------
     def was_week_exported(self, plan_id: int, week_number: int) -> bool:
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM wger_export_log WHERE plan_id = %s AND week_number = %s LIMIT 1;",
-                    (plan_id, week_number),
-                )
-                return cur.fetchone() is not None
-        except Exception as e:
-            log_utils.log_message(
-                f"Error checking wger export status for plan {plan_id} week {week_number}: {e}",
-                "ERROR",
-            )
-            raise
+        sql = "SELECT 1 FROM wger_export_log WHERE plan_id = %s AND week_number = %s LIMIT 1;"
+        with self._get_cursor(use_dict_row=False) as cur:
+            cur.execute(sql, (plan_id, week_number))
+            return cur.fetchone() is not None
 
-    def record_wger_export(
-        self,
-        plan_id: int,
-        week_number: int,
-        payload: Dict[str, Any],
-        response: Optional[Dict[str, Any]] = None,
-        routine_id: Optional[int] = None,
-    ) -> None:
-        checksum_source = json.dumps(payload, sort_keys=True).encode("utf-8")
-        checksum = hashlib.sha1(checksum_source).hexdigest()
-        try:
-            with get_conn() as conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum, routine_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;
-                    """,
-                    (plan_id, week_number, Json(payload), Json(response or {}), checksum, routine_id),
-                )
-                conn.commit()
-        except Exception as e:
-            log_utils.log_message(
-                f"Error recording wger export for plan {plan_id} week {week_number}: {e}",
-                "ERROR",
-            )
-            raise
+    def record_wger_export(self, plan_id: int, week_number: int, payload: Dict[str, Any], response: Optional[Dict[str, Any]] = None, routine_id: Optional[int] = None):
+        body = json.dumps(payload, sort_keys=True)
+        checksum = hashlib.sha1(f"{plan_id}:{week_number}:{body}".encode("utf-8")).hexdigest()
+        sql = "INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum, routine_id) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (plan_id, week_number, Json(payload), Json(response or {}), checksum, routine_id))
+    
+    def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
+        # This was just a log message, so we'll keep it that way.
+        log_utils.info(f"[VALIDATION] {tag}: {adjustments}")
