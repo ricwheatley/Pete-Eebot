@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pete_e.infrastructure import wger_exporter
+from pete_e.infrastructure import wger_client as wger_exporter
 
 
 def test_set_sets_posts_string_payload(monkeypatch):

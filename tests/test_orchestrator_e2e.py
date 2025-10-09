@@ -18,7 +18,7 @@ from pete_e.application.orchestrator import (
 )
 
 
-DAILY_SOURCES = orchestrator_module.DAILY_SYNC_SOURCES
+DAILY_SOURCES = ["AppleDropbox", "Withings", "Wger", "BodyAge"]
 
 
 class LedgerStub:
