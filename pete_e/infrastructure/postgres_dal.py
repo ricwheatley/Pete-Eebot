@@ -20,6 +20,7 @@ from psycopg_pool import ConnectionPool
 from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
+from pete_e.domain.repositories import PlanRepository
 
 # --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
@@ -35,7 +36,7 @@ def get_pool() -> ConnectionPool:
     return _pool
 
 # --- Data Access Layer ---
-class PostgresDal:
+class PostgresDal(PlanRepository):
     """PostgreSQL implementation of the Data Access Layer."""
 
     def __init__(self, pool: Optional[ConnectionPool] = None):
@@ -57,6 +58,15 @@ class PostgresDal:
     # ----------------------------------------------
     # --- Plan & Block Management ---
     # ----------------------------------------------
+    def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
+        raise NotImplementedError
+
+    def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
+        return []
+
+    def get_core_pool_ids(self) -> List[int]:
+        return []
+
     def create_block_and_plan(self, start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=None) as cur:
