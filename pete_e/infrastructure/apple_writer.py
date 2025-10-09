@@ -8,7 +8,6 @@ import psycopg
 from psycopg import sql
 
 from pete_e.config.config import settings
-from pete_e.infrastructure.database import get_conn
 from pete_e.infrastructure.apple_parser import (
     DailyHeartRateSummary,
     DailyMetricPoint,

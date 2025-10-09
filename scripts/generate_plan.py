@@ -8,7 +8,7 @@ import argparse
 import datetime as dt
 
 from pete_e.application.services import PlanService, WgerExportService
-from pete_e.infrastructure.database import PostgresDal
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
 
