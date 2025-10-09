@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
 from pete_e.application.services import PlanService, WgerExportService
-from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.domain.validation import validate_and_adjust_plan, ValidationDecision
 from pete_e.domain.cycle_service import CycleService
@@ -38,15 +38,20 @@ class WeeklyAutomationResult:
 class Orchestrator:
     """Coordinates the weekly workflow by delegating to application services."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        dal: PostgresDal,
+        wger_client: WgerClient,
+        plan_service: PlanService,
+        export_service: WgerExportService,
+    ):
         """
-        Initializes the DAL and all necessary services.
-        This is the new dependency injection point.
+        Initializes the orchestrator with the dependencies it requires.
         """
-        self.dal = PostgresDal(get_pool())
-        self.wger_client = WgerClient()
-        self.plan_service = PlanService(self.dal)
-        self.export_service = WgerExportService(self.dal, self.wger_client)
+        self.dal = dal
+        self.wger_client = wger_client
+        self.plan_service = plan_service
+        self.export_service = export_service
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
         """
