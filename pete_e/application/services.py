@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.validation import validate_and_adjust_plan
-from pete_e.infrastructure.database import PostgresDal
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
 

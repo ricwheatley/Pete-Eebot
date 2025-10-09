@@ -5,7 +5,7 @@ Refreshes the local wger exercise catalog from the wger API
 and seeds the main lift / assistance pool data.
 """
 from pete_e.domain import schedule_rules # For MAIN_LIFT_IDS
-from pete_e.infrastructure.database import PostgresDal
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
 
