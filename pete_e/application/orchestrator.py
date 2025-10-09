@@ -13,6 +13,7 @@ from pete_e.application.services import PlanService, WgerExportService
 from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.domain.validation import validate_and_adjust_plan, ValidationDecision
+from pete_e.domain.cycle_service import CycleService
 from pete_e.infrastructure import log_utils
 
 # --- Result dataclasses can remain for clear return types ---
@@ -117,12 +118,8 @@ class Orchestrator:
         
         # Example: Trigger rollover on the last Sunday of a 4-week block
         active_plan = self.dal.get_active_plan()
-        if active_plan:
-            start_date = active_plan['start_date']
-            days_into_plan = (today - start_date).days
-            week_in_plan = (days_into_plan // 7) + 1
-            if week_in_plan >= 4 and today.weekday() == 6: # It's Sunday of week 4 or later
-                rollover_triggered = True
+        if CycleService.should_rollover(active_plan, today):
+            rollover_triggered = True
 
         if rollover_triggered:
             rollover_result = self.run_cycle_rollover(today)
