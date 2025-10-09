@@ -7,9 +7,11 @@ using the refactored application services.
 import argparse
 import datetime as dt
 
+import psycopg
+
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.infrastructure.postgres_dal import PostgresDal
-from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.wger_client import WgerClient, WgerError
 from pete_e.infrastructure import log_utils
 
 def main() -> None:
@@ -41,7 +43,7 @@ def main() -> None:
         )
         log_utils.info(f"Export result: {export_result}")
 
-    except Exception as e:
+    except (psycopg.Error, WgerError) as e:
         log_utils.error(f"Script failed: {e}", exc_info=True)
         raise
     finally:
