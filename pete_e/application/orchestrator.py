@@ -25,7 +25,7 @@ from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.di_container import Container, get_container
-from pete_e.application.sync import run_withings_sync
+from pete_e.infrastructure.withings_client import WithingsClient
 
 # --- Result dataclasses can remain for clear return types ---
 @dataclass(frozen=True)
@@ -66,6 +66,7 @@ class Orchestrator:
         self.plan_service = container.resolve(PlanService)
         self.export_service = container.resolve(WgerExportService)
         self.dropbox_client = container.resolve(AppleDropboxClient)
+        self.withings_client = container.resolve(WithingsClient)
         self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
 
@@ -198,7 +199,7 @@ class Orchestrator:
         # Note: The original `run_withings_sync` in sync.py returns a complex tuple.
         # We'll assume it's adapted or wrapped to return a dict or object.
         # For this patch, we'll call it and assume a dict-like result.
-        withings_results = run_withings_sync(self.dal, self.withings_client, days)
+        withings_results = self.run_withings_sync(days)
 
         log_utils.info("Running Apple Health ingest from Dropbox...")
         apple_results = run_apple_health_ingest(self.dal, self.dropbox_client, days)
@@ -213,6 +214,30 @@ class Orchestrator:
         statuses = {**withings_results.get("statuses", {}), **apple_results.get("statuses", {})}
         alerts = withings_results.get("alerts", []) + apple_results.get("alerts", [])
         return success, failures, statuses, alerts
+    
+    def run_withings_sync(self, days: int) -> dict[str, Any]:
+        """Runs only the Withings portion of the sync."""
+        try:
+            for i in range(days):
+                summary = self.withings_client.get_summary(days_back=i)
+                if summary:
+                    self.dal.save_withings_daily(
+                        day=date.fromisoformat(summary["date"]),
+                        weight_kg=summary.get("weight"),
+                        body_fat_pct=summary.get("fat_percent"),
+                        muscle_pct=summary.get("muscle_percent"),
+                        water_pct=summary.get("water_percent"),
+                    )
+            return {"success": True, "failures": [], "statuses": {"Withings": "ok"}, "alerts": []}
+        except Exception as e:
+            log_utils.error(f"Withings sync failed: {e}", exc_info=True)
+            return {"success": False, "failures": ["Withings"], "statuses": {"Withings": "failed"}, "alerts": []}
+
+    def run_withings_only_sync(self, days: int):
+        """Runs only the Withings portion of the sync and refreshes views."""
+        results = self.run_withings_sync(days)
+        self.dal.refresh_daily_summary(days=days + 1)
+        return results["success"], results["failures"], results["statuses"], results["alerts"]
 
     def close(self):
         """Closes any open connections, like the database pool."""
