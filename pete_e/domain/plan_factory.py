@@ -134,7 +134,7 @@ class PlanFactory:
             percent = schedule_rules.TEST_WEEK_PCTS[ex_id]
             target_weight = self._get_target_weight(training_maxes, ex_id, percent)
             week_workouts.append({
-                "day_of_week": dow, "exercise_id": ex_id, "sets": 1, "reps": 1,
+                "day_of_week": dow, "exercise_id": ex_id, "sets": 1, "reps": 1, "slot": "main",
                 "percent_1rm": percent, "target_weight_kg": target_weight, "is_cardio": False,
                 "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S"),
                 "comment": "AMRAP Test"
