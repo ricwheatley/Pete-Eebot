@@ -5,7 +5,7 @@ delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
 from datetime import date, timedelta
-from typing import Dict, Any, NamedTuple
+from typing import Dict, Any
 from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
@@ -22,6 +22,7 @@ from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.di_container import Container, get_container
 
 # --- Result dataclasses can remain for clear return types ---
 @dataclass(frozen=True)
@@ -47,21 +48,21 @@ class Orchestrator:
 
     def __init__(
         self,
-        dal: PostgresDal,
-        wger_client: WgerClient,
-        plan_service: PlanService,
-        export_service: WgerExportService,
+        *,
+        container: Container | None = None,
         validation_service: ValidationService | None = None,
         cycle_service: CycleService | None = None,
     ):
         """
         Initializes the orchestrator with the dependencies it requires.
         """
-        self.dal = dal
-        self.wger_client = wger_client
-        self.plan_service = plan_service
-        self.export_service = export_service
-        self.validation_service = validation_service or ValidationService(dal)
+        container = container or get_container()
+
+        self.dal = container.resolve(PostgresDal)
+        self.wger_client = container.resolve(WgerClient)
+        self.plan_service = container.resolve(PlanService)
+        self.export_service = container.resolve(WgerExportService)
+        self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:

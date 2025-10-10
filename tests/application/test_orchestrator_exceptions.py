@@ -7,6 +7,7 @@ import pytest
 
 from pete_e.application.exceptions import DataAccessError, PlanRolloverError, ValidationError
 from pete_e.application.orchestrator import Orchestrator
+from tests.di_utils import build_stub_container
 
 
 class StubDal:
@@ -34,14 +35,14 @@ class ExplodingCycleService:
 
 
 def _make_orchestrator(**overrides) -> Orchestrator:
-    params = {
-        "dal": overrides.get("dal", StubDal()),
-        "wger_client": SimpleNamespace(),
-        "plan_service": overrides.get(
+    container = build_stub_container(
+        dal=overrides.get("dal", StubDal()),
+        wger_client=SimpleNamespace(),
+        plan_service=overrides.get(
             "plan_service",
             SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 99),
         ),
-        "export_service": overrides.get(
+        export_service=overrides.get(
             "export_service",
             SimpleNamespace(
                 export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {
@@ -49,10 +50,12 @@ def _make_orchestrator(**overrides) -> Orchestrator:
                 }
             ),
         ),
-        "validation_service": overrides.get("validation_service"),
-        "cycle_service": overrides.get("cycle_service"),
-    }
-    return Orchestrator(**params)
+    )
+    return Orchestrator(
+        container=container,
+        validation_service=overrides.get("validation_service"),
+        cycle_service=overrides.get("cycle_service"),
+    )
 
 
 def test_run_weekly_calibration_raises_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
