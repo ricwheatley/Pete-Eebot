@@ -10,8 +10,6 @@ import os
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
-
-from psycopg.conninfo import make_conninfo
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -105,14 +103,15 @@ class Settings(BaseSettings):
     def build_database_url(self) -> "Settings":
         """Dynamically construct the ``DATABASE_URL`` after validation."""
         db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
+        conninfo_params = {
+            "user": self.POSTGRES_USER,
+            "password": self.POSTGRES_PASSWORD.get_secret_value(),
+            "host": db_host,
+            "port": self.POSTGRES_PORT,
+            "dbname": self.POSTGRES_DB,
+        }
 
-        self.DATABASE_URL = make_conninfo(
-            user=self.POSTGRES_USER,
-            password=self.POSTGRES_PASSWORD.get_secret_value(),
-            host=db_host,
-            port=self.POSTGRES_PORT,
-            dbname=self.POSTGRES_DB,
-        )
+        self.DATABASE_URL = _build_conninfo(conninfo_params)
         return self
 
     # --- DYNAMIC FILE PATHS ---
@@ -141,6 +140,28 @@ class Settings(BaseSettings):
     def phrases_path(self) -> Path:
         """Path to the tagged phrases resource file."""
         return APP_ROOT / "pete_e/resources/phrases_tagged.json"
+
+
+def _build_conninfo(params: dict[str, Any]) -> str:
+    """Return a libpq-compatible connection string from keyword parameters."""
+
+    try:
+        from psycopg.conninfo import make_conninfo as _make_conninfo  # type: ignore
+
+        return _make_conninfo(**params)
+    except ModuleNotFoundError:
+        pass
+
+    def _quote(value: Any) -> str:
+        text = str(value)
+        if not text:
+            return "''"
+        if any(ch.isspace() for ch in text) or any(ch in "'\\" for ch in text):
+            escaped = text.replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{escaped}'"
+        return text
+
+    return " ".join(f"{key}={_quote(value)}" for key, value in params.items())
 
 
 # Create a single, importable instance of the settings for the entire application.
