@@ -624,8 +624,32 @@ def _severity_from_breach_ratio(ratio: float) -> Tuple[str, float, int]:
     return "severe", 0.70, 3
 
 
+def _resolve_historical_rows(
+    rows_or_provider: Any, start_date: date, end_date: date
+) -> List[Dict[str, Any]]:
+    """Normalise callers that provide either a list or a DAL-style provider.
+
+    Historically these helpers fetched data directly from the DAL via a
+    ``get_historical_data`` method. During the refactor we switched them to
+    accept pre-fetched rows, but some call sites (including tests) still pass a
+    DAL object. To remain backwards compatible, detect such providers and fetch
+    the rows on behalf of the caller.
+    """
+
+    if isinstance(rows_or_provider, list):
+        return rows_or_provider
+
+    fetcher = getattr(rows_or_provider, "get_historical_data", None)
+    if callable(fetcher):
+        return list(fetcher(start_date, end_date))
+
+    raise TypeError(
+        "Expected a list of rows or provider with 'get_historical_data(start, end)'"
+    )
+
+
 def compute_dynamic_baselines(
-    rows: List[Dict[str, Any]],
+    rows: Any,
     reference_end_date: date,
     *,
     hrv_key: Optional[str] = None,
@@ -635,6 +659,7 @@ def compute_dynamic_baselines(
     The caller supplies historical metric rows covering the required window.
     """
     start = reference_end_date - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+    rows = _resolve_historical_rows(rows, start, reference_end_date)
     hist = [
         row
         for row in rows
@@ -667,7 +692,7 @@ def compute_dynamic_baselines(
 
 
 def assess_recovery_and_backoff(
-    historical_rows: List[Dict[str, Any]],
+    historical_rows: Any,
     week_start_date: date,
 ) -> BackoffRecommendation:
     """
@@ -679,9 +704,10 @@ def assess_recovery_and_backoff(
 
     # Pull just enough history for obs + baseline
     base_start = obs_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+    rows = _resolve_historical_rows(historical_rows, base_start, obs_end)
     hist = [
         row
-        for row in historical_rows
+        for row in rows
         if isinstance(row, dict)
         and (d := row.get("date")) is not None
         and base_start <= d <= obs_end
