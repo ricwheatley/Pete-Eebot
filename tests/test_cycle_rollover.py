@@ -7,6 +7,7 @@ import pytest
 
 from pete_e.application.exceptions import PlanRolloverError
 from pete_e.application.orchestrator import CycleRolloverResult, Orchestrator, WeeklyAutomationResult, WeeklyCalibrationResult
+from tests.di_utils import build_stub_container
 
 
 class StubPlanService:
@@ -41,12 +42,13 @@ class StubDal:
 
 def make_orchestrator(plan_service: StubPlanService | None = None, export_service: StubExportService | None = None, dal: StubDal | None = None) -> Orchestrator:
     dal = dal or StubDal()
-    return Orchestrator(
+    container = build_stub_container(
         dal=dal,
         wger_client=SimpleNamespace(),
         plan_service=plan_service or StubPlanService(),
         export_service=export_service or StubExportService(),
     )
+    return Orchestrator(container=container)
 
 
 def test_run_cycle_rollover_creates_plan_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:

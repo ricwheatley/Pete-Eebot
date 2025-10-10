@@ -72,7 +72,6 @@ from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
-from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
@@ -92,20 +91,7 @@ console = Console()
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
     from pete_e.application.orchestrator import Orchestrator as _Orchestrator
-    from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
-    from pete_e.infrastructure.wger_client import WgerClient
-
-    dal = PostgresDal(get_pool())
-    wger_client = WgerClient()
-    plan_service = PlanService(dal)
-    export_service = WgerExportService(dal, wger_client)
-
-    return _Orchestrator(
-        dal=dal,
-        wger_client=wger_client,
-        plan_service=plan_service,
-        export_service=export_service,
-    )
+    return _Orchestrator()
 
 
 def _format_body_age_line(trend) -> str | None:
