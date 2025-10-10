@@ -12,6 +12,7 @@ import json
 from pete_e.application.validation_service import ValidationService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.plan_factory import PlanFactory
+from pete_e.domain.plan_mapper import PlanMapper
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
@@ -23,6 +24,7 @@ class PlanService:
         """Initializes the service with a data access layer."""
         self.dal = dal
         self.factory = PlanFactory(plan_repository=self.dal)
+        self.mapper = PlanMapper()
 
     def create_and_persist_531_block(self, start_date: date) -> int:
         """
@@ -35,10 +37,12 @@ class PlanService:
         
         # 2. Use PlanFactory to build the plan dictionary
         plan_dict = self.factory.create_531_block_plan(start_date, tms)
-        
+        plan_entity = self.mapper.to_entity(plan_dict)
+        payload = self.mapper.to_payload(plan_entity)
+
         # 3. Persist the plan using the DAL
         # This will be a new method in the DAL to save a full plan object.
-        plan_id = self.dal.save_full_plan(plan_dict)
+        plan_id = self.dal.save_full_plan(payload)
         log_utils.info(f"Successfully created and persisted plan_id: {plan_id}")
         return plan_id
 
@@ -47,7 +51,9 @@ class PlanService:
         log_utils.info(f"Creating new strength test week starting {start_date.isoformat()}...")
         tms = self.dal.get_latest_training_maxes()
         plan_dict = self.factory.create_strength_test_plan(start_date, tms)
-        plan_id = self.dal.save_full_plan(plan_dict)
+        plan_entity = self.mapper.to_entity(plan_dict)
+        payload = self.mapper.to_payload(plan_entity)
+        plan_id = self.dal.save_full_plan(payload)
         log_utils.info(f"Successfully created and persisted strength test plan_id: {plan_id}")
         return plan_id
 

@@ -2,147 +2,36 @@
 
 from dataclasses import dataclass
 
-from statistics import mean
 from typing import Any, Dict, List, Tuple
-from pete_e.config import settings
-from pete_e.infrastructure import log_utils
-from pete_e.utils import converters, math as math_utils
+
+from pete_e.domain.entities import (
+    Exercise,
+    Week,
+    Workout,
+    compute_recovery_flag,
+)
+from pete_e.utils import converters
 
 
-def _metric_values(metrics: list[dict], key: str) -> list[float]:
-    return [m.get(key) for m in metrics if m.get(key) is not None]
-
-
-def _compute_recovery_flag(
-    metrics_7d: list[dict], metrics_baseline: list[dict]
-) -> bool:
-    """Return True when recovery markers are within the expected range."""
-
-    rhr_7 = math_utils.mean_or_none(_metric_values(metrics_7d, "hr_resting"))
-    sleep_7 = math_utils.mean_or_none(
-        _metric_values(metrics_7d, "sleep_asleep_minutes")
-    )
-    rhr_baseline = math_utils.mean_or_none(
-        _metric_values(metrics_baseline, "hr_resting")
-    )
-    sleep_baseline = math_utils.mean_or_none(
-        _metric_values(metrics_baseline, "sleep_asleep_minutes")
-    )
-
-    if (
-        rhr_baseline is None
-        or rhr_7 is None
-        or sleep_baseline is None
-        or sleep_7 is None
-    ):
-        return True
-
-    rhr_limit = rhr_baseline * (1 + settings.RHR_ALLOWED_INCREASE)
-    sleep_limit = sleep_baseline * settings.SLEEP_ALLOWED_DECREASE
-    if rhr_7 > rhr_limit or sleep_7 < sleep_limit:
-        return False
-    return True
-
-
-def _adjust_exercise(
-    exercise: dict, history_entries: list[dict], recovery_good: bool
-) -> Tuple[float | None, str]:
-    """Apply progression rules for a single exercise."""
-
-    ex_id = exercise.get("id")
-    name = exercise.get("name", f"Exercise #{ex_id}")
-    target_display = exercise.get("weight_target", 0)
-
-    if not history_entries:
-        detail = f"no RIR, recovery {'good' if recovery_good else 'poor'}"
-        message = f"{name}: no history, kept at {target_display}kg ({detail})"
-        return None, message
-
-    recent_entries = history_entries[-4:]
-    weights = [
-        entry.get("weight") for entry in recent_entries if entry.get("weight") is not None
-    ]
-    rirs = [entry.get("rir") for entry in recent_entries if entry.get("rir") is not None]
-
-    if not weights:
-        detail = f"no RIR, recovery {'good' if recovery_good else 'poor'}"
-        message = (
-            f"{name}: no valid weight data, kept at {target_display}kg ({detail})"
-        )
-        return None, message
-
-    avg_weight = mean(weights)
-    use_rir = bool(rirs)
-    avg_rir = mean(rirs) if use_rir else None
-
-    target = exercise.get("weight_target", avg_weight)
-    inc = settings.PROGRESSION_INCREMENT
-    dec = settings.PROGRESSION_DECREMENT
-
-    if use_rir:
-        if avg_rir is not None and avg_rir <= 1:
-            inc += settings.PROGRESSION_INCREMENT / 2
-        elif avg_rir is not None and avg_rir >= 2:
-            inc /= 2
-
-    if not recovery_good:
-        inc /= 2
-        dec *= 1.5
-
-    detail = (
-        f"avg RIR {avg_rir:.1f}" if use_rir and avg_rir is not None else "no RIR"
-    ) + f", recovery {'good' if recovery_good else 'poor'}"
-
-    if avg_weight >= target and (not use_rir or (avg_rir is not None and avg_rir <= 2)):
-        new_target = round(target * (1 + inc), 2)
-        message = f"{name}: +{inc*100:.1f}% ({detail})"
-        return new_target, message
-
-    if avg_weight < target or (use_rir and avg_rir is not None and avg_rir > 2):
-        new_target = round(target * (1 - dec), 2)
-        message = f"{name}: -{dec*100:.1f}% ({detail})"
-        return new_target, message
-
-    message = f"{name}: no change ({detail})"
-    return None, message
-
-
-def apply_progression(
-    week: dict,
-    *,
-    lift_history: dict | None = None,
-    recent_metrics: list[dict] | None = None,
-    baseline_metrics: list[dict] | None = None,
-) -> Tuple[dict, list[str]]:
-    """Adjust weights based on lift log and recovery metrics."""
-
-    history = lift_history or {}
-    metrics_7d = recent_metrics or []
-    metrics_baseline = baseline_metrics or []
-    recovery_good = _compute_recovery_flag(metrics_7d, metrics_baseline)
-
-    # The richer Apple Health exports also include heart rate variability (HRV)
-    # and detailed sleep stages. In future iterations, these could augment the
-    # simple recovery flag above - e.g. flag poor recovery when HRV trends down
-    # or when deep/REM sleep proportions fall below expectations.
-
-    adjustments: list[str] = []
-
-    for day in week.get("days", []):
-        for session in day.get("sessions", []):
-            if session.get("type") != "weights":
-                continue
-            for exercise in session.get("exercises", []):
-                ex_id = str(exercise.get("id"))
-                entries = history.get(ex_id, [])
-                new_target, message = _adjust_exercise(
-                    exercise, entries, recovery_good
-                )
-                if new_target is not None:
-                    exercise["weight_target"] = new_target
-                adjustments.append(message)
-
-    return week, adjustments
+def _to_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return int(stripped)
+        except ValueError:
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return None
+    return None
 
 
 @dataclass(frozen=True)
@@ -163,47 +52,61 @@ class PlanProgressionDecision:
     notes: List[str]
     updates: List[WorkoutProgression]
     persisted: bool
-def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[dict, Dict[int, dict]]:
+
+
+def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[Week, Dict[int, Workout]]:
     """Convert raw plan rows into the structure expected by apply_progression."""
 
-    days: Dict[int, dict] = {}
-    workout_map: Dict[int, dict] = {}
+    workouts: list[Workout] = []
+    workout_map: Dict[int, Workout] = {}
+
+    if not rows:
+        return Week(week_number=0, workouts=[]), workout_map
+
+    week_number = _to_int(rows[0].get("week_number")) or 0
+    start_date = converters.to_date(rows[0].get("week_start"))
 
     for row in rows:
-        workout_id = row.get("id")
+        workout_id = _to_int(row.get("id"))
         if workout_id is None:
             continue
-        if row.get("is_cardio"):
+
+        day_number = _to_int(row.get("day_of_week"))
+        if day_number is None:
             continue
 
-        day_number = row.get("day_of_week")
-        if not isinstance(day_number, int):
-            continue
+        is_cardio = bool(row.get("is_cardio"))
+        workout_type = "cardio" if is_cardio else "weights"
 
-        day_entry = days.setdefault(day_number, {"day_of_week": day_number, "sessions": []})
-        session = next((s for s in day_entry["sessions"] if s.get("type") == "weights"), None)
-        if session is None:
-            session = {"type": "weights", "exercises": []}
-            day_entry["sessions"].append(session)
+        exercise_id = _to_int(row.get("exercise_id"))
+        exercise_name = row.get("exercise_name") or (
+            f"Exercise #{exercise_id}" if exercise_id is not None else "Exercise"
+        )
+        exercise = Exercise(
+            id=exercise_id,
+            name=str(exercise_name),
+            sets=_to_int(row.get("sets")),
+            reps=_to_int(row.get("reps")),
+            rir=converters.to_float(row.get("rir")),
+            weight_target=converters.to_float(row.get("target_weight_kg")),
+            muscle_group=row.get("muscle_group"),
+        )
 
-        exercise = {
-            "id": row.get("exercise_id"),
-            "name": row.get("exercise_name") or f"Exercise #{row.get('exercise_id')}"
-        }
-        weight_target = row.get("target_weight_kg")
-        if weight_target is not None:
-            converted = converters.to_float(weight_target)
-            if converted is not None:
-                exercise["weight_target"] = converted
-        for key in ("sets", "reps", "rir"):
-            if row.get(key) is not None:
-                exercise[key] = row.get(key)
+        workout = Workout(
+            id=workout_id,
+            day_of_week=day_number,
+            slot=row.get("slot"),
+            is_cardio=is_cardio,
+            type=workout_type,
+            percent_1rm=converters.to_float(row.get("percent_1rm")),
+            exercise=exercise,
+            intensity=row.get("intensity"),
+        )
 
-        session["exercises"].append(exercise)
-        workout_map[int(workout_id)] = exercise
+        workouts.append(workout)
+        workout_map[workout_id] = workout
 
-    week = {"days": [days[idx] for idx in sorted(days.keys())]}
-    return week, workout_map
+    return Week(week_number=week_number, start_date=start_date, workouts=workouts), workout_map
 
 
 def calibrate_plan_week(
@@ -218,12 +121,12 @@ def calibrate_plan_week(
     if not rows:
         return PlanProgressionDecision(notes=[], updates=[], persisted=False)
 
-    week_structure, workout_map = _normalise_plan_week(rows)
-    if not week_structure["days"]:
+    week_entity, workout_map = _normalise_plan_week(rows)
+    if not week_entity.workouts:
         return PlanProgressionDecision(notes=[], updates=[], persisted=False)
 
     _, notes = apply_progression(
-        week_structure,
+        week_entity,
         lift_history=lift_history,
         recent_metrics=recent_metrics,
         baseline_metrics=baseline_metrics,
@@ -234,12 +137,12 @@ def calibrate_plan_week(
         workout_id = row.get("id")
         if workout_id is None:
             continue
-        exercise = workout_map.get(int(workout_id))
-        if not exercise:
+        workout = workout_map.get(int(workout_id))
+        if not workout:
             continue
 
         before = converters.to_float(row.get("target_weight_kg"))
-        after = converters.to_float(exercise.get("weight_target"))
+        after = converters.to_float(workout.weight_target)
         if before is None and after is None:
             continue
         if before is not None and after is not None and abs(after - before) < 1e-6:
@@ -249,12 +152,32 @@ def calibrate_plan_week(
             WorkoutProgression(
                 workout_id=int(workout_id),
                 exercise_id=row.get("exercise_id"),
-                name=exercise.get("name", f"Exercise #{row.get('exercise_id')}") or "Exercise",
+                name=workout.exercise.name
+                if workout.exercise and workout.exercise.name
+                else f"Exercise #{row.get('exercise_id')}",
                 before=before,
                 after=after,
             )
         )
 
     return PlanProgressionDecision(notes=notes, updates=updates, persisted=False)
+
+
+def apply_progression(
+    week: Week,
+    *,
+    lift_history: Dict[str, List[Dict[str, Any]]] | None = None,
+    recent_metrics: List[Dict[str, Any]] | None = None,
+    baseline_metrics: List[Dict[str, Any]] | None = None,
+) -> Tuple[Week, List[str]]:
+    """Adjust weights based on lift log and recovery metrics."""
+
+    history = lift_history or {}
+    metrics_7d = recent_metrics or []
+    metrics_baseline = baseline_metrics or []
+    recovery_good = compute_recovery_flag(metrics_7d, metrics_baseline)
+
+    notes = week.apply_progression(history, recovery_good=recovery_good)
+    return week, notes
 
 
