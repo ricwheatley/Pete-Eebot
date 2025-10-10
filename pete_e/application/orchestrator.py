@@ -5,7 +5,6 @@ delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
 from datetime import date, timedelta
-from typing import Dict, Any
 from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
@@ -15,17 +14,15 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
-from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
 from pete_e.domain.cycle_service import CycleService
+from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
-from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.di_container import Container, get_container
-from pete_e.infrastructure.withings_client import WithingsClient
 
 # --- Result dataclasses can remain for clear return types ---
 @dataclass(frozen=True)
@@ -65,8 +62,7 @@ class Orchestrator:
         self.wger_client = container.resolve(WgerClient)
         self.plan_service = container.resolve(PlanService)
         self.export_service = container.resolve(WgerExportService)
-        self.dropbox_client = container.resolve(AppleDropboxClient)
-        self.withings_client = container.resolve(WithingsClient)
+        self.daily_sync_service = container.resolve(DailySyncService)
         self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
 
@@ -195,46 +191,13 @@ class Orchestrator:
         """Orchestrates the daily sync of all data sources."""
         log_utils.info("Orchestrator running daily sync...")
 
-        log_utils.info("Running Withings sync...")
-        withings_results = self.run_withings_sync(days)
-
-        log_utils.info("Running Apple Health ingest from Dropbox...")
-        apple_results = run_apple_health_ingest()
-
-        log_utils.info("Refreshing database views...")
-        self.dal.refresh_daily_summary(days=days + 1) # Add buffer day
-        self.dal.refresh_actual_view()
-
-        # Combine results into the tuple format expected by the CLI retry wrapper
-        success = withings_results.get("success", False) and apple_results.get("success", False)
-        failures = withings_results.get("failures", []) + apple_results.get("failures", [])
-        statuses = {**withings_results.get("statuses", {}), **apple_results.get("statuses", {})}
-        alerts = withings_results.get("alerts", []) + apple_results.get("alerts", [])
-        return success, failures, statuses, alerts
-
-    def run_withings_sync(self, days: int) -> dict[str, Any]:
-        """Runs only the Withings portion of the sync."""
-        try:
-            for i in range(days):
-                summary = self.withings_client.get_summary(days_back=i)
-                if summary:
-                    self.dal.save_withings_daily(
-                        day=date.fromisoformat(summary["date"]),
-                        weight_kg=summary.get("weight"),
-                        body_fat_pct=summary.get("fat_percent"),
-                        muscle_pct=summary.get("muscle_percent"),
-                        water_pct=summary.get("water_percent"),
-                    )
-            return {"success": True, "failures": [], "statuses": {"Withings": "ok"}, "alerts": []}
-        except Exception as e:
-            log_utils.error(f"Withings sync failed: {e}", exc_info=True)
-            return {"success": False, "failures": ["Withings"], "statuses": {"Withings": "failed"}, "alerts": []}
+        result = self.daily_sync_service.run_full(days=days)
+        return result.as_tuple()
 
     def run_withings_only_sync(self, days: int):
         """Runs only the Withings portion of the sync and refreshes views."""
-        results = self.run_withings_sync(days)
-        self.dal.refresh_daily_summary(days=days + 1)
-        return results["success"], results["failures"], results["statuses"], results["alerts"]
+        result = self.daily_sync_service.run_withings_only(days=days)
+        return result.as_tuple()
 
     def close(self):
         """Closes any open connections, like the database pool."""
