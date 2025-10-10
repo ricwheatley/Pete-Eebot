@@ -31,7 +31,7 @@ def build_orchestrator(validation_service: StubValidationService | None = None):
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 0),
         export_service=SimpleNamespace(
-            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: None
+            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: None
         ),
     )
     return Orchestrator(container=container, validation_service=validation_service)
