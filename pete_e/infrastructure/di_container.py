@@ -7,9 +7,11 @@ import inspect
 from typing import Any, Callable, Dict, Type
 
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
+from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
+from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.withings_client import WithingsClient
 
 ServiceType = Type[Any]
@@ -55,12 +57,27 @@ def _register_defaults(container: Container) -> None:
     container.register(WgerClient, factory=lambda _c: WgerClient())
     container.register(AppleDropboxClient, factory=lambda _c: AppleDropboxClient())
     container.register(WithingsClient, factory=lambda _c: WithingsClient())
+    container.register(
+        AppleHealthIngestor,
+        factory=lambda c: AppleHealthDropboxIngestor(
+            dal=c.resolve(PostgresDal),
+            client=c.resolve(AppleDropboxClient),
+        ),
+    )
     container.register(PlanService, factory=lambda c: PlanService(c.resolve(PostgresDal)))
     container.register(
         WgerExportService,
         factory=lambda c: WgerExportService(
             dal=c.resolve(PostgresDal),
             wger_client=c.resolve(WgerClient),
+        ),
+    )
+    container.register(
+        DailySyncService,
+        factory=lambda c: DailySyncService(
+            repository=c.resolve(PostgresDal),
+            withings_source=c.resolve(WithingsClient),
+            apple_ingestor=c.resolve(AppleHealthIngestor),
         ),
     )
 
