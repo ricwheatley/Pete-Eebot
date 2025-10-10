@@ -6,9 +6,12 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
+import tests.config_stub  # noqa: F401
+
 from pete_e.application.validation_service import ValidationService
 from pete_e.domain.validation import (
     BackoffRecommendation,
+    PlanContext,
     ReadinessSummary,
     ValidationDecision,
 )
@@ -98,11 +101,18 @@ def test_validation_service_applies_adjustment(monkeypatch: pytest.MonkeyPatch) 
 
     captured: Dict[str, Any] = {}
 
-    def fake_validate(historical_rows, target_week, *, adherence_snapshot=None):
+    def fake_validate(
+        historical_rows,
+        target_week,
+        *,
+        plan_context=None,
+        adherence_snapshot=None,
+    ):
         captured.update(
             {
                 "rows": historical_rows,
                 "week": target_week,
+                "plan_context": plan_context,
                 "snapshot": adherence_snapshot,
             }
         )
@@ -118,6 +128,8 @@ def test_validation_service_applies_adjustment(monkeypatch: pytest.MonkeyPatch) 
 
     assert captured["rows"] == hist
     assert captured["week"] == week_start
+    assert isinstance(captured["plan_context"], PlanContext)
+    assert captured["plan_context"].plan_id == 5
     assert captured["snapshot"] and captured["snapshot"]["plan_id"] == 5
     assert dal.backoff_calls and dal.backoff_calls[0]["set_multiplier"] == pytest.approx(1.05)
     assert decision.applied is True
