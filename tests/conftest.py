@@ -13,13 +13,14 @@ if str(ROOT) not in sys.path:
 
 
 if "pydantic" not in sys.modules:
-    from mocks.pydantic_mock import Field, FieldInfo, SecretStr
+    from mocks.pydantic_mock import Field, FieldInfo, SecretStr, model_validator
 
     pydantic_module = types.ModuleType("pydantic")
     pydantic_module.Field = Field
     pydantic_module.FieldInfo = FieldInfo
     pydantic_module.SecretStr = SecretStr
-    pydantic_module.__all__ = ["Field", "FieldInfo", "SecretStr"]
+    pydantic_module.model_validator = model_validator
+    pydantic_module.__all__ = ["Field", "FieldInfo", "SecretStr", "model_validator"]
     pydantic_module.__file__ = __file__
 
     sys.modules["pydantic"] = pydantic_module
