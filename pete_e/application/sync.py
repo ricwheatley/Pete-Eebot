@@ -251,15 +251,23 @@ def run_sync_with_retries(
     max_attempts = max(1, retries)
     base_delay = max(1, delay)
 
-    result = _run_with_retry(
-        execute=lambda: orchestrator.run_daily_sync(days=days),
-        max_attempts=max_attempts,
-        base_delay=base_delay,
-        label="Sync",
-        summary_name="daily",
-    )
-    log_utils.log_message(result.summary_line(days=days), result.log_level())
-    return result
+    try:
+        result = _run_with_retry(
+            execute=lambda: orchestrator.run_daily_sync(days=days),
+            max_attempts=max_attempts,
+            base_delay=base_delay,
+            label="Sync",
+            summary_name="daily",
+        )
+        log_utils.log_message(result.summary_line(days=days), result.log_level())
+        return result
+    finally:  # pragma: no branch - ensure resources are released
+        closer = getattr(orchestrator, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception as exc:  # pragma: no cover - defensive logging
+                log_utils.log_message(f"Failed to close orchestrator cleanly: {exc}", "WARN")
 
 
 def run_withings_only_with_retries(
@@ -273,12 +281,20 @@ def run_withings_only_with_retries(
     max_attempts = max(1, retries)
     base_delay = max(1, delay)
 
-    result = _run_with_retry(
-        execute=lambda: orchestrator.run_withings_only_sync(days=days),
-        max_attempts=max_attempts,
-        base_delay=base_delay,
-        label="Withings-only sync",
-        summary_name="withings-only",
-    )
-    log_utils.log_message(result.summary_line(days=days), result.log_level())
-    return result
+    try:
+        result = _run_with_retry(
+            execute=lambda: orchestrator.run_withings_only_sync(days=days),
+            max_attempts=max_attempts,
+            base_delay=base_delay,
+            label="Withings-only sync",
+            summary_name="withings-only",
+        )
+        log_utils.log_message(result.summary_line(days=days), result.log_level())
+        return result
+    finally:  # pragma: no branch - ensure resources are released
+        closer = getattr(orchestrator, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception as exc:  # pragma: no cover - defensive logging
+                log_utils.log_message(f"Failed to close orchestrator cleanly: {exc}", "WARN")
