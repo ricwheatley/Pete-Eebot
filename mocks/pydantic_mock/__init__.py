@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Callable
 
 
 class FieldInfo:
@@ -18,6 +18,16 @@ def Field(default: Any = None, **kwargs: Dict[str, Any]) -> FieldInfo:
     """Return a lightweight descriptor representing field configuration."""
 
     return FieldInfo(default=default, **kwargs)
+
+
+def model_validator(*, mode: str | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator that tags a method as a model validator."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        setattr(func, "__pydantic_model_validator__", {"mode": mode or "after"})
+        return func
+
+    return decorator
 
 
 @dataclass
@@ -36,5 +46,5 @@ class SecretStr:
         return "********"
 
 
-__all__ = ["Field", "FieldInfo", "SecretStr"]
+__all__ = ["Field", "FieldInfo", "SecretStr", "model_validator"]
 
