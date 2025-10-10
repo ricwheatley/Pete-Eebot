@@ -1,22 +1,54 @@
 from fastapi import FastAPI, Query, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
-import psycopg
 import time
 import datetime
 import hmac
 import hashlib
 import subprocess
 from pete_e.config import settings  # loads .env via BaseSettings
-from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.cli.status import (
     DEFAULT_TIMEOUT_SECONDS,
     render_results,
-    run_status_checks,
 )
 from pete_e.application.sync import run_sync_with_retries
+from pete_e.application.api_services import MetricsService, PlanService, StatusService
+from pete_e.infrastructure.postgres_dal import PostgresDal
 
 app = FastAPI(title="Pete-Eebot API")
 WEBHOOK_SECRET = b"supersecretwebhooktoken"
+
+_dal: PostgresDal | None = None
+_metrics_service: MetricsService | None = None
+_plan_service: PlanService | None = None
+_status_service: StatusService | None = None
+
+
+def get_dal() -> PostgresDal:
+    global _dal
+    if _dal is None:
+        _dal = PostgresDal()
+    return _dal
+
+
+def get_metrics_service() -> MetricsService:
+    global _metrics_service
+    if _metrics_service is None:
+        _metrics_service = MetricsService(get_dal())
+    return _metrics_service
+
+
+def get_plan_service() -> PlanService:
+    global _plan_service
+    if _plan_service is None:
+        _plan_service = PlanService(get_dal())
+    return _plan_service
+
+
+def get_status_service() -> StatusService:
+    global _status_service
+    if _status_service is None:
+        _status_service = StatusService(get_dal())
+    return _status_service
 
 # Helper to validate API key from header OR query string
 def validate_api_key(request: Request, x_api_key: str | None) -> None:
@@ -50,14 +82,10 @@ def metrics_overview(
     validate_api_key(request, x_api_key)
 
     try:
-        with psycopg.connect(get_database_url()) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM sp_metrics_overview(%s)", (date,))
-                rows = cur.fetchall()
-                cols = [desc[0] for desc in cur.description]
-
-        return {"columns": cols, "rows": rows}
-
+        service = get_metrics_service()
+        return service.overview(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
@@ -90,12 +118,10 @@ def plan_for_day(
     validate_api_key(request, x_api_key)
 
     try:
-        with psycopg.connect(get_database_url()) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM sp_plan_for_day(%s)", (date,))
-                rows = cur.fetchall()
-                cols = [desc[0] for desc in cur.description]
-        return {"columns": cols, "rows": rows}
+        service = get_plan_service()
+        return service.for_day(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
@@ -115,12 +141,10 @@ def plan_for_week(
     validate_api_key(request, x_api_key)
 
     try:
-        with psycopg.connect(get_database_url()) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT * FROM sp_plan_for_week(%s)", (start_date,))
-                rows = cur.fetchall()
-                cols = [desc[0] for desc in cur.description]
-        return {"columns": cols, "rows": rows}
+        service = get_plan_service()
+        return service.for_week(start_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     except Exception as e:
@@ -142,7 +166,7 @@ def status(
     validate_api_key(request, x_api_key)
 
     try:
-        results = run_status_checks(timeout=timeout)
+        results = get_status_service().run_checks(timeout=timeout)
     except Exception as exc:  # pragma: no cover - defensive response
         raise HTTPException(status_code=500, detail=str(exc))
 
