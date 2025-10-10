@@ -6,7 +6,7 @@ import copy
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from statistics import median, mean
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
@@ -95,6 +95,14 @@ class ValidationDecision:
 
 
 @dataclass(frozen=True)
+class PlanContext:
+    """Lightweight data container describing a persisted plan."""
+
+    plan_id: int
+    start_date: date
+
+
+@dataclass(frozen=True)
 class MuscleBalanceReport:
     balanced: bool
     totals_by_group: Dict[str, float]
@@ -105,7 +113,7 @@ class MuscleBalanceReport:
 
 def collect_adherence_snapshot(
     *,
-    plan_id: int | None,
+    plan_context: Optional[PlanContext],
     week_number: int,
     week_start: date,
     week_end: date,
@@ -114,7 +122,7 @@ def collect_adherence_snapshot(
 ) -> Optional[Dict[str, Any]]:
     """Return planned vs actual muscle volume coverage for the supplied window."""
 
-    if plan_id is None:
+    if plan_context is None:
         return None
 
     planned_rows = planned_rows or []
@@ -172,7 +180,7 @@ def collect_adherence_snapshot(
     high_muscles = [m for m in muscles if m['planned'] > 0 and m['ratio'] > 1.10]
 
     return {
-        'plan_id': plan_id,
+        'plan_id': plan_context.plan_id,
         'week_number': week_number,
         'week_start': week_start,
         'week_end': week_end,
@@ -624,28 +632,20 @@ def _severity_from_breach_ratio(ratio: float) -> Tuple[str, float, int]:
     return "severe", 0.70, 3
 
 
-def _resolve_historical_rows(
-    rows_or_provider: Any, start_date: date, end_date: date
-) -> List[Dict[str, Any]]:
-    """Normalise callers that provide either a list or a DAL-style provider.
+def _ensure_row_sequence(rows: Any) -> List[Dict[str, Any]]:
+    """Coerce historical rows into a list without assuming a backing store."""
 
-    Historically these helpers fetched data directly from the DAL via a
-    ``get_historical_data`` method. During the refactor we switched them to
-    accept pre-fetched rows, but some call sites (including tests) still pass a
-    DAL object. To remain backwards compatible, detect such providers and fetch
-    the rows on behalf of the caller.
-    """
-
-    if isinstance(rows_or_provider, list):
-        return rows_or_provider
-
-    fetcher = getattr(rows_or_provider, "get_historical_data", None)
-    if callable(fetcher):
-        return list(fetcher(start_date, end_date))
-
-    raise TypeError(
-        "Expected a list of rows or provider with 'get_historical_data(start, end)'"
-    )
+    if rows is None:
+        return []
+    if isinstance(rows, list):
+        return rows
+    if isinstance(rows, tuple):
+        return list(rows)
+    if isinstance(rows, Iterator):
+        return list(rows)
+    if isinstance(rows, Iterable):
+        return list(rows)
+    raise TypeError("Expected an iterable of historical rows")
 
 
 def compute_dynamic_baselines(
@@ -659,7 +659,7 @@ def compute_dynamic_baselines(
     The caller supplies historical metric rows covering the required window.
     """
     start = reference_end_date - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
-    rows = _resolve_historical_rows(rows, start, reference_end_date)
+    rows = _ensure_row_sequence(rows)
     hist = [
         row
         for row in rows
@@ -704,7 +704,7 @@ def assess_recovery_and_backoff(
 
     # Pull just enough history for obs + baseline
     base_start = obs_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
-    rows = _resolve_historical_rows(historical_rows, base_start, obs_end)
+    rows = _ensure_row_sequence(historical_rows)
     hist = [
         row
         for row in rows
@@ -866,6 +866,7 @@ def validate_and_adjust_plan(
     historical_rows: List[Dict[str, Any]],
     week_start_date: date,
     *,
+    plan_context: Optional[PlanContext] = None,
     adherence_snapshot: Optional[Dict[str, Any]] = None,
 ) -> ValidationDecision:
     """Assess recovery ahead of the upcoming week and compute recommended adjustments."""
@@ -971,4 +972,44 @@ def validate_and_adjust_plan(
 
 MAX_BASELINE_WINDOW_DAYS: int = max(_BASELINE_WINDOWS_DAYS)
 LAST_N_DAYS_FOR_OBS: int = _LAST_N_DAYS_FOR_OBS
+
+def resolve_plan_context(
+    plan: Any,
+    *,
+    default_start: Optional[date] = None,
+) -> Optional[PlanContext]:
+    """Normalise a plan record or DTO into a :class:`PlanContext`."""
+
+    if plan is None:
+        return None
+    if isinstance(plan, PlanContext):
+        return plan
+
+    plan_id: Optional[int] = None
+    start_value: Any = None
+
+    if isinstance(plan, dict):
+        raw_id = plan.get("plan_id", plan.get("id"))
+        if raw_id is not None:
+            try:
+                plan_id = int(raw_id)
+            except (TypeError, ValueError):
+                plan_id = None
+        start_value = plan.get("start_date")
+    else:
+        raw_id = getattr(plan, "plan_id", getattr(plan, "id", None))
+        if raw_id is not None:
+            try:
+                plan_id = int(raw_id)
+            except (TypeError, ValueError):
+                plan_id = None
+        start_value = getattr(plan, "start_date", None)
+
+    start_date = converters.to_date(start_value) or default_start
+
+    if plan_id is None or start_date is None:
+        return None
+
+    return PlanContext(plan_id=plan_id, start_date=start_date)
+
 

@@ -5,7 +5,10 @@ from typing import Any, Dict, List
 
 import pytest
 
+import tests.config_stub  # noqa: F401
+
 from pete_e.domain.validation import (
+    PlanContext,
     collect_adherence_snapshot,
     validate_and_adjust_plan,
 )
@@ -43,13 +46,12 @@ def _make_history(
 
 def _build_snapshot(
     *,
-    plan_id: int,
-    plan_start: date,
+    plan_context: PlanContext,
     week_start: date,
     planned_by_week: Dict[int, List[Dict[str, Any]]],
     actual_by_week: Dict[int, List[Dict[str, Any]]],
 ) -> Dict[str, Any] | None:
-    days_since_start = (week_start - plan_start).days
+    days_since_start = (week_start - plan_context.start_date).days
     if days_since_start <= 0:
         return None
     prev_week_number = days_since_start // 7
@@ -62,7 +64,7 @@ def _build_snapshot(
     actual_rows = actual_by_week.get(prev_week_number, [])
 
     return collect_adherence_snapshot(
-        plan_id=plan_id,
+        plan_context=plan_context,
         week_number=prev_week_number,
         week_start=prev_week_start,
         week_end=prev_week_end,
@@ -92,9 +94,9 @@ def test_low_adherence_reduces_volume(plan_start: date) -> None:
     week_start = plan_start + timedelta(days=14)
 
     history = _make_history(week_start)
+    plan_context = PlanContext(plan_id=101, start_date=plan_start)
     snapshot = _build_snapshot(
-        plan_id=101,
-        plan_start=plan_start,
+        plan_context=plan_context,
         week_start=week_start,
         planned_by_week=planned,
         actual_by_week=actual,
@@ -103,6 +105,7 @@ def test_low_adherence_reduces_volume(plan_start: date) -> None:
     decision = validate_and_adjust_plan(
         history,
         week_start,
+        plan_context=plan_context,
         adherence_snapshot=snapshot,
     )
 
@@ -128,9 +131,9 @@ def test_high_adherence_increases_volume_when_recovery_good(plan_start: date) ->
     week_start = plan_start + timedelta(days=14)
 
     history = _make_history(week_start)
+    plan_context = PlanContext(plan_id=202, start_date=plan_start)
     snapshot = _build_snapshot(
-        plan_id=202,
-        plan_start=plan_start,
+        plan_context=plan_context,
         week_start=week_start,
         planned_by_week=planned,
         actual_by_week=actual,
@@ -139,6 +142,7 @@ def test_high_adherence_increases_volume_when_recovery_good(plan_start: date) ->
     decision = validate_and_adjust_plan(
         history,
         week_start,
+        plan_context=plan_context,
         adherence_snapshot=snapshot,
     )
 
@@ -168,9 +172,9 @@ def test_high_adherence_blocked_when_recovery_flagged(plan_start: date) -> None:
         recent_hr=55.0,
         baseline_hr=50.0,
     )
+    plan_context = PlanContext(plan_id=303, start_date=plan_start)
     snapshot = _build_snapshot(
-        plan_id=303,
-        plan_start=plan_start,
+        plan_context=plan_context,
         week_start=week_start,
         planned_by_week=planned,
         actual_by_week=actual,
@@ -179,6 +183,7 @@ def test_high_adherence_blocked_when_recovery_flagged(plan_start: date) -> None:
     decision = validate_and_adjust_plan(
         history,
         week_start,
+        plan_context=plan_context,
         adherence_snapshot=snapshot,
     )
 
