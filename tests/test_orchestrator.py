@@ -19,24 +19,40 @@ class StubDal:
         pass
 
 
-def _make_orchestrator(dal: StubDal | None = None):
+class StubValidationService:
+    def __init__(self, decision):
+        self.decision = decision
+        self.calls: list[date] = []
+
+    def validate_and_adjust_plan(self, week_start: date):
+        self.calls.append(week_start)
+        return self.decision
+
+
+def _make_orchestrator(
+    dal: StubDal | None = None,
+    *,
+    validation_service: StubValidationService | None = None,
+):
     return Orchestrator(
         dal=dal or StubDal(),
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 5),
         export_service=SimpleNamespace(export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {"status": "exported"}),
+        validation_service=validation_service,
     )
 
 
-def test_run_weekly_calibration_reports_message(monkeypatch: pytest.MonkeyPatch):
+def test_run_weekly_calibration_reports_message():
     result_obj = SimpleNamespace(explanation="All clear", needs_backoff=False)
-    monkeypatch.setattr("pete_e.application.orchestrator.validate_and_adjust_plan", lambda dal, week_start: result_obj)
+    validation_service = StubValidationService(result_obj)
 
-    orch = _make_orchestrator()
+    orch = _make_orchestrator(validation_service=validation_service)
     result = orch.run_weekly_calibration(reference_date=date(2024, 5, 3))
 
     assert result.message == "All clear"
     assert result.validation is result_obj
+    assert validation_service.calls == [date(2024, 5, 6)]
 
 
 def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
