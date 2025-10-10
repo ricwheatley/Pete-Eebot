@@ -45,7 +45,7 @@ def _make_orchestrator(**overrides) -> Orchestrator:
         export_service=overrides.get(
             "export_service",
             SimpleNamespace(
-                export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {
+                export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: {
                     "status": "exported"
                 }
             ),

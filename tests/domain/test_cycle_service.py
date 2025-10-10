@@ -53,5 +53,8 @@ def test_orchestrator_delegates_rollover_decision():
     result = orchestrator.run_end_to_end_week(today)
 
     cycle_service.check_and_rollover.assert_called_once_with(active_plan, today)
-    orchestrator.run_cycle_rollover.assert_called_once_with(today)
+    orchestrator.run_cycle_rollover.assert_called_once_with(
+        today,
+        validation_decision=None,
+    )
     assert result.rollover_triggered is True

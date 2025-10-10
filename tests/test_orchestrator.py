@@ -40,7 +40,7 @@ def _make_orchestrator(
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 5),
         export_service=SimpleNamespace(
-            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {"status": "exported"}
+            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: {"status": "exported"}
         ),
     )
     return Orchestrator(container=container, validation_service=validation_service)
@@ -66,8 +66,8 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
         create_next_plan_for_cycle=lambda start_date: plan_service_calls.append(start_date) or 11
     )
     export_service = SimpleNamespace(
-        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: export_calls.append(
-            (plan_id, week_number, start_date)
+        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: export_calls.append(
+            (plan_id, week_number, start_date, validation_decision)
         )
     )
     dal = StubDal(active_plan={"start_date": date(2024, 4, 1), "weeks": 4})
@@ -90,4 +90,4 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
 
     assert result.rollover_triggered is True
     assert plan_service_calls == [date(2024, 4, 29)]
-    assert export_calls == [(11, 1, date(2024, 4, 29))]
+    assert export_calls == [(11, 1, date(2024, 4, 29), None)]

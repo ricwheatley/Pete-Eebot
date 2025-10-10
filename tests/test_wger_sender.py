@@ -52,8 +52,16 @@ def test_push_week_forwards_to_export_service(monkeypatch):
         def __init__(self, dal, client):
             pass
 
-        def export_plan_week(self, *, plan_id: int, week_number: int, start_date: date, force_overwrite: bool):
-            calls["export"].append((plan_id, week_number, start_date, force_overwrite))
+        def export_plan_week(
+            self,
+            *,
+            plan_id: int,
+            week_number: int,
+            start_date: date,
+            force_overwrite: bool,
+            validation_decision=None,
+        ):
+            calls["export"].append((plan_id, week_number, start_date, force_overwrite, validation_decision))
             return {"status": "exported"}
 
     monkeypatch.setattr(wger_sender, "WgerClient", lambda: SimpleNamespace())
@@ -72,7 +80,7 @@ def test_push_week_forwards_to_export_service(monkeypatch):
     )
 
     assert result["status"] == "exported"
-    assert calls["export"] == [(10, 2, date(2024, 6, 17), True)]
+    assert calls["export"] == [(10, 2, date(2024, 6, 17), True, None)]
 
 
 def test_push_week_logs_skip_when_exported(monkeypatch):
