@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from pete_e.config import settings
+from pete_e.domain.entities import Exercise, Week, Workout
 from pete_e.domain.progression import apply_progression
 
 from tests import config_stub  # noqa: F401 - ensure pete_e.config is stubbed
@@ -15,21 +16,10 @@ def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     ]
 
 
-def make_week(target: float = 100.0, ex_id: int = 1) -> dict:
-    return {
-        "days": [
-            {
-                "sessions": [
-                    {
-                        "type": "weights",
-                        "exercises": [
-                            {"id": ex_id, "name": "Test", "weight_target": target}
-                        ],
-                    }
-                ]
-            }
-        ]
-    }
+def make_week(target: float = 100.0, ex_id: int = 1) -> Week:
+    exercise = Exercise(id=ex_id, name="Test", weight_target=target)
+    workout = Workout(id=1, day_of_week=1, exercise=exercise, is_cardio=False)
+    return Week(week_number=1, workouts=[workout])
 
 
 def _run_progression(
@@ -64,7 +54,9 @@ def test_low_rir_good_recovery() -> None:
         lift_history=lift_history, metrics=metrics, baseline=baseline
     )
 
-    weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
+    exercise = adjusted.workouts[0].exercise
+    assert exercise is not None
+    weight = exercise.weight_target
     assert weight == 107.5
     assert any("+7.5%" in n for n in notes)
     assert any("recovery good" in n for n in notes)
@@ -86,7 +78,9 @@ def test_high_rir_good_recovery() -> None:
         lift_history=lift_history, metrics=metrics, baseline=baseline
     )
 
-    weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
+    exercise = adjusted.workouts[0].exercise
+    assert exercise is not None
+    weight = exercise.weight_target
     assert weight == 95.0
     assert any("-5.0%" in n for n in notes)
 
@@ -107,7 +101,9 @@ def test_poor_recovery_halves_increment() -> None:
         lift_history=lift_history, metrics=metrics, baseline=baseline
     )
 
-    weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
+    exercise = adjusted.workouts[0].exercise
+    assert exercise is not None
+    weight = exercise.weight_target
     assert weight == 103.75
     assert any("recovery poor" in n for n in notes)
 
@@ -131,7 +127,9 @@ def test_missing_history_keeps_target() -> None:
         week=make_week(target=50, ex_id=2),
     )
 
-    weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
+    exercise = adjusted.workouts[0].exercise
+    assert exercise is not None
+    weight = exercise.weight_target
     assert weight == 50
     assert any("no history" in n for n in notes)
 
@@ -152,6 +150,8 @@ def test_no_rir_uses_weight_and_recovery() -> None:
         lift_history=lift_history, metrics=metrics, baseline=baseline
     )
 
-    weight = adjusted["days"][0]["sessions"][0]["exercises"][0]["weight_target"]
+    exercise = adjusted.workouts[0].exercise
+    assert exercise is not None
+    weight = exercise.weight_target
     assert weight == 105.0
     assert any("no RIR" in n for n in notes)
