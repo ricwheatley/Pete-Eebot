@@ -1,42 +1,12 @@
-"""Adaptive weight progression logic using the Data Access Layer."""
+"""Adaptive weight progression logic operating on pre-fetched data."""
 
 from dataclasses import dataclass
 
 from statistics import mean
 from typing import Any, Dict, List, Tuple
-
-from pete_e.domain.data_access import DataAccessLayer
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.utils import converters, math as math_utils
-
-
-def _collect_lift_history(
-    dal: DataAccessLayer, week: dict, lift_history: dict | None
-) -> dict:
-    """Load lift history for all exercises in the provided week."""
-
-    if lift_history is not None:
-        return lift_history
-
-    requested_ids: set[int] = set()
-    for day in week.get("days", []):
-        for session in day.get("sessions", []):
-            if session.get("type") != "weights":
-                continue
-            for ex in session.get("exercises", []):
-                ex_id = ex.get("id")
-                if ex_id is None:
-                    continue
-                try:
-                    requested_ids.add(int(ex_id))
-                except (TypeError, ValueError):
-                    continue
-
-    if not requested_ids:
-        return {}
-
-    return dal.load_lift_log(exercise_ids=list(requested_ids))
 
 
 def _metric_values(metrics: list[dict], key: str) -> list[float]:
@@ -138,15 +108,18 @@ def _adjust_exercise(
 
 
 def apply_progression(
-    dal: DataAccessLayer, week: dict, lift_history: dict | None = None
+    week: dict,
+    *,
+    lift_history: dict | None = None,
+    recent_metrics: list[dict] | None = None,
+    baseline_metrics: list[dict] | None = None,
 ) -> Tuple[dict, list[str]]:
     """Adjust weights based on lift log and recovery metrics."""
 
-    lift_history = _collect_lift_history(dal, week, lift_history)
-
-    recent_metrics = dal.get_historical_metrics(7)
-    baseline_metrics = dal.get_historical_metrics(settings.BASELINE_DAYS)
-    recovery_good = _compute_recovery_flag(recent_metrics, baseline_metrics)
+    history = lift_history or {}
+    metrics_7d = recent_metrics or []
+    metrics_baseline = baseline_metrics or []
+    recovery_good = _compute_recovery_flag(metrics_7d, metrics_baseline)
 
     # The richer Apple Health exports also include heart rate variability (HRV)
     # and detailed sleep stages. In future iterations, these could augment the
@@ -161,7 +134,7 @@ def apply_progression(
                 continue
             for exercise in session.get("exercises", []):
                 ex_id = str(exercise.get("id"))
-                entries = lift_history.get(ex_id, [])
+                entries = history.get(ex_id, [])
                 new_target, message = _adjust_exercise(
                     exercise, entries, recovery_good
                 )
@@ -234,14 +207,14 @@ def _normalise_plan_week(rows: List[Dict[str, Any]]) -> Tuple[dict, Dict[int, di
 
 
 def calibrate_plan_week(
-    dal: DataAccessLayer,
-    plan_id: int,
-    week_number: int,
-    persist: bool = True,
+    rows: List[Dict[str, Any]],
+    *,
+    lift_history: Dict[str, List[Dict[str, Any]]] | None = None,
+    recent_metrics: List[Dict[str, Any]] | None = None,
+    baseline_metrics: List[Dict[str, Any]] | None = None,
 ) -> PlanProgressionDecision:
-    """Run progression for the specified plan week and optionally persist updates."""
+    """Run progression for the specified plan week using supplied data."""
 
-    rows = dal.get_plan_week(plan_id, week_number)
     if not rows:
         return PlanProgressionDecision(notes=[], updates=[], persisted=False)
 
@@ -249,7 +222,12 @@ def calibrate_plan_week(
     if not week_structure["days"]:
         return PlanProgressionDecision(notes=[], updates=[], persisted=False)
 
-    _, notes = apply_progression(dal, week_structure)
+    _, notes = apply_progression(
+        week_structure,
+        lift_history=lift_history,
+        recent_metrics=recent_metrics,
+        baseline_metrics=baseline_metrics,
+    )
 
     updates: List[WorkoutProgression] = []
     for row in rows:
@@ -277,30 +255,6 @@ def calibrate_plan_week(
             )
         )
 
-    persisted = False
-    if persist and updates:
-        payload = [
-            {"workout_id": item.workout_id, "target_weight_kg": item.after}
-            for item in updates
-        ]
-
-        try:
-            dal.update_workout_targets(payload)
-        except Exception as exc:  # pragma: no cover - defensive guardrail
-            log_utils.log_message(
-                f"Failed to update workout targets: {exc}",
-                "ERROR",
-            )
-        else:
-            persisted = True
-            try:
-                dal.refresh_plan_view()
-            except Exception as exc:  # pragma: no cover - defensive guardrail
-                log_utils.log_message(
-                    f"Failed to refresh plan view after progression updates: {exc}",
-                    "WARN",
-                )
-
-    return PlanProgressionDecision(notes=notes, updates=updates, persisted=persisted)
+    return PlanProgressionDecision(notes=notes, updates=updates, persisted=False)
 
 

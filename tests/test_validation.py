@@ -100,6 +100,16 @@ def test_baselines_use_recent_medians():
     assert bl["sleep_total_minutes"].value == pytest.approx(420.0, abs=1e-6)
 
 
+def test_baselines_accept_prefetched_rows():
+    today = date.today()
+    hist = _make_rows(today, 45, rhr=52.0, sleep_min=400)
+
+    bl = compute_dynamic_baselines(hist, reference_end_date=today)
+
+    assert bl["hr_resting"].value == pytest.approx(52.0, abs=1e-6)
+    assert bl["sleep_total_minutes"].value == pytest.approx(400.0, abs=1e-6)
+
+
 def test_backoff_none_when_within_thresholds():
     today = date.today()
     rows = _make_rows(today, 180, rhr=50.0, sleep_min=420)

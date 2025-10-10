@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
@@ -8,14 +9,20 @@ import pytest
 from pete_e.application.services import WgerExportService
 
 
-@pytest.fixture(autouse=True)
-def stub_validation(monkeypatch):
-    from types import SimpleNamespace
+class StubValidationService:
+    def validate_and_adjust_plan(self, start_date: date):
+        return SimpleNamespace(
+            explanation="ok",
+            log_entries=[],
+            readiness=None,
+            recommendation=SimpleNamespace(set_multiplier=1.0, rir_increment=0, metrics={}),
+            should_apply=False,
+            applied=False,
+            needs_backoff=False,
+        )
 
-    monkeypatch.setattr(
-        "pete_e.application.services.validate_and_adjust_plan",
-        lambda dal, start_date: SimpleNamespace(explanation="ok"),
-    )
+    def get_adherence_snapshot(self, start_date: date):
+        return None
 
 
 class DryRunDal:
@@ -36,7 +43,8 @@ class DryRunDal:
 
 def test_export_service_dry_run_returns_payload():
     dal = DryRunDal()
-    service = WgerExportService(dal=dal, wger_client=None)  # client unused in dry-run path
+    validation_service = StubValidationService()
+    service = WgerExportService(dal=dal, wger_client=None, validation_service=validation_service)  # client unused in dry-run path
 
     result = service.export_plan_week(
         plan_id=1,

@@ -86,11 +86,12 @@ class ValidationDecision:
     """Outcome of plan validation ahead of Wger export or calibration."""
 
     needs_backoff: bool
-    applied: bool
+    should_apply: bool
     explanation: str
     log_entries: List[str]
     readiness: ReadinessSummary
     recommendation: BackoffRecommendation
+    applied: bool = False
 
 
 @dataclass(frozen=True)
@@ -102,64 +103,23 @@ class MuscleBalanceReport:
     tolerance: float
 
 
-def _resolve_plan_context(dal: Any, week_start_date: date) -> Optional[Tuple[int, date]]:
-    get_active_plan = getattr(dal, 'get_active_plan', None)
-    plan: Optional[Dict[str, Any]] = None
-    if callable(get_active_plan):
-        try:
-            plan = get_active_plan()
-        except Exception:
-            plan = None
-    if plan:
-        plan_id = plan.get('id')
-        start_date = converters.to_date(plan.get('start_date'))
-        if plan_id is not None and start_date is not None:
-            return int(plan_id), start_date
+def collect_adherence_snapshot(
+    *,
+    plan_id: int | None,
+    week_number: int,
+    week_start: date,
+    week_end: date,
+    planned_rows: Optional[List[Dict[str, Any]]],
+    actual_rows: Optional[List[Dict[str, Any]]],
+) -> Optional[Dict[str, Any]]:
+    """Return planned vs actual muscle volume coverage for the supplied window."""
 
-    find_by_start = getattr(dal, 'find_plan_by_start_date', None)
-    if callable(find_by_start):
-        try:
-            plan = find_by_start(week_start_date)
-        except Exception:
-            plan = None
-        if plan:
-            plan_id = plan.get('id')
-            start_date = converters.to_date(plan.get('start_date')) or week_start_date
-            if plan_id is not None and start_date is not None:
-                return int(plan_id), start_date
-    return None
-
-
-def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict[str, Any]]:
-    '''Return planned vs actual muscle volume coverage for the prior week.'''
-    context = _resolve_plan_context(dal, week_start_date)
-    if not context:
-        return None
-    plan_id, plan_start = context
-
-    days_since_start = (week_start_date - plan_start).days
-    if days_since_start < 0:
-        return None
-    week_number = (days_since_start // 7) + 1
-    prev_week_number = week_number - 1
-    if prev_week_number <= 0:
+    if plan_id is None:
         return None
 
-    try:
-        planned_rows = dal.get_plan_muscle_volume(plan_id, prev_week_number) or []
-    except Exception:
-        return None
-
+    planned_rows = planned_rows or []
     if not planned_rows:
         return None
-
-    prev_week_start = week_start_date - timedelta(days=7)
-    prev_week_end = week_start_date - timedelta(days=1)
-
-    try:
-        actual_rows = dal.get_actual_muscle_volume(prev_week_start, prev_week_end) or []
-    except Exception:
-        actual_rows = []
 
     planned_by_muscle: Dict[int, float] = {}
     for row in planned_rows:
@@ -177,6 +137,7 @@ def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict
     if not planned_by_muscle:
         return None
 
+    actual_rows = actual_rows or []
     actual_by_muscle: Dict[int, float] = {}
     for row in actual_rows:
         muscle_id = row.get('muscle_id')
@@ -212,9 +173,9 @@ def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict
 
     return {
         'plan_id': plan_id,
-        'week_number': prev_week_number,
-        'week_start': prev_week_start,
-        'week_end': prev_week_end,
+        'week_number': week_number,
+        'week_start': week_start,
+        'week_end': week_end,
         'planned_total': total_planned,
         'actual_total': total_actual,
         'ratio': ratio,
@@ -226,8 +187,7 @@ def collect_adherence_snapshot(dal: Any, week_start_date: date) -> Optional[Dict
 
 
 def _evaluate_adherence_adjustment(
-    dal: Any,
-    week_start_date: date,
+    snapshot: Optional[Dict[str, Any]],
     recovery: BackoffRecommendation,
 ) -> Dict[str, Any]:
     base_result: Dict[str, Any] = {
@@ -238,7 +198,6 @@ def _evaluate_adherence_adjustment(
         'log_entries': [],
         'metrics': {'available': False},
     }
-    snapshot = collect_adherence_snapshot(dal, week_start_date)
     if not snapshot:
         return base_result
 
@@ -665,18 +624,49 @@ def _severity_from_breach_ratio(ratio: float) -> Tuple[str, float, int]:
     return "severe", 0.70, 3
 
 
+def _resolve_historical_rows(
+    rows_or_provider: Any, start_date: date, end_date: date
+) -> List[Dict[str, Any]]:
+    """Normalise callers that provide either a list or a DAL-style provider.
+
+    Historically these helpers fetched data directly from the DAL via a
+    ``get_historical_data`` method. During the refactor we switched them to
+    accept pre-fetched rows, but some call sites (including tests) still pass a
+    DAL object. To remain backwards compatible, detect such providers and fetch
+    the rows on behalf of the caller.
+    """
+
+    if isinstance(rows_or_provider, list):
+        return rows_or_provider
+
+    fetcher = getattr(rows_or_provider, "get_historical_data", None)
+    if callable(fetcher):
+        return list(fetcher(start_date, end_date))
+
+    raise TypeError(
+        "Expected a list of rows or provider with 'get_historical_data(start, end)'"
+    )
+
+
 def compute_dynamic_baselines(
-    dal: Any,
+    rows: Any,
     reference_end_date: date,
     *,
     hrv_key: Optional[str] = None,
 ) -> Dict[str, BaselineResult]:
     """
     Compute dynamic baselines for RHR, Sleep, and (optionally) HRV as of 'reference_end_date'.
-    Pull one 180-day history then reuse for each window computation.
+    The caller supplies historical metric rows covering the required window.
     """
-    start = reference_end_date - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
-    hist = dal.get_historical_data(start_date=start, end_date=reference_end_date)
+    start = reference_end_date - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+    rows = _resolve_historical_rows(rows, start, reference_end_date)
+    hist = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and (d := row.get("date")) is not None
+        and start <= d <= reference_end_date
+    ]
 
     # RHR: zeros should generally be treated as missing
     rhr = _compute_baseline_for_metric(
@@ -702,7 +692,7 @@ def compute_dynamic_baselines(
 
 
 def assess_recovery_and_backoff(
-    dal: Any,
+    historical_rows: Any,
     week_start_date: date,
 ) -> BackoffRecommendation:
     """
@@ -713,8 +703,15 @@ def assess_recovery_and_backoff(
     obs_start = obs_end - timedelta(days=_LAST_N_DAYS_FOR_OBS - 1)
 
     # Pull just enough history for obs + baseline
-    base_start = obs_end - timedelta(days=max(_BASELINE_WINDOWS_DAYS) - 1)
-    hist = dal.get_historical_data(start_date=base_start, end_date=obs_end)
+    base_start = obs_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+    rows = _resolve_historical_rows(historical_rows, base_start, obs_end)
+    hist = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and (d := row.get("date")) is not None
+        and base_start <= d <= obs_end
+    ]
 
     hrv_metric_key = _detect_metric_key(hist, _HRV_METRIC_KEYS)
 
@@ -742,7 +739,7 @@ def assess_recovery_and_backoff(
             treat_zero_as_missing=True,
         )
 
-    baselines = compute_dynamic_baselines(dal, reference_end_date=obs_end, hrv_key=hrv_metric_key)
+    baselines = compute_dynamic_baselines(hist, reference_end_date=obs_end, hrv_key=hrv_metric_key)
     rhr_base = baselines["hr_resting"].value
     sleep_base = baselines["sleep_total_minutes"].value
     hrv_baseline_result = baselines.get("hrv")
@@ -857,19 +854,26 @@ def assess_recovery_and_backoff(
     )
 
 
-def summarise_readiness(dal: Any, week_start_date: date) -> ReadinessSummary:
+def summarise_readiness(
+    historical_rows: List[Dict[str, Any]], week_start_date: date
+) -> ReadinessSummary:
     """Return a non-destructive readiness summary for the supplied window."""
-    rec = assess_recovery_and_backoff(dal, week_start_date)
+    rec = assess_recovery_and_backoff(historical_rows, week_start_date)
     return _build_readiness_summary(rec)
 
 
-def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecision:
-    """Assess recovery ahead of the upcoming week and optionally apply plan adjustments."""
+def validate_and_adjust_plan(
+    historical_rows: List[Dict[str, Any]],
+    week_start_date: date,
+    *,
+    adherence_snapshot: Optional[Dict[str, Any]] = None,
+) -> ValidationDecision:
+    """Assess recovery ahead of the upcoming week and compute recommended adjustments."""
 
-    rec = assess_recovery_and_backoff(dal, week_start_date)
+    rec = assess_recovery_and_backoff(historical_rows, week_start_date)
     readiness = _build_readiness_summary(rec)
 
-    adherence = _evaluate_adherence_adjustment(dal, week_start_date, rec)
+    adherence = _evaluate_adherence_adjustment(adherence_snapshot, rec)
 
     adherence_multiplier = float(adherence.get('set_multiplier', 1.0))
     final_multiplier = rec.set_multiplier
@@ -912,11 +916,12 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
         log_entries = list(adherence_log_entries)
         return ValidationDecision(
             needs_backoff=rec.needs_backoff,
-            applied=False,
+            should_apply=False,
             explanation=explanation,
             log_entries=log_entries,
             readiness=readiness,
             recommendation=rec,
+            applied=False,
         )
 
     log_entries: List[str] = [
@@ -954,25 +959,16 @@ def validate_and_adjust_plan(dal: Any, week_start_date: date) -> ValidationDecis
 
     log_utils.log_message(explanation, log_level)
 
-    applied = False
-    try:
-        dal.apply_plan_backoff(
-            week_start_date,
-            set_multiplier=final_multiplier,
-            rir_increment=final_rir_increment,
-        )
-        log_utils.log_message('Applied plan adjustment to upcoming week.', 'INFO')
-        applied = True
-    except Exception as exc:  # pragma: no cover - DB failures are environment-specific
-        log_utils.log_message(f'Failed to apply back-off: {exc}', 'ERROR')
-        log_entries.append(f'apply_failed: {exc}')
-
     return ValidationDecision(
         needs_backoff=rec.needs_backoff,
-        applied=applied,
+        should_apply=True,
         explanation=explanation,
         log_entries=log_entries,
         readiness=readiness,
         recommendation=rec,
+        applied=False,
     )
+
+MAX_BASELINE_WINDOW_DAYS: int = max(_BASELINE_WINDOWS_DAYS)
+LAST_N_DAYS_FOR_OBS: int = _LAST_N_DAYS_FOR_OBS
 

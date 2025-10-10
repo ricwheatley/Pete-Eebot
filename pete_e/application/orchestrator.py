@@ -10,9 +10,10 @@ from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.validation_service import ValidationService
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.domain.validation import validate_and_adjust_plan, ValidationDecision
+from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.cycle_service import CycleService
 from pete_e.infrastructure import log_utils
 
@@ -44,6 +45,7 @@ class Orchestrator:
         wger_client: WgerClient,
         plan_service: PlanService,
         export_service: WgerExportService,
+        validation_service: ValidationService | None = None,
         cycle_service: CycleService | None = None,
     ):
         """
@@ -53,6 +55,7 @@ class Orchestrator:
         self.wger_client = wger_client
         self.plan_service = plan_service
         self.export_service = export_service
+        self.validation_service = validation_service or ValidationService(dal)
         self.cycle_service = cycle_service or CycleService()
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
@@ -65,7 +68,7 @@ class Orchestrator:
         # The core validation logic remains, but it's now the main focus of this method.
         # The complex plan-finding logic will be handled by the services it calls.
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
-        validation_decision = validate_and_adjust_plan(self.dal, next_monday)
+        validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
         
         return WeeklyCalibrationResult(
             message=validation_decision.explanation,

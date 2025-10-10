@@ -10,16 +10,25 @@ from pete_e.application import wger_sender
 
 @pytest.fixture(autouse=True)
 def stub_validation(monkeypatch):
-    from types import SimpleNamespace as SN
+    class StubValidationService:
+        def __init__(self, dal):
+            self.dal = dal
 
-    monkeypatch.setattr(
-        "pete_e.application.wger_sender.validate_and_adjust_plan",
-        lambda dal, start_date: SN(explanation="ok", log_entries=[]),
-    )
-    monkeypatch.setattr(
-        "pete_e.application.wger_sender.collect_adherence_snapshot",
-        lambda dal, start_date: None,
-    )
+        def validate_and_adjust_plan(self, start_date):
+            return SimpleNamespace(
+                explanation="ok",
+                log_entries=[],
+                readiness=None,
+                recommendation=SimpleNamespace(set_multiplier=1.0, rir_increment=0, metrics={}),
+                should_apply=False,
+                applied=False,
+                needs_backoff=False,
+            )
+
+        def get_adherence_snapshot(self, start_date):
+            return None
+
+    monkeypatch.setattr(wger_sender, "ValidationService", StubValidationService)
 
 
 class RecordingDal:
