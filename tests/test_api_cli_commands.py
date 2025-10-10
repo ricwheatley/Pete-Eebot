@@ -77,7 +77,12 @@ def test_status_endpoint_returns_checks(enable_api_key, request_stub, monkeypatc
         CheckResult(name="Dropbox", ok=False, detail="timeout"),
     ]
 
-    monkeypatch.setattr(api, "run_status_checks", lambda timeout: checks)
+    class _StatusService:
+        def run_checks(self, timeout: float):
+            assert timeout == 1.5
+            return checks
+
+    monkeypatch.setattr(api, "get_status_service", lambda: _StatusService())
 
     payload = api.status(request=request_stub, x_api_key="test-key", timeout=1.5)
 

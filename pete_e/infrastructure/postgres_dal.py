@@ -106,6 +106,12 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
 
+    def get_plan_for_day(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
+        return self._call_function("sp_plan_for_day", target_date)
+
+    def get_plan_for_week(self, start_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
+        return self._call_function("sp_plan_for_week", start_date)
+
     def get_week_ids_for_plan(self, plan_id: int) -> Dict[int, int]:
         sql = "SELECT id, week_number FROM training_plan_weeks WHERE plan_id = %s;"
         out: Dict[int, int] = {}
@@ -282,6 +288,9 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (days,))
             return list(reversed(cur.fetchall()))
+
+    def get_metrics_overview(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
+        return self._call_function("sp_metrics_overview", target_date)
     
     def refresh_daily_summary(self, days: int = 7) -> None:
         start_date = date.today() - timedelta(days=days); end_date = date.today()
@@ -327,3 +336,21 @@ class PostgresDal(PlanRepository):
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         # This was just a log message, so we'll keep it that way.
         log_utils.info(f"[VALIDATION] {tag}: {adjustments}")
+    def _call_function(self, function_name: str, *params: Any) -> Tuple[List[str], List[Tuple[Any, ...]]]:
+        """Execute a SQL function and return column names and rows."""
+        with self._get_cursor(use_dict_row=False) as cur:
+            if params:
+                placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in params)
+                stmt = sql.SQL("SELECT * FROM {function_name}({params});").format(
+                    function_name=sql.Identifier(function_name),
+                    params=placeholders,
+                )
+            else:
+                stmt = sql.SQL("SELECT * FROM {function_name}();").format(
+                    function_name=sql.Identifier(function_name)
+                )
+
+            cur.execute(stmt, params)
+            rows = cur.fetchall()
+            columns = [desc[0] for desc in cur.description]
+        return columns, rows
