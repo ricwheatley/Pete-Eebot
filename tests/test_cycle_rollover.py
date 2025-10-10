@@ -24,8 +24,16 @@ class StubExportService:
     def __init__(self) -> None:
         self.calls: list[tuple[int, int, date]] = []
 
-    def export_plan_week(self, *, plan_id: int, week_number: int, start_date: date, force_overwrite: bool = False):
-        self.calls.append((plan_id, week_number, start_date))
+    def export_plan_week(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        start_date: date,
+        force_overwrite: bool = False,
+        validation_decision=None,
+    ):
+        self.calls.append((plan_id, week_number, start_date, validation_decision))
         return {"status": "exported"}
 
 
@@ -62,7 +70,7 @@ def test_run_cycle_rollover_creates_plan_and_exports(monkeypatch: pytest.MonkeyP
     assert result.created is True
     assert result.exported is True
     assert plan_service.calls == [date(2024, 5, 6)]
-    assert export_service.calls == [(77, 1, date(2024, 5, 6))]
+    assert export_service.calls == [(77, 1, date(2024, 5, 6), None)]
 
 
 def test_run_cycle_rollover_raises_when_plan_creation_errors() -> None:

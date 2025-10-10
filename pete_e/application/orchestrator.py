@@ -92,7 +92,12 @@ class Orchestrator:
             validation=validation_decision
         )
 
-    def run_cycle_rollover(self, reference_date: date) -> CycleRolloverResult:
+    def run_cycle_rollover(
+        self,
+        reference_date: date,
+        *,
+        validation_decision: ValidationDecision | None = None,
+    ) -> CycleRolloverResult:
         """
         Handles the end-of-cycle logic: creating the next block and exporting week 1.
         This is now a clean, high-level workflow.
@@ -121,7 +126,8 @@ class Orchestrator:
                 plan_id=plan_id,
                 week_number=1,
                 start_date=next_monday,
-                force_overwrite=True
+                force_overwrite=True,
+                validation_decision=validation_decision,
             )
         except ApplicationError:
             raise
@@ -145,6 +151,7 @@ class Orchestrator:
 
         # Run calibration on the upcoming week
         calibration_result = self.run_weekly_calibration(today)
+        validation_decision = calibration_result.validation
 
         # Decide if a rollover is needed via the domain service
         rollover_result = None
@@ -168,7 +175,10 @@ class Orchestrator:
             raise PlanRolloverError(message) from exc
 
         if rollover_triggered:
-            rollover_result = self.run_cycle_rollover(today)
+            rollover_result = self.run_cycle_rollover(
+                today,
+                validation_decision=validation_decision,
+            )
 
         return WeeklyAutomationResult(
             calibration=calibration_result,
