@@ -44,6 +44,7 @@ class Orchestrator:
         wger_client: WgerClient,
         plan_service: PlanService,
         export_service: WgerExportService,
+        cycle_service: CycleService | None = None,
     ):
         """
         Initializes the orchestrator with the dependencies it requires.
@@ -52,6 +53,7 @@ class Orchestrator:
         self.wger_client = wger_client
         self.plan_service = plan_service
         self.export_service = export_service
+        self.cycle_service = cycle_service or CycleService()
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
         """
@@ -117,14 +119,11 @@ class Orchestrator:
         # Run calibration on the upcoming week
         calibration_result = self.run_weekly_calibration(today)
         
-        # Decide if a rollover is needed (simplified logic)
-        rollover_triggered = False
+        # Decide if a rollover is needed via the domain service
         rollover_result = None
-        
-        # Example: Trigger rollover on the last Sunday of a 4-week block
+
         active_plan = self.dal.get_active_plan()
-        if CycleService.should_rollover(active_plan, today):
-            rollover_triggered = True
+        rollover_triggered = self.cycle_service.check_and_rollover(active_plan, today)
 
         if rollover_triggered:
             rollover_result = self.run_cycle_rollover(today)
