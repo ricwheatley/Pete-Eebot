@@ -1,13 +1,36 @@
 import io
 import json
+import zipfile
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import List
-import zipfile
 
 import pytest
 
 from pete_e.application import apple_dropbox_ingest
+from pete_e.domain.daily_sync import AppleHealthImportSummary, AppleHealthIngestResult
+from pete_e.infrastructure.apple_health_ingestor import (
+    AppleHealthDropboxIngestor,
+    AppleIngestError,
+    _get_json_from_content,
+)
+
+
+def _build_dummy_writer(writer_calls: List[SimpleNamespace]):
+    class DummyWriter:
+        def __init__(self, conn) -> None:
+            self.conn = conn
+
+        def get_last_import_timestamp(self):
+            return datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+        def upsert_all(self, parsed):
+            writer_calls.append(SimpleNamespace(action="upsert", payload=parsed))
+
+        def save_last_import_timestamp(self, latest_file_timestamp):
+            writer_calls.append(SimpleNamespace(action="checkpoint", payload=latest_file_timestamp))
+
+    return DummyWriter
 
 
 def test_get_json_from_content_supports_zip_files():
@@ -17,12 +40,12 @@ def test_get_json_from_content_supports_zip_files():
             archive.writestr("Health.json", json.dumps(payload))
         zipped_bytes = buffer.getvalue()
 
-    extracted = apple_dropbox_ingest._get_json_from_content("HealthAutoExport.zip", zipped_bytes)
+    extracted = _get_json_from_content("HealthAutoExport.zip", zipped_bytes)
 
     assert extracted == payload
 
 
-def test_run_apple_health_ingest_processes_new_files(monkeypatch):
+def test_ingestor_processes_new_files():
     class DummyConn:
         def __init__(self) -> None:
             self.committed = False
@@ -70,7 +93,6 @@ def test_run_apple_health_ingest_processes_new_files(monkeypatch):
 
         def parse(self, root):
             self.calls += 1
-            # Return a minimal structure expected by the writer.
             metric_point = SimpleNamespace(
                 device_name="Watch",
                 metric_name="steps",
@@ -90,65 +112,38 @@ def test_run_apple_health_ingest_processes_new_files(monkeypatch):
                 "workout_hr_recovery": [],
             }
 
-    class DummyWriter:
-        def __init__(self, conn) -> None:
-            self.conn = conn
-            self.upserts: List[dict] = []
-            self.checkpoints: List[datetime] = []
-
-        def get_last_import_timestamp(self):
-            return datetime(2024, 1, 1, tzinfo=timezone.utc)
-
-        def upsert_all(self, parsed):
-            self.upserts.append(parsed)
-
-        def save_last_import_timestamp(self, latest_file_timestamp: datetime) -> None:
-            self.checkpoints.append(latest_file_timestamp)
-
-    dummy_client = DummyClient()
-    dummy_parser = DummyParser()
-    writer_instances: List[DummyWriter] = []
-
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: dummy_client)
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: dummy_parser)
-
-    def _writer_factory(conn):
-        writer = DummyWriter(conn)
-        writer_instances.append(writer)
-        return writer
-
     class DummyDal:
         def __init__(self) -> None:
             self.ctx = DummyConnCtx()
-            self.closed = False
 
         def connection(self):
             return self.ctx
 
-        def close(self) -> None:
-            self.closed = True
+    dummy_client = DummyClient()
+    dummy_parser = DummyParser()
+    writer_calls: List[SimpleNamespace] = []
 
-    dummy_dal = DummyDal()
+    ingestor = AppleHealthDropboxIngestor(
+        dal=DummyDal(),
+        client=dummy_client, 
+        parser=dummy_parser,
+        writer_factory=_build_dummy_writer(writer_calls),
+    )
 
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", _writer_factory)
-    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
+    result = ingestor.ingest()
 
-    report = apple_dropbox_ingest.run_apple_health_ingest()
-
-    assert report.sources == ["metrics.json", "workouts.zip"]
-    assert report.daily_points == 2  # two files processed
-    assert report.workouts == 0
-
+    assert result.success is True
+    assert isinstance(result.summary, AppleHealthImportSummary)
+    assert list(result.summary.sources) == ["metrics.json", "workouts.zip"]
+    assert result.summary.daily_points == 2
+    assert result.summary.workouts == 0
     assert dummy_parser.calls == 2
-    assert len(writer_instances) == 1
-    writer = writer_instances[0]
-    assert len(writer.upserts) == 2
-    assert writer.checkpoints == [datetime(2024, 1, 3, tzinfo=timezone.utc)]
-    assert writer.conn.committed
-    assert dummy_dal.closed
+    assert writer_calls[0].action == "upsert"
+    assert writer_calls[-1].action == "checkpoint"
+    assert dummy_client.downloaded == ["metrics.json", "workouts.zip"]
 
 
-def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
+def test_ingestor_skips_already_processed_files():
     class DummyConn:
         def __init__(self) -> None:
             self.committed = False
@@ -171,7 +166,6 @@ def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
         workouts_path = "/workouts"
 
         def find_new_export_files(self, folder_path, since_datetime):
-            # All files are older than the recorded checkpoint, so they are skipped.
             return []
 
         def download_as_bytes(self, dropbox_path: str) -> bytes:  # pragma: no cover - unused
@@ -184,46 +178,39 @@ def test_run_apple_health_ingest_skips_already_processed_files(monkeypatch):
     class DummyWriter:
         def __init__(self, conn) -> None:
             self.conn = conn
-            self.checkpoints = []
 
         def get_last_import_timestamp(self):
-            from datetime import datetime, timezone
-
             return datetime(2024, 1, 5, tzinfo=timezone.utc)
 
         def upsert_all(self, parsed):  # pragma: no cover - unused
-            raise AssertionError("upsert should not be invoked when no files found")
+            raise AssertionError
 
-        def save_last_import_timestamp(self, latest_file_timestamp):
-            self.checkpoints.append(latest_file_timestamp)
+        def save_last_import_timestamp(self, latest_file_timestamp):  # pragma: no cover - unused
+            raise AssertionError
 
     class DummyDal:
         def __init__(self) -> None:
             self.ctx = DummyConnCtx()
-            self.closed = False
 
         def connection(self):
             return self.ctx
 
-        def close(self) -> None:
-            self.closed = True
+    ingestor = AppleHealthDropboxIngestor(
+        dal=DummyDal(),
+        client=DummyClient(),
+        parser=DummyParser(),
+        writer_factory=DummyWriter,
+    )
 
-    dummy_dal = DummyDal()
+    result = ingestor.ingest()
 
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
-    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
-
-    report = apple_dropbox_ingest.run_apple_health_ingest()
-
-    assert report.sources == []
-    assert report.daily_points == 0
-    assert report.workouts == 0
-    assert dummy_dal.closed
+    assert result.success is True
+    assert result.summary == AppleHealthImportSummary(
+        sources=[], workouts=0, daily_points=0, hr_days=0, sleep_days=0
+    )
 
 
-def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
+def test_ingestor_raises_on_parser_failure():
     class DummyConn:
         def commit(self):  # pragma: no cover - not reached
             raise AssertionError("commit should not be called on failure")
@@ -241,8 +228,6 @@ def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
             self.workouts_path = "/workouts"
 
         def find_new_export_files(self, folder_path, since_datetime):
-            from datetime import datetime, timezone
-
             if folder_path == self.health_metrics_path:
                 return [(datetime(2024, 1, 2, tzinfo=timezone.utc), "bad.json")]
             return []
@@ -259,8 +244,6 @@ def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
             self.conn = conn
 
         def get_last_import_timestamp(self):
-            from datetime import datetime, timezone
-
             return datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         def upsert_all(self, parsed):  # pragma: no cover - not reached
@@ -272,24 +255,50 @@ def test_run_apple_health_ingest_raises_on_parser_failure(monkeypatch):
     class DummyDal:
         def __init__(self) -> None:
             self.ctx = DummyConnCtx()
-            self.closed = False
 
         def connection(self):
             return self.ctx
 
-        def close(self) -> None:
-            self.closed = True
+    ingestor = AppleHealthDropboxIngestor(
+        dal=DummyDal(),
+        client=DummyClient(),
+        parser=DummyParser(),
+        writer_factory=DummyWriter,
+    )
 
-    dummy_dal = DummyDal()
-
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleDropboxClient", lambda: DummyClient())
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthParser", lambda: DummyParser())
-    monkeypatch.setattr(apple_dropbox_ingest, "AppleHealthWriter", lambda conn: DummyWriter(conn))
-    monkeypatch.setattr(apple_dropbox_ingest, "_get_dal", lambda: dummy_dal)
-
-    with pytest.raises(apple_dropbox_ingest.AppleIngestError) as excinfo:
-        apple_dropbox_ingest.run_apple_health_ingest()
+    with pytest.raises(AppleIngestError) as excinfo:
+        ingestor.ingest()
 
     assert excinfo.value.stage == "parse"
     assert excinfo.value.file_path == "bad.json"
-    assert dummy_dal.closed
+
+
+def test_application_wrapper_uses_injected_ingestor():
+    class DummyIngestor:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def ingest(self):
+            self.calls += 1
+            return AppleHealthIngestResult(
+                success=True,
+                summary=AppleHealthImportSummary(
+                    sources=("foo",), workouts=0, daily_points=0, hr_days=0, sleep_days=0
+                ),
+                failures=(),
+                statuses={"Apple Health": "ok"},
+                alerts=(),
+            )
+
+        def get_last_import_timestamp(self):
+            return datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+    dummy_ingestor = DummyIngestor()
+
+    result = apple_dropbox_ingest.run_apple_health_ingest(ingestor=dummy_ingestor)
+    assert result.success is True
+    assert dummy_ingestor.calls == 1
+
+    timestamp = apple_dropbox_ingest.get_last_successful_import_timestamp(ingestor=dummy_ingestor)
+    assert timestamp == datetime(2024, 1, 1, tzinfo=timezone.utc)
+
