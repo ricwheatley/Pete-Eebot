@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import json
 
 from pete_e.application.validation_service import ValidationService
+from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
@@ -70,7 +71,8 @@ class WgerExportService:
         week_number: int,
         start_date: date,
         force_overwrite: bool = False,
-        dry_run: bool = False
+        dry_run: bool = False,
+        validation_decision: ValidationDecision | None = None,
     ) -> Dict[str, Any]:
         """
         Validates, prepares, and pushes a single training week to wger.
@@ -79,8 +81,11 @@ class WgerExportService:
         log_utils.info(f"Starting export for plan {plan_id}, week {week_number}...")
 
         # 1. Perform readiness validation and apply adjustments if needed
-        decision = self.validation_service.validate_and_adjust_plan(start_date)
-        log_utils.info(f"Readiness check: {decision.explanation}")
+        if validation_decision is None:
+            decision = self.validation_service.validate_and_adjust_plan(start_date)
+            log_utils.info(f"Readiness check: {decision.explanation}")
+        else:
+            decision = validation_decision
 
         # 2. Check if this week was already exported
         if not force_overwrite and self.dal.was_week_exported(plan_id, week_number):
