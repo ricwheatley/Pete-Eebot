@@ -6,11 +6,11 @@ This layer is responsible for coordinating tasks like plan creation and export.
 
 from __future__ import annotations
 from datetime import date, timedelta
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 import json
 
+from pete_e.application.validation_service import ValidationService
 from pete_e.domain.plan_factory import PlanFactory
-from pete_e.domain.validation import validate_and_adjust_plan
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure import log_utils
@@ -54,9 +54,15 @@ class PlanService:
 class WgerExportService:
     """Service for validating plans and exporting them to wger."""
 
-    def __init__(self, dal: PostgresDal, wger_client: WgerClient):
+    def __init__(
+        self,
+        dal: PostgresDal,
+        wger_client: WgerClient,
+        validation_service: ValidationService | None = None,
+    ):
         self.dal = dal
         self.client = wger_client
+        self.validation_service = validation_service or ValidationService(dal)
 
     def export_plan_week(
         self,
@@ -73,7 +79,7 @@ class WgerExportService:
         log_utils.info(f"Starting export for plan {plan_id}, week {week_number}...")
 
         # 1. Perform readiness validation and apply adjustments if needed
-        decision = validate_and_adjust_plan(self.dal, start_date)
+        decision = self.validation_service.validate_and_adjust_plan(start_date)
         log_utils.info(f"Readiness check: {decision.explanation}")
 
         # 2. Check if this week was already exported

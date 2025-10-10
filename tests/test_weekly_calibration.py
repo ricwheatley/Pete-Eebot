@@ -14,25 +14,29 @@ class DummyDal:
         pass
 
 
-def build_orchestrator():
+class StubValidationService:
+    def __init__(self):
+        self.calls: list[date] = []
+
+    def validate_and_adjust_plan(self, week_start: date):
+        self.calls.append(week_start)
+        return SimpleNamespace(explanation="ok", needs_backoff=False)
+
+
+def build_orchestrator(validation_service: StubValidationService | None = None):
+    validation_service = validation_service or StubValidationService()
     return Orchestrator(
         dal=DummyDal(),
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 0),
         export_service=SimpleNamespace(export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: None),
+        validation_service=validation_service,
     )
 
 
 def test_run_weekly_calibration_uses_next_monday(monkeypatch):
-    captured = {}
-
-    def fake_validate(dal, week_start):
-        captured["week_start"] = week_start
-        return SimpleNamespace(explanation="ok", needs_backoff=False)
-
-    monkeypatch.setattr("pete_e.application.orchestrator.validate_and_adjust_plan", fake_validate)
-
-    orch = build_orchestrator()
+    validation_service = StubValidationService()
+    orch = build_orchestrator(validation_service)
     orch.run_weekly_calibration(reference_date=date(2024, 3, 6))  # Wednesday
 
-    assert captured["week_start"] == date(2024, 3, 11)
+    assert validation_service.calls == [date(2024, 3, 11)]
