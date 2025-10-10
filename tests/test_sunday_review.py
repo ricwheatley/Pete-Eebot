@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from pete_e.application.orchestrator import Orchestrator
+from tests.di_utils import build_stub_container
 
 
 class PassiveDal:
@@ -18,12 +19,15 @@ class PassiveDal:
 
 
 def build_orchestrator():
-    return Orchestrator(
+    container = build_stub_container(
         dal=PassiveDal(),
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 0),
-        export_service=SimpleNamespace(export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: None),
+        export_service=SimpleNamespace(
+            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: None
+        ),
     )
+    return Orchestrator(container=container)
 
 
 def test_run_end_to_end_week_skips_rollover_when_not_due(monkeypatch):

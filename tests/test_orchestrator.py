@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from pete_e.application.orchestrator import Orchestrator
+from tests.di_utils import build_stub_container
 
 
 class StubDal:
@@ -34,13 +35,15 @@ def _make_orchestrator(
     *,
     validation_service: StubValidationService | None = None,
 ):
-    return Orchestrator(
+    container = build_stub_container(
         dal=dal or StubDal(),
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 5),
-        export_service=SimpleNamespace(export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {"status": "exported"}),
-        validation_service=validation_service,
+        export_service=SimpleNamespace(
+            export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True: {"status": "exported"}
+        ),
     )
+    return Orchestrator(container=container, validation_service=validation_service)
 
 
 def test_run_weekly_calibration_reports_message():
@@ -68,7 +71,13 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
         )
     )
     dal = StubDal(active_plan={"start_date": date(2024, 4, 1), "weeks": 4})
-    orch = Orchestrator(dal=dal, wger_client=SimpleNamespace(), plan_service=plan_service, export_service=export_service)
+    container = build_stub_container(
+        dal=dal,
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+    )
+    orch = Orchestrator(container=container)
 
     monkeypatch.setattr(
         Orchestrator,

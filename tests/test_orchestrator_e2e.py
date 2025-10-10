@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from pete_e.application.orchestrator import CycleRolloverResult, WeeklyAutomationResult, WeeklyCalibrationResult, Orchestrator
+from tests.di_utils import build_stub_container
 
 
 def test_dataclasses_capture_expected_fields():
@@ -23,12 +24,13 @@ def test_close_invokes_dal_close():
         def close(self):
             calls.append("closed")
 
-    orch = Orchestrator(
+    container = build_stub_container(
         dal=Closer(),
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(),
         export_service=SimpleNamespace(),
     )
+    orch = Orchestrator(container=container)
 
     orch.close()
 
