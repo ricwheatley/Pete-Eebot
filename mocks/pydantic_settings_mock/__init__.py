@@ -74,6 +74,24 @@ class BaseSettings:
             value = _coerce_value(annotation, raw_value)
             setattr(self, name, value)
 
+        self._run_model_validators()
+
+    def _run_model_validators(self) -> None:
+        """Execute any validators registered via ``model_validator``."""
+
+        for attribute_name in dir(type(self)):
+            attribute = getattr(type(self), attribute_name)
+            metadata = getattr(attribute, "__pydantic_model_validator__", None)
+            if not callable(attribute) or not metadata:
+                continue
+
+            mode = metadata.get("mode")
+            if mode in (None, "after"):
+                result = attribute(self)
+                if result is not None and result is not self:
+                    for key, value in vars(result).items():
+                        setattr(self, key, value)
+
     @classmethod
     def _load_value(cls, name: str) -> Any:
         if name in os.environ:

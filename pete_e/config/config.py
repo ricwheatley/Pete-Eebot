@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 from psycopg.conninfo import make_conninfo
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -101,11 +101,11 @@ class Settings(BaseSettings):
     WGER_BLAZE_MODE: str = "exercise"
     WGER_ROUTINE_PREFIX: str | None = None
 
-    def __init__(self, **values):
-        """Dynamically constructs the DATABASE_URL after initial validation."""
-        super().__init__(**values)
+    @model_validator(mode="after")
+    def build_database_url(self) -> "Settings":
+        """Dynamically construct the ``DATABASE_URL`` after validation."""
         db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
-        
+
         self.DATABASE_URL = make_conninfo(
             user=self.POSTGRES_USER,
             password=self.POSTGRES_PASSWORD.get_secret_value(),
@@ -113,6 +113,7 @@ class Settings(BaseSettings):
             port=self.POSTGRES_PORT,
             dbname=self.POSTGRES_DB,
         )
+        return self
 
     # --- DYNAMIC FILE PATHS ---
     @property
