@@ -11,6 +11,7 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.utils import converters
+from pete_e.domain.entities import Plan
 
 
 # Windows are expressed in days to avoid calendar edge cases.
@@ -280,31 +281,14 @@ def _evaluate_adherence_adjustment(
     return base_result
 
 def ensure_muscle_balance(
-    plan: Dict[str, Any],
+    plan: Plan,
     tolerance: float = 0.25,
     required_groups: Optional[Iterable[str]] = None,
 ) -> MuscleBalanceReport:
     if tolerance < 0:
         raise ValueError('tolerance must be non-negative')
     groups = tuple(required_groups) if required_groups is not None else ('upper_push', 'upper_pull', 'lower')
-    totals: Dict[str, float] = {}
-    for week in plan.get('weeks', []):
-        workouts = week.get('workouts', [])
-        for workout in workouts:
-            if not isinstance(workout, dict):
-                continue
-            group = workout.get('muscle_group')
-            sets_value = workout.get('sets')
-            if group is None:
-                continue
-            try:
-                sets_float = float(sets_value)
-            except (TypeError, ValueError):
-                continue
-            totals[group] = totals.get(group, 0.0) + sets_float
-
-    for group in groups:
-        totals.setdefault(group, 0.0)
+    totals = dict(plan.muscle_totals(required_groups=groups))
 
     missing = [group for group in groups if totals[group] <= 0]
 
@@ -327,10 +311,10 @@ def ensure_muscle_balance(
 
 
 
-def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[date] = None) -> None:
+def validate_plan_structure(plan: Plan, block_start_date: Optional[date] = None) -> None:
     """Validate overall plan structure before persistence or export."""
 
-    weeks = plan.get('weeks')
+    weeks = plan.weeks
     errors: List[str] = []
 
     if not isinstance(weeks, list) or not weeks:
@@ -343,7 +327,7 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
 
     canonical_start = converters.to_date(block_start_date)
     if canonical_start is None and weeks:
-        canonical_start = converters.to_date(weeks[0].get('start_date'))
+        canonical_start = weeks[0].start_date
     if canonical_start is None:
         errors.append('unable to determine canonical start date for plan')
 
@@ -351,11 +335,11 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
 
     for idx, week in enumerate(weeks, start=1):
         prefix = f'week {idx}'
-        week_number = week.get('week_number')
+        week_number = week.week_number
         if week_number != idx:
             errors.append(f'{prefix}: expected week_number {idx}, found {week_number}')
 
-        week_start = converters.to_date(week.get('start_date'))
+        week_start = week.start_date
         if week_start is None:
             errors.append(f'{prefix}: missing or invalid start_date')
         elif canonical_start is not None:
@@ -365,7 +349,7 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
                     f"{prefix}: start_date {week_start.isoformat()} does not match expected {expected.isoformat()}"
                 )
 
-        workouts = week.get('workouts')
+        workouts = week.workouts
         if not isinstance(workouts, list) or not workouts:
             errors.append(f'{prefix}: no workouts defined')
             continue
@@ -375,37 +359,28 @@ def validate_plan_structure(plan: Dict[str, Any], block_start_date: Optional[dat
         invalid_day_flagged = False
 
         for workout in workouts:
-            if not isinstance(workout, dict):
-                continue
-            day_raw = workout.get('day_of_week')
-            try:
-                day = int(day_raw)
-            except (TypeError, ValueError):
+            day = workout.day_of_week
+            if not isinstance(day, int):
                 if not invalid_day_flagged:
-                    errors.append(f'{prefix}: encountered invalid day_of_week value {day_raw!r}')
+                    errors.append(f'{prefix}: encountered invalid day_of_week value {day!r}')
                     invalid_day_flagged = True
                 continue
 
-            percent_1rm = workout.get('percent_1rm')
+            percent_1rm = workout.percent_1rm
             has_percent = percent_1rm is not None
-            if isinstance(percent_1rm, str) and percent_1rm.strip() == '':
-                has_percent = False
 
-            is_cardio = bool(workout.get('is_cardio'))
+            is_cardio = workout.is_cardio
             if not is_cardio and has_percent:
-                target_weight_raw = workout.get('target_weight_kg')
-                weight_valid = False
-                if target_weight_raw is not None:
-                    try:
-                        weight_valid = float(target_weight_raw) != 0
-                    except (TypeError, ValueError):
-                        weight_valid = False
+                target_weight_raw = workout.weight_target
+                weight_valid = (
+                    target_weight_raw is not None and float(target_weight_raw) != 0
+                )
                 if not weight_valid:
                     errors.append(
                         f"{prefix}: {_DAY_NAME_BY_NUMBER.get(day, str(day))} session missing target weight"
                     )
 
-            slot_raw = workout.get('slot')
+            slot_raw = workout.slot
             slot = str(slot_raw).lower() if slot_raw is not None else ''
             if slot == 'conditioning':
                 continue
