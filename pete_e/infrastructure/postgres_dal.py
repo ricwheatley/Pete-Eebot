@@ -27,7 +27,7 @@ _pool: ConnectionPool | None = None
 
 def _create_pool() -> ConnectionPool:
     db_url = get_database_url()
-    return ConnectionPool(conninfo=db_url, min_size=1, max_size=5, row_factory=dict_row)
+    return ConnectionPool(conninfo=db_url, min_size=1, max_size=5)
 
 def get_pool() -> ConnectionPool:
     global _pool
@@ -48,6 +48,8 @@ class PostgresDal(PlanRepository):
         with self.pool.connection() as conn:
             cursor_factory = conn.cursor(row_factory=row_factory) if use_dict_row else conn.cursor()
             with cursor_factory as cur:
+                if use_dict_row:
+                    cur.row_factory = dict_row
                 yield cur
 
     def connection(self):
