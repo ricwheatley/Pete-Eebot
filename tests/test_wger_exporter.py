@@ -1,24 +1,26 @@
 from __future__ import annotations
 
-from pete_e.infrastructure import wger_client as wger_exporter
+from pete_e.infrastructure.wger_client import WgerClient
 
 
-def test_set_sets_posts_string_payload(monkeypatch):
+def test_set_config_posts_payload(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_post(self, path, payload):  # type: ignore[override]
+    def fake_request(self, method, path, **kwargs):
+        captured["method"] = method
         captured["path"] = path
-        captured["payload"] = payload
+        captured["kwargs"] = kwargs
         return {}
 
-    monkeypatch.setattr(wger_exporter.WgerClient, "post", fake_post, raising=False)
+    monkeypatch.setattr(WgerClient, "_request", fake_request)
 
-    client = wger_exporter.WgerClient(base_url="https://example.com", token="dummy-token")
-    client.set_sets(slot_entry_id=321, sets=5)
+    client = WgerClient()
+    client.token = "token"  # ensure headers can be built
 
-    assert captured["path"] == "/api/v2/sets-config/"
-    payload = captured["payload"]
-    assert isinstance(payload, dict)
+    client.set_config("sets", slot_entry_id=321, iteration=1, value=5)
+
+    assert captured["method"] == "POST"
+    assert captured["path"] == "/sets-config/"
+    payload = captured["kwargs"]["json"]
     assert payload["slot_entry"] == 321
     assert payload["value"] == "5"
-

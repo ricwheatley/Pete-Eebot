@@ -69,3 +69,18 @@ ASSISTANCE_2 = {"sets": 3, "reps_low": 8,  "reps_high": 10, "rir_cue": 2.0}
 
 # Core prescriptions (rep or time envelope, we store reps here)
 CORE_SCHEME = {"sets": 3, "reps_low": 10, "reps_high": 15, "rir_cue": 2.0}
+
+# Strength test configuration
+TEST_WEEK_LIFT_ORDER = [
+    BENCH_ID,
+    SQUAT_ID,
+    OHP_ID,
+    DEADLIFT_ID,
+]
+
+TEST_WEEK_PCTS = {
+    BENCH_ID: 85.0,
+    SQUAT_ID: 87.5,
+    OHP_ID: 85.0,
+    DEADLIFT_ID: 90.0,
+}
