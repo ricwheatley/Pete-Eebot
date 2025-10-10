@@ -126,11 +126,13 @@ class Workout:
     id: int | None
     day_of_week: int
     slot: str | None = None
+    scheduled_time: str | None = None
     is_cardio: bool = False
     type: str = "weights"
     percent_1rm: float | None = None
     exercise: Exercise | None = None
     intensity: str | None = None
+    comment: str | None = None
 
     def is_weights_session(self) -> bool:
         return not self.is_cardio and self.type == "weights"
@@ -166,6 +168,7 @@ class Week:
 
     week_number: int
     start_date: date | None = None
+    is_test: bool = False
     workouts: list[Workout] = field(default_factory=list)
 
     def weights_workouts(self) -> Iterable[Workout]:

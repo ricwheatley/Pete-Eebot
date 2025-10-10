@@ -31,29 +31,32 @@ class PlanMapper:
             workouts_payload: List[Dict[str, Any]] = []
             for workout in week.workouts:
                 exercise = workout.exercise
-                workouts_payload.append(
-                    {
-                        "id": workout.id,
-                        "day_of_week": workout.day_of_week,
-                        "slot": workout.slot,
-                        "is_cardio": workout.is_cardio,
-                        "type": workout.type,
-                        "percent_1rm": workout.percent_1rm,
-                        "intensity": workout.intensity,
-                        "exercise_id": exercise.id if exercise else None,
-                        "exercise_name": exercise.name if exercise else None,
-                        "sets": exercise.sets if exercise else None,
-                        "reps": exercise.reps if exercise else None,
-                        "rir": exercise.rir if exercise else None,
-                        "target_weight_kg": exercise.weight_target if exercise else None,
-                        "muscle_group": exercise.muscle_group if exercise else None,
-                    }
-                )
+                workout_payload: Dict[str, Any] = {
+                    "id": workout.id,
+                    "day_of_week": workout.day_of_week,
+                    "slot": workout.slot,
+                    "scheduled_time": workout.scheduled_time,
+                    "is_cardio": workout.is_cardio,
+                    "type": workout.type,
+                    "percent_1rm": workout.percent_1rm,
+                    "intensity": workout.intensity,
+                    "comment": workout.comment,
+                    "exercise_id": exercise.id if exercise else None,
+                    "exercise_name": exercise.name if exercise else None,
+                    "sets": exercise.sets if exercise else None,
+                    "reps": exercise.reps if exercise else None,
+                    "rir_cue": exercise.rir if exercise else None,
+                    "target_weight_kg": exercise.weight_target if exercise else None,
+                    "muscle_group": exercise.muscle_group if exercise else None,
+                }
+
+                workouts_payload.append(workout_payload)
 
             weeks_payload.append(
                 {
                     "week_number": week.week_number,
                     "start_date": week.start_date,
+                    "is_test": week.is_test,
                     "workouts": workouts_payload,
                 }
             )
@@ -79,6 +82,7 @@ class PlanMapper:
     def _build_week(self, data: Dict[str, Any]) -> Week:
         week_number = self._to_int(data.get("week_number")) or 0
         start_date = converters.to_date(data.get("start_date"))
+        is_test = self._to_bool(data.get("is_test"))
         workouts_data = data.get("workouts")
         workouts: List[Workout] = []
 
@@ -88,16 +92,23 @@ class PlanMapper:
                     continue
                 workouts.append(self._build_workout(item))
 
-        return Week(week_number=week_number, start_date=start_date, workouts=workouts)
+        return Week(
+            week_number=week_number,
+            start_date=start_date,
+            is_test=is_test,
+            workouts=workouts,
+        )
 
     def _build_workout(self, data: Dict[str, Any]) -> Workout:
         workout_id = self._to_int(data.get("id"))
         day_of_week = self._to_int(data.get("day_of_week")) or 0
-        is_cardio = bool(data.get("is_cardio"))
+        is_cardio = self._to_bool(data.get("is_cardio"))
         workout_type = data.get("type") or ("cardio" if is_cardio else "weights")
         percent = converters.to_float(data.get("percent_1rm"))
         slot = data.get("slot")
         intensity = data.get("intensity")
+        scheduled_time = data.get("scheduled_time")
+        comment = data.get("comment")
 
         exercise = self._build_exercise(data)
 
@@ -105,11 +116,13 @@ class PlanMapper:
             id=workout_id,
             day_of_week=day_of_week,
             slot=slot,
+            scheduled_time=scheduled_time,
             is_cardio=is_cardio,
             type=str(workout_type),
             percent_1rm=percent,
             exercise=exercise,
             intensity=intensity,
+            comment=comment,
         )
 
     def _build_exercise(self, data: Dict[str, Any]) -> Exercise | None:
@@ -151,3 +164,16 @@ class PlanMapper:
                 except ValueError:
                     return None
         return None
+
+    def _to_bool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            stripped = value.strip().lower()
+            if stripped in {"true", "t", "1", "yes", "y"}:
+                return True
+            if stripped in {"false", "f", "0", "no", "n", ""}:
+                return False
+        return bool(value)
