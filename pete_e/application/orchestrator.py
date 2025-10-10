@@ -121,13 +121,38 @@ class Orchestrator:
             log_utils.error(message, "ERROR")
             raise PlanRolloverError(message)
 
+        # If validation determined that a back-off adjustment should happen but the
+        # cached decision was unable to apply it (because the new plan did not
+        # exist yet), re-run validation now that the rollover plan has been
+        # created. This ensures any recommended adjustments are applied before
+        # export.
+        validation_for_export = validation_decision
+        if (
+            validation_decision
+            and validation_decision.should_apply
+            and not validation_decision.applied
+        ):
+            try:
+                validation_for_export = self.validation_service.validate_and_adjust_plan(
+                    next_monday
+                )
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                message = (
+                    "Failed to re-run validation after rollover plan creation "
+                    f"for week starting {next_monday.isoformat()}: {exc}"
+                )
+                log_utils.error(message, "ERROR")
+                raise ValidationError(message) from exc
+
         try:
             self.export_service.export_plan_week(
                 plan_id=plan_id,
                 week_number=1,
                 start_date=next_monday,
                 force_overwrite=True,
-                validation_decision=validation_decision,
+                validation_decision=validation_for_export,
             )
         except ApplicationError:
             raise

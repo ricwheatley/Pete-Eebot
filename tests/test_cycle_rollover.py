@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import date
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
 from pete_e.application.exceptions import PlanRolloverError
 from pete_e.application.orchestrator import CycleRolloverResult, Orchestrator, WeeklyAutomationResult, WeeklyCalibrationResult
+from pete_e.domain.validation import BackoffRecommendation, ReadinessSummary, ValidationDecision
 from tests.di_utils import build_stub_container
 
 
@@ -35,6 +37,32 @@ class StubExportService:
     ):
         self.calls.append((plan_id, week_number, start_date, validation_decision))
         return {"status": "exported"}
+
+
+def _make_backoff_decision(*, applied: bool) -> ValidationDecision:
+    return ValidationDecision(
+        needs_backoff=True,
+        should_apply=True,
+        explanation="Backoff recommended",
+        log_entries=[],
+        readiness=ReadinessSummary(
+            state="caution",
+            headline="Backoff recommended",
+            tip=None,
+            severity="moderate",
+            breach_ratio=1.2,
+            reasons=["low readiness"],
+        ),
+        recommendation=BackoffRecommendation(
+            needs_backoff=True,
+            severity="moderate",
+            reasons=["low readiness"],
+            set_multiplier=0.9,
+            rir_increment=1,
+            metrics={},
+        ),
+        applied=applied,
+    )
 
 
 class StubDal:
@@ -106,3 +134,41 @@ def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.Monk
     assert isinstance(outcome, WeeklyAutomationResult)
     assert outcome.rollover_triggered is True
     assert outcome.rollover.plan_id == 400
+
+
+def test_run_cycle_rollover_revalidates_when_cached_adjustment_not_applied() -> None:
+    plan_service = StubPlanService(plan_id=321)
+    export_service = StubExportService()
+
+    reapplied_decision = _make_backoff_decision(applied=True)
+    initial_decision = replace(reapplied_decision, applied=False)
+
+    class RecordingValidationService:
+        def __init__(self, decision: ValidationDecision) -> None:
+            self.decision = decision
+            self.calls: list[date] = []
+
+        def validate_and_adjust_plan(self, week_start: date) -> ValidationDecision:
+            self.calls.append(week_start)
+            return self.decision
+
+    validation_service = RecordingValidationService(reapplied_decision)
+
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+    )
+
+    orch = Orchestrator(container=container, validation_service=validation_service)
+
+    result = orch.run_cycle_rollover(
+        reference_date=date(2024, 6, 2),
+        validation_decision=initial_decision,
+    )
+
+    next_monday = date(2024, 6, 3)
+    assert validation_service.calls == [next_monday]
+    assert export_service.calls == [(321, 1, next_monday, reapplied_decision)]
+    assert result.exported is True
