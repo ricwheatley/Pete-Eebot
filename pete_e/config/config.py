@@ -10,8 +10,7 @@ import os
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
-
-from psycopg.conninfo import make_conninfo
+from urllib.parse import quote_plus
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -105,13 +104,14 @@ class Settings(BaseSettings):
     def build_database_url(self) -> "Settings":
         """Dynamically construct the ``DATABASE_URL`` after validation."""
         db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
+        user = quote_plus(self.POSTGRES_USER)
+        password = quote_plus(self.POSTGRES_PASSWORD.get_secret_value())
+        host = db_host
+        port = self.POSTGRES_PORT
+        dbname = quote_plus(self.POSTGRES_DB)
 
-        self.DATABASE_URL = make_conninfo(
-            user=self.POSTGRES_USER,
-            password=self.POSTGRES_PASSWORD.get_secret_value(),
-            host=db_host,
-            port=self.POSTGRES_PORT,
-            dbname=self.POSTGRES_DB,
+        self.DATABASE_URL = (
+            f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
         )
         return self
 
