@@ -9,13 +9,19 @@ from typing import Dict, Any, NamedTuple
 from dataclasses import dataclass
 
 # --- NEW Clean Imports ---
+from pete_e.application.exceptions import (
+    ApplicationError,
+    DataAccessError,
+    PlanRolloverError,
+    ValidationError,
+)
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
+from pete_e.domain.cycle_service import CycleService
+from pete_e.domain.validation import ValidationDecision
+from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.domain.validation import ValidationDecision
-from pete_e.domain.cycle_service import CycleService
-from pete_e.infrastructure import log_utils
 
 # --- Result dataclasses can remain for clear return types ---
 @dataclass(frozen=True)
@@ -64,12 +70,22 @@ class Orchestrator:
         This method is now much simpler.
         """
         log_utils.info(f"Running weekly calibration for week starting after {reference_date.isoformat()}")
-        
+
         # The core validation logic remains, but it's now the main focus of this method.
         # The complex plan-finding logic will be handled by the services it calls.
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
-        validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
-        
+
+        try:
+            validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = (
+                f"Weekly calibration failed for week starting {next_monday.isoformat()}: {exc}"
+            )
+            log_utils.error(message)
+            raise ValidationError(message) from exc
+
         return WeeklyCalibrationResult(
             message=validation_decision.explanation,
             validation=validation_decision
@@ -84,49 +100,71 @@ class Orchestrator:
         log_utils.info(f"Cycle rollover triggered for block starting {next_monday.isoformat()}")
 
         try:
-            # 1. Delegate plan creation to the PlanService
-            # The service now contains all the logic for deciding if a test week or
-            # a standard block is needed, and for building and saving it.
-            # (Assuming a method in PlanService that encapsulates this logic)
             plan_id = self.plan_service.create_next_plan_for_cycle(start_date=next_monday)
-            if not plan_id:
-                raise RuntimeError("Plan creation returned an invalid ID.")
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Plan creation failed for cycle starting {next_monday.isoformat()}: {exc}"
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
 
-            # 2. Delegate the export to the WgerExportService
+        if not plan_id:
+            message = (
+                f"Plan creation returned an invalid ID for cycle starting {next_monday.isoformat()}"
+            )
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message)
+
+        try:
             self.export_service.export_plan_week(
                 plan_id=plan_id,
                 week_number=1,
                 start_date=next_monday,
                 force_overwrite=True
             )
-            
-            return CycleRolloverResult(
-                plan_id=plan_id,
-                created=True,
-                exported=True,
-                message=f"New cycle started with plan {plan_id} and week 1 exported."
-            )
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Export failed for plan {plan_id} week 1 starting {next_monday.isoformat()}: {exc}"
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
 
-        except Exception as e:
-            log_utils.error(f"Cycle rollover failed: {e}", "ERROR")
-            return CycleRolloverResult(
-                plan_id=None, created=False, exported=False, message=str(e)
-            )
+        return CycleRolloverResult(
+            plan_id=plan_id,
+            created=True,
+            exported=True,
+            message=f"New cycle started with plan {plan_id} and week 1 exported."
+        )
 
     def run_end_to_end_week(self, reference_date: date | None = None) -> WeeklyAutomationResult:
         """
         The main entry point for the Sunday review.
         """
         today = reference_date or date.today()
-        
+
         # Run calibration on the upcoming week
         calibration_result = self.run_weekly_calibration(today)
-        
+
         # Decide if a rollover is needed via the domain service
         rollover_result = None
 
-        active_plan = self.dal.get_active_plan()
-        rollover_triggered = self.cycle_service.check_and_rollover(active_plan, today)
+        try:
+            active_plan = self.dal.get_active_plan()
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to load active plan before weekly run on {today.isoformat()}: {exc}"
+            log_utils.error(message, "ERROR")
+            raise DataAccessError(message) from exc
+
+        try:
+            rollover_triggered = self.cycle_service.check_and_rollover(active_plan, today)
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to evaluate rollover for {today.isoformat()}: {exc}"
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
 
         if rollover_triggered:
             rollover_result = self.run_cycle_rollover(today)
