@@ -6,18 +6,10 @@ import pytest
 # Import the new classes and modules that are now used
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.repositories import PlanRepository
+import tests.config_stub  # noqa: F401
+
 from pete_e.domain.validation import assess_recovery_and_backoff
 from pete_e.config import settings
-
-
-class HrvTrendStubDal:
-    """Stub DAL exposing just enough history for recovery assessment."""
-
-    def __init__(self, rows: List[Dict[str, Any]]) -> None:
-        self._rows = rows
-
-    def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        return [row for row in self._rows if start_date <= row["date"] <= end_date]
 
 
 class PlanBuilderStubRepo(PlanRepository):
@@ -71,9 +63,7 @@ def test_downward_hrv_trend_triggers_backoff(drop_percent: float, expected_sever
     for offset in range(7):
         rows[offset]["hrv_sdnn_ms"] = drop_value
 
-    stub = HrvTrendStubDal(rows)
-
-    rec = assess_recovery_and_backoff(stub, week_start)
+    rec = assess_recovery_and_backoff(rows, week_start)
 
     assert rec.needs_backoff is expected_severity
     assert any("hrv" in reason.lower() for reason in rec.reasons)
