@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pete_e.application.exceptions import PlanRolloverError
 from pete_e.application.orchestrator import CycleRolloverResult, Orchestrator, WeeklyAutomationResult, WeeklyCalibrationResult
 
 
@@ -62,19 +63,17 @@ def test_run_cycle_rollover_creates_plan_and_exports(monkeypatch: pytest.MonkeyP
     assert export_service.calls == [(77, 1, date(2024, 5, 6))]
 
 
-def test_run_cycle_rollover_returns_failure_when_plan_creation_errors() -> None:
+def test_run_cycle_rollover_raises_when_plan_creation_errors() -> None:
     class ExplodingPlanService(StubPlanService):
         def create_next_plan_for_cycle(self, *, start_date: date) -> int:
             raise RuntimeError("boom")
 
     orch = make_orchestrator(plan_service=ExplodingPlanService())
 
-    result = orch.run_cycle_rollover(reference_date=date(2024, 9, 1))
+    with pytest.raises(PlanRolloverError) as excinfo:
+        orch.run_cycle_rollover(reference_date=date(2024, 9, 1))
 
-    assert result.plan_id is None
-    assert result.created is False
-    assert result.exported is False
-    assert "boom" in (result.message or "")
+    assert "boom" in str(excinfo.value)
 
 
 def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.MonkeyPatch) -> None:
