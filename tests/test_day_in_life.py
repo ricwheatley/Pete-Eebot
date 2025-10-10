@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
@@ -8,14 +9,16 @@ import pytest
 from pete_e.application.services import WgerExportService
 
 
-@pytest.fixture(autouse=True)
-def stub_validation(monkeypatch):
-    from types import SimpleNamespace
+class StubValidationService:
+    def __init__(self):
+        self.calls: list[date] = []
 
-    monkeypatch.setattr(
-        "pete_e.application.services.validate_and_adjust_plan",
-        lambda dal, start_date: SimpleNamespace(explanation="ok"),
-    )
+    def validate_and_adjust_plan(self, start_date: date):
+        self.calls.append(start_date)
+        return SimpleNamespace(explanation="ok", log_entries=[], readiness=None, recommendation=SimpleNamespace(set_multiplier=1.0, rir_increment=0, metrics={}), should_apply=False, applied=False, needs_backoff=False)
+
+    def get_adherence_snapshot(self, start_date: date):
+        return None
 
 
 class StubDal:
@@ -55,7 +58,8 @@ class StubWgerClient:
 def test_export_service_builds_payload_and_records(monkeypatch: pytest.MonkeyPatch) -> None:
     dal = StubDal()
     client = StubWgerClient()
-    service = WgerExportService(dal=dal, wger_client=client)
+    validation_service = StubValidationService()
+    service = WgerExportService(dal=dal, wger_client=client, validation_service=validation_service)
 
     result = service.export_plan_week(plan_id=5, week_number=1, start_date=date(2024, 6, 3), force_overwrite=True)
 
@@ -72,7 +76,8 @@ def test_export_service_respects_existing_export(monkeypatch: pytest.MonkeyPatch
 
     dal = AlreadyExportedDal()
     client = StubWgerClient()
-    service = WgerExportService(dal=dal, wger_client=client)
+    validation_service = StubValidationService()
+    service = WgerExportService(dal=dal, wger_client=client, validation_service=validation_service)
 
     result = service.export_plan_week(plan_id=9, week_number=1, start_date=date(2024, 6, 10))
 

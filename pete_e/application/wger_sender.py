@@ -3,13 +3,10 @@
 from datetime import date, timedelta
 import hashlib
 import json
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
-from pete_e.domain.validation import (
-    ValidationDecision,
-    collect_adherence_snapshot,
-    validate_and_adjust_plan,
-)
+from pete_e.application.validation_service import ValidationService
+from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.application.services import WgerExportService
@@ -98,8 +95,9 @@ def push_week(
     """Push a single plan week to Wger with idempotency guards."""
 
     # The validation and adherence logic can remain as it was
-    decision: ValidationDecision = validate_and_adjust_plan(dal, start_date)
-    adherence_snapshot = collect_adherence_snapshot(dal, start_date)
+    validation_service = ValidationService(dal)
+    decision: ValidationDecision = validation_service.validate_and_adjust_plan(start_date)
+    adherence_snapshot = validation_service.get_adherence_snapshot(start_date)
     adherence_summary = _summarize_adherence(adherence_snapshot)
     log_entries = getattr(decision, "log_entries", None) or []
     adjustment_text = ", ".join(log_entries) if log_entries else "none"
