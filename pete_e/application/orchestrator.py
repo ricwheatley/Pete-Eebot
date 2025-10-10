@@ -196,13 +196,10 @@ class Orchestrator:
         log_utils.info("Orchestrator running daily sync...")
 
         log_utils.info("Running Withings sync...")
-        # Note: The original `run_withings_sync` in sync.py returns a complex tuple.
-        # We'll assume it's adapted or wrapped to return a dict or object.
-        # For this patch, we'll call it and assume a dict-like result.
         withings_results = self.run_withings_sync(days)
 
         log_utils.info("Running Apple Health ingest from Dropbox...")
-        apple_results = run_apple_health_ingest(self.dal, self.dropbox_client, days)
+        apple_results = run_apple_health_ingest()
 
         log_utils.info("Refreshing database views...")
         self.dal.refresh_daily_summary(days=days + 1) # Add buffer day
@@ -214,7 +211,7 @@ class Orchestrator:
         statuses = {**withings_results.get("statuses", {}), **apple_results.get("statuses", {})}
         alerts = withings_results.get("alerts", []) + apple_results.get("alerts", [])
         return success, failures, statuses, alerts
-    
+
     def run_withings_sync(self, days: int) -> dict[str, Any]:
         """Runs only the Withings portion of the sync."""
         try:
