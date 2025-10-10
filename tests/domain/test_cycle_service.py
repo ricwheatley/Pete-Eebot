@@ -9,6 +9,7 @@ from pete_e.application.orchestrator import (
     CycleRolloverResult,
 )
 from pete_e.domain.cycle_service import CycleService
+from tests.di_utils import build_stub_container
 
 
 def test_check_and_rollover_requires_four_weeks_and_sunday():
@@ -33,13 +34,13 @@ def test_orchestrator_delegates_rollover_decision():
     cycle_service = MagicMock()
     cycle_service.check_and_rollover.return_value = True
 
-    orchestrator = Orchestrator(
+    container = build_stub_container(
         dal=dal,
         wger_client=MagicMock(),
         plan_service=MagicMock(),
         export_service=MagicMock(),
-        cycle_service=cycle_service,
     )
+    orchestrator = Orchestrator(container=container, cycle_service=cycle_service)
 
     orchestrator.run_weekly_calibration = MagicMock(
         return_value=WeeklyCalibrationResult(message="ok")

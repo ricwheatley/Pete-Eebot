@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.sync import run_sync_with_retries, SyncResult
+from tests.di_utils import build_stub_container
 
 
 def test_orchestrator_close_method_closes_dal(monkeypatch):
@@ -22,12 +23,13 @@ def test_orchestrator_close_method_closes_dal(monkeypatch):
     mock_export_service = MagicMock()
 
     # Instantiate the orchestrator with our mock DAL and other services
-    orchestrator = Orchestrator(
+    container = build_stub_container(
         dal=mock_dal,
         wger_client=mock_wger_client,
         plan_service=mock_plan_service,
         export_service=mock_export_service,
     )
+    orchestrator = Orchestrator(container=container)
 
     # Call the method we want to test
     orchestrator.close()

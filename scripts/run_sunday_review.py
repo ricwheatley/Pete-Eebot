@@ -2,10 +2,7 @@
 # scripts/run_sunday_review.py
 """Executes the main Sunday review, handling weekly calibration and cycle rollover."""
 from pete_e.application.orchestrator import Orchestrator
-from pete_e.application.services import PlanService, WgerExportService
 from pete_e.infrastructure import log_utils
-from pete_e.infrastructure.postgres_dal import PostgresDal, get_pool
-from pete_e.infrastructure.wger_client import WgerClient
 
 
 def main() -> None:
@@ -13,16 +10,7 @@ def main() -> None:
     log_utils.info("Starting Sunday review via script...")
     orchestrator: Orchestrator | None = None
     try:
-        dal = PostgresDal(get_pool())
-        wger_client = WgerClient()
-        plan_service = PlanService(dal)
-        export_service = WgerExportService(dal, wger_client)
-        orchestrator = Orchestrator(
-            dal=dal,
-            wger_client=wger_client,
-            plan_service=plan_service,
-            export_service=export_service,
-        )
+        orchestrator = Orchestrator()
         result = orchestrator.run_end_to_end_week()
         log_utils.info(f"Sunday review complete. Result: {result}")
     except Exception as exc:
