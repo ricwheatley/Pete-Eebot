@@ -1,17 +1,11 @@
 ﻿# (Functional) Withings API client â€“ interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `~/.config/pete_eebot/.withings_tokens.json`)
 
-"""
-Withings API client for Pete-E.
-Now persists tokens in ~/.config/pete_eebot/.withings_tokens.json so you do not have to
-update .env manually.
-"""
+"""Withings API client for Pete-E."""
 
-import json
-import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import requests
 from datetime import datetime, timedelta, timezone
@@ -20,6 +14,8 @@ from pydantic import SecretStr
 
 from pete_e.config import settings
 from pete_e.infrastructure.log_utils import log_message
+from pete_e.domain.token_storage import TokenStorage
+from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 
 
 def _unwrap_secret(value):
@@ -56,27 +52,23 @@ class WithingsClient:
     CONFIG_DIR = Path.home() / ".config" / "pete_eebot"
     TOKEN_FILE = CONFIG_DIR / ".withings_tokens.json"
 
-    def __init__(self, request_timeout: float = 30.0):
+    def __init__(self, request_timeout: float = 30.0, *, token_storage: Optional[TokenStorage] = None):
         """Initializes the client with credentials from settings or token file."""
         self.client_id = settings.WITHINGS_CLIENT_ID
         self.client_secret = _unwrap_secret(settings.WITHINGS_CLIENT_SECRET)
         self.redirect_uri = settings.WITHINGS_REDIRECT_URI
         self._request_timeout = request_timeout
 
-        # Try to load existing tokens from file
+        self._token_storage: TokenStorage = token_storage or JsonFileTokenStorage(self.TOKEN_FILE)
+        self._cached_tokens: Dict[str, Any] = {}
+
+        # Try to load existing tokens from configured storage
         self.access_token = None
         self.refresh_token = None
 
-        self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if self.TOKEN_FILE.exists():
-            try:
-                with open(self.TOKEN_FILE) as f:
-                    tokens = json.load(f)
-                self.refresh_token = tokens.get("refresh_token")
-                self.access_token = tokens.get("access_token")
-                log_message("Loaded Withings tokens from file.", "INFO")
-            except Exception as e:
-                log_message(f"Failed to load tokens from file: {e}", "WARN")
+        tokens = self._load_tokens_from_storage()
+        if tokens:
+            log_message("Loaded Withings tokens from storage.", "INFO")
 
         # Fallback to .env if no token file
         if not self.refresh_token:
@@ -89,23 +81,22 @@ class WithingsClient:
         self._token_state = WithingsTokenState(requires_reauth=False)
 
     def _save_tokens(self, tokens: dict) -> None:
-        """Persist tokens (with expiry) to disk."""
-        self.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        """Persist tokens (with expiry) using the configured storage."""
 
-        # Calculate expiry timestamp if present
-        expires_in = tokens.get("expires_in")
+        tokens_to_save = dict(tokens)
+
+        expires_in = tokens_to_save.get("expires_in")
         if expires_in:
-            tokens["expires_at"] = int(datetime.now(timezone.utc).timestamp()) + int(expires_in)
-
-        with open(self.TOKEN_FILE, "w") as f:
-            json.dump(tokens, f, indent=2)
+            tokens_to_save["expires_at"] = int(datetime.now(timezone.utc).timestamp()) + int(expires_in)
 
         try:
-            os.chmod(self.TOKEN_FILE, 0o600)
-        except OSError as exc:
-            log_message(f"Could not set permissions on {self.TOKEN_FILE}: {exc}", "WARN")
+            self._token_storage.save_tokens(tokens_to_save)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log_message(f"Failed to save Withings tokens: {exc}", "WARN")
+            return
 
-        log_message("Saved Withings tokens to file.", "INFO")
+        self._cached_tokens = tokens_to_save
+        log_message("Saved Withings tokens via token storage.", "INFO")
 
     def ensure_fresh_token(self) -> None:
         """Ensure access token is present and not expired, refresh if needed."""
@@ -114,28 +105,11 @@ class WithingsClient:
             self._refresh_access_token()
             return
 
-        # Load expiry from token file if available
-        try:
-            with open(self.TOKEN_FILE) as f:
-                tokens = json.load(f)
-            expires_at = tokens.get("expires_at")
-        except Exception:
-            tokens = {}
-            expires_at = None
+        tokens = self._cached_tokens or self._load_tokens_from_storage()
+        expires_at = tokens.get("expires_at") if tokens else None
 
         if expires_at is None:
             log_message("No expires_at in Withings token data, refreshing immediately.", "WARN")
-            self._refresh_access_token()
-            return
-
-        # Refresh proactively if the stored token data is older than 12 hours
-        try:
-            token_age = time.time() - self.TOKEN_FILE.stat().st_mtime
-        except FileNotFoundError:
-            token_age = None
-
-        if token_age is not None and token_age > 43200:
-            log_message("Token older than 12h, refreshing to avoid expiry.", "INFO")
             self._refresh_access_token()
             return
 
@@ -272,6 +246,21 @@ class WithingsClient:
         )
         log_message("Successfully refreshed Withings access token.", "INFO")
         return body
+
+    def _load_tokens_from_storage(self) -> Dict[str, Any]:
+        try:
+            tokens = self._token_storage.read_tokens()
+        except Exception as exc:  # pragma: no cover - defensive logging
+            log_message(f"Failed to load tokens from storage: {exc}", "WARN")
+            return {}
+
+        if not tokens:
+            return {}
+
+        self._cached_tokens = dict(tokens)
+        self.refresh_token = tokens.get("refresh_token") or self.refresh_token
+        self.access_token = tokens.get("access_token") or self.access_token
+        return self._cached_tokens
 
     def _parse_json(self, response: requests.Response, *, context: str) -> dict:
         """Safely parses a JSON response, raising a runtime error if parsing fails."""
