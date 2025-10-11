@@ -6,6 +6,9 @@ from typing import List
 
 import mocks.requests_mock
 
+from unittest.mock import Mock
+
+from pete_e.domain.token_storage import TokenStorage
 from pete_e.infrastructure import withings_client as withings_module
 from pete_e.infrastructure.withings_client import WithingsClient
 
@@ -25,8 +28,14 @@ class DummyResponse:
 
 
 def test_withings_client_retries_rate_limits(monkeypatch):
-    client = WithingsClient()
-    client.access_token = "token"
+    token_storage = Mock(spec=TokenStorage)
+    token_storage.read_tokens.return_value = {
+        "access_token": "token",
+        "refresh_token": "refresh",
+        "expires_at": int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp()),
+    }
+
+    client = WithingsClient(token_storage=token_storage)
 
     responses = [
         DummyResponse(
