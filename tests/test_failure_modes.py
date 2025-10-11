@@ -97,3 +97,28 @@ def test_withings_client_retries_rate_limits(monkeypatch):
     assert call_count["count"] == 3
     assert sleep_calls == [1, 2]
     assert payload["status"] == 0
+
+
+def test_withings_client_reloads_tokens_when_storage_changes(monkeypatch):
+    future_expiry = int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp())
+
+    token_storage = Mock(spec=TokenStorage)
+    token_storage.read_tokens.side_effect = [
+        {"access_token": "first", "refresh_token": "r1", "expires_at": future_expiry},
+        {"access_token": "second", "refresh_token": "r2", "expires_at": future_expiry},
+    ]
+
+    client = WithingsClient(token_storage=token_storage)
+
+    monkeypatch.setattr(
+        client,
+        "_refresh_access_token",
+        Mock(side_effect=AssertionError("should not refresh when tokens are valid")),
+    )
+
+    client.ensure_fresh_token()
+
+    assert client.access_token == "second"
+    assert client.refresh_token == "r2"
+    assert client._cached_tokens["access_token"] == "second"
+    assert token_storage.read_tokens.call_count == 2
