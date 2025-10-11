@@ -105,7 +105,11 @@ class WithingsClient:
             self._refresh_access_token()
             return
 
-        tokens = self._cached_tokens or self._load_tokens_from_storage()
+        latest_tokens = self._load_tokens_from_storage()
+        if latest_tokens:
+            tokens = latest_tokens
+        else:
+            tokens = self._cached_tokens
         expires_at = tokens.get("expires_at") if tokens else None
 
         if expires_at is None:
