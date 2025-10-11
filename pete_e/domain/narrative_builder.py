@@ -8,8 +8,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from pete_e.domain.phrase_picker import random_phrase as phrase_for
 from pete_e.domain import narrative_utils
-from pete_e.config import settings
-from pete_e.infrastructure.log_utils import log_message
+from pete_e.domain.configuration import get_settings
+from pete_e.domain.logging import log_message
 from pete_e.utils import converters, formatters, helpers
 
 
@@ -971,7 +971,7 @@ def build_cycle_narrative(metrics: Dict[str, Any]) -> str:
         return "Ey up Ric 👋\n\nNo logs found for last cycle."
 
     all_dates = sorted(days.keys())
-    cycle_days = settings.CYCLE_DAYS
+    cycle_days = get_settings().cycle_days
     cycle_data = [days[d] for d in all_dates[-cycle_days:]]
     prev_cycle = [days[d] for d in all_dates[-2 * cycle_days:-cycle_days]] if len(all_dates) > cycle_days else []
 
