@@ -7,7 +7,7 @@ from datetime import date
 from statistics import mean
 from typing import Iterable, Mapping, MutableMapping, Sequence
 
-from pete_e.config import settings
+from pete_e.domain.configuration import get_settings
 from pete_e.utils import converters
 from pete_e.utils import math as math_utils
 
@@ -80,12 +80,13 @@ class Exercise:
         avg_rir = mean(rirs) if use_rir else None
 
         target = self.weight_target if self.weight_target is not None else avg_weight
-        inc = settings.PROGRESSION_INCREMENT
-        dec = settings.PROGRESSION_DECREMENT
+        domain_settings = get_settings()
+        inc = domain_settings.progression_increment
+        dec = domain_settings.progression_decrement
 
         if use_rir:
             if avg_rir is not None and avg_rir <= 1:
-                inc += settings.PROGRESSION_INCREMENT / 2
+                inc += domain_settings.progression_increment / 2
             elif avg_rir is not None and avg_rir >= 2:
                 inc /= 2
 
@@ -248,8 +249,9 @@ def compute_recovery_flag(
     ):
         return True
 
-    rhr_limit = rhr_baseline * (1 + settings.RHR_ALLOWED_INCREASE)
-    sleep_limit = sleep_baseline * settings.SLEEP_ALLOWED_DECREASE
+    domain_settings = get_settings()
+    rhr_limit = rhr_baseline * (1 + domain_settings.rhr_allowed_increase)
+    sleep_limit = sleep_baseline * domain_settings.sleep_allowed_decrease
     if rhr_7 > rhr_limit or sleep_7 < sleep_limit:
         return False
     return True
