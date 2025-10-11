@@ -10,7 +10,9 @@ from typing import Callable, Dict, Optional
 from typing_extensions import Protocol
 
 from pete_e.config import settings
-from pete_e.infrastructure import log_utils, telegram_sender
+from pete_e.infrastructure import log_utils
+from pete_e.infrastructure.di_container import get_container
+from pete_e.infrastructure.telegram_client import TelegramClient
 
 
 class _LazyModuleProxy:
@@ -67,6 +69,7 @@ class TelegramCommandListener:
         orchestrator_factory: Callable[[], _OrchestratorProtocol] | None = None,
         poll_limit: int = 5,
         poll_timeout: int = 2,
+        telegram_client: TelegramClient | None = None,
     ) -> None:
         self._offset_path = Path(offset_path) if offset_path else self._default_offset_path()
         self._offset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,7 @@ class TelegramCommandListener:
         self._poll_limit = max(1, int(poll_limit))
         self._poll_timeout = max(0, int(poll_timeout))
         self._orchestrator: _OrchestratorProtocol | None = None
+        self._telegram_client = telegram_client or get_container().resolve(TelegramClient)
 
     @staticmethod
     def _default_offset_path() -> Path:
@@ -172,7 +176,7 @@ class TelegramCommandListener:
 
         if success:
             confirmation = "Strength test week scheduled"
-            telegram_sender.send_alert(confirmation)
+            self._telegram_client.send_alert(confirmation)
             return confirmation
 
         failure_message = "Strength test week scheduling failed; check logs."
@@ -190,7 +194,7 @@ class TelegramCommandListener:
         """Fetch a batch of updates, handle commands, and persist the offset."""
 
         next_offset = self._next_offset()
-        updates = telegram_sender.get_updates(
+        updates = self._telegram_client.get_updates(
             offset=next_offset,
             limit=self._poll_limit,
             timeout=self._poll_timeout,
@@ -247,7 +251,7 @@ class TelegramCommandListener:
                 )
                 response_text = "Command failed; check logs."
 
-            if not telegram_sender.send_message(response_text):
+            if not self._telegram_client.send_message(response_text):
                 log_utils.log_message(
                     f"Telegram listener failed to reply to {command}.",
                     "ERROR",
