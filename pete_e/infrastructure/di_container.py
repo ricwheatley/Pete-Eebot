@@ -11,6 +11,7 @@ from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.withings_client import WithingsClient
 
@@ -57,6 +58,7 @@ def _register_defaults(container: Container) -> None:
     container.register(WgerClient, factory=lambda _c: WgerClient())
     container.register(AppleDropboxClient, factory=lambda _c: AppleDropboxClient())
     container.register(WithingsClient, factory=lambda _c: WithingsClient())
+    container.register(TelegramClient, factory=lambda _c: TelegramClient())
     container.register(
         AppleHealthIngestor,
         factory=lambda c: AppleHealthDropboxIngestor(
