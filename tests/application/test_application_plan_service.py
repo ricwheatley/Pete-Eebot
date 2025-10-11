@@ -1,8 +1,11 @@
 from datetime import date, timedelta
 from typing import Any, Dict, Optional
 
+import pytest
+
 import tests.config_stub  # noqa: F401
 
+from pete_e.application.exceptions import DataAccessError
 from pete_e.application.plan_context_service import ApplicationPlanService
 from pete_e.domain.validation import PlanContext
 
@@ -56,9 +59,17 @@ def test_falls_back_to_lookup_by_week_start() -> None:
 
 
 def test_returns_none_when_no_plan_available() -> None:
-    dal = StubDal(active_plan=None, fallback_plan=None, fallback_raises=True)
+    dal = StubDal(active_plan=None, fallback_plan=None, fallback_raises=False)
     service = ApplicationPlanService(dal)
 
     context = service.get_plan_context(date(2024, 8, 5))
 
     assert context is None
+
+
+def test_raises_data_access_error_when_dal_fails() -> None:
+    dal = StubDal(active_plan=None, fallback_plan=None, fallback_raises=True)
+    service = ApplicationPlanService(dal)
+
+    with pytest.raises(DataAccessError):
+        service.get_plan_context(date(2024, 8, 5))

@@ -70,12 +70,19 @@ from typer import Argument, Option
 from pete_e.infrastructure.db_conn import get_database_url
 
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.exceptions import (
+    ApplicationError,
+    DataAccessError,
+    PlanRolloverError,
+    ValidationError,
+)
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
 from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper
+from pete_e.infrastructure.apple_health_ingestor import AppleIngestError
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.cli.telegram import telegram as telegram_command
 from pete_e.config import settings
@@ -87,6 +94,37 @@ else:  # pragma: no cover - runtime fallback
 
 
 console = Console()
+
+
+_APPLICATION_EXIT_CODES: dict[type[ApplicationError], int] = {
+    ValidationError: 2,
+    PlanRolloverError: 3,
+    DataAccessError: 4,
+}
+
+
+def _echo_error(message: str) -> None:
+    secho = getattr(typer, "secho", None)
+    if callable(secho):
+        secho(message, err=True, fg="red")
+    else:  # pragma: no cover - exercised via typer test stubs
+        typer.echo(message)
+
+
+def _exit_for_application_error(exc: ApplicationError, *, context: str) -> None:
+    """Render a friendly error message for application-layer failures."""
+
+    exit_code = next(
+        (
+            code
+            for exc_type, code in _APPLICATION_EXIT_CODES.items()
+            if isinstance(exc, exc_type)
+        ),
+        1,
+    )
+    log_utils.log_message(f"{context} failed: {exc}", "ERROR")
+    _echo_error(f"{context} failed: {exc}")
+    raise typer.Exit(code=exit_code)
 
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
@@ -511,7 +549,10 @@ def sync(
     updates the database, and recalculates body age.
     """
     log_utils.log_message(f"Starting manual sync for the last {days} days.", "INFO")
-    result = run_sync_with_retries(days=days, retries=retries)
+    try:
+        result = run_sync_with_retries(days=days, retries=retries)
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Manual sync")
     if result.success:
         typer.echo("Manual sync completed. Summary written to logs/pete_history.log.")
         raise typer.Exit(code=0)
@@ -526,7 +567,10 @@ def withings_sync(
 ) -> None:
     """Run only the Withings portion of the sync pipeline."""
     log_utils.log_message(f"Starting Withings-only sync for the last {days} days.", "INFO")
-    result = run_withings_only_with_retries(days=days, retries=retries)
+    try:
+        result = run_withings_only_with_retries(days=days, retries=retries)
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Withings-only sync")
     if result.success:
         typer.echo("Withings-only sync completed. Summary written to logs/pete_history.log.")
         raise typer.Exit(code=0)
@@ -555,8 +599,11 @@ def ingest_apple() -> None:
     """
     try:
         report = run_apple_health_ingest()
-    except Exception as exc:  # pragma: no cover - defensive guardrail
+    except DataAccessError as exc:  # pragma: no cover - defensive guardrail
+        _exit_for_application_error(exc, context="Apple Health ingestion")
+    except AppleIngestError as exc:  # pragma: no cover - defensive guardrail
         log_utils.log_message(f"Apple Health Dropbox ingestion failed: {exc}", "ERROR")
+        _echo_error(f"Apple Health Dropbox ingestion failed: {exc}")
         raise typer.Exit(code=1)
 
     processed_files = len(report.sources)
@@ -592,8 +639,11 @@ def plan(
 
     previous_mode = os.environ.get("PETE_CLI_MODE")
     os.environ["PETE_CLI_MODE"] = "plan"
+    plan_id = -1
     try:
         plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Plan deployment")
     finally:
         if previous_mode is None:
             os.environ.pop("PETE_CLI_MODE", None)
