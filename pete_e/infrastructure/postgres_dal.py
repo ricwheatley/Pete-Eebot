@@ -375,10 +375,53 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, params)
             row = cur.fetchone() or {}
 
-        historical_rows = row.get("historical_rows") or []
+        def _normalise_date_fields(
+            records: Any, date_keys: Tuple[str, ...] = ("date",)
+        ) -> List[Any]:
+            """Ensure JSON-aggregated rows have :class:`date` instances where expected."""
+
+            if not isinstance(records, list):
+                return [] if records is None else list(records)
+
+            normalised: List[Any] = []
+            for record in records:
+                if not isinstance(record, dict):
+                    normalised.append(record)
+                    continue
+
+                updated = dict(record)
+                for key in date_keys:
+                    value = updated.get(key)
+                    if isinstance(value, date):
+                        continue
+                    if isinstance(value, datetime):
+                        updated[key] = value.date()
+                        continue
+                    if isinstance(value, str):
+                        try:
+                            updated[key] = date.fromisoformat(value)
+                        except ValueError:
+                            # Leave the original value untouched if it isn't ISO formatted.
+                            pass
+                normalised.append(updated)
+
+            return normalised
+
+        historical_rows = _normalise_date_fields(row.get("historical_rows") or [])
         planned_rows = row.get("planned_rows") or []
-        actual_rows = row.get("actual_rows") or []
+        actual_rows = _normalise_date_fields(row.get("actual_rows") or [])
         plan_info = row.get("plan")
+        if isinstance(plan_info, dict):
+            plan_info = dict(plan_info)
+            for key in ("start_date", "prior_week_start", "prior_week_end"):
+                value = plan_info.get(key)
+                if isinstance(value, datetime):
+                    plan_info[key] = value.date()
+                elif isinstance(value, str):
+                    try:
+                        plan_info[key] = date.fromisoformat(value)
+                    except ValueError:
+                        continue
 
         return {
             "plan": plan_info,
