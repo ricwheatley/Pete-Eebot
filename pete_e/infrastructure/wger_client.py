@@ -5,7 +5,6 @@ This module consolidates logic from the previous wger_client.py and wger_exporte
 """
 from __future__ import annotations
 import json
-import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +12,7 @@ import requests
 
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
+from pete_e.infrastructure.decorators import retry_on_network_error
 
 class WgerError(RuntimeError):
     """Custom exception for Wger API errors."""
@@ -50,40 +50,34 @@ class WgerClient:
     def _should_retry(self, status: int) -> bool:
         return status in (408, 429, 500, 502, 503, 504)
 
+    @retry_on_network_error(lambda self, status: self._should_retry(status), exception_types=(WgerError,))
     def _request(self, method: str, path: str, **kwargs) -> Any:
         """Internal request handler with retry logic."""
         url = self._url(path)
-        for attempt in range(self.max_retries):
-            try:
-                if self.debug_api:
-                    log_utils.debug(f"[wger.api] {method} {url} kwargs={kwargs}")
-                
-                response = requests.request(method=method.upper(), url=url, headers=self._headers(), timeout=self.timeout, **kwargs)
-                
-                if self.debug_api:
-                    log_utils.debug(f"[wger.api] <- {response.status_code} {response.text[:500]}")
 
-                if response.status_code in (200, 201):
-                    return response.json()
-                if response.status_code == 204:
-                    return None
-                
-                if not self._should_retry(response.status_code):
-                    raise WgerError(f"{method} {path} failed with {response.status_code}", response)
-                
-                # If retry is needed, wait and continue loop
-                sleep_for = self.backoff_base * (2 ** attempt)
-                log_utils.warn(f"[wger.api] transient {response.status_code} on {method} {path}, retrying in {sleep_for:.2f}s...")
-                time.sleep(sleep_for)
+        if self.debug_api:
+            log_utils.debug(f"[wger.api] {method} {url} kwargs={kwargs}")
 
-            except requests.exceptions.RequestException as exc:
-                if attempt == self.max_retries - 1:
-                    raise WgerError(f"{method} {path} failed after retries: {exc!r}") from exc
-                sleep_for = self.backoff_base * (2 ** attempt)
-                log_utils.warn(f"[wger.api] network error on {method} {path}: {exc!r}, retrying in {sleep_for:.2f}s...")
-                time.sleep(sleep_for)
+        try:
+            response = requests.request(
+                method=method.upper(),
+                url=url,
+                headers=self._headers(),
+                timeout=self.timeout,
+                **kwargs,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise WgerError(f"{method} {path} failed: {exc!r}") from exc
 
-        raise WgerError(f"{method} {path} failed after all retries.")
+        if self.debug_api:
+            log_utils.debug(f"[wger.api] <- {response.status_code} {response.text[:500]}")
+
+        if response.status_code in (200, 201):
+            return response.json()
+        if response.status_code == 204:
+            return None
+
+        raise WgerError(f"{method} {path} failed with {response.status_code}", response)
 
     def get_all_pages(self, path: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Fetches and aggregates results from all pages of a paginated endpoint."""
