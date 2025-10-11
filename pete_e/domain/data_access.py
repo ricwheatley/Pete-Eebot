@@ -56,6 +56,11 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
+        """Return all data required for validation for the supplied week."""
+        pass
+
+    @abstractmethod
     def refresh_daily_summary(self, days: int = 7) -> None:
         pass
 

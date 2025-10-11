@@ -21,6 +21,7 @@ from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
 from pete_e.domain.repositories import PlanRepository
+from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
 
 # --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
@@ -284,6 +285,107 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (start_date, end_date))
             return cur.fetchall()
+
+    def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
+        """Return all historical, planned, and actual data required for validation."""
+
+        if not isinstance(week_start, date):
+            raise TypeError("week_start must be a date instance")
+
+        observation_end = week_start - timedelta(days=1)
+        baseline_start = observation_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+        previous_week_start = week_start - timedelta(days=7)
+        previous_week_end = week_start - timedelta(days=1)
+
+        sql = """
+            WITH candidate_plan AS (
+                SELECT id, start_date, weeks
+                FROM training_plans
+                WHERE is_active = TRUE
+                ORDER BY id DESC
+                LIMIT 1
+            ),
+            fallback_plan AS (
+                SELECT id, start_date, weeks
+                FROM training_plans
+                WHERE start_date = %(week_start)s
+                ORDER BY id DESC
+                LIMIT 1
+            ),
+            selected_plan AS (
+                SELECT *
+                FROM (
+                    SELECT cp.id, cp.start_date, cp.weeks, 1 AS priority FROM candidate_plan cp
+                    UNION ALL
+                    SELECT fp.id, fp.start_date, fp.weeks, 2 AS priority FROM fallback_plan fp
+                ) ranked
+                ORDER BY priority
+                LIMIT 1
+            ),
+            plan_context AS (
+                SELECT
+                    sp.id AS plan_id,
+                    sp.start_date,
+                    sp.weeks,
+                    ((%(week_start)s::date - sp.start_date) / 7)::int + 1 AS upcoming_week_number,
+                    GREATEST(((%(week_start)s::date - sp.start_date) / 7)::int, 0) AS prior_week_number,
+                    %(previous_week_start)s::date AS prior_week_start,
+                    %(previous_week_end)s::date AS prior_week_end
+                FROM selected_plan sp
+            ),
+            historical AS (
+                SELECT ds.*
+                FROM daily_summary ds
+                WHERE ds.date BETWEEN %(baseline_start)s AND %(observation_end)s
+                ORDER BY ds.date ASC
+            ),
+            planned AS (
+                SELECT pmv.*
+                FROM plan_context pc
+                JOIN plan_muscle_volume pmv
+                  ON pmv.plan_id = pc.plan_id
+                 AND pmv.week_number = pc.prior_week_number
+                WHERE pc.prior_week_number > 0
+                ORDER BY pmv.muscle_id
+            ),
+            actual AS (
+                SELECT amv.*
+                FROM plan_context pc
+                JOIN actual_muscle_volume amv
+                  ON amv.date BETWEEN %(previous_week_start)s AND %(previous_week_end)s
+                WHERE pc.prior_week_number > 0
+                ORDER BY amv.date, amv.muscle_id
+            )
+            SELECT
+                COALESCE((SELECT json_agg(h) FROM historical h), '[]'::json) AS historical_rows,
+                COALESCE((SELECT json_agg(p) FROM planned p), '[]'::json) AS planned_rows,
+                COALESCE((SELECT json_agg(a) FROM actual a), '[]'::json) AS actual_rows,
+                (SELECT row_to_json(pc) FROM plan_context pc) AS plan
+        """
+
+        params = {
+            "week_start": week_start,
+            "baseline_start": baseline_start,
+            "observation_end": observation_end,
+            "previous_week_start": previous_week_start,
+            "previous_week_end": previous_week_end,
+        }
+
+        with self._get_cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone() or {}
+
+        historical_rows = row.get("historical_rows") or []
+        planned_rows = row.get("planned_rows") or []
+        actual_rows = row.get("actual_rows") or []
+        plan_info = row.get("plan")
+
+        return {
+            "plan": plan_info,
+            "historical_rows": historical_rows,
+            "planned_rows": planned_rows,
+            "actual_rows": actual_rows,
+        }
 
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM daily_summary ORDER BY date DESC LIMIT %s;"

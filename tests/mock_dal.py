@@ -1,10 +1,11 @@
 """Utilities for constructing DataAccessLayer test doubles."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from pete_e.domain.data_access import DataAccessLayer
+from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS, resolve_plan_context
 
 
 class MockableDal(DataAccessLayer):
@@ -61,6 +62,51 @@ class MockableDal(DataAccessLayer):
         self, start_date: date, end_date: date
     ) -> List[Dict[str, Any]]:
         return []
+
+    def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
+        observation_end = week_start - timedelta(days=1)
+        baseline_start = observation_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+        previous_week_start = week_start - timedelta(days=7)
+        previous_week_end = week_start - timedelta(days=1)
+
+        plan_record = self.get_active_plan() or self.find_plan_by_start_date(week_start)
+        plan_context = resolve_plan_context(plan_record, default_start=week_start)
+
+        historical_rows = self.get_historical_data(baseline_start, observation_end) or []
+        planned_rows: List[Dict[str, Any]] = []
+        actual_rows: List[Dict[str, Any]] = []
+
+        plan_payload: Optional[Dict[str, Any]] = None
+
+        if plan_context:
+            days_since_start = (week_start - plan_context.start_date).days
+            if days_since_start >= 0:
+                upcoming_week_number = (days_since_start // 7) + 1
+                prior_week_number = upcoming_week_number - 1
+                if prior_week_number > 0:
+                    planned_rows = (
+                        self.get_plan_muscle_volume(plan_context.plan_id, prior_week_number)
+                        or []
+                    )
+                    actual_rows = (
+                        self.get_actual_muscle_volume(previous_week_start, previous_week_end)
+                        or []
+                    )
+                plan_payload = {
+                    "plan_id": plan_context.plan_id,
+                    "start_date": plan_context.start_date,
+                    "upcoming_week_number": upcoming_week_number,
+                    "prior_week_number": prior_week_number,
+                    "prior_week_start": previous_week_start,
+                    "prior_week_end": previous_week_end,
+                }
+
+        return {
+            "plan": plan_payload,
+            "historical_rows": historical_rows,
+            "planned_rows": planned_rows,
+            "actual_rows": actual_rows,
+        }
 
     def refresh_daily_summary(self, days: int = 7) -> None:
         pass

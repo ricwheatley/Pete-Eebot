@@ -6,10 +6,10 @@ from typing import Dict, List, Optional
 
 from pete_e.domain.data_access import DataAccessLayer
 from pete_e.domain.validation import (
-    MAX_BASELINE_WINDOW_DAYS,
     PlanContext,
     ValidationDecision,
     collect_adherence_snapshot,
+    resolve_plan_context,
     validate_and_adjust_plan as domain_validate_and_adjust,
 )
 from pete_e.infrastructure import log_utils
@@ -29,18 +29,39 @@ class ValidationService:
         self._dal = dal
         self._plan_service = plan_service or ApplicationPlanService(dal)
 
-    def _load_historical_rows(self, week_start: date) -> List[Dict[str, object]]:
-        obs_end = week_start - timedelta(days=1)
-        base_start = obs_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
+    def _load_validation_payload(self, week_start: date) -> Dict[str, object]:
+        base: Dict[str, object] = {
+            "plan": None,
+            "historical_rows": [],
+            "planned_rows": [],
+            "actual_rows": [],
+        }
+
         try:
-            return self._dal.get_historical_data(start_date=base_start, end_date=obs_end)
+            payload = self._dal.get_data_for_validation(week_start)
         except Exception:
-            return []
+            return base
+
+        if not isinstance(payload, dict):
+            return base
+
+        merged = {**base, **payload}
+        for key in ("historical_rows", "planned_rows", "actual_rows"):
+            value = merged.get(key)
+            if isinstance(value, list):
+                continue
+            if value is None:
+                merged[key] = []
+            else:
+                merged[key] = list(value)
+        return merged
 
     def _build_adherence_snapshot(
         self,
         week_start: date,
         plan_context: Optional[PlanContext],
+        planned_rows: List[Dict[str, object]],
+        actual_rows: List[Dict[str, object]],
     ) -> Optional[Dict[str, object]]:
         if not plan_context:
             return None
@@ -55,19 +76,11 @@ class ValidationService:
         if prev_week_number <= 0:
             return None
 
-        try:
-            planned_rows = self._dal.get_plan_muscle_volume(plan_id, prev_week_number) or []
-        except Exception:
-            return None
         if not planned_rows:
             return None
 
         prev_week_start = week_start - timedelta(days=7)
         prev_week_end = week_start - timedelta(days=1)
-        try:
-            actual_rows = self._dal.get_actual_muscle_volume(prev_week_start, prev_week_end) or []
-        except Exception:
-            actual_rows = []
 
         return collect_adherence_snapshot(
             plan_context=plan_context,
@@ -82,8 +95,13 @@ class ValidationService:
         self, week_start: date
     ) -> Optional[Dict[str, object]]:
         """Expose adherence snapshot for consumers that need summary data."""
-        plan_context = self._plan_service.get_plan_context(week_start)
-        return self._build_adherence_snapshot(week_start, plan_context)
+        payload = self._load_validation_payload(week_start)
+        plan_context = resolve_plan_context(payload.get("plan"), default_start=week_start)
+        if plan_context is None:
+            plan_context = self._plan_service.get_plan_context(week_start)
+        planned_rows = payload.get("planned_rows", [])
+        actual_rows = payload.get("actual_rows", [])
+        return self._build_adherence_snapshot(week_start, plan_context, planned_rows, actual_rows)
 
     def validate_and_adjust_plan(
         self,
@@ -91,9 +109,19 @@ class ValidationService:
         *,
         apply_adjustment: bool = True,
     ) -> ValidationDecision:
-        plan_context = self._plan_service.get_plan_context(week_start)
-        historical_rows = self._load_historical_rows(week_start)
-        adherence_snapshot = self._build_adherence_snapshot(week_start, plan_context)
+        payload = self._load_validation_payload(week_start)
+        plan_context = resolve_plan_context(payload.get("plan"), default_start=week_start)
+        if plan_context is None:
+            plan_context = self._plan_service.get_plan_context(week_start)
+        historical_rows = payload.get("historical_rows", [])
+        planned_rows = payload.get("planned_rows", [])
+        actual_rows = payload.get("actual_rows", [])
+        adherence_snapshot = self._build_adherence_snapshot(
+            week_start,
+            plan_context,
+            planned_rows,
+            actual_rows,
+        )
 
         decision = domain_validate_and_adjust(
             historical_rows,
