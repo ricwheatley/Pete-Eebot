@@ -66,13 +66,155 @@ class PostgresDal(PlanRepository):
     # --- Plan & Block Management ---
     # ----------------------------------------------
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
-        raise NotImplementedError
+        if not isinstance(plan_dict, dict):
+            raise TypeError("plan_dict must be a mapping")
+
+        plan_weeks = plan_dict.get("plan_weeks")
+        if not isinstance(plan_weeks, list) or not plan_weeks:
+            raise ValueError("plan_dict must include a non-empty 'plan_weeks' list")
+
+        start_date = plan_dict.get("start_date")
+        if start_date is None:
+            raise ValueError("plan_dict must include a 'start_date'")
+
+        total_weeks = plan_dict.get("weeks")
+        if not isinstance(total_weeks, int):
+            total_weeks = len(plan_weeks)
+
+        def _coerce_int(value: Any) -> Optional[int]:
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                return int(value)
+            if isinstance(value, int):
+                return value
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _persist_workout(cur, week_id: int, payload: Dict[str, Any]) -> None:
+            day_of_week = _coerce_int(payload.get("day_of_week"))
+            if day_of_week is None:
+                raise ValueError("workout payload missing day_of_week")
+
+            exercise_id = _coerce_int(payload.get("exercise_id"))
+            sets = _coerce_int(payload.get("sets"))
+            reps = _coerce_int(payload.get("reps"))
+            rir = payload.get("rir")
+            rir_cue = payload.get("rir_cue")
+            if rir_cue is None:
+                rir_cue = rir
+            percent_1rm = payload.get("percent_1rm")
+            target_weight = payload.get("target_weight_kg")
+            scheduled_time = payload.get("scheduled_time") or payload.get("slot")
+            is_cardio = bool(payload.get("is_cardio"))
+
+            cur.execute(
+                """
+                INSERT INTO training_plan_workouts (
+                    week_id,
+                    day_of_week,
+                    exercise_id,
+                    sets,
+                    reps,
+                    rir,
+                    percent_1rm,
+                    target_weight_kg,
+                    rir_cue,
+                    scheduled_time,
+                    is_cardio
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    week_id,
+                    day_of_week,
+                    exercise_id,
+                    sets,
+                    reps,
+                    rir,
+                    percent_1rm,
+                    target_weight,
+                    rir_cue,
+                    scheduled_time,
+                    is_cardio,
+                ),
+            )
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=None) as cur:
+                try:
+                    conn.autocommit = False
+                    cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
+                    cur.execute(
+                        "INSERT INTO training_plans (start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
+                        (start_date, total_weeks),
+                    )
+                    plan_id = cur.fetchone()[0]
+
+                    for week_payload in sorted(plan_weeks, key=lambda item: item.get("week_number", 0)):
+                        week_number = _coerce_int(week_payload.get("week_number"))
+                        if week_number is None:
+                            raise ValueError("week payload missing week_number")
+                        is_test = bool(week_payload.get("is_test", False))
+                        cur.execute(
+                            "INSERT INTO training_plan_weeks (plan_id, week_number, is_test) VALUES (%s, %s, %s) RETURNING id;",
+                            (plan_id, week_number, is_test),
+                        )
+                        week_id = cur.fetchone()[0]
+
+                        workouts = week_payload.get("workouts") or []
+                        for workout in workouts:
+                            if not isinstance(workout, dict):
+                                raise TypeError("workouts must be mappings")
+                            _persist_workout(cur, week_id, workout)
+
+                    conn.commit()
+                    log_utils.info(
+                        f"Persisted training plan {plan_id} starting {start_date} spanning {total_weeks} week(s)."
+                    )
+                    return plan_id
+                except Exception:
+                    conn.rollback()
+                    raise
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
-        return []
+        sql = (
+            "SELECT assistance_exercise_id FROM assistance_pool WHERE main_exercise_id = %s ORDER BY assistance_exercise_id"
+        )
+        with self._get_cursor(use_dict_row=False) as cur:
+            cur.execute(sql, (main_lift_id,))
+            rows = cur.fetchall()
+            return [row[0] for row in rows]
 
     def get_core_pool_ids(self) -> List[int]:
-        return []
+        sql_primary = (
+            """
+            SELECT assistance_exercise_id
+            FROM assistance_pool
+            WHERE main_exercise_id IS NULL
+            ORDER BY assistance_exercise_id
+            """
+        )
+        with self._get_cursor(use_dict_row=False) as cur:
+            cur.execute(sql_primary)
+            rows = cur.fetchall()
+            if rows:
+                return [row[0] for row in rows]
+
+        sql_fallback = (
+            """
+            SELECT ex.id
+            FROM wger_exercise ex
+            JOIN wger_category cat ON cat.id = ex.category_id
+            WHERE LOWER(cat.name) LIKE 'core%%' OR LOWER(cat.name) LIKE 'abs%%'
+            ORDER BY ex.id
+            """
+        )
+        with self._get_cursor(use_dict_row=False) as cur:
+            cur.execute(sql_fallback)
+            return [row[0] for row in cur.fetchall()]
 
     def create_block_and_plan(self, start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
         with self.pool.connection() as conn:

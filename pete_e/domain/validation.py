@@ -8,8 +8,8 @@ from datetime import date, datetime, timedelta
 from statistics import median, mean
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
-from pete_e.config import settings
-from pete_e.infrastructure import log_utils
+from pete_e.domain.configuration import get_settings
+from pete_e.domain import logging as domain_logging
 from pete_e.utils import converters
 from pete_e.domain.entities import Plan
 
@@ -724,9 +724,10 @@ def assess_recovery_and_backoff(
     breach_ratios: List[float] = []
 
     # Thresholds come from settings and remain percentage deltas
-    rhr_allowed_inc = float(getattr(settings, "RHR_ALLOWED_INCREASE", 0.05))
-    sleep_allowed_dec = float(getattr(settings, "SLEEP_ALLOWED_DECREASE", 0.10))
-    hrv_allowed_dec = float(getattr(settings, "HRV_ALLOWED_DECREASE", 0.12))
+    domain_settings = get_settings()
+    rhr_allowed_inc = float(domain_settings.rhr_allowed_increase)
+    sleep_allowed_dec = float(domain_settings.sleep_allowed_decrease)
+    hrv_allowed_dec = float(domain_settings.hrv_allowed_decrease)
 
     # RHR breach ratio
     if avg_rhr_7d is not None and rhr_base and rhr_base > 0:
@@ -888,7 +889,7 @@ def validate_and_adjust_plan(
         if adherence.get('direction') != 'maintain' and adherence.get('reasons'):
             notes = '; '.join(adherence['reasons'])
             explanation = f"Recovery within dynamic baselines - no plan change applied. Notes: {notes}"
-        log_utils.log_message(explanation, 'INFO')
+        domain_logging.log_message(explanation, 'INFO')
         log_entries = list(adherence_log_entries)
         return ValidationDecision(
             needs_backoff=rec.needs_backoff,
@@ -933,7 +934,7 @@ def validate_and_adjust_plan(
             explanation += f" Reasons: {', '.join(combined_reasons)}."
         log_level = 'INFO'
 
-    log_utils.log_message(explanation, log_level)
+    domain_logging.log_message(explanation, log_level)
 
     return ValidationDecision(
         needs_backoff=rec.needs_backoff,

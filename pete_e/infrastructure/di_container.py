@@ -7,6 +7,8 @@ import inspect
 from typing import Any, Callable, Dict, Type
 
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.config import settings as app_settings
+from pete_e.domain.configuration import DomainSettings, configure as configure_domain
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
@@ -15,6 +17,21 @@ from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 from pete_e.infrastructure.withings_client import WithingsClient
+
+configure_domain(
+    DomainSettings(
+        progression_increment=app_settings.PROGRESSION_INCREMENT,
+        progression_decrement=app_settings.PROGRESSION_DECREMENT,
+        rhr_allowed_increase=app_settings.RHR_ALLOWED_INCREASE,
+        sleep_allowed_decrease=app_settings.SLEEP_ALLOWED_DECREASE,
+        hrv_allowed_decrease=app_settings.HRV_ALLOWED_DECREASE,
+        body_age_allowed_increase=app_settings.BODY_AGE_ALLOWED_INCREASE,
+        global_backoff_factor=app_settings.GLOBAL_BACKOFF_FACTOR,
+        baseline_days=app_settings.BASELINE_DAYS,
+        cycle_days=app_settings.CYCLE_DAYS,
+        phrases_path=app_settings.phrases_path,
+    )
+)
 
 ServiceType = Type[Any]
 Factory = Callable[["Container"], Any]
