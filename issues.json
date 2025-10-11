@@ -1,0 +1,43 @@
+{
+  "issues": [
+    {
+      "id": "SEC-API-KEY-001",
+      "severity": "high",
+      "category": "security",
+      "title": "API authentication allows empty secret",
+      "location": {"file": "pete_e/api.py", "start": 44, "end": 74},
+      "explanation": "validate_api_key compares the presented secret with settings.PETEEEBOT_API_KEY but accepts None as the configured value. When the environment variable is absent the comparison succeeds for missing keys, leaving endpoints unauthenticated.",
+      "proof": "key = x_api_key or request.query_params.get(\"api_key\"); if key != settings.PETEEEBOT_API_KEY: raise HTTPException ...",
+      "repro": "Unset PETEEEBOT_API_KEY and issue GET /status without an X-API-Key header; the call returns 200.",
+      "quick_fix": "Fail Fast during startup if settings.PETEEEBOT_API_KEY is falsy and update validate_api_key to reject empty secrets explicitly.",
+      "risks": "Anyone with network access can trigger sync jobs, inspect health data, or run other privileged workflows.",
+      "related_ids": []
+    },
+    {
+      "id": "SEC-WEBHOOK-002",
+      "severity": "high",
+      "category": "security",
+      "title": "Webhook secret and deploy command are hard-coded",
+      "location": {"file": "pete_e/api.py", "start": 1, "end": 210},
+      "explanation": "The module-level WEBHOOK_SECRET embeds a static byte string and subprocess.Popen invokes /home/ricwheatley/pete-eebot/deploy.sh. Attackers who know the repository can forge webhook requests and deployments fail outside the maintainer's host.",
+      "proof": "WEBHOOK_SECRET = b'supersecretwebhooktoken' and subprocess.Popen(['/home/ricwheatley/pete-eebot/deploy.sh'])",
+      "repro": "Inspect pete_e/api.py to see the inlined secret and absolute path.",
+      "quick_fix": "Load both values via configuration (environment or secrets manager), validate them on startup, and refuse to execute when unset.",
+      "risks": "Secrets leak to every install and the automation cannot run in other environments.",
+      "related_ids": ["SEC-API-KEY-001"]
+    },
+    {
+      "id": "QA-RUFF-001",
+      "severity": "medium",
+      "category": "ci",
+      "title": "ruff check . fails with existing code",
+      "location": {"file": "pete_e", "start": 1, "end": 1},
+      "explanation": "Running the configured linter reports dozens of errors (unused imports, redefinitions, etc.). Without addressing them, developers cannot rely on static analysis and CI gates stay red.",
+      "proof": "Executing `ruff check .` returns 82 errors across runtime and tests.",
+      "repro": "Run `ruff check .` in a clean checkout.",
+      "quick_fix": "Resolve or silence the reported diagnostics and ensure CI enforces the clean baseline.",
+      "risks": "Quality regressions go undetected and contributors are blocked by failing hooks.",
+      "related_ids": []
+    }
+  ]
+}
