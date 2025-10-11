@@ -1,152 +1,39 @@
-"""Telegram Bot API helpers for Pete-Eebot."""
+"""High-level helpers built on top of the Telegram client."""
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
-import requests
-
-from pete_e.config import settings
-from pete_e.infrastructure import log_utils
-
-_REQUEST_TIMEOUT_SECONDS = 10
+from pete_e.infrastructure.di_container import get_container
+from pete_e.infrastructure.telegram_client import TelegramClient
 
 
-def _secret_to_str(value: Any) -> str:
-    """Best-effort extraction of raw secret string values."""
-
-    if value is None:
-        return ""
-    getter = getattr(value, "get_secret_value", None)
-    if callable(getter):
-        try:
-            return getter()
-        except Exception:  # pragma: no cover - defensive
-            pass
-    return str(value)
+def _get_client(client: TelegramClient | None = None) -> TelegramClient:
+    if client is not None:
+        return client
+    return get_container().resolve(TelegramClient)
 
 
-def _scrub_sensitive(text: str) -> str:
-    """Redacts known Telegram credentials from the outgoing message."""
+def send_message(message: str, *, client: TelegramClient | None = None) -> bool:
+    """Send a message to Telegram using the shared client."""
 
-    sanitized = text or ""
-    for attr in ("TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"):
-        secret = getattr(settings, attr, None)
-        raw = _secret_to_str(secret)
-        if raw:
-            # Handle known Telegram Bot API URL patterns that embed the token directly.
-            for prefix in ("https://api.telegram.org/bot", "http://api.telegram.org/bot"):
-                sanitized = sanitized.replace(f"{prefix}{raw}", f"{prefix}[redacted]")
-            sanitized = sanitized.replace(f"bot{raw}", "bot[redacted]")
-            sanitized = sanitized.replace(raw, "[redacted]")
-    return sanitized
+    return _get_client(client).send_message(message)
 
 
-def send_message(message: str) -> bool:
-    """Send a message to the configured Telegram chat."""
+def get_updates(
+    *,
+    offset: int | None = None,
+    limit: int = 10,
+    timeout: int = 0,
+    client: TelegramClient | None = None,
+) -> list[dict]:
+    """Fetch Telegram updates via the shared client."""
 
-    token = _secret_to_str(getattr(settings, "TELEGRAM_TOKEN", None))
-    chat_id = _secret_to_str(getattr(settings, "TELEGRAM_CHAT_ID", None))
-
-    if not token or not chat_id:
-        log_utils.log_message(
-            "Telegram token or chat_id not configured. Cannot send message.",
-            "ERROR",
-        )
-        return False
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message or ""}
-    log_utils.log_message(f"Telegram payload preview: {payload}", "DEBUG")
-
-    try:
-        if len(payload["text"]) > 4096:
-            chunks = [
-                payload["text"][i : i + 4000] for i in range(0, len(payload["text"]), 4000)
-            ]
-            for chunk in chunks:
-                requests.post(
-                    url,
-                    json={**payload, "text": chunk},
-                    timeout=_REQUEST_TIMEOUT_SECONDS,
-                ).raise_for_status()
-            log_utils.log_message("Message split + sent in chunks.", "INFO")
-            return True
-
-        response = requests.post(url, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        log_utils.log_message("Successfully sent message to Telegram.", "INFO")
-        return True
-
-    except requests.exceptions.RequestException as exc:
-        error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
-        log_utils.log_message(
-            f"Failed to send message to Telegram: {error_details}",
-            "ERROR",
-        )
-        return False
+    return _get_client(client).get_updates(offset=offset, limit=limit, timeout=timeout)
 
 
-def get_updates(*, offset: int | None = None, limit: int = 10, timeout: int = 0) -> list[Dict[str, Any]]:
-    """Poll Telegram for new updates using the configured bot credentials."""
+def send_alert(message: str, *, client: TelegramClient | None = None) -> bool:
+    """Send a high-priority Telegram alert using the shared client."""
 
-    token = _secret_to_str(getattr(settings, "TELEGRAM_TOKEN", None))
-    if not token:
-        log_utils.log_message("Telegram token missing; cannot poll updates.", "WARN")
-        return []
-
-    url = f"https://api.telegram.org/bot{token}/getUpdates"
-    bounded_limit = max(1, min(100, int(limit)))
-    wait_timeout = max(0, int(timeout))
-    params: Dict[str, Any] = {"limit": bounded_limit, "timeout": wait_timeout}
-    if offset is not None:
-        params["offset"] = int(offset)
-
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            timeout=max(1, wait_timeout + 5),
-        )
-        response.raise_for_status()
-    except requests.exceptions.RequestException as exc:
-        error_details = _scrub_sensitive(str(exc).strip() or exc.__class__.__name__)
-        log_utils.log_message(
-            f"Failed to fetch Telegram updates: {error_details}",
-            "ERROR",
-        )
-        return []
-
-    try:
-        payload = response.json()
-    except ValueError:
-        log_utils.log_message("Telegram getUpdates returned invalid JSON.", "ERROR")
-        return []
-
-    if not isinstance(payload, dict) or not payload.get("ok"):
-        status = payload.get("description") if isinstance(payload, dict) else "unknown error"
-        log_utils.log_message(
-            _scrub_sensitive(f"Telegram getUpdates failed: {status}"),
-            "ERROR",
-        )
-        return []
-
-    results = payload.get("result", [])
-    if not isinstance(results, list):
-        log_utils.log_message("Telegram getUpdates payload missing result list.", "ERROR")
-        return []
-
-    return results
+    return _get_client(client).send_alert(message)
 
 
-def send_alert(message: str) -> bool:
-    """Sends a high-priority alert via Telegram, redacting secrets first."""
-
-    if not message:
-        log_utils.log_message("Skipping Telegram alert because the message was empty.", "WARN")
-        return False
-
-    sanitized = _scrub_sensitive(message.strip())
-    alert_text = f"[ALERT] {sanitized}"
-    return send_message(alert_text)
-
+__all__ = ["get_updates", "send_alert", "send_message"]

@@ -1,12 +1,10 @@
 ﻿from datetime import date
 
 import pytest
-from mocks.pydantic_mock import SecretStr
 
 from pete_e.domain import narrative_builder
 from pete_e.domain.narrative_builder import NarrativeBuilder
 from pete_e.infrastructure import telegram_sender
-from pete_e.config import settings
 
 
 class _DeterministicRandom:
@@ -151,23 +149,16 @@ def test_daily_summary_formats_extended_metrics(fixed_random, monkeypatch):
 
 
 def test_send_message_sends_plain_text(monkeypatch):
-    payload = {}
+    captured: list[str] = []
 
-    def fake_post(url, *, json, timeout):
-        payload["url"] = url
-        payload["json"] = json
+    class DummyClient:
+        def send_message(self, message: str) -> bool:
+            captured.append(message)
+            return True
 
-        class _Reply:
-            def raise_for_status(self):
-                return None
-
-        return _Reply()
-
-    monkeypatch.setattr("pete_e.infrastructure.telegram_sender.requests.post", fake_post)
-    monkeypatch.setattr(settings, "TELEGRAM_TOKEN", SecretStr("abc123"))
-    monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "chat-42")
+    monkeypatch.setattr(telegram_sender, "_get_client", lambda client=None: DummyClient())
 
     text = "Weight: 80.5kg (PR #1)! Gains + smiles."
     assert telegram_sender.send_message(text) is True
 
-    assert payload["json"] == {"chat_id": "chat-42", "text": text}
+    assert captured == [text]
