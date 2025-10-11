@@ -2,6 +2,7 @@ import sys
 import types
 
 import pytest
+from typer.testing import CliRunner
 
 
 # Provide a very small ``fastapi`` stub so the API module can be imported in tests
@@ -57,6 +58,8 @@ if "fastapi" not in sys.modules:
 
 
 from pete_e import api
+from pete_e.application.exceptions import DataAccessError, ValidationError
+from pete_e.cli import messenger as cli
 from pete_e.cli.status import CheckResult
 from pete_e.application.sync import SyncResult
 
@@ -143,4 +146,33 @@ def test_logs_endpoint_returns_tail(enable_api_key, request_stub, tmp_path, monk
 
     assert payload["path"].endswith("pete_history.log")
     assert payload["lines"] == ["line3", "line4"]
+
+
+def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+
+    def _explode(*_args, **_kwargs):
+        raise DataAccessError("database offline")
+
+    monkeypatch.setattr(cli, "run_sync_with_retries", _explode)
+
+    result = runner.invoke(cli.app, ["sync"])
+
+    assert result.exit_code == 4
+    assert "Manual sync failed: database offline" in result.stdout
+
+
+def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+
+    class _ExplodingOrchestrator:
+        def generate_and_deploy_next_plan(self, start_date, weeks):  # noqa: ARG002
+            raise ValidationError("plan validation failed")
+
+    monkeypatch.setattr(cli, "_build_orchestrator", lambda: _ExplodingOrchestrator())
+
+    result = runner.invoke(cli.app, ["plan"])
+
+    assert result.exit_code == 2
+    assert "Plan deployment failed: plan validation failed" in result.stdout
 
