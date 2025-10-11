@@ -1,12 +1,16 @@
 # Pinned runtime dependencies for Pete Eebot.
 # The versions mirror the pyproject.toml constraints and have been
 # validated on Raspberry Pi OS (64-bit, Bookworm) with Python 3.11.
+click==8.1.7
+dropbox==12.0.2
+fastapi==0.111.0
+Jinja2==3.1.4
 psycopg[binary,pool]==3.2.0
+python-dateutil==2.9.0.post0
 pydantic==2.8.2
 pydantic-settings==2.3.4
 requests==2.32.3
-typer[all]==0.12.3
-Jinja2==3.1.4
-python-dateutil==2.9.0.post0
+rich==13.7.1
 tenacity==8.5.0
-dropbox==11.36.0
+typer[all]==0.12.3
+uvicorn[standard]==0.29.0
