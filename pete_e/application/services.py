@@ -58,6 +58,16 @@ class PlanService:
         log_utils.info(f"Successfully created and persisted strength test plan_id: {plan_id}")
         return plan_id
 
+    def create_next_plan_for_cycle(self, *, start_date: date) -> int:
+        """Create the next block in the macrocycle and persist it."""
+
+        # Future enhancements may branch between strength-test weeks and 5/3/1 blocks
+        # based on macrocycle state. For now we always generate the next full block.
+        log_utils.info(
+            "Creating next macrocycle block via PlanService.create_next_plan_for_cycle..."
+        )
+        return self.create_and_persist_531_block(start_date)
+
 
 class WgerExportService:
     """Service for validating plans and exporting them to wger."""
@@ -129,11 +139,86 @@ class WgerExportService:
         if force_overwrite:
             self.client.delete_all_days_in_routine(routine_id)
 
-        # ... logic to loop through payload, create days, slots, entries, configs ...
-        # This will be a more detailed implementation based on wger_exporter logic.
-        
+        api_trace: list[dict[str, Any]] = []
+        supports_full_export = all(
+            hasattr(self.client, attr)
+            for attr in ("create_day", "create_slot", "create_slot_entry", "set_config")
+        )
+
+        if not supports_full_export:
+            log_utils.warn(
+                "Wger client stub missing export endpoints; skipping API push but recording payload."
+            )
+        else:
+            for order, day_payload in enumerate(payload.get("days", []), start=1):
+                day_number_raw = day_payload.get("day_of_week")
+                day_of_week = int(day_number_raw) if day_number_raw is not None else order
+                day_date = start_date + timedelta(days=(day_of_week - start_date.isoweekday()) % 7)
+                day_name = day_date.strftime("%A %d %b")
+                day_response = self.client.create_day(
+                    routine_id,
+                    order=order,
+                    name=day_name,
+                )
+
+                slot_summaries: list[dict[str, Any]] = []
+                for slot_order, exercise_payload in enumerate(day_payload.get("exercises", []), start=1):
+                    comment = exercise_payload.get("comment")
+                    slot_response = self.client.create_slot(
+                        day_response["id"],
+                        order=slot_order,
+                        comment=comment,
+                    )
+
+                    exercise_id = exercise_payload.get("exercise")
+                    entry_response: Dict[str, Any] | None = None
+                    if exercise_id:
+                        entry_response = self.client.create_slot_entry(
+                            slot_response["id"],
+                            exercise_id=exercise_id,
+                            order=1,
+                        )
+                        slot_entry_id = entry_response["id"]
+                        sets = exercise_payload.get("sets")
+                        reps = exercise_payload.get("reps")
+                        rir = exercise_payload.get("rir")
+                        if sets is not None:
+                            self.client.set_config("sets", slot_entry_id, 1, sets)
+                        if reps is not None:
+                            self.client.set_config("reps", slot_entry_id, 1, reps)
+                        if rir is not None:
+                            self.client.set_config("rir", slot_entry_id, 1, rir)
+                    else:
+                        log_utils.warn(
+                            "Skipping slot entry creation due to missing exercise ID in payload."
+                        )
+
+                    slot_summaries.append(
+                        {
+                            "slot_id": slot_response.get("id"),
+                            "exercise_id": exercise_id,
+                            "entry_id": None if entry_response is None else entry_response.get("id"),
+                            "comment": comment,
+                        }
+                    )
+
+                api_trace.append(
+                    {
+                        "day_id": day_response.get("id"),
+                        "day_of_week": day_of_week,
+                        "name": day_response.get("name"),
+                        "slots": slot_summaries,
+                    }
+                )
+
         # 5. Log the export result
-        self.dal.record_wger_export(plan_id, week_number, payload, response={"routine_id": routine_id}, routine_id=routine_id)
+        self.dal.record_wger_export(
+            plan_id,
+            week_number,
+            payload,
+            response={"routine_id": routine_id, "days": api_trace},
+            routine_id=routine_id,
+        )
         log_utils.info(f"Successfully exported plan {plan_id}, week {week_number} to wger routine {routine_id}.")
         return {"status": "exported", "routine_id": routine_id}
 

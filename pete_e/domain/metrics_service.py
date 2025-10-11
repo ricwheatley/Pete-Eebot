@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 from pete_e.domain.data_access import DataAccessLayer
-from pete_e.infrastructure import log_utils
+from pete_e.domain import logging as domain_logging
 from pete_e.utils import converters
 
 
@@ -228,7 +228,7 @@ def get_metrics_overview(
     reference = reference_date or date.today()
     history_fn = getattr(dal, "get_historical_data", None)
     if not callable(history_fn):
-        log_utils.log_message(
+        domain_logging.log_message(
             "DataAccessLayer does not expose get_historical_data; metrics overview unavailable.",
             "WARN",
         )
@@ -241,7 +241,7 @@ def get_metrics_overview(
     try:
         rows = history_fn(start_date, reference)
     except Exception as exc:
-        log_utils.log_message(f"Failed to load daily_summary history: {exc}", "ERROR")
+        domain_logging.log_message(f"Failed to load daily_summary history: {exc}", "ERROR")
         return {}
 
     if not rows:
@@ -258,7 +258,7 @@ def get_metrics_overview(
                 continue
             stats = _build_metric_stats(series, reference=reference)
         except Exception as exc:
-            log_utils.log_message(f"Failed to compute metric '{name}': {exc}", "WARN")
+            domain_logging.log_message(f"Failed to compute metric '{name}': {exc}", "WARN")
             continue
 
         if any(value is not None for value in stats.values()):
