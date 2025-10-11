@@ -111,6 +111,7 @@ MANIFEST
 # Environment variables file
 
 .env
+.withings_tokens.json
 
 
 
