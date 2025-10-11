@@ -13,6 +13,7 @@ from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngest
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 from pete_e.infrastructure.withings_client import WithingsClient
 
 ServiceType = Type[Any]
@@ -57,7 +58,10 @@ def _register_defaults(container: Container) -> None:
     container.register(PostgresDal, factory=lambda _c: PostgresDal())
     container.register(WgerClient, factory=lambda _c: WgerClient())
     container.register(AppleDropboxClient, factory=lambda _c: AppleDropboxClient())
-    container.register(WithingsClient, factory=lambda _c: WithingsClient())
+    container.register(
+        WithingsClient,
+        factory=lambda _c: WithingsClient(token_storage=JsonFileTokenStorage(WithingsClient.TOKEN_FILE)),
+    )
     container.register(TelegramClient, factory=lambda _c: TelegramClient())
     container.register(
         AppleHealthIngestor,
