@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     WGER_BASE_URL: str = "https://wger.de/api/v2"
     WGER_USERNAME: str | None = None
     WGER_PASSWORD: str | None = None
-
+    model_config = SettingsConfigDict(extra="ignore", env_prefix="")
     
     # --- DROPBOX (from environment) ---
     DROPBOX_HEALTH_METRICS_DIR: str
