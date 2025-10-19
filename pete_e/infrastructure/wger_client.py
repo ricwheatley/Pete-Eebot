@@ -1,10 +1,10 @@
-# pete_e/infrastructure/wger_client.py
 """
 A unified client for all read and write interactions with the wger API v2.
-This module consolidates logic from the previous wger_client.py and wger_exporter.py.
+This module consolidates logic from the previous implementations while offering
+both API key and username/password authentication flows.
 """
 from __future__ import annotations
-import json
+
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -14,55 +14,99 @@ from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.decorators import retry_on_network_error
 
+
+def _unwrap_secret(value: Any) -> Any:
+    """Return the plain value for SecretStr instances."""
+    if hasattr(value, "get_secret_value"):
+        try:
+            return value.get_secret_value()  # type: ignore[no-any-return]
+        except TypeError:
+            return value
+    return value
+
+
 class WgerError(RuntimeError):
     """Custom exception for Wger API errors."""
+
     def __init__(self, msg: str, resp: Optional[requests.Response] = None):
         super().__init__(msg)
         self.resp = resp
         self.status_code = None if resp is None else resp.status_code
         self.text = None if resp is None else (resp.text or "")
 
-class WgerClient:
-    def __init__(self):
-        # ✅ ensure base_url is defined
-        self.base_url = settings.WGER_BASE_URL.rstrip("/")
 
-        # ✅ read credentials or API key
+class WgerClient:
+    def __init__(self, *, timeout: float | None = None):
+        api_suffix = "/api/v2"
+        raw_base = settings.WGER_BASE_URL.rstrip("/")
+
+        if raw_base.lower().endswith(api_suffix):
+            trimmed = raw_base[: -len(api_suffix)]
+        else:
+            trimmed = raw_base
+
+        self.base_url = trimmed.rstrip("/") or trimmed
+        if not self.base_url:
+            raise WgerError("WGER_BASE_URL must include scheme and host.")
+
+        self.api_root = f"{self.base_url}{api_suffix}"
+
         self.api_key = settings.WGER_API_KEY
         self.username = getattr(settings, "WGER_USERNAME", None)
         self.password = getattr(settings, "WGER_PASSWORD", None)
 
-        # ✅ lazy load token if needed
-        self.jwt_token = None
-        self._access_token: str | None = None
-        
-        self.debug_api: bool = getattr(settings, "DEBUG_API", False)
+        self.timeout = timeout or getattr(settings, "WGER_TIMEOUT", 10.0)
+        self.max_retries = getattr(settings, "WGER_MAX_RETRIES", 3)
+        self.backoff_base = getattr(settings, "WGER_BACKOFF_BASE", 0.5)
 
-    def _get_jwt_token(self):
-        # Reuse token if still valid (<4 minutes old)
+        self._access_token: str | None = None
+        self._token_expiry: datetime | None = None
+
+        self.debug_api = bool(getattr(settings, "DEBUG_API", False))
+
+    def _get_jwt_token(self) -> str:
         if self._access_token and self._token_expiry and datetime.now(timezone.utc) < self._token_expiry:
             return self._access_token
 
-        url = f"{self.base_url}/api/v2/token"
-        data = {"username": settings.WGER_USERNAME, "password": settings.WGER_PASSWORD}
-        r = requests.post(url, data=data)
-        r.raise_for_status()
-        token_data = r.json()
+        username = _unwrap_secret(self.username)
+        password = _unwrap_secret(self.password)
+        if not username or not password:
+            raise WgerError("JWT auth requires WGER_USERNAME and WGER_PASSWORD.")
 
+        url = f"{self.api_root}/token"
+        data = {"username": username, "password": password}
+        response = requests.post(url, data=data, timeout=self.timeout)
+        response.raise_for_status()
+
+        token_data = response.json()
         self._access_token = token_data["access"]
-        # JWT default expiry = 5 minutes → refresh a bit early
+        # JWT default expiry is 5 minutes; refresh slightly early.
         self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=4)
         return self._access_token
 
     def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._get_jwt_token()}",
+        headers: Dict[str, str] = {
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
 
+        api_key = _unwrap_secret(self.api_key)
+        if api_key:
+            headers["Authorization"] = f"Token {api_key}"
+            return headers
+
+        if self.username and self.password:
+            headers["Authorization"] = f"Bearer {self._get_jwt_token()}"
+            return headers
+
+        raise WgerError("No authentication method configured for WgerClient.")
+
     def _url(self, path: str) -> str:
-        return f"{self.base_url}/api/v2{path if path.startswith('/') else '/' + path}"
+        if path.startswith("http://") or path.startswith("https://"):
+            return path
+
+        normalized = path if path.startswith("/") else f"/{path}"
+        return f"{self.api_root}{normalized}"
 
     def _should_retry(self, status: int) -> bool:
         return status in (408, 429, 500, 502, 503, 504)
@@ -101,18 +145,21 @@ class WgerClient:
         items: List[Dict[str, Any]] = []
         current_path = path
         current_params = params.copy() if params else {}
-        
+
         while current_path:
             data = self._request("GET", current_path, params=current_params)
-            if not isinstance(data, dict): break
-            
+            if not isinstance(data, dict):
+                break
+
             items.extend(data.get("results", []))
             next_url = data.get("next")
-            
+
             if next_url:
-                # The next URL contains the full path and params, so we reset them
-                current_path = next_url.replace(self.base_url, "")
-                current_params = {} 
+                if next_url.startswith(self.api_root):
+                    current_path = next_url.replace(self.api_root, "", 1)
+                else:
+                    current_path = next_url
+                current_params = {}
             else:
                 break
         return items
@@ -122,7 +169,7 @@ class WgerClient:
         """Fetches workout logs within a date range."""
         params = {
             "ordering": "date",
-            "limit": 200, # Max limit for wger
+            "limit": 200,  # Max limit for wger
             "date__gte": start_date.isoformat(),
             "date__lte": end_date.isoformat(),
         }
@@ -135,7 +182,7 @@ class WgerClient:
         existing = self._request("GET", "/routine/", params=params)
         if existing and existing.get("results"):
             return existing["results"][0]
-        
+
         payload = {"name": name, "description": description, "start": start.isoformat(), "end": end.isoformat()}
         return self._request("POST", "/routine/", json=payload)
 
@@ -170,7 +217,7 @@ class WgerClient:
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": iteration,
-            "value": str(value), # API expects string values for these
+            "value": str(value),  # API expects string values for these
             "operation": "r",
             "step": "na",
             "repeat": repeat,
