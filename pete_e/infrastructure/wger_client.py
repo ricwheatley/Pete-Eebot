@@ -34,6 +34,8 @@ class WgerClient:
 
         # ✅ lazy load token if needed
         self.jwt_token = None
+        
+        self.debug_api: bool = getattr(settings, "DEBUG_API", False)
 
     def _get_jwt_token(self):
         # Reuse token if still valid (<4 minutes old)
