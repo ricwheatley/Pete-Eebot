@@ -77,6 +77,7 @@ from pete_e.application.exceptions import (
     ValidationError,
 )
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.application.plan_generation import PlanGenerationService
 from pete_e.domain import body_age, narrative_builder
 from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
@@ -667,106 +668,56 @@ def lets_begin(
         ),
     ] = None,
 ) -> None:
-    """Start a new 13-week macrocycle and seed the strength test week."""
+    """
+    Start a new 13-week 5/3/1 macrocycle and seed the strength test week.
+    Uses the Orchestrator’s PlanGenerationService to build and export week 1.
+    """
+    from pete_e.application.orchestrator import Orchestrator
+    from pete_e.infrastructure import log_utils
 
-    orchestrator = _build_orchestrator()
+    # 🧠 Build orchestrator instance
+    orchestrator = Orchestrator()
 
-    resolved_start: date
+    # 🗓️ Determine start date
     if start_date:
         try:
             resolved_start = date.fromisoformat(start_date)
         except ValueError:
-            typer.echo("Invalid start date format. Please use YYYY-MM-DD.", err=True)
+            typer.echo("❌ Invalid start date format. Please use YYYY-MM-DD.", err=True)
             raise typer.Exit(code=1)
     else:
         today = date.today()
         days_until_monday = (0 - today.weekday()) % 7
         resolved_start = today + timedelta(days=days_until_monday)
 
-    message = (
-        "Starting new 13-week 5/3/1 macrocycle "
-        f"on {resolved_start:%Y-%m-%d}..."
+    typer.echo(f"🚀 Starting new 13-week 5/3/1 macrocycle on {resolved_start:%Y-%m-%d}...")
+    log_utils.log_message(
+        f"Starting new 13-week 5/3/1 macrocycle on {resolved_start.isoformat()}...",
+        "PLAN",
     )
-    log_utils.log_message(message, "INFO")
-    typer.echo("Starting new 13-week 5/3/1 macrocycle")
 
-    start_macrocycle = getattr(orchestrator, "start_new_macrocycle", None)
-    if callable(start_macrocycle):
-        try:
-            start_macrocycle(resolved_start)
-        except Exception as exc:
-            log_utils.log_message(f"Failed to start macrocycle: {exc}", "ERROR")
-            typer.echo(f"Failed to start macrocycle: {exc}", err=True)
-            raise typer.Exit(code=1)
-    else:
+    # 🏗️ Use orchestrator’s PlanGenerationService
+    if not getattr(orchestrator, "plan_generation_service", None):
+        typer.echo("❌ PlanGenerationService unavailable. Check orchestrator wiring.", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        orchestrator.plan_generation_service.run(start_date=resolved_start)
+        typer.echo("✅ Strength test week created and exported successfully!")
         log_utils.log_message(
-            "Orchestrator missing start_new_macrocycle; continuing with strength test only.",
-            "WARN",
+            f"Strength test week created successfully via lets-begin at {resolved_start}",
+            "PLAN",
         )
+    except Exception as exc:
+        log_utils.log_message(f"Failed to build or export plan: {exc}", "ERROR")
+        typer.echo(f"❌ Failed to build or export plan: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        orchestrator.close()
 
-    dal = getattr(orchestrator, "dal", None)
-    if dal is None:
-        log_utils.log_message(
-            "Orchestrator missing data access layer; skipping strength test week seeding.",
-            "WARN",
-        )
-    else:
-        try:
-            plan_id = orchestrator.plan_service.create_and_persist_strength_test_week(resolved_start)
-        except Exception as exc:
-            log_utils.log_message(f"Failed to build strength test week: {exc}", "ERROR")
-            typer.echo(f"Failed to build strength test week: {exc}", err=True)
-            raise typer.Exit(code=1)
-
-        if not plan_id:
-            log_utils.log_message(
-                "Strength test builder returned invalid plan identifier.", "ERROR"
-            )
-            typer.echo(
-                "Strength test builder returned invalid plan identifier.", err=True
-            )
-            raise typer.Exit(code=1)
-
-        mark_active = getattr(dal, "mark_plan_active", None)
-        if not callable(mark_active):
-            log_utils.log_message(
-                "Data access layer missing mark_plan_active; cannot activate plan.",
-                "ERROR",
-            )
-            typer.echo(
-                "Strength test plan created but could not be activated (missing DAL method).",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        try:
-            mark_active(plan_id)
-        except Exception as exc:
-            log_utils.log_message(
-                f"Failed to activate strength test plan {plan_id}: {exc}", "ERROR"
-            )
-            typer.echo(
-                f"Failed to activate strength test plan: {exc}",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        try:
-            push_week(dal, plan_id, week=1, start_date=resolved_start)
-        except Exception as exc:
-            log_utils.log_message(
-                f"Failed to export strength test plan {plan_id} to Wger: {exc}", "ERROR"
-            )
-            typer.echo(f"Failed to export strength test plan: {exc}", err=True)
-            raise typer.Exit(code=1)
-
-        log_utils.log_message(
-            f"Strength test week {plan_id} created via manual trigger.",
-            "INFO",
-        )
-        typer.echo("Strength test week created via manual trigger.")
-    typer.echo("New macrocycle started successfully!")
+    typer.echo("🎉 New macrocycle initialized successfully — allez, champion!")
     raise typer.Exit(code=0)
+
 
 
 @app.command()

@@ -1,7 +1,7 @@
 # pete_e/application/orchestrator.py
 """
-Main orchestrator for Pete-Eebot's core logic. This refactored version
-delegates tasks to specialized services for clarity and maintainability.
+Main orchestrator for Pete-Eebot's core logic.
+Delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
 from datetime import date, timedelta
@@ -16,6 +16,7 @@ from pete_e.application.exceptions import (
 )
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
+from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.validation import ValidationDecision
@@ -24,11 +25,13 @@ from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.di_container import Container, get_container
 
-# --- Result dataclasses can remain for clear return types ---
+
+# --- Result dataclasses (unchanged) ---
 @dataclass(frozen=True)
 class WeeklyCalibrationResult:
     message: str
     validation: ValidationDecision | None = None
+
 
 @dataclass(frozen=True)
 class CycleRolloverResult:
@@ -37,14 +40,16 @@ class CycleRolloverResult:
     exported: bool
     message: str | None = None
 
+
 @dataclass(frozen=True)
 class WeeklyAutomationResult:
     calibration: WeeklyCalibrationResult
     rollover: CycleRolloverResult | None
     rollover_triggered: bool
 
+
 class Orchestrator:
-    """Coordinates the weekly workflow by delegating to application services."""
+    """Coordinates Pete-Eebot workflows by delegating to application services."""
 
     def __init__(
         self,
@@ -53,11 +58,10 @@ class Orchestrator:
         validation_service: ValidationService | None = None,
         cycle_service: CycleService | None = None,
     ):
-        """
-        Initializes the orchestrator with the dependencies it requires.
-        """
+        """Initialize orchestrator dependencies."""
         container = container or get_container()
 
+        # Resolve shared dependencies
         self.dal = container.resolve(PostgresDal)
         self.wger_client = container.resolve(WgerClient)
         self.plan_service = container.resolve(PlanService)
@@ -65,6 +69,18 @@ class Orchestrator:
         self.daily_sync_service = container.resolve(DailySyncService)
         self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
+
+        # 🧩 NEW – integrated PlanGenerationService following same DI style
+        try:
+            self.plan_generation_service = PlanGenerationService(
+                dal_factory=lambda: self.dal,
+                wger_client_factory=lambda: self.wger_client,
+            )
+            log_utils.info("PlanGenerationService initialized successfully.")
+        except Exception as exc:  # defensive guard
+            self.plan_generation_service = None
+            log_utils.error(f"Failed to initialize PlanGenerationService: {exc}")
+
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
         """
