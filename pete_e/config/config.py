@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     WITHINGS_REFRESH_TOKEN: SecretStr
     WGER_API_KEY: SecretStr
     WGER_BASE_URL: str = "https://wger.de/api/v2"
+    WGER_USERNAME: str | None = None
+    WGER_PASSWORD: str | None = None
+
     
     # --- DROPBOX (from environment) ---
     DROPBOX_HEALTH_METRICS_DIR: str
