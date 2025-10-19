@@ -21,6 +21,7 @@ ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 T = TypeVar("T")
 
+print(f"[DEBUG] Loading .env from: {ENV_FILE_PATH} (exists={ENV_FILE_PATH.exists()})")
 
 class Settings(BaseSettings):
     """
