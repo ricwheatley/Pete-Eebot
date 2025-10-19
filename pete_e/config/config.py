@@ -13,8 +13,9 @@ from typing import Any, Callable, Optional, TypeVar
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-APP_ROOT = PROJECT_ROOT / "app"      
+CONFIG_FILE = Path(__file__).resolve()
+PROJECT_ROOT = next(p for p in CONFIG_FILE.parents if (p / ".env").exists())
+APP_ROOT = PROJECT_ROOT / "app"
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
