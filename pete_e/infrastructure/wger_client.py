@@ -34,6 +34,7 @@ class WgerClient:
 
         # ✅ lazy load token if needed
         self.jwt_token = None
+        self._access_token: str | None = None
         
         self.debug_api: bool = getattr(settings, "DEBUG_API", False)
 
