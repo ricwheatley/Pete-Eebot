@@ -23,10 +23,17 @@ class WgerError(RuntimeError):
         self.text = None if resp is None else (resp.text or "")
 
 class WgerClient:
-    def __init__(self, debug_api: bool = False):
-        ...
-        self._access_token: Optional[str] = None
-        self._token_expiry: Optional[datetime] = None
+    def __init__(self):
+        # ✅ ensure base_url is defined
+        self.base_url = settings.WGER_BASE_URL.rstrip("/")
+
+        # ✅ read credentials or API key
+        self.api_key = settings.WGER_API_KEY
+        self.username = getattr(settings, "WGER_USERNAME", None)
+        self.password = getattr(settings, "WGER_PASSWORD", None)
+
+        # ✅ lazy load token if needed
+        self.jwt_token = None
 
     def _get_jwt_token(self):
         # Reuse token if still valid (<4 minutes old)

@@ -18,7 +18,6 @@ PROJECT_ROOT = next(p for p in CONFIG_FILE.parents if (p / ".env").exists())
 APP_ROOT = PROJECT_ROOT / "app"
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
-print(f"[DEBUG] Loading .env from: {ENV_FILE_PATH} (exists={ENV_FILE_PATH.exists()})")
 
 T = TypeVar("T")
 
