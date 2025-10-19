@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import List
+from types import SimpleNamespace
 
 import pytest
 import requests
@@ -24,6 +24,16 @@ def _response(status: int, payload: dict | None = None) -> _FakeResponse:
     return _FakeResponse(status, payload)
 
 
+def _configured_client() -> WgerClient:
+    client = WgerClient()
+    client.base_url = "https://wger.de"
+    client.timeout = 5
+    client.debug_api = False
+    client.max_retries = 3
+    client.backoff_base = 0
+    return client
+
+
 def test_wger_client_retry_logic() -> None:
     client = WgerClient()
     retryable = [408, 429, 500, 502, 503, 504]
@@ -31,9 +41,19 @@ def test_wger_client_retry_logic() -> None:
     assert client._should_retry(404) is False  # type: ignore[attr-defined]
 
 
-def test_wger_client_request_retries_and_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
-    attempts: List[int] = []
+def test_wger_client_request_retries_and_succeeds(monkeypatch):
+    # --- Arrange ---
+    monkeypatch.setattr("pete_e.infrastructure.wger_client.settings", SimpleNamespace(
+        WGER_BASE_URL="https://wger.de/api/v2",
+        WGER_API_KEY="dummy-key",
+        WGER_USERNAME="user",
+        WGER_PASSWORD="pass",
+    ))
 
+    # Mock the JWT fetch to avoid network calls
+    monkeypatch.setattr("pete_e.infrastructure.wger_client.WgerClient._get_jwt_token", lambda self: "jwt123")
+
+    attempts = []
     responses = [
         requests.RequestException("boom"),
         requests.RequestException("slow"),
@@ -51,12 +71,24 @@ def test_wger_client_request_retries_and_succeeds(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(wger_client_module.requests, "request", fake_request, raising=False)
     monkeypatch.setattr("pete_e.infrastructure.decorators.time.sleep", lambda _: None)
 
-    client = WgerClient()
-    assert client._request("GET", "/test/") == {"ok": True}
+    # --- Act ---
+    client = _configured_client()
+    result = client._request("GET", "/test/")
+
+    # --- Assert ---
+    assert result == {"ok": True}
     assert len(attempts) == 3
 
 
-def test_wger_client_request_raises_after_non_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+
+def test_wger_client_request_raises_after_non_retryable(monkeypatch):
+    monkeypatch.setattr("pete_e.infrastructure.wger_client.settings", SimpleNamespace(
+        WGER_BASE_URL="https://wger.de/api/v2",
+        WGER_API_KEY="dummy-key",
+        WGER_USERNAME="user",
+        WGER_PASSWORD="pass",
+    ))
+    monkeypatch.setattr("pete_e.infrastructure.wger_client.WgerClient._get_jwt_token", lambda self: "jwt123")
     monkeypatch.setattr("pete_e.infrastructure.decorators.time.sleep", lambda _: None)
 
     def fake_request(*args, **kwargs):
@@ -64,6 +96,8 @@ def test_wger_client_request_raises_after_non_retryable(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(wger_client_module.requests, "request", fake_request, raising=False)
 
-    client = WgerClient()
-    with pytest.raises(WgerError):
+    client = _configured_client()
+    with pytest.raises(WgerError) as e:
         client._request("GET", "/missing/")
+    assert "404" in str(e.value)
+
