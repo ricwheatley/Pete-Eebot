@@ -2,10 +2,10 @@
 
 import json
 import random
+from pathlib import Path
 
-# Import centralized components
-from pete_e.config import settings
-from pete_e.infrastructure.log_utils import log_message
+from pete_e.domain.configuration import get_settings
+from pete_e.domain.logging import log_message
 
 # Global cache for phrases to avoid repeated file reads
 _all_phrases = None
@@ -15,7 +15,11 @@ def load_phrases():
     """Load phrases from JSON into memory (cached)."""
     global _all_phrases
     if _all_phrases is None:
-        phrases_path = settings.phrases_path
+        settings = get_settings()
+        phrases_path: Path | None = settings.phrases_path
+        if phrases_path is None:
+            log_message("Domain settings missing phrases_path; no phrases loaded", "WARN")
+            return []
         if not phrases_path.exists():
             log_message(f"Missing phrases file at {phrases_path}", "ERROR")
             # Return an empty list to prevent crashes, but log the error
