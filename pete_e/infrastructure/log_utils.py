@@ -14,6 +14,7 @@ _LEVEL_MAP: Dict[str, int] = {
     "WARN": logging.WARNING,
     "ERROR": logging.ERROR,
     "CRITICAL": logging.CRITICAL,
+    "PLAN": logging.INFO,
 }
 
 
