@@ -23,26 +23,33 @@ class WgerError(RuntimeError):
         self.text = None if resp is None else (resp.text or "")
 
 class WgerClient:
-    """Handles all communication with the wger API v2."""
-
     def __init__(self, debug_api: bool = False):
-        base_url = str(settings.WGER_BASE_URL).rstrip("/")
-        if base_url.endswith("/api/v2"):
-            base_url = base_url[:-len("/api/v2")]
-        self.base_url = base_url
-        
-        token = str(settings.WGER_API_KEY)
-        if not token:
-            raise WgerError("WGER_API_KEY is not set")
-        self.token = token
-        
-        self.timeout = 30
-        self.max_retries = 3
-        self.backoff_base = 0.75
-        self.debug_api = debug_api
+        ...
+        self._access_token: Optional[str] = None
+        self._token_expiry: Optional[datetime] = None
+
+    def _get_jwt_token(self):
+        # Reuse token if still valid (<4 minutes old)
+        if self._access_token and self._token_expiry and datetime.now(timezone.utc) < self._token_expiry:
+            return self._access_token
+
+        url = f"{self.base_url}/api/v2/token"
+        data = {"username": settings.WGER_USERNAME, "password": settings.WGER_PASSWORD}
+        r = requests.post(url, data=data)
+        r.raise_for_status()
+        token_data = r.json()
+
+        self._access_token = token_data["access"]
+        # JWT default expiry = 5 minutes → refresh a bit early
+        self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=4)
+        return self._access_token
 
     def _headers(self) -> Dict[str, str]:
-        return {"Authorization": f"Token {self.token}", "Accept": "application/json", "Content-Type": "application/json"}
+        return {
+            "Authorization": f"Bearer {self._get_jwt_token()}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/api/v2{path if path.startswith('/') else '/' + path}"
