@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
 
 from pete_e.domain import phrase_picker
-from pete_e.infrastructure import log_utils
+from pete_e.domain import logging as domain_logging
 from pete_e.utils import converters, math as math_utils
 
 MetricMap = Dict[str, Dict[str, Any]]
@@ -295,7 +295,7 @@ def _closing_phrase() -> str:
     try:
         phrase = phrase_picker.random_phrase(kind="motivational", mode="balanced")
     except Exception as exc:  # pragma: no cover - defensive guardrail
-        log_utils.log_message(f"Failed to pick closing phrase: {exc}", "WARN")
+        domain_logging.log_message(f"Failed to pick closing phrase: {exc}", "WARN")
         phrase = "Keep the effort honest, mon ami!"
     if not phrase.endswith("!"):
         phrase += "!"
