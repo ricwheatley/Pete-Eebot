@@ -14,9 +14,13 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CONFIG_FILE = Path(__file__).resolve()
-PROJECT_ROOT = next(p for p in CONFIG_FILE.parents if (p / ".env").exists())
+print(f"[DEBUG] CONFIG_FILE: {CONFIG_FILE}")
+print(f"[DEBUG] CONFIG_FILE.parents: {list(CONFIG_FILE.parents)}")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 APP_ROOT = PROJECT_ROOT / "app"
 ENV_FILE_PATH = PROJECT_ROOT / ".env"
+print(f"[DEBUG] ENV_FILE_PATH: {ENV_FILE_PATH} (exists={ENV_FILE_PATH.exists()})")
 
 
 T = TypeVar("T")
@@ -170,7 +174,7 @@ def _build_conninfo(params: dict[str, Any]) -> str:
 
 
 # Create a single, importable instance of the settings for the entire application.
-settings = Settings()
+# settings = Settings()
 
 
 def _coerce_secret(value: Any) -> Any:
