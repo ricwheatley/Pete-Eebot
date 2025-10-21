@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from typing_extensions import Protocol
 
@@ -47,8 +47,7 @@ class _LazyModuleProxy:
             object.__getattribute__(self, "__dict__")[key] = value
 
 
-messenger = _LazyModuleProxy("pete_e.cli.messenger")
-messenger.build_daily_summary = None  # type: ignore[attr-defined]
+messenger = cast(Any, _LazyModuleProxy("pete_e.cli.messenger"))
 
 
 class _OrchestratorProtocol(Protocol):
