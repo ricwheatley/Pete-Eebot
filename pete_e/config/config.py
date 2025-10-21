@@ -14,9 +14,50 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CONFIG_FILE = Path(__file__).resolve()
-PROJECT_ROOT = next(p for p in CONFIG_FILE.parents if (p / ".env").exists())
-APP_ROOT = PROJECT_ROOT / "app"
-ENV_FILE_PATH = PROJECT_ROOT / ".env"
+
+
+def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
+    """Return a project root and env file path without assuming ``.env`` exists.
+
+    The production deployment stores a ``.env`` file alongside the repository,
+    but that file is intentionally absent in development and CI.  The previous
+    implementation relied on ``next(...)`` to find the first parent directory
+    containing ``.env`` which raised ``StopIteration`` during tests.  Instead we
+    walk the parents looking for a ``.env`` file and gracefully fall back to the
+    repository root (detected via common project markers) when it is missing.
+    """
+
+    parents = list(config_file.parents)
+
+    for parent in parents:
+        env_file = parent / ".env"
+        if env_file.exists():
+            return parent, env_file
+
+    # Fall back to a sensible default if no .env is present.
+    for marker in ("pyproject.toml", ".git", "requirements.txt"):
+        for parent in parents:
+            if (parent / marker).exists():
+                return parent, parent / ".env"
+
+    # As a last resort, pick the immediate package parent.
+    fallback_root = parents[1] if len(parents) > 1 else parents[0]
+    return fallback_root, fallback_root / ".env"
+
+
+PROJECT_ROOT, ENV_FILE_PATH = _discover_project_root(CONFIG_FILE)
+
+
+def _discover_app_root(project_root: Path) -> Path:
+    """Resolve the root used for locating bundled application resources."""
+
+    for candidate in (project_root / "app", project_root):
+        if (candidate / "pete_e").exists():
+            return candidate
+    return project_root
+
+
+APP_ROOT = _discover_app_root(PROJECT_ROOT)
 
 
 T = TypeVar("T")
