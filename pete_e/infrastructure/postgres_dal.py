@@ -422,6 +422,20 @@ class PostgresDal(PlanRepository):
     # ----------------------------------------------
     # --- Metrics, Summaries & Views ---
     # ----------------------------------------------
+    def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
+        """Return the daily_summary row for a specific date."""
+        if not isinstance(target_date, date):
+            raise TypeError("target_date must be a date instance")
+
+        sql = "SELECT * FROM daily_summary WHERE date = %s LIMIT 1;"
+        with self._get_cursor() as cur:
+            cur.execute(sql, (target_date,))
+            row = cur.fetchone()
+
+        if not row:
+            return None
+        return dict(row)
+
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM daily_summary WHERE date BETWEEN %s AND %s ORDER BY date ASC;"
         with self._get_cursor() as cur:
