@@ -6,6 +6,7 @@ Delegates tasks to specialized services for clarity and maintainability.
 from __future__ import annotations
 from datetime import date, timedelta
 from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Sequence
 
 # --- NEW Clean Imports ---
 from pete_e.application.exceptions import (
@@ -14,16 +15,19 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
-from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
+from pete_e.domain import french_trainer, metrics_service
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
+from pete_e.domain.narrative_builder import NarrativeBuilder
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
-from pete_e.infrastructure.postgres_dal import PostgresDal
-from pete_e.infrastructure.wger_client import WgerClient
 from pete_e.infrastructure.di_container import Container, get_container
+from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.telegram_client import TelegramClient
+from pete_e.infrastructure.wger_client import WgerClient
 
 
 # --- Result dataclasses (unchanged) ---
@@ -57,6 +61,8 @@ class Orchestrator:
         container: Container | None = None,
         validation_service: ValidationService | None = None,
         cycle_service: CycleService | None = None,
+        telegram_client: TelegramClient | None = None,
+        narrative_builder: NarrativeBuilder | None = None,
     ):
         """Initialize orchestrator dependencies."""
         container = container or get_container()
@@ -69,6 +75,17 @@ class Orchestrator:
         self.daily_sync_service = container.resolve(DailySyncService)
         self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
+
+        try:
+            self.telegram_client = telegram_client or container.resolve(TelegramClient)
+        except KeyError:
+            self.telegram_client = telegram_client
+            if self.telegram_client is None:
+                log_utils.warn(
+                    "TelegramClient dependency is unavailable; Telegram sends will be disabled."
+                )
+
+        self.narrative_builder = narrative_builder or NarrativeBuilder()
 
         # 🧩 NEW – integrated PlanGenerationService following same DI style
         try:
@@ -218,3 +235,148 @@ class Orchestrator:
     def close(self):
         """Closes any open connections, like the database pool."""
         self.dal.close()
+
+    # ------------------------------------------------------------------
+    # Messaging helpers
+    # ------------------------------------------------------------------
+
+    def get_daily_summary(self, target_date: date | None = None) -> str:
+        """Return the rendered daily summary narrative for the chosen day."""
+
+        target = target_date or (date.today() - timedelta(days=1))
+        try:
+            summary_data = self.dal.get_daily_summary(target)
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to load daily summary for {target.isoformat()}: {exc}"
+            log_utils.error(message)
+            raise DataAccessError(message) from exc
+
+        if not summary_data:
+            return ""
+
+        builder = self.narrative_builder or NarrativeBuilder()
+        try:
+            return builder.build_daily_summary(summary_data)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to build daily summary for {target.isoformat()}: {exc}"
+            log_utils.error(message)
+            raise ApplicationError(message) from exc
+
+    def build_trainer_message(self, message_date: date | None = None) -> str:
+        """Compose Pierre's trainer check-in for the supplied date."""
+
+        target = message_date or date.today()
+        try:
+            metrics = metrics_service.get_metrics_overview(
+                self.dal, reference_date=target
+            )
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to load metrics for trainer message on {target.isoformat()}: {exc}"
+            log_utils.error(message)
+            raise DataAccessError(message) from exc
+
+        context = self._build_trainer_context(target)
+        try:
+            return french_trainer.compose_daily_message(metrics, context)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = f"Failed to compose trainer message for {target.isoformat()}: {exc}"
+            log_utils.error(message)
+            raise ApplicationError(message) from exc
+
+    def send_telegram_message(self, message: str) -> bool:
+        """Proxy to the Telegram client while providing defensive logging."""
+
+        if not message or not message.strip():
+            log_utils.warn("Skipping Telegram send because the message was empty.")
+            return False
+
+        if self.telegram_client is None:
+            log_utils.warn("No Telegram client available; cannot send message.")
+            return False
+
+        try:
+            return bool(self.telegram_client.send_message(message))
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.error(f"Telegram send failed: {exc}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _build_trainer_context(self, target: date) -> Dict[str, Any]:
+        """Construct contextual hints for the trainer narrative."""
+
+        context: Dict[str, Any] = {}
+        plan_rows = self._load_plan_for_day(target)
+        session_description = self._summarise_session(plan_rows)
+        if session_description:
+            context["today_session_type"] = session_description
+        return context
+
+    def _load_plan_for_day(self, target: date) -> Iterable[Dict[str, Any]]:
+        """Fetch the active plan rows for the given day, normalising shape."""
+
+        dal = getattr(self, "dal", None)
+        if dal is None or not hasattr(dal, "get_plan_for_day"):
+            return []
+
+        try:
+            columns, rows = dal.get_plan_for_day(target)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.warn(f"Failed to load plan for {target.isoformat()}: {exc}")
+            return []
+
+        if not rows:
+            return []
+
+        column_index = {name: idx for idx, name in enumerate(columns or [])}
+        normalised: List[Dict[str, Any]] = []
+        for row in rows:
+            if isinstance(row, dict):
+                normalised.append(dict(row))
+                continue
+            if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
+                continue
+            record: Dict[str, Any] = {}
+            for name, idx in column_index.items():
+                try:
+                    value = row[idx]
+                except (IndexError, TypeError):
+                    continue
+                record[name] = value
+            if record:
+                normalised.append(record)
+        return normalised
+
+    def _summarise_session(self, plan_rows: Iterable[Dict[str, Any]]) -> str | None:
+        """Generate a short descriptor for the day's planned training."""
+
+        rows = list(plan_rows)
+        if not rows:
+            return "Repos"
+
+        seen: List[str] = []
+        for row in rows:
+            name = row.get("exercise_name")
+            if not name:
+                continue
+            label = str(name).strip()
+            if not label:
+                continue
+            if label not in seen:
+                seen.append(label)
+            if len(seen) == 3:
+                break
+
+        if not seen:
+            return "Seance d'entraînement"
+        if len(seen) == 1:
+            return seen[0]
+        if len(seen) == 2:
+            return f"{seen[0]} & {seen[1]}"
+        return f"{seen[0]}, {seen[1]} + more"
