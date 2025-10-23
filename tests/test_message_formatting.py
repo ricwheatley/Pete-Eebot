@@ -148,6 +148,51 @@ def test_daily_summary_formats_extended_metrics(fixed_random, monkeypatch):
     assert bullet_lines == expected_lines
 
 
+def test_daily_narrative_highlights_key_metrics(fixed_random, monkeypatch):
+    monkeypatch.setattr(narrative_builder, "phrase_for", lambda **_: "Keep charging.")
+
+    metrics = {
+        "metrics": {
+            "weight": {
+                "metric_name": "weight",
+                "yesterday_value": 82.4,
+                "day_before_value": 82.1,
+                "abs_change_d1": 0.3,
+            },
+            "body_fat_pct": {
+                "metric_name": "body_fat_pct",
+                "yesterday_value": 18.2,
+                "day_before_value": 18.6,
+                "abs_change_d1": -0.4,
+            },
+            "cardio_recovery": {
+                "metric_name": "cardio_recovery",
+                "yesterday_value": 16.2,
+                "day_before_value": 15.0,
+                "abs_change_d1": 1.2,
+            },
+            "resting_heart_rate": {
+                "metric_name": "resting_heart_rate",
+                "yesterday_value": 51.0,
+                "day_before_value": 52.8,
+                "abs_change_d1": -1.8,
+            },
+            "strength_volume": {
+                "metric_name": "strength_volume",
+                "yesterday_value": 12340,
+                "abs_change_7d": 600,
+            },
+        }
+    }
+
+    message = narrative_builder.build_daily_narrative(metrics)
+
+    assert "Weight nudged up to 82.4kg" in message
+    assert "Body fat dipped to 18.2%" in message
+    assert "HR recovery popped to 16" in message
+    assert "Resting HR settled to 51 bpm" in message
+    assert "Barbell volume hit 12,340 kg" in message
+
 def test_send_message_sends_plain_text(monkeypatch):
     captured: list[str] = []
 

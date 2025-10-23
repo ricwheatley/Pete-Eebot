@@ -774,6 +774,47 @@ def message(
                 raise typer.Exit(code=1)
 
 
+@app.command("morning-report")
+def morning_report(
+    send: Annotated[
+        bool,
+        Option("--send", help="Send the morning report via Telegram.", is_flag=True),
+    ] = False,
+    target_date: Annotated[
+        Optional[str],
+        Option("--date", help="Override the default report date (YYYY-MM-DD)."),
+    ] = None,
+) -> None:
+    """Generate the conversational morning report and optionally send it."""
+
+    orchestrator = _build_orchestrator()
+
+    resolved_date: date | None = None
+    if target_date:
+        try:
+            resolved_date = date.fromisoformat(target_date)
+        except ValueError:
+            typer.echo(
+                "Invalid date supplied to --date. Use YYYY-MM-DD.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+    report = orchestrator.get_daily_summary(target_date=resolved_date)
+    if not report.strip():
+        typer.echo("No morning report is available yet. Give the sync a minute.")
+        raise typer.Exit(code=0)
+
+    typer.echo("--- Morning Report ---")
+    typer.echo(report)
+
+    if send:
+        try:
+            send_daily_summary(orchestrator=orchestrator, summary_text=report)
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            log_utils.log_message(f"Failed to send morning report via Telegram: {exc}", "ERROR")
+            raise typer.Exit(code=1)
+
 @app.command("refresh-withings")
 def refresh_withings_tokens() -> None:
     """
