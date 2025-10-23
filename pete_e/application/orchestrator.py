@@ -4,9 +4,10 @@ Main orchestrator for Pete-Eebot's core logic.
 Delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Sequence
+from decimal import Decimal
+from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 # --- NEW Clean Imports ---
 from pete_e.application.exceptions import (
@@ -21,7 +22,7 @@ from pete_e.application.validation_service import ValidationService
 from pete_e.domain import french_trainer, metrics_service
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
-from pete_e.domain.narrative_builder import NarrativeBuilder
+from pete_e.domain.narrative_builder import NarrativeBuilder, build_daily_narrative
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import Container, get_container
@@ -50,6 +51,29 @@ class WeeklyAutomationResult:
     calibration: WeeklyCalibrationResult
     rollover: CycleRolloverResult | None
     rollover_triggered: bool
+
+
+def _coerce_metric_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _build_metrics_overview_payload(
+    *, columns: Sequence[str], rows: Iterable[Sequence[Any]], reference_date: date
+) -> Dict[str, Any]:
+    metrics: Dict[str, Dict[str, Any]] = {}
+    for raw_row in rows or []:
+        entry = {str(column): _coerce_metric_value(raw_row[idx]) for idx, column in enumerate(columns)}
+        metric_name = entry.get("metric_name")
+        if not metric_name:
+            continue
+        metrics[str(metric_name)] = entry
+
+    return {
+        "reference_date": reference_date,
+        "metrics": metrics,
+    }
 
 
 class Orchestrator:
@@ -241,26 +265,32 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def get_daily_summary(self, target_date: date | None = None) -> str:
-        """Return the rendered daily summary narrative for the chosen day."""
+        """Return the conversational morning narrative for the chosen day."""
 
         target = target_date or (date.today() - timedelta(days=1))
+
         try:
-            summary_data = self.dal.get_daily_summary(target)
+            columns, rows = self.dal.get_metrics_overview(target)
         except ApplicationError:
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to load daily summary for {target.isoformat()}: {exc}"
+            message = f"Failed to load metrics overview for {target.isoformat()}: {exc}"
             log_utils.error(message)
             raise DataAccessError(message) from exc
 
-        if not summary_data:
-            return ""
+        metrics_payload = _build_metrics_overview_payload(
+            columns=columns or [],
+            rows=rows or [],
+            reference_date=target,
+        )
 
         builder = self.narrative_builder or NarrativeBuilder()
         try:
-            return builder.build_daily_summary(summary_data)
+            if hasattr(builder, "build_daily_narrative"):
+                return builder.build_daily_narrative(metrics_payload)
+            return build_daily_narrative(metrics=metrics_payload)
         except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to build daily summary for {target.isoformat()}: {exc}"
+            message = f"Failed to build daily narrative for {target.isoformat()}: {exc}"
             log_utils.error(message)
             raise ApplicationError(message) from exc
 
