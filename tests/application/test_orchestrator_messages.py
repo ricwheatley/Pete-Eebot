@@ -12,21 +12,29 @@ from tests.di_utils import build_stub_container
 
 
 class _SummaryDal:
-    def __init__(self, summary_payload: dict[str, object]):
-        self.summary_payload = summary_payload
-        self.summary_requests: list[date] = []
+    def __init__(self, overview_rows: list[dict[str, object]]):
+        self.overview_rows = overview_rows
+        self.overview_requests: list[date] = []
 
-    def get_daily_summary(self, target_date: date):
-        self.summary_requests.append(target_date)
-        return self.summary_payload
+    def get_metrics_overview(self, target_date: date):
+        self.overview_requests.append(target_date)
+        if not self.overview_rows:
+            return ["metric_name"], []
+
+        columns = list(self.overview_rows[0].keys())
+        rows = [tuple(row.get(col) for col in columns) for row in self.overview_rows]
+        return columns, rows
 
     def close(self):  # pragma: no cover - compatibility
         pass
 
+    def get_historical_data(self, start_date: date, end_date: date):  # pragma: no cover - used in tests
+        return []
+
 
 class _TrainerDal(_SummaryDal):
-    def __init__(self, summary_payload: dict[str, object], *, plan_rows):
-        super().__init__(summary_payload)
+    def __init__(self, overview_rows: list[dict[str, object]], *, plan_rows):
+        super().__init__(overview_rows)
         self.plan_rows = plan_rows
         self.history_requests: list[tuple[date, date]] = []
 
@@ -48,9 +56,9 @@ class _NarrativeBuilder:
     def __init__(self):
         self.calls: list[dict[str, object]] = []
 
-    def build_daily_summary(self, summary_data: dict[str, object]) -> str:
-        self.calls.append(summary_data)
-        return "rendered-summary"
+    def build_daily_narrative(self, metrics: dict[str, object]) -> str:
+        self.calls.append(metrics)
+        return "rendered-narrative"
 
 
 class _StubTelegram(TelegramClient):
@@ -83,17 +91,23 @@ def _orchestrator_for(
 
 
 def test_get_daily_summary_uses_builder():
-    payload = {"date": date(2024, 5, 3), "weight_kg": 82.0}
-    dal = _SummaryDal(payload)
+    overview_rows = [
+        {
+            "metric_name": "weight",
+            "yesterday_value": 82.0,
+            "day_before_value": 81.7,
+        }
+    ]
+    dal = _SummaryDal(overview_rows)
     builder = _NarrativeBuilder()
 
     orch = _orchestrator_for(dal, narrative_builder=builder)
 
     result = orch.get_daily_summary(target_date=date(2024, 5, 2))
 
-    assert result == "rendered-summary"
-    assert dal.summary_requests == [date(2024, 5, 2)]
-    assert builder.calls == [payload]
+    assert result == "rendered-narrative"
+    assert dal.overview_requests == [date(2024, 5, 2)]
+    assert builder.calls and "metrics" in builder.calls[0]
 
 
 @pytest.mark.parametrize(
@@ -104,8 +118,8 @@ def test_get_daily_summary_uses_builder():
     ],
 )
 def test_build_trainer_message_includes_session(plan_rows, expected_fragment):
-    payload = {"date": date(2024, 5, 3)}
-    dal = _TrainerDal(payload, plan_rows=plan_rows)
+    overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
+    dal = _TrainerDal(overview_rows, plan_rows=plan_rows)
     telegram = _StubTelegram()
 
     orch = _orchestrator_for(dal, telegram_client=telegram)
@@ -117,8 +131,8 @@ def test_build_trainer_message_includes_session(plan_rows, expected_fragment):
 
 
 def test_send_telegram_message_uses_client():
-    payload = {"date": date(2024, 5, 3)}
-    dal = _SummaryDal(payload)
+    overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
+    dal = _SummaryDal(overview_rows)
     telegram = _StubTelegram()
 
     orch = _orchestrator_for(dal, telegram_client=telegram)

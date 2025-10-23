@@ -771,7 +771,7 @@ def compare_text(current, previous, unit: str = "", context: str = "") -> str:
 # Daily / Weekly / Cycle summaries
 # -------------------------------------------------------------------------
 
-def build_daily_narrative(metrics: Dict[str, Any]) -> str:
+def _build_daily_narrative_from_days(metrics: Mapping[str, Any]) -> str:
     days = metrics.get("days", {})
     if not days:
         return "Morning mate 👋\n\nNo logs found for yesterday. Did you rest? 😴"
@@ -789,31 +789,54 @@ def build_daily_narrative(metrics: Dict[str, Any]) -> str:
 
     insights: List[str] = []
 
-    # Strength
+    def _as_float(value: Any, digits: int | None = None) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if digits is None:
+            return number
+        return round(number, digits)
+
     if "strength" in today_data:
-        total_vol = sum(ex["volume_kg"] for ex in today_data["strength"])
-        prev_vol = sum(ex["volume_kg"] for ex in prev_data.get("strength", [])) if prev_data else None
-        insights.append(f"You lifted {compare_text(int(total_vol), int(prev_vol) if prev_vol else None, 'kg')}.")
+        total_vol = sum(ex.get("volume_kg", 0) for ex in today_data["strength"])
+        prev_strength = prev_data.get("strength", []) if prev_data else []
+        prev_vol = sum(ex.get("volume_kg", 0) for ex in prev_strength) if prev_strength else None
+        if total_vol:
+            current_vol = int(total_vol)
+            previous_vol = int(prev_vol) if prev_vol else None
+            lift_text = compare_text(current_vol, previous_vol, "kg", "on the bar")
+            insights.append(f"Lifts totalled {lift_text}.")
 
-    # Steps
-    steps = today_data.get("activity", {}).get("steps")
-    prev_steps = prev_data.get("activity", {}).get("steps") if prev_data else None
-    if steps:
-        insights.append(f"You did {compare_text(int(steps), prev_steps, 'steps', 'yesterday')}.")
+    recovery = today_data.get("recovery", {}) if isinstance(today_data, dict) else {}
+    prev_recovery = prev_data.get("recovery", {}) if isinstance(prev_data, dict) else {}
 
-    # Sleep
-    sleep = today_data.get("sleep", {}).get("asleep_minutes")
-    prev_sleep = prev_data.get("sleep", {}).get("asleep_minutes") if prev_data else None
-    if sleep:
-        hrs = round(sleep / 60)
-        prev_hrs = round(prev_sleep / 60) if prev_sleep else None
-        insights.append(f"You slept {compare_text(hrs, prev_hrs, 'h')}.")
+    cardio = _as_float(recovery.get("cardio_recovery"))
+    if cardio is not None:
+        prev_cardio = _as_float(prev_recovery.get("cardio_recovery"))
+        cardio_text = compare_text(round(cardio), round(prev_cardio) if prev_cardio is not None else None, "bpm", "this morning")
+        insights.append(f"HR recovery clocked {cardio_text}.")
 
-    # Weight
-    weight = today_data.get("body", {}).get("weight_kg")
-    prev_weight = prev_data.get("body", {}).get("weight_kg") if prev_data else None
-    if weight:
-        insights.append(f"Weight came in at {compare_text(round(weight, 1), round(prev_weight, 1) if prev_weight else None, 'kg')}.")
+    resting_hr = _as_float(recovery.get("hr_resting"))
+    if resting_hr is not None:
+        prev_resting = _as_float(prev_recovery.get("hr_resting"))
+        resting_text = compare_text(round(resting_hr), round(prev_resting) if prev_resting is not None else None, "bpm", "overnight")
+        insights.append(f"Resting HR sat at {resting_text}.")
+
+    body = today_data.get("body", {}) if isinstance(today_data, dict) else {}
+    prev_body = prev_data.get("body", {}) if isinstance(prev_data, dict) else {}
+
+    weight = _as_float(body.get("weight_kg"), digits=1)
+    if weight is not None:
+        prev_weight = _as_float(prev_body.get("weight_kg"), digits=1)
+        weight_text = compare_text(weight, prev_weight, "kg", "on the scale")
+        insights.append(f"Weight {weight_text}.")
+
+    fat_pct = _as_float(body.get("body_fat_pct"), digits=1)
+    if fat_pct is not None:
+        prev_fat = _as_float(prev_body.get("body_fat_pct"), digits=1)
+        fat_text = compare_text(fat_pct, prev_fat, "%", "today")
+        insights.append(f"Body fat sits at {fat_text}.")
 
     if not insights:
         return f"{greeting}\n\nNo major metrics logged yesterday."
@@ -821,6 +844,195 @@ def build_daily_narrative(metrics: Dict[str, Any]) -> str:
     phrase = phrase_for(tags=["#Motivation"])
     sprinkles = [phrase_for(tags=["#Humour"]) for _ in range(random.randint(1, 2))]
     return f"{greeting}\n\n" + narrative_utils.stitch_sentences(insights, [phrase] + sprinkles)
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_weight_line(metric: Mapping[str, Any] | None) -> str | None:
+    if not metric:
+        return None
+    current = _as_float(metric.get("yesterday_value"))
+    if current is None:
+        return None
+    prev = _as_float(metric.get("day_before_value"))
+    change = _as_float(metric.get("abs_change_d1"))
+    avg_7d = _as_float(metric.get("moving_avg_7d"))
+    avg_28d = _as_float(metric.get("moving_avg_28d"))
+
+    if change is not None and prev is not None and abs(change) >= 0.25:
+        verb = "nudged up" if change > 0 else "came down"
+        return f"Weight {verb} to {current:.1f}kg ({change:+.1f} vs yesterday)."
+
+    if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 0.25:
+        direction = "running lighter" if avg_7d < avg_28d else "running heavier"
+        return f"Weight sits at {current:.1f}kg, {direction} than the 28d pace."
+
+    return f"Weight steady at {current:.1f}kg."
+
+
+def _format_body_fat_line(metric: Mapping[str, Any] | None) -> str | None:
+    if not metric:
+        return None
+    current = _as_float(metric.get("yesterday_value"))
+    if current is None:
+        return None
+    prev = _as_float(metric.get("day_before_value"))
+    change = _as_float(metric.get("abs_change_d1"))
+    avg_7d = _as_float(metric.get("moving_avg_7d"))
+    avg_28d = _as_float(metric.get("moving_avg_28d"))
+
+    if change is not None and prev is not None and abs(change) >= 0.3:
+        verb = "dipped" if change < 0 else "nudged up"
+        return f"Body fat {verb} to {current:.1f}% ({change:+.1f} pts vs yesterday)."
+
+    if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 0.3:
+        direction = "trending leaner" if avg_7d < avg_28d else "trending softer"
+        return f"Body fat holds at {current:.1f}% with the 7d average {direction} than 28d."
+
+    return f"Body fat parked at {current:.1f}%."
+
+
+def _format_recovery_line(metric: Mapping[str, Any] | None) -> str | None:
+    if not metric:
+        return None
+    current = _as_float(metric.get("yesterday_value"))
+    if current is None:
+        return None
+    prev = _as_float(metric.get("day_before_value"))
+    change = _as_float(metric.get("abs_change_d1"))
+    avg_7d = _as_float(metric.get("moving_avg_7d"))
+    avg_28d = _as_float(metric.get("moving_avg_28d"))
+
+    value = round(current)
+    if change is not None and prev is not None and abs(change) >= 0.75:
+        verb = "popped to" if change > 0 else "slipped to"
+        return f"HR recovery {verb} {value:.0f} bpm ({change:+.0f} vs yesterday)."
+
+    if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 0.5:
+        direction = "running hotter" if avg_7d > avg_28d else "easing back"
+        return f"HR recovery at {value:.0f} bpm with the 7d average {direction} than 28d."
+
+    return f"HR recovery holding at {value:.0f} bpm."
+
+
+def _format_resting_hr_line(metric: Mapping[str, Any] | None) -> str | None:
+    if not metric:
+        return None
+    current = _as_float(metric.get("yesterday_value"))
+    if current is None:
+        return None
+    prev = _as_float(metric.get("day_before_value"))
+    change = _as_float(metric.get("abs_change_d1"))
+    avg_7d = _as_float(metric.get("moving_avg_7d"))
+    avg_28d = _as_float(metric.get("moving_avg_28d"))
+
+    value = round(current)
+    if change is not None and prev is not None and abs(change) >= 1.0:
+        verb = "climbed" if change > 0 else "settled"
+        return f"Resting HR {verb} to {value:.0f} bpm ({change:+.0f} vs yesterday)."
+
+    if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 0.8:
+        direction = "trending down" if avg_7d < avg_28d else "running a touch high"
+        return f"Resting HR sitting around {value:.0f} bpm, {direction} versus the 28d rhythm."
+
+    return f"Resting HR steady around {value:.0f} bpm."
+
+
+def _format_strength_line(metric: Mapping[str, Any] | None) -> str | None:
+    if not metric:
+        return None
+
+    current = _as_float(metric.get("yesterday_value"))
+    avg_7d = _as_float(metric.get("moving_avg_7d"))
+    avg_28d = _as_float(metric.get("moving_avg_28d"))
+    change_7d = _as_float(metric.get("abs_change_7d"))
+
+    if current and current > 0:
+        volume = int(round(current))
+        if change_7d is not None and abs(change_7d) >= 250:
+            direction = "up" if change_7d > 0 else "down"
+            comparison = "up" if change_7d > 0 else "off"
+            return (
+                f"Barbell volume hit {volume:,} kg, {comparison} versus last week's pace."
+                if direction == "up"
+                else f"Barbell volume logged {volume:,} kg, easing off versus last week."
+            )
+
+        if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 200:
+            direction = "running hotter" if avg_7d > avg_28d else "easing back"
+            return f"Barbell volume landed at {volume:,} kg with the 7d average {direction}."
+
+        return f"Barbell volume stacked {volume:,} kg yesterday."
+
+    if avg_7d is not None and avg_28d is not None and abs(avg_7d - avg_28d) >= 200:
+        direction = "higher" if avg_7d > avg_28d else "lighter"
+        return f"No lifts logged yesterday, but the 7d volume is {direction} than the 28d baseline."
+
+    return None
+
+
+def _build_daily_narrative_from_metrics(metrics: Mapping[str, Any]) -> str:
+    metrics_map = metrics.get("metrics") if isinstance(metrics, Mapping) else None
+    if not isinstance(metrics_map, Mapping) or not metrics_map:
+        return "Morning Ric ☀️\n\nNo fresh metrics yet. Give the sync a moment."
+
+    get_metric = lambda key: metrics_map.get(key)
+
+    sentences: List[str] = []
+    for formatter, key in (
+        (_format_weight_line, "weight"),
+        (_format_body_fat_line, "body_fat_pct"),
+        (_format_recovery_line, "cardio_recovery"),
+        (_format_resting_hr_line, "resting_heart_rate"),
+        (_format_strength_line, "strength_volume"),
+    ):
+        line = formatter(get_metric(key))
+        if line:
+            sentences.append(line)
+
+    if not sentences:
+        sentences.append("No major shifts logged yesterday – call it a consolidation day.")
+
+    opener = helpers.choose_from(
+        [
+            "Morning Ric ☀️",
+            "Morning Ric – clipboard in hand",
+            "Morning Ric, coffee's on",
+        ],
+        "Morning Ric",
+        rand=random,
+    )
+
+    first_sentence = sentences[0]
+    tail = " ".join(sentences[1:])
+    body = f"{first_sentence}" if not tail else f"{first_sentence} {tail}"
+
+    message_lines = [f"{opener} – {body}"]
+
+    closers = _closing_phrases(
+        ["#Motivation"],
+        "Keep the cadence playful today.",
+        secondary_tags=["#Humour"],
+        secondary_fallback="And hey, espresso counts as mobility warm-up.",
+    )
+    if closers:
+        message_lines.append("")
+        message_lines.extend(closers)
+
+    return "\n".join(message_lines).strip()
+
+
+def build_daily_narrative(metrics: Dict[str, Any]) -> str:
+    if "metrics" in metrics:
+        return _build_daily_narrative_from_metrics(metrics)
+    if "days" in metrics:
+        return _build_daily_narrative_from_days(metrics)
+    return "Morning Ric ☀️\n\nNo fresh metrics yet."
 
 
 def build_weekly_narrative(metrics: Dict[str, Any]) -> str:
@@ -1121,6 +1333,9 @@ class PeteVoice:
 
 class NarrativeBuilder:
     """Compatibility wrapper around the narrative helper functions."""
+
+    def build_daily_narrative(self, metrics: Dict[str, Any]) -> str:
+        return build_daily_narrative(metrics)
 
     def build_daily_summary(self, summary_data: Dict[str, Any]) -> str:
         if not summary_data:

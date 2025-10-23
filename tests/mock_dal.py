@@ -63,6 +63,9 @@ class MockableDal(DataAccessLayer):
     ) -> List[Dict[str, Any]]:
         return []
 
+    def get_metrics_overview(self, target_date: date):
+        return ["metric_name"], []
+
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         observation_end = week_start - timedelta(days=1)
         baseline_start = observation_end - timedelta(days=MAX_BASELINE_WINDOW_DAYS - 1)
