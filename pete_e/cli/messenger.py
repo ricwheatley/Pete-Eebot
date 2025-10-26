@@ -876,10 +876,10 @@ def logs(
     Print the last N lines of the Pete-Eebot log file, optionally filtered by tag.
 
     Examples:
-      pete logs               → last 50 lines
-      pete logs 200           → last 200 lines
-      pete logs HB            → last 50 lines containing [HB]
-      pete logs PLAN 100      → last 100 lines containing [PLAN]
+        pete logs               → last 50 lines
+        pete logs 200           → last 200 lines
+        pete logs HB            → last 50 lines containing [HB]
+        pete logs PLAN 100      → last 100 lines containing [PLAN]
     """
 
     log_file = settings.log_path  # ← this uses your config property
