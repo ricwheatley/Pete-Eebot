@@ -26,6 +26,17 @@ def test_check_and_rollover_requires_four_weeks_and_sunday():
     assert service.check_and_rollover(plan, midweek) is False
 
 
+def test_check_and_rollover_shorter_plans_roll_immediately():
+    service = CycleService()
+    plan = {"start_date": date(2024, 1, 1), "weeks": 1}
+
+    first_sunday = date(2024, 1, 7)
+    assert service.check_and_rollover(plan, first_sunday) is True
+
+    saturday = first_sunday - timedelta(days=1)
+    assert service.check_and_rollover(plan, saturday) is False
+
+
 def test_orchestrator_delegates_rollover_decision():
     dal = MagicMock()
     active_plan = {"start_date": date(2024, 1, 1)}
