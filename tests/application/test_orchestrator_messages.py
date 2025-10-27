@@ -86,7 +86,6 @@ def _orchestrator_for(
     return Orchestrator(
         container=container,
         narrative_builder=narrative_builder,
-        telegram_client=telegram_client,
     )
 
 

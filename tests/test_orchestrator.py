@@ -5,6 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
+import tests.config_stub  # noqa: F401
+
 from pete_e.application.orchestrator import Orchestrator
 from tests.di_utils import build_stub_container
 

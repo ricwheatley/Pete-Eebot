@@ -13,6 +13,7 @@ from pete_e.application.validation_service import ValidationService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.entities import Plan, Week
 from pete_e.domain.plan_factory import PlanFactory
+from pete_e.domain import schedule_rules
 from pete_e.infrastructure.mappers import PlanMapper, WgerPayloadMapper
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
@@ -243,8 +244,46 @@ class WgerExportService:
                 for row in rows
             ]
             plan = self.plan_mapper.from_rows({"start_date": plan_start_date}, enriched_rows)
-        return self.payload_mapper.build_week_payload(
+        payload = self.payload_mapper.build_week_payload(
             plan,
             week_number,
             plan_id=plan_id,
         )
+        self._annotate_week_payload(payload, week_number)
+        return payload
+
+    def _annotate_week_payload(self, payload: Dict[str, Any], week_number: int) -> None:
+        """Enrich the payload with protocol notes and rest guidance."""
+
+        for day in payload.get("days", []):
+            main_set_index = 0
+            exercises = day.get("exercises", [])
+            for entry in exercises:
+                exercise_id = entry.get("exercise")
+                role = schedule_rules.classify_exercise(exercise_id)
+                if role == "cardio":
+                    continue
+
+                if role == "main":
+                    main_set_index += 1
+                    protocol = schedule_rules.describe_main_set(
+                        week_number=week_number,
+                        set_index=main_set_index,
+                        percent=entry.get("percent_1rm"),
+                        reps=entry.get("reps"),
+                    )
+                elif role == "core":
+                    protocol = schedule_rules.describe_core(entry.get("sets"), entry.get("reps"))
+                else:
+                    protocol = schedule_rules.describe_assistance(entry.get("sets"), entry.get("reps"))
+
+                rest_seconds = schedule_rules.rest_seconds_for(
+                    "main" if role == "main" else role,
+                    week_number,
+                )
+                rest_note = schedule_rules.format_rest_seconds(rest_seconds)
+
+                if protocol or rest_note:
+                    comment_parts = [part for part in (protocol, rest_note) if part]
+                    if comment_parts and not entry.get("comment"):
+                        entry["comment"] = " | ".join(comment_parts)

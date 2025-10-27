@@ -5,6 +5,8 @@ from typing import Any, Dict, List
 
 import pytest
 
+import tests.config_stub  # noqa: F401
+
 from pete_e.application.services import PlanService
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain import schedule_rules
@@ -59,12 +61,13 @@ def test_plan_factory_computes_expected_targets(monkeypatch: pytest.MonkeyPatch)
     first_week = plan["plan_weeks"][0]
     assert first_week["week_number"] == 1
 
-    squat_entry = next(
+    squat_sets = [
         workout for workout in first_week["workouts"] if workout["exercise_id"] == schedule_rules.SQUAT_ID
-    )
-    percent = schedule_rules.WEEK_PCTS[1]["percent_1rm"]
+    ]
+    top_set = max(squat_sets, key=lambda w: w["percent_1rm"])
+    percent = schedule_rules.main_set_summary(1)["percent_1rm"]
     expected_weight = round((tm["squat"] * percent / 100) / 2.5) * 2.5
-    assert squat_entry["target_weight_kg"] == pytest.approx(expected_weight)
+    assert top_set["target_weight_kg"] == pytest.approx(expected_weight)
 
     assistance_ids = [
         workout["exercise_id"]
