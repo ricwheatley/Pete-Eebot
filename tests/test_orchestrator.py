@@ -91,3 +91,32 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
     assert result.rollover_triggered is True
     assert plan_service_calls == [date(2024, 4, 29)]
     assert export_calls == [(11, 1, date(2024, 4, 29), None)]
+
+
+def test_run_end_to_end_week_exports_when_rollover_skipped(monkeypatch: pytest.MonkeyPatch):
+    export_calls: list[tuple[int, int, date, object]] = []
+    export_service = SimpleNamespace(
+        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: export_calls.append(
+            (plan_id, week_number, start_date, validation_decision)
+        )
+    )
+    dal = StubDal(active_plan={"id": 13, "start_date": date(2024, 4, 22), "weeks": 4})
+    container = build_stub_container(
+        dal=dal,
+        wger_client=SimpleNamespace(),
+        plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 99),
+        export_service=export_service,
+    )
+    orch = Orchestrator(container=container)
+
+    monkeypatch.setattr(
+        Orchestrator,
+        "run_weekly_calibration",
+        lambda self, reference_date: SimpleNamespace(message="ok", validation=None),
+        raising=False,
+    )
+
+    result = orch.run_end_to_end_week(reference_date=date(2024, 4, 28))
+
+    assert result.rollover_triggered is False
+    assert export_calls == [(13, 2, date(2024, 4, 29), None)]
