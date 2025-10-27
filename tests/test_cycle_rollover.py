@@ -108,6 +108,25 @@ def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.Monk
     assert outcome.rollover.plan_id == 400
 
 
+def test_run_end_to_end_week_exports_next_week_when_rollover_not_due(monkeypatch: pytest.MonkeyPatch) -> None:
+    plan_service = StubPlanService(plan_id=401)
+    export_service = StubExportService()
+    active_plan = {"id": 7, "start_date": date(2024, 1, 1), "weeks": 4}
+    dal = StubDal(active_plan=active_plan)
+    orch = make_orchestrator(plan_service=plan_service, export_service=export_service, dal=dal)
+
+    monkeypatch.setattr(
+        Orchestrator,
+        "run_weekly_calibration",
+        lambda self, reference_date: WeeklyCalibrationResult(message="ok", validation=None),
+    )
+
+    outcome = orch.run_end_to_end_week(reference_date=date(2024, 1, 7))
+
+    assert outcome.rollover_triggered is False
+    assert export_service.calls == [(7, 2, date(2024, 1, 8), None)]
+
+
 def test_run_end_to_end_week_aligns_to_previous_sunday(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the review runs late (e.g., Monday AM), cadence checks should still fire."""
 

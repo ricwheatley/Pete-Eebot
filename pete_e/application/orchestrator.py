@@ -53,10 +53,10 @@ class WeeklyAutomationResult:
     rollover_triggered: bool
 
 
-def _coerce_metric_value(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
+    def _coerce_metric_value(value: Any) -> Any:
+        if isinstance(value, Decimal):
+            return float(value)
+        return value
 
 
 def _build_metrics_overview_payload(
@@ -252,6 +252,13 @@ class Orchestrator:
                 review_anchor,
                 validation_decision=validation_decision,
             )
+        else:
+            next_week_start = self._next_week_start(review_anchor)
+            self._export_active_week(
+                active_plan=active_plan,
+                week_start=next_week_start,
+                validation_decision=validation_decision,
+            )
 
         return WeeklyAutomationResult(
             calibration=calibration_result,
@@ -435,6 +442,82 @@ class Orchestrator:
 
         days_since_sunday = (reference_date.weekday() - 6) % 7
         return reference_date - timedelta(days=days_since_sunday)
+
+    @staticmethod
+    def _next_week_start(reference_date: date) -> date:
+        """Return the Monday immediately after the supplied anchor date."""
+
+        days_until_monday = (0 - reference_date.weekday()) % 7
+        candidate = reference_date + timedelta(days=days_until_monday)
+        if candidate <= reference_date:
+            candidate += timedelta(days=7)
+        return candidate
+
+    def _export_active_week(
+        self,
+        *,
+        active_plan: Dict[str, Any] | None,
+        week_start: date,
+        validation_decision: ValidationDecision | None,
+    ) -> None:
+        """Push the upcoming training week to wger for the active plan."""
+
+        if not active_plan:
+            log_utils.warn(
+                "Skipping weekly export because no active plan was available.",
+                "WARN",
+            )
+            return
+
+        plan_id = active_plan.get("id")
+        plan_start = self._coerce_date(active_plan.get("start_date"))
+        if not plan_id or plan_start is None:
+            log_utils.warn(
+                f"Cannot export weekly plan: invalid plan payload {active_plan}",
+                "WARN",
+            )
+            return
+
+        week_number = self._plan_week_index(plan_start, week_start)
+        if week_number is None:
+            log_utils.warn(
+                f"Cannot export weekly plan: week_start {week_start.isoformat()} precedes plan start {plan_start.isoformat()}",
+                "WARN",
+            )
+            return
+
+        plan_weeks = self._coerce_positive_int(active_plan.get("weeks"))
+        if plan_weeks is not None and week_number > plan_weeks:
+            log_utils.warn(
+                f"Skipping weekly export for plan {plan_id}: week {week_number} exceeds plan length {plan_weeks}",
+                "WARN",
+            )
+            return
+
+        log_utils.info(
+            f"Exporting plan {plan_id} week {week_number} to wger for week starting {week_start.isoformat()}."
+        )
+
+        try:
+            self.export_service.export_plan_week(
+                plan_id=plan_id,
+                week_number=week_number,
+                start_date=week_start,
+                force_overwrite=True,
+                validation_decision=validation_decision,
+            )
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = (
+                f"Weekly export failed for plan {plan_id} week {week_number} starting {week_start.isoformat()}: {exc}"
+            )
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
+        else:
+            log_utils.info(
+                f"Exported plan {plan_id} week {week_number} to wger for {week_start.isoformat()}."
+            )
 
     @staticmethod
     def _summarise_active_plan(active_plan: Dict[str, Any] | None, reference_date: date) -> Dict[str, Any]:
