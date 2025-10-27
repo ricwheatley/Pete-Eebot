@@ -287,18 +287,53 @@ class PostgresDal(PlanRepository):
 
     def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
         with self._get_cursor() as cur:
-            cur.execute("SELECT id, start_date, weeks FROM training_plans WHERE start_date <= %s ORDER BY start_date DESC LIMIT 1;", (week_start_date,))
+            cur.execute(
+                "SELECT id, start_date, weeks FROM training_plans WHERE is_active = true ORDER BY id DESC LIMIT 1;"
+            )
             plan = cur.fetchone()
-            if not plan: return
-            
-            week_number = ((week_start_date - plan['start_date']).days // 7) + 1
-            if not (1 <= week_number <= plan['weeks']): return
 
-            cur.execute("SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;", (plan['id'], week_number))
+            if not plan:
+                cur.execute(
+                    "SELECT id, start_date, weeks FROM training_plans WHERE start_date <= %s ORDER BY start_date DESC LIMIT 1;",
+                    (week_start_date,),
+                )
+                plan = cur.fetchone()
+
+            if not plan:
+                log_utils.warn(
+                    f"Skipped plan back-off: no plan matched week starting {week_start_date.isoformat()}."
+                )
+                return
+
+            plan_start = plan["start_date"]
+            week_number = ((week_start_date - plan_start).days // 7) + 1
+            if not (1 <= week_number <= plan["weeks"]):
+                log_utils.warn(
+                    f"Skipped plan back-off: computed week {week_number} outside plan bounds for plan_id={plan['id']}."
+                )
+                return
+
+            cur.execute(
+                "SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;",
+                (plan["id"], week_number),
+            )
             week = cur.fetchone()
-            if not week: return
-            
-            cur.execute("UPDATE training_plan_workouts SET sets = GREATEST(1, ROUND(sets * %s)::int), rir = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END WHERE week_id = %s AND is_cardio = false;", (set_multiplier, rir_increment, rir_increment, week['id']))
+            if not week:
+                log_utils.warn(
+                    f"Skipped plan back-off: no week {week_number} found for plan_id={plan['id']}."
+                )
+                return
+
+            cur.execute(
+                """
+                UPDATE training_plan_workouts
+                SET
+                    sets = GREATEST(1, ROUND(sets * %s)::int),
+                    rir = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END
+                WHERE week_id = %s AND is_cardio = false;
+                """,
+                (set_multiplier, rir_increment, rir_increment, week["id"]),
+            )
             log_utils.info(f"Applied plan back-off to week {week_number} (plan_id={plan['id']}).")
 
     # ----------------------------------------------
