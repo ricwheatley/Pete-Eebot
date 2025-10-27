@@ -43,10 +43,25 @@ class CycleService:
             return False
 
         week_in_plan = (days_into_plan // 7) + 1
+        plan_weeks = self._coerce_positive_int(active_plan.get("weeks"))
+        required_weeks = self._rollover_weeks
+        if plan_weeks is not None and plan_weeks < self._rollover_weeks:
+            required_weeks = plan_weeks
 
-        return week_in_plan >= self._rollover_weeks and reference_date.weekday() == self._trigger_weekday
+        return week_in_plan >= required_weeks and reference_date.weekday() == self._trigger_weekday
 
     def should_rollover(self, active_plan: Dict[str, Any] | None, reference_date: date) -> bool:
         """Backward compatible alias for :meth:`check_and_rollover`."""
 
         return self.check_and_rollover(active_plan, reference_date)
+
+    @staticmethod
+    def _coerce_positive_int(value: Any) -> int | None:
+        """Best-effort conversion helper for loosely typed plan metadata."""
+
+        try:
+            candidate = int(value)
+        except (TypeError, ValueError):
+            return None
+
+        return candidate if candidate > 0 else None
