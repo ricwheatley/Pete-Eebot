@@ -74,7 +74,7 @@ class PlanFactory:
                 # 2. Add Main Lift (classic 5/3/1 sets)
                 slot_time = schedule_rules.weight_slot_for_day(dow)
                 slot_str = slot_time.strftime("%H:%M:%S") if slot_time else None
-                for set_index, set_scheme in enumerate(schedule_rules.get_main_set_scheme(week_num), start=1):
+                for set_scheme in schedule_rules.get_main_set_scheme(week_num):
                     percent = set_scheme["percent"]
                     target_weight = self._get_target_weight(training_maxes, main_lift_id, percent)
                     week_workouts.append({
@@ -87,7 +87,6 @@ class PlanFactory:
                         "target_weight_kg": target_weight,
                         "is_cardio": False,
                         "scheduled_time": slot_str,
-                        "slot": f"Set {set_index}",
                     })
                 
                 # 3. Add Assistance Lifts
