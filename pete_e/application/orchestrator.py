@@ -128,11 +128,13 @@ class Orchestrator:
         Runs validation and progression on the upcoming week.
         This method is now much simpler.
         """
-        log_utils.info(f"Running weekly calibration for week starting after {reference_date.isoformat()}")
-
         # The core validation logic remains, but it's now the main focus of this method.
         # The complex plan-finding logic will be handled by the services it calls.
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
+        log_utils.info(
+            f"Running weekly calibration for week starting {next_monday.isoformat()} "
+            f"(review anchor {reference_date.isoformat()})"
+        )
 
         try:
             validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
@@ -205,10 +207,16 @@ class Orchestrator:
         """
         The main entry point for the Sunday review.
         """
-        today = reference_date or date.today()
+        run_date = reference_date or date.today()
+        review_anchor = self._resolve_review_anchor(run_date)
+        if review_anchor != run_date:
+            log_utils.info(
+                f"Weekly automation invoked on {run_date.isoformat()} ({run_date.strftime('%A')}); "
+                f"anchoring cadence checks to Sunday {review_anchor.isoformat()}."
+            )
 
         # Run calibration on the upcoming week
-        calibration_result = self.run_weekly_calibration(today)
+        calibration_result = self.run_weekly_calibration(review_anchor)
         validation_decision = calibration_result.validation
 
         # Decide if a rollover is needed via the domain service
@@ -219,22 +227,22 @@ class Orchestrator:
         except ApplicationError:
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to load active plan before weekly run on {today.isoformat()}: {exc}"
+            message = f"Failed to load active plan before weekly run on {run_date.isoformat()}: {exc}"
             log_utils.error(message, "ERROR")
             raise DataAccessError(message) from exc
 
         try:
-            rollover_triggered = self.cycle_service.check_and_rollover(active_plan, today)
+            rollover_triggered = self.cycle_service.check_and_rollover(active_plan, review_anchor)
         except ApplicationError:
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to evaluate rollover for {today.isoformat()}: {exc}"
+            message = f"Failed to evaluate rollover for {review_anchor.isoformat()}: {exc}"
             log_utils.error(message, "ERROR")
             raise PlanRolloverError(message) from exc
 
         if rollover_triggered:
             rollover_result = self.run_cycle_rollover(
-                today,
+                review_anchor,
                 validation_decision=validation_decision,
             )
 
@@ -410,3 +418,13 @@ class Orchestrator:
         if len(seen) == 2:
             return f"{seen[0]} & {seen[1]}"
         return f"{seen[0]}, {seen[1]} + more"
+
+    @staticmethod
+    def _resolve_review_anchor(reference_date: date) -> date:
+        """Normalize the weekly automation anchor to the most recent Sunday."""
+
+        if reference_date.weekday() == 6:
+            return reference_date
+
+        days_since_sunday = (reference_date.weekday() - 6) % 7
+        return reference_date - timedelta(days=days_since_sunday)
