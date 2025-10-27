@@ -106,3 +106,30 @@ def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.Monk
     assert isinstance(outcome, WeeklyAutomationResult)
     assert outcome.rollover_triggered is True
     assert outcome.rollover.plan_id == 400
+
+
+def test_run_end_to_end_week_aligns_to_previous_sunday(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the review runs late (e.g., Monday AM), cadence checks should still fire."""
+
+    plan_service = StubPlanService(plan_id=912)
+    export_service = StubExportService()
+    # 2024-09-30 Monday -> 2024-10-27 Sunday marks week 4 boundary
+    active_plan = {"id": 9, "start_date": date(2024, 9, 30), "weeks": 4}
+    dal = StubDal(active_plan=active_plan)
+    orch = make_orchestrator(plan_service=plan_service, export_service=export_service, dal=dal)
+
+    captured_reference_dates: list[date] = []
+
+    def fake_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
+        captured_reference_dates.append(reference_date)
+        return WeeklyCalibrationResult(message="ok", validation=None)
+
+    monkeypatch.setattr(Orchestrator, "run_weekly_calibration", fake_calibration, raising=False)
+
+    outcome = orch.run_end_to_end_week(reference_date=date(2024, 10, 28))  # Monday run
+
+    assert captured_reference_dates == [date(2024, 10, 27)]  # anchored to Sunday
+    assert outcome.rollover_triggered is True
+    assert outcome.rollover.plan_id == 912
+    assert plan_service.calls == [date(2024, 10, 28)]
+    assert export_service.calls == [(912, 1, date(2024, 10, 28), None)]
