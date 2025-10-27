@@ -184,9 +184,9 @@ def test_validate_plan_structure_flags_missing_weights() -> None:
             exercise = Exercise(
                 id=exercise_id,
                 name=f"Main {exercise_id}",
-                sets=schedule_rules.WEEK_PCTS[week_number]["sets"],
-                reps=schedule_rules.WEEK_PCTS[week_number]["reps"],
-                rir=schedule_rules.WEEK_PCTS[week_number]["rir_cue"],
+                sets=schedule_rules.main_set_summary(week_number)["sets"],
+                reps=schedule_rules.main_set_summary(week_number)["reps"],
+                rir=schedule_rules.main_set_summary(week_number)["rir_cue"],
                 weight_target=None,
                 muscle_group=muscle_group_by_day.get(day_of_week, "upper_push"),
             )
@@ -197,7 +197,7 @@ def test_validate_plan_structure_flags_missing_weights() -> None:
                     slot="main",
                     is_cardio=False,
                     type="weights",
-                    percent_1rm=schedule_rules.WEEK_PCTS[week_number]["percent_1rm"],
+                    percent_1rm=schedule_rules.main_set_summary(week_number)["percent_1rm"],
                     exercise=exercise,
                 )
             )

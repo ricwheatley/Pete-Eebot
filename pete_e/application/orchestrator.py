@@ -53,10 +53,10 @@ class WeeklyAutomationResult:
     rollover_triggered: bool
 
 
-    def _coerce_metric_value(value: Any) -> Any:
-        if isinstance(value, Decimal):
-            return float(value)
-        return value
+def _coerce_metric_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
 
 
 def _build_metrics_overview_payload(

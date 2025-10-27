@@ -89,16 +89,19 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         for workout in week["workouts"]
     ]
 
-    # There should be 4 weeks * 4 days * (Blaze + main + 2 assist + core) = 80 workouts
-    # (The original test had a miscalculation, it should be 5 workouts per day * 4 days * 4 weeks)
-    assert len(all_workouts) == 4 * 4 * 5
+    # Blaze (1) + main sets + assistance/core (3) per training day, four training days each week
+    expected_total = 0
+    for week_idx in range(1, 5):
+        main_sets = len(schedule_rules.get_main_set_scheme(week_idx))
+        expected_total += (main_sets + 4) * len(schedule_rules.MAIN_LIFT_BY_DOW)
+    assert len(all_workouts) == expected_total
 
     # Blaze cardio sessions should always be present with the correct ID
     blaze_workouts = [w for w in all_workouts if w["is_cardio"]]
     assert all(w["exercise_id"] == schedule_rules.BLAZE_ID for w in blaze_workouts)
     assert len(blaze_workouts) == 16 # 4 days * 4 weeks
 
-    # Verify that each main lift appears once per week on the correct day
+    # Verify that each main lift appears with the 5/3/1 set prescription
     for week_num in range(1, 5):
         week_workouts = plan_dict["plan_weeks"][week_num - 1]["workouts"]
         for dow, main_id in schedule_rules.MAIN_LIFT_BY_DOW.items():
@@ -106,17 +109,18 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
                 w for w in week_workouts
                 if w["day_of_week"] == dow and w["exercise_id"] == main_id
             ]
-            assert len(main_lifts) == 1, f"Week {week_num} dow {dow} missing main lift {main_id}"
-
-            # Verify %1RM matches the schedule
-            scheme = schedule_rules.WEEK_PCTS[week_num]
-            assert main_lifts[0]["percent_1rm"] == scheme["percent_1rm"]
+            expected_scheme = schedule_rules.get_main_set_scheme(week_num)
+            assert len(main_lifts) == len(expected_scheme)
+            observed_percents = [lift["percent_1rm"] for lift in main_lifts]
+            expected_percents = [scheme["percent"] for scheme in expected_scheme]
+            assert observed_percents == expected_percents
 
     # Deload week (week 4) should have reduced sets for assistance/core work
     week4_workouts = plan_dict["plan_weeks"][3]["workouts"]
     non_main_lifts_week4 = [
         w for w in week4_workouts
-        if not w["is_cardio"] and w["exercise_id"] not in schedule_rules.MAIN_LIFT_BY_DOW.values()
+        if not w["is_cardio"]
+        and schedule_rules.classify_exercise(w["exercise_id"]) in ("assistance", "core")
     ]
     for workout in non_main_lifts_week4:
         # Check that sets are reduced compared to the standard assistance schemes
@@ -128,10 +132,13 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         if not w["is_cardio"] and w["exercise_id"] in schedule_rules.MAIN_LIFT_BY_DOW.values()
     ]
     
-    for workout in week1_main_lifts:
-        lift_code = schedule_rules.LIFT_CODE_BY_ID[workout["exercise_id"]]
+    for dow, main_id in schedule_rules.MAIN_LIFT_BY_DOW.items():
+        day_workouts = [
+            w for w in week1_main_lifts if w["exercise_id"] == main_id and w["day_of_week"] == dow
+        ]
+        heaviest = max(day_workouts, key=lambda item: item["percent_1rm"])
+        lift_code = schedule_rules.LIFT_CODE_BY_ID[main_id]
         tm = training_maxes[lift_code]
-        week1_pct = schedule_rules.WEEK_PCTS[1]["percent_1rm"]
-        expected_weight = round((tm * week1_pct / 100) / 2.5) * 2.5
-        
-        assert workout["target_weight_kg"] == expected_weight
+        summary = schedule_rules.main_set_summary(1)
+        expected_weight = round((tm * summary["percent_1rm"] / 100) / 2.5) * 2.5
+        assert heaviest["target_weight_kg"] == expected_weight

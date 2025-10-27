@@ -55,7 +55,7 @@ class PlanFactory:
         plan_weeks: List[Dict[str, Any]] = []
 
         # Fetch assistance/core pools once
-        core_ids = self.plan_repository.get_core_pool_ids()
+        core_ids = self.plan_repository.get_core_pool_ids() or schedule_rules.DEFAULT_CORE_POOL_IDS
 
         for week_num in range(1, weeks_in_plan + 1):
             is_deload_week = (week_num == 4)
@@ -71,19 +71,29 @@ class PlanFactory:
                         "scheduled_time": blaze_time.strftime("%H:%M:%S")
                     })
 
-                # 2. Add Main Lift
-                main_lift_scheme = schedule_rules.WEEK_PCTS[week_num]
-                target_weight = self._get_target_weight(training_maxes, main_lift_id, main_lift_scheme["percent_1rm"])
-                week_workouts.append({
-                    "day_of_week": dow, "exercise_id": main_lift_id,
-                    "sets": main_lift_scheme["sets"], "reps": main_lift_scheme["reps"],
-                    "percent_1rm": main_lift_scheme["percent_1rm"], "rir_cue": main_lift_scheme["rir_cue"],
-                    "target_weight_kg": target_weight, "is_cardio": False,
-                    "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S")
-                })
+                # 2. Add Main Lift (classic 5/3/1 sets)
+                slot_time = schedule_rules.weight_slot_for_day(dow)
+                slot_str = slot_time.strftime("%H:%M:%S") if slot_time else None
+                for set_index, set_scheme in enumerate(schedule_rules.get_main_set_scheme(week_num), start=1):
+                    percent = set_scheme["percent"]
+                    target_weight = self._get_target_weight(training_maxes, main_lift_id, percent)
+                    week_workouts.append({
+                        "day_of_week": dow,
+                        "exercise_id": main_lift_id,
+                        "sets": set_scheme.get("sets", 1),
+                        "reps": set_scheme["reps"],
+                        "percent_1rm": percent,
+                        "rir_cue": set_scheme.get("rir"),
+                        "target_weight_kg": target_weight,
+                        "is_cardio": False,
+                        "scheduled_time": slot_str,
+                        "slot": f"Set {set_index}",
+                    })
                 
                 # 3. Add Assistance Lifts
                 assistance_ids = self.plan_repository.get_assistance_pool_for(main_lift_id)
+                if not assistance_ids:
+                    assistance_ids = schedule_rules.default_assistance_for(main_lift_id)
                 chosen_assistance = self._pick_random(assistance_ids, 2)
                 
                 if chosen_assistance:
@@ -92,7 +102,7 @@ class PlanFactory:
                         "day_of_week": dow, "exercise_id": chosen_assistance[0],
                         "sets": a1_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": a1_scheme["reps_low"], "rir_cue": a1_scheme["rir_cue"], "is_cardio": False,
-                        "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S")
+                        "scheduled_time": slot_str,
                     })
                 if len(chosen_assistance) > 1:
                     a2_scheme = schedule_rules.ASSISTANCE_2
@@ -100,7 +110,7 @@ class PlanFactory:
                         "day_of_week": dow, "exercise_id": chosen_assistance[1],
                         "sets": a2_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": a2_scheme["reps_low"], "rir_cue": a2_scheme["rir_cue"], "is_cardio": False,
-                        "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S")
+                        "scheduled_time": slot_str,
                     })
 
                 # 4. Add Core Work
@@ -111,7 +121,7 @@ class PlanFactory:
                         "day_of_week": dow, "exercise_id": chosen_core[0],
                         "sets": core_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": core_scheme["reps_low"], "rir_cue": core_scheme["rir_cue"], "is_cardio": False,
-                        "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S")
+                        "scheduled_time": slot_str,
                     })
 
             plan_weeks.append({"week_number": week_num, "workouts": week_workouts})
