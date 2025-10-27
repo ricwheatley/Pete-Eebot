@@ -81,9 +81,9 @@ _FIVE_THREE_ONE_TEMPLATE: Dict[int, Dict[str, object]] = {
     1: {
         "name": "Week 1 – 5s PRO",
         "main_sets": [
-            {"percent": 50.0, "reps": 5, "rir": 5.0},
-            {"percent": 55.0, "reps": 5, "rir": 5.0},
-            {"percent": 60.0, "reps": 5, "rir": 5.0},
+            {"percent": 50.0, "reps": 5},
+            {"percent": 55.0, "reps": 5},
+            {"percent": 60.0, "reps": 5},
             {"percent": 65.0, "reps": 5, "rir": 3.0},
             {"percent": 75.0, "reps": 5, "rir": 2.0},
             {"percent": 85.0, "reps": 5, "rir": 0.0, "amrap": True},
@@ -93,9 +93,9 @@ _FIVE_THREE_ONE_TEMPLATE: Dict[int, Dict[str, object]] = {
     2: {
         "name": "Week 2 – 3s PRO",
         "main_sets": [
-            {"percent": 55.0, "reps": 5, "rir": 5.0},
-            {"percent": 60.0, "reps": 5, "rir": 5.0},
-            {"percent": 65.0, "reps": 5, "rir": 5.0},
+            {"percent": 55.0, "reps": 5},
+            {"percent": 60.0, "reps": 5},
+            {"percent": 65.0, "reps": 5},
             {"percent": 70.0, "reps": 3, "rir": 3.0},
             {"percent": 80.0, "reps": 3, "rir": 2.0},
             {"percent": 90.0, "reps": 3, "rir": 0.0, "amrap": True},
@@ -105,9 +105,9 @@ _FIVE_THREE_ONE_TEMPLATE: Dict[int, Dict[str, object]] = {
     3: {
         "name": "Week 3 – 5/3/1",
         "main_sets": [
-            {"percent": 60.0, "reps": 5, "rir": 5.0},
-            {"percent": 65.0, "reps": 5, "rir": 5.0},
-            {"percent": 70.0, "reps": 5, "rir": 5.0},
+            {"percent": 60.0, "reps": 5},
+            {"percent": 65.0, "reps": 5},
+            {"percent": 70.0, "reps": 5},
             {"percent": 75.0, "reps": 5, "rir": 3.0},
             {"percent": 85.0, "reps": 3, "rir": 2.0},
             {"percent": 95.0, "reps": 1, "rir": 0.0, "amrap": True},
