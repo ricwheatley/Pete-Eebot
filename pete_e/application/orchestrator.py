@@ -231,6 +231,9 @@ class Orchestrator:
             log_utils.error(message, "ERROR")
             raise DataAccessError(message) from exc
 
+        plan_snapshot = self._summarise_active_plan(active_plan, review_anchor)
+        log_utils.info(f"Cycle rollover checkpoint: {plan_snapshot}")
+
         try:
             rollover_triggered = self.cycle_service.check_and_rollover(active_plan, review_anchor)
         except ApplicationError:
@@ -239,6 +242,10 @@ class Orchestrator:
             message = f"Failed to evaluate rollover for {review_anchor.isoformat()}: {exc}"
             log_utils.error(message, "ERROR")
             raise PlanRolloverError(message) from exc
+
+        log_utils.info(
+            f"Cycle rollover decision: triggered={rollover_triggered}, context={plan_snapshot}"
+        )
 
         if rollover_triggered:
             rollover_result = self.run_cycle_rollover(
@@ -428,3 +435,76 @@ class Orchestrator:
 
         days_since_sunday = (reference_date.weekday() - 6) % 7
         return reference_date - timedelta(days=days_since_sunday)
+
+    @staticmethod
+    def _summarise_active_plan(active_plan: Dict[str, Any] | None, reference_date: date) -> Dict[str, Any]:
+        """Collect lightweight debugging info for the weekly rollover checkpoint."""
+
+        summary: Dict[str, Any] = {
+            "reference_date": reference_date.isoformat(),
+            "weekday": reference_date.strftime("%A"),
+        }
+
+        if not active_plan:
+            summary["status"] = "no-active-plan"
+            return summary
+
+        start_date = Orchestrator._coerce_date(active_plan.get("start_date"))
+        plan_weeks = Orchestrator._coerce_positive_int(active_plan.get("weeks"))
+        week_in_plan = Orchestrator._plan_week_index(start_date, reference_date)
+
+        summary.update(
+            {
+                "plan_id": active_plan.get("id"),
+                "plan_start": start_date.isoformat() if start_date else active_plan.get("start_date"),
+                "plan_weeks": plan_weeks,
+                "week_in_plan": week_in_plan,
+            }
+        )
+
+        if start_date:
+            summary["days_into_plan"] = (reference_date - start_date).days
+
+        if "is_test" in active_plan:
+            summary["is_test"] = active_plan.get("is_test")
+        if "plan_type" in active_plan:
+            summary["plan_type"] = active_plan.get("plan_type")
+
+        return summary
+
+    @staticmethod
+    def _plan_week_index(start_date: date | None, reference_date: date) -> int | None:
+        """Return the 1-based week index for the supplied start and reference dates."""
+
+        if start_date is None:
+            return None
+
+        delta_days = (reference_date - start_date).days
+        if delta_days < 0:
+            return None
+        return (delta_days // 7) + 1
+
+    @staticmethod
+    def _coerce_date(value: Any) -> date | None:
+        """Best-effort conversion of DAL payloads to ``date`` objects."""
+
+        if isinstance(value, date):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _coerce_positive_int(value: Any) -> int | None:
+        """Helper shared with plan snapshots to keep log payloads legible."""
+
+        try:
+            candidate = int(value)
+        except (TypeError, ValueError):
+            return None
+        return candidate if candidate > 0 else None
