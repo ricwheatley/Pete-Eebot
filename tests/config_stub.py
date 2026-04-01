@@ -87,7 +87,20 @@ class Settings:
 
     @property
     def log_path(self) -> Path:  # pragma: no cover - trivial property
-        return Path("logs/test.log")
+        resolved_path, _notice = self._resolve_log_path()
+        return resolved_path
+
+    def consume_log_path_notice(self) -> str | None:
+        _resolved_path, notice = self._resolve_log_path()
+        if not notice:
+            return None
+        if getattr(self, "_log_path_notice_consumed", False):
+            return None
+        self._log_path_notice_consumed = True
+        return notice
+
+    def _resolve_log_path(self) -> tuple[Path, str | None]:
+        return Path("logs/test.log"), None
 
     @property
     def phrases_path(self) -> Path:

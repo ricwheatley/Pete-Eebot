@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.repositories import PlanRepository
 
@@ -28,7 +29,12 @@ def test_531_block_plan_includes_blaze_sessions(monkeypatch):
 
     first_week = plan["plan_weeks"][0]
     blaze_entries = [entry for entry in first_week["workouts"] if entry.get("is_cardio")]
-    assert blaze_entries, "Expected Blaze cardio placeholders"
+    expected_blaze_days = set(schedule_rules.BLAZE_TIMES).intersection(
+        schedule_rules.MAIN_LIFT_BY_DOW
+    )
+
+    assert len(blaze_entries) == len(expected_blaze_days)
+    assert all(entry["exercise_id"] == schedule_rules.BLAZE_ID for entry in blaze_entries)
 
 
 def test_531_block_plan_includes_core_work(monkeypatch):

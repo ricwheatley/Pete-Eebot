@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from contextlib import nullcontext
 from typing import Callable
 
 import psycopg
@@ -31,19 +32,22 @@ class PlanGenerationService:
         try:
             plan_service = PlanService(dal)
             export_service = WgerExportService(dal, wger_client)
+            holder = getattr(dal, "hold_plan_generation_lock", None)
+            lock_context = holder() if callable(holder) else nullcontext()
 
-            plan_id = plan_service.create_and_persist_531_block(start_date)
-            log_utils.info(f"Successfully created plan_id: {plan_id}")
+            with lock_context:
+                plan_id = plan_service.create_and_persist_531_block(start_date)
+                log_utils.info(f"Successfully created plan_id: {plan_id}")
 
-            export_result = export_service.export_plan_week(
-                plan_id=plan_id,
-                week_number=1,
-                start_date=start_date,
-                force_overwrite=True,
-                dry_run=dry_run,
-            )
-            log_utils.info(f"Export result: {export_result}")
-            return plan_id
+                export_result = export_service.export_plan_week(
+                    plan_id=plan_id,
+                    week_number=1,
+                    start_date=start_date,
+                    force_overwrite=True,
+                    dry_run=dry_run,
+                )
+                log_utils.info(f"Export result: {export_result}")
+                return plan_id
         except (psycopg.Error, WgerError) as exc:
             log_utils.error(f"Plan generation failed: {exc}", exc_info=True)
             raise

@@ -9,6 +9,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: pete_ci
+          POSTGRES_USER: pete_ci
+          POSTGRES_PASSWORD: pete_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pete_ci -d pete_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Check out code
@@ -22,8 +36,48 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest
+          pip install -e .[dev]
+
+      - name: Lint Critical Modules
+        run: |
+          python -m ruff check \
+            pete_e/api.py \
+            pete_e/application/orchestrator.py \
+            pete_e/application/plan_generation.py \
+            pete_e/config/config.py \
+            pete_e/infrastructure/postgres_dal.py \
+            pete_e/logging_setup.py \
+            tests/config/test_settings.py \
+            tests/test_api_cli_commands.py \
+            tests/test_orchestrator.py \
+            tests/test_plan_generation.py \
+            tests/test_postgres_dal.py \
+            tests/test_schema_integrations.py
+
+      - name: Schema Smoke Test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: pete_ci
+          PGPASSWORD: pete_ci
+          PGDATABASE: pete_ci
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import psycopg
+
+          schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+
+          with psycopg.connect(
+              "dbname=pete_ci user=pete_ci password=pete_ci host=127.0.0.1 port=5432"
+          ) as conn:
+              with conn.cursor() as cur:
+                  cur.execute(schema_sql)
+                  cur.execute(
+                      "SELECT to_regclass('public.training_plans'), to_regclass('public.core_pool');"
+                  )
+                  assert cur.fetchone() == ("training_plans", "core_pool")
+          PY
 
       - name: Run tests
         run: pytest -q

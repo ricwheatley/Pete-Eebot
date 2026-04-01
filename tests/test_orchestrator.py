@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date
 from types import SimpleNamespace
 
@@ -193,4 +194,43 @@ def test_generate_strength_test_week_creates_and_exports():
     assert calls == [
         ("create", date(2024, 5, 6)),
         ("export", (77, 1, date(2024, 5, 6))),
+    ]
+
+
+def test_generate_strength_test_week_serializes_plan_generation():
+    calls: list[tuple[str, object]] = []
+
+    class LockingDal(StubDal):
+        @contextmanager
+        def hold_plan_generation_lock(self):
+            calls.append(("lock_enter", None))
+            try:
+                yield
+            finally:
+                calls.append(("lock_exit", None))
+
+    plan_service = SimpleNamespace(
+        create_and_persist_strength_test_week=lambda start_date: calls.append(("create", start_date)) or 77
+    )
+    export_service = SimpleNamespace(
+        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: calls.append(
+            ("export", (plan_id, week_number, start_date))
+        )
+    )
+    container = build_stub_container(
+        dal=LockingDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+    )
+    orch = Orchestrator(container=container)
+
+    result = orch.generate_strength_test_week(start_date=date(2024, 5, 6))
+
+    assert result is True
+    assert calls == [
+        ("lock_enter", None),
+        ("create", date(2024, 5, 6)),
+        ("export", (77, 1, date(2024, 5, 6))),
+        ("lock_exit", None),
     ]

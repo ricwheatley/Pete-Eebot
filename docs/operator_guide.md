@@ -98,6 +98,12 @@ Manual Postgres path:
 psql "$DATABASE_URL" -f init-db/schema.sql
 ```
 
+For an existing database, apply the incremental migration before relying on the new hardening features:
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260401_harden_plan_generation.sql
+```
+
 ### 2.4 OAuth and Credential Sanity Check
 
 Withings:
@@ -555,20 +561,49 @@ Core selection is a little less clean than assistance selection.
 
 The actual resolution order is:
 
-1. `PostgresDal.get_core_pool_ids()`
-2. if that returns nothing, `DEFAULT_CORE_POOL_IDS` in `pete_e/domain/schedule_rules.py`
+1. `core_pool` in Postgres
+2. category-based fallback from `wger_exercise` / `wger_category`
+3. if both return nothing, `DEFAULT_CORE_POOL_IDS` in `pete_e/domain/schedule_rules.py`
 
-In the current codebase, the practical DB-backed path is the fallback query inside `get_core_pool_ids()` that selects `wger_exercise` rows whose category name looks like `core%` or `abs%`.
+That means there is now a clean DB-backed control surface for core work.
 
 Safe operator options:
 
-#### Option A: change the hard-coded default core pool
+#### Option A: manage `core_pool` directly
+
+Inspect it:
+
+```sql
+SELECT cp.exercise_id, ex.name
+FROM core_pool cp
+JOIN wger_exercise ex ON ex.id = cp.exercise_id
+ORDER BY ex.name;
+```
+
+Add a core exercise:
+
+```sql
+INSERT INTO core_pool (exercise_id)
+VALUES (<core_exercise_id>)
+ON CONFLICT DO NOTHING;
+```
+
+Remove one:
+
+```sql
+DELETE FROM core_pool
+WHERE exercise_id = <core_exercise_id>;
+```
+
+This is the cleanest DB-backed way to control future core selection.
+
+#### Option B: change the hard-coded default core pool
 
 Edit `DEFAULT_CORE_POOL_IDS` in `pete_e/domain/schedule_rules.py`.
 
 This is the most reliable route if you want predictable behaviour.
 
-#### Option B: use the exercise catalogue categories
+#### Option C: use the exercise catalogue categories
 
 If your desired core exercises exist in `wger_exercise`, make sure their category is something like `Core` or `Abs`, then newly generated plans can pick them up through the fallback path.
 
@@ -861,6 +896,7 @@ DB tables you will most likely touch:
 - `training_max`
 - `strength_test_result`
 - `assistance_pool`
+- `core_pool`
 - `wger_exercise`
 - `wger_category`
 - `wger_export_log`

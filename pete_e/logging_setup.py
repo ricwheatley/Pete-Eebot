@@ -87,6 +87,11 @@ def configure_logging(
 
     formatter = _build_formatter()
     resolved_path = Path(log_path) if log_path is not None else settings.log_path
+    log_path_notice = None
+    if log_path is None:
+        consume_notice = getattr(settings, "consume_log_path_notice", None)
+        if callable(consume_notice):
+            log_path_notice = consume_notice()
     max_bytes = max_bytes or DEFAULT_MAX_BYTES
     backup_count = backup_count or DEFAULT_BACKUP_COUNT
 
@@ -112,8 +117,11 @@ def configure_logging(
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
-    
+
     logger.propagate = False
+
+    if log_path_notice:
+        logger.warning(log_path_notice, extra={"tag": "SYS"})
 
     _configured = True
     _logger = logger

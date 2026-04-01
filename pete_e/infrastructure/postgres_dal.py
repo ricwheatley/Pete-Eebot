@@ -11,7 +11,6 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
@@ -25,6 +24,7 @@ from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
 
 # --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
+_PLAN_GENERATION_LOCK_KEY = 7041917001
 
 def _create_pool() -> ConnectionPool:
     db_url = get_database_url()
@@ -61,6 +61,59 @@ class PostgresDal(PlanRepository):
         if self.pool and not self.pool.closed:
             self.pool.close()
             log_utils.info("Database connection pool closed.")
+
+    @staticmethod
+    def _ensure_single_active_plan_invariant(cur) -> None:
+        cur.execute(
+            """
+            WITH ranked_active_plans AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY id DESC) AS row_num
+                FROM training_plans
+                WHERE is_active = true
+            )
+            UPDATE training_plans
+            SET is_active = false
+            WHERE id IN (
+                SELECT id
+                FROM ranked_active_plans
+                WHERE row_num > 1
+            );
+            """
+        )
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_training_plans_single_active
+            ON training_plans (is_active)
+            WHERE is_active = true;
+            """
+        )
+
+    @staticmethod
+    def _core_pool_table_exists(cur) -> bool:
+        cur.execute("SELECT to_regclass('public.core_pool');")
+        row = cur.fetchone()
+        if not row:
+            return False
+        return bool(row[0])
+
+    @contextmanager
+    def hold_plan_generation_lock(self):
+        """Serialize plan generation and export across processes."""
+
+        with self.pool.connection() as conn:
+            conn.autocommit = True
+            with conn.cursor(row_factory=None) as cur:
+                log_utils.info("Waiting for plan generation lock.")
+                cur.execute("SELECT pg_advisory_lock(%s);", (_PLAN_GENERATION_LOCK_KEY,))
+                log_utils.info("Plan generation lock acquired.")
+                try:
+                    yield
+                finally:
+                    cur.execute(
+                        "SELECT pg_advisory_unlock(%s);",
+                        (_PLAN_GENERATION_LOCK_KEY,),
+                    )
+                    log_utils.info("Plan generation lock released.")
 
     # ----------------------------------------------
     # --- Plan & Block Management ---
@@ -146,6 +199,7 @@ class PostgresDal(PlanRepository):
             with conn.cursor(row_factory=None) as cur:
                 try:
                     conn.autocommit = False
+                    self._ensure_single_active_plan_invariant(cur)
                     cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
                     cur.execute(
                         "INSERT INTO training_plans (start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
@@ -189,19 +243,13 @@ class PostgresDal(PlanRepository):
             return [row[0] for row in rows]
 
     def get_core_pool_ids(self) -> List[int]:
-        sql_primary = (
-            """
-            SELECT assistance_exercise_id
-            FROM assistance_pool
-            WHERE main_exercise_id IS NULL
-            ORDER BY assistance_exercise_id
-            """
-        )
+        sql_primary = "SELECT exercise_id FROM core_pool ORDER BY exercise_id"
         with self._get_cursor(use_dict_row=False) as cur:
-            cur.execute(sql_primary)
-            rows = cur.fetchall()
-            if rows:
-                return [row[0] for row in rows]
+            if self._core_pool_table_exists(cur):
+                cur.execute(sql_primary)
+                rows = cur.fetchall()
+                if rows:
+                    return [row[0] for row in rows]
 
         sql_fallback = (
             """
@@ -221,6 +269,7 @@ class PostgresDal(PlanRepository):
             with conn.cursor(row_factory=None) as cur:
                 try:
                     conn.autocommit = False
+                    self._ensure_single_active_plan_invariant(cur)
                     cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
                     cur.execute("INSERT INTO training_plans(start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;", (start_date, weeks))
                     plan_id = cur.fetchone()[0]
@@ -283,11 +332,20 @@ class PostgresDal(PlanRepository):
             return bool(row[0]) if row else False
 
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
-        if not updates: return
-        payload = [(item.get("target_weight_kg"), item.get("workout_id")) for item in updates if item.get("workout_id") is not None]
-        if not payload: return
+        if not updates:
+            return
+        payload = [
+            (item.get("target_weight_kg"), item.get("workout_id"))
+            for item in updates
+            if item.get("workout_id") is not None
+        ]
+        if not payload:
+            return
         with self._get_cursor() as cur:
-            cur.executemany("UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s", payload)
+            cur.executemany(
+                "UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s",
+                payload,
+            )
 
     def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
         with self._get_cursor() as cur:
@@ -348,6 +406,7 @@ class PostgresDal(PlanRepository):
             with conn.cursor(row_factory=None) as cur:
                 try:
                     conn.autocommit = False
+                    self._ensure_single_active_plan_invariant(cur)
                     cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
                     cur.execute("INSERT INTO training_plans(start_date, weeks, is_active) VALUES (%s, 1, true) RETURNING id;", (start_date,))
                     plan_id = cur.fetchone()[0]
@@ -389,7 +448,8 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql)
             row = cur.fetchone()
-            if not row or not row.get("latest"): return None
+            if not row or not row.get("latest"):
+                return None
             latest = row["latest"]
             return latest.date() if isinstance(latest, datetime) else latest
     
@@ -410,8 +470,12 @@ class PostgresDal(PlanRepository):
         out: Dict[str, List[Dict[str, Any]]] = {}
         sql_parts = ["SELECT * FROM wger_logs WHERE exercise_id = ANY(%s)"]
         params: List[Any] = [exercise_ids]
-        if start_date: sql_parts.append("AND date >= %s"); params.append(start_date)
-        if end_date: sql_parts.append("AND date <= %s"); params.append(end_date)
+        if start_date:
+            sql_parts.append("AND date >= %s")
+            params.append(start_date)
+        if end_date:
+            sql_parts.append("AND date <= %s")
+            params.append(end_date)
         sql_parts.append("ORDER BY date, set_number;")
         
         with self._get_cursor() as cur:
@@ -424,7 +488,8 @@ class PostgresDal(PlanRepository):
     # --- Wger Catalog & Seeding ---
     # ----------------------------------------------
     def _bulk_upsert(self, table_name: str, data: List[Dict[str, Any]], conflict_keys: List[str], update_keys: List[str]):
-        if not data: return
+        if not data:
+            return
         cols = list(data[0].keys())
         placeholders = sql.SQL(",").join(sql.Placeholder() * len(cols))
         conflict_action = sql.SQL("DO UPDATE SET {updates}").format(updates=sql.SQL(",").join(sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(k), sql.Identifier(k)) for k in update_keys)) if update_keys else sql.SQL("DO NOTHING")
@@ -435,19 +500,52 @@ class PostgresDal(PlanRepository):
             log_utils.info(f"Upserted {len(data)} rows into \"{table_name}\".")
 
     def upsert_wger_exercises_and_relations(self, exercises: List[Dict[str, Any]]):
-        if not exercises: return
+        if not exercises:
+            return
         exercise_data = [{"id": ex["id"], "uuid": ex["uuid"], "name": ex["name"], "description": ex["description"], "category_id": ex["category_id"]} for ex in exercises]
         self._bulk_upsert("wger_exercise", exercise_data, ["id"], ["uuid", "name", "description", "category_id"])
         equipment, primary, secondary, exercise_ids = [], [], [], [ex["id"] for ex in exercises]
         for ex in exercises:
-            for eq_id in ex["equipment_ids"]: equipment.append({"exercise_id": ex["id"], "equipment_id": eq_id})
-            for m_id in ex["primary_muscle_ids"]: primary.append({"exercise_id": ex["id"], "muscle_id": m_id})
-            for m_id in ex["secondary_muscle_ids"]: secondary.append({"exercise_id": ex["id"], "muscle_id": m_id})
+            for eq_id in ex["equipment_ids"]:
+                equipment.append({"exercise_id": ex["id"], "equipment_id": eq_id})
+            for m_id in ex["primary_muscle_ids"]:
+                primary.append({"exercise_id": ex["id"], "muscle_id": m_id})
+            for m_id in ex["secondary_muscle_ids"]:
+                secondary.append({"exercise_id": ex["id"], "muscle_id": m_id})
         with self._get_cursor() as cur:
-            cur.execute('DELETE FROM wger_exercise_equipment WHERE exercise_id = ANY(%s)', (exercise_ids,)); cur.execute('DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = ANY(%s)', (exercise_ids,)); cur.execute('DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = ANY(%s)', (exercise_ids,))
-        if equipment: self._bulk_upsert("wger_exercise_equipment", equipment, ["exercise_id", "equipment_id"], [])
-        if primary: self._bulk_upsert("wger_exercise_muscle_primary", primary, ["exercise_id", "muscle_id"], [])
-        if secondary: self._bulk_upsert("wger_exercise_muscle_secondary", secondary, ["exercise_id", "muscle_id"], [])
+            cur.execute(
+                "DELETE FROM wger_exercise_equipment WHERE exercise_id = ANY(%s)",
+                (exercise_ids,),
+            )
+            cur.execute(
+                "DELETE FROM wger_exercise_muscle_primary WHERE exercise_id = ANY(%s)",
+                (exercise_ids,),
+            )
+            cur.execute(
+                "DELETE FROM wger_exercise_muscle_secondary WHERE exercise_id = ANY(%s)",
+                (exercise_ids,),
+            )
+        if equipment:
+            self._bulk_upsert(
+                "wger_exercise_equipment",
+                equipment,
+                ["exercise_id", "equipment_id"],
+                [],
+            )
+        if primary:
+            self._bulk_upsert(
+                "wger_exercise_muscle_primary",
+                primary,
+                ["exercise_id", "muscle_id"],
+                [],
+            )
+        if secondary:
+            self._bulk_upsert(
+                "wger_exercise_muscle_secondary",
+                secondary,
+                ["exercise_id", "muscle_id"],
+                [],
+            )
 
     def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[int]]]):
         with self._get_cursor() as cur:
@@ -635,7 +733,8 @@ class PostgresDal(PlanRepository):
         return self._call_function("sp_metrics_overview", target_date)
     
     def refresh_daily_summary(self, days: int = 7) -> None:
-        start_date = date.today() - timedelta(days=days); end_date = date.today()
+        start_date = date.today() - timedelta(days=days)
+        end_date = date.today()
         with self._get_cursor() as cur:
             cur.execute("SELECT sp_upsert_body_age_range(%s, %s, %s);", (start_date, end_date, settings.USER_DATE_OF_BIRTH))
             cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
@@ -654,10 +753,12 @@ class PostgresDal(PlanRepository):
             return cur.fetchall()
 
     def refresh_plan_view(self) -> None:
-        with self._get_cursor() as cur: cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
+        with self._get_cursor() as cur:
+            cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
     
     def refresh_actual_view(self) -> None:
-        with self._get_cursor() as cur: cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
+        with self._get_cursor() as cur:
+            cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
 
     # ----------------------------------------------
     # --- Export & Validation Logging ---

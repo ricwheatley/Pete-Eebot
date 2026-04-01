@@ -4,10 +4,11 @@ Main orchestrator for Pete-Eebot's core logic.
 Delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, Iterable, List, Sequence
 
 # --- NEW Clean Imports ---
 from pete_e.application.exceptions import (
@@ -133,6 +134,12 @@ class Orchestrator:
             self.plan_generation_service = None
             log_utils.error(f"Failed to initialize PlanGenerationService: {exc}")
 
+    def _hold_plan_generation_lock(self):
+        holder = getattr(self.dal, "hold_plan_generation_lock", None)
+        if callable(holder):
+            return holder()
+        return nullcontext()
+
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
         """
@@ -176,36 +183,37 @@ class Orchestrator:
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
         log_utils.info(f"Cycle rollover triggered for block starting {next_monday.isoformat()}")
 
-        try:
-            plan_id = self.plan_service.create_next_plan_for_cycle(start_date=next_monday)
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Plan creation failed for cycle starting {next_monday.isoformat()}: {exc}"
-            log_utils.error(message, "ERROR")
-            raise PlanRolloverError(message) from exc
+        with self._hold_plan_generation_lock():
+            try:
+                plan_id = self.plan_service.create_next_plan_for_cycle(start_date=next_monday)
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                message = f"Plan creation failed for cycle starting {next_monday.isoformat()}: {exc}"
+                log_utils.error(message, "ERROR")
+                raise PlanRolloverError(message) from exc
 
-        if not plan_id:
-            message = (
-                f"Plan creation returned an invalid ID for cycle starting {next_monday.isoformat()}"
-            )
-            log_utils.error(message, "ERROR")
-            raise PlanRolloverError(message)
+            if not plan_id:
+                message = (
+                    f"Plan creation returned an invalid ID for cycle starting {next_monday.isoformat()}"
+                )
+                log_utils.error(message, "ERROR")
+                raise PlanRolloverError(message)
 
-        try:
-            self.export_service.export_plan_week(
-                plan_id=plan_id,
-                week_number=1,
-                start_date=next_monday,
-                force_overwrite=True,
-                validation_decision=validation_decision,
-            )
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Export failed for plan {plan_id} week 1 starting {next_monday.isoformat()}: {exc}"
-            log_utils.error(message, "ERROR")
-            raise PlanRolloverError(message) from exc
+            try:
+                self.export_service.export_plan_week(
+                    plan_id=plan_id,
+                    week_number=1,
+                    start_date=next_monday,
+                    force_overwrite=True,
+                    validation_decision=validation_decision,
+                )
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                message = f"Export failed for plan {plan_id} week 1 starting {next_monday.isoformat()}: {exc}"
+                log_utils.error(message, "ERROR")
+                raise PlanRolloverError(message) from exc
 
         return CycleRolloverResult(
             plan_id=plan_id,
@@ -343,22 +351,23 @@ class Orchestrator:
             f"Generating and deploying the next plan block starting {start_date.isoformat()}."
         )
 
-        try:
-            plan_id = self.plan_service.create_and_persist_531_block(start_date)
-            self.export_service.export_plan_week(
-                plan_id=plan_id,
-                week_number=1,
-                start_date=start_date,
-                force_overwrite=True,
-            )
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = (
-                f"Plan generation failed for start date {start_date.isoformat()}: {exc}"
-            )
-            log_utils.error(message, "ERROR")
-            raise PlanRolloverError(message) from exc
+        with self._hold_plan_generation_lock():
+            try:
+                plan_id = self.plan_service.create_and_persist_531_block(start_date)
+                self.export_service.export_plan_week(
+                    plan_id=plan_id,
+                    week_number=1,
+                    start_date=start_date,
+                    force_overwrite=True,
+                )
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                message = (
+                    f"Plan generation failed for start date {start_date.isoformat()}: {exc}"
+                )
+                log_utils.error(message, "ERROR")
+                raise PlanRolloverError(message) from exc
 
         return plan_id
 
@@ -372,22 +381,23 @@ class Orchestrator:
 
         log_utils.info(f"Generating strength test week starting {start_date.isoformat()}.")
 
-        try:
-            plan_id = self.plan_service.create_and_persist_strength_test_week(start_date)
-            self.export_service.export_plan_week(
-                plan_id=plan_id,
-                week_number=1,
-                start_date=start_date,
-                force_overwrite=True,
-            )
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = (
-                f"Strength test week generation failed for {start_date.isoformat()}: {exc}"
-            )
-            log_utils.error(message, "ERROR")
-            raise PlanRolloverError(message) from exc
+        with self._hold_plan_generation_lock():
+            try:
+                plan_id = self.plan_service.create_and_persist_strength_test_week(start_date)
+                self.export_service.export_plan_week(
+                    plan_id=plan_id,
+                    week_number=1,
+                    start_date=start_date,
+                    force_overwrite=True,
+                )
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                message = (
+                    f"Strength test week generation failed for {start_date.isoformat()}: {exc}"
+                )
+                log_utils.error(message, "ERROR")
+                raise PlanRolloverError(message) from exc
 
         return True
 

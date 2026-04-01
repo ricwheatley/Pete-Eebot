@@ -301,6 +301,9 @@ CREATE TABLE training_plans (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT now()
 );
+CREATE UNIQUE INDEX ux_training_plans_single_active
+    ON training_plans (is_active)
+    WHERE is_active = true;
 
 CREATE TABLE training_plan_weeks (
     id SERIAL PRIMARY KEY,
@@ -329,6 +332,11 @@ CREATE TABLE assistance_pool (
     assistance_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
     PRIMARY KEY(main_exercise_id, assistance_exercise_id)
 );
+
+CREATE TABLE core_pool (
+    exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE
+);
+COMMENT ON TABLE core_pool IS 'Operator-managed pool of core exercises used during plan generation.';
 
 CREATE TABLE training_cycle (
     id SERIAL PRIMARY KEY,

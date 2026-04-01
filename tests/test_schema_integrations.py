@@ -64,6 +64,14 @@ def test_withings_daily_table_includes_body_composition_columns():
     assert "water_pct" in columns
 
 
+def test_training_plan_schema_includes_single_active_index_and_core_pool() -> None:
+    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+
+    assert "CREATE UNIQUE INDEX ux_training_plans_single_active" in schema_sql
+    core_pool_columns = _extract_table_columns(schema_sql, "core_pool")
+    assert core_pool_columns == ["exercise_id"]
+
+
 _EXPECTED_DAILY_SUMMARY_COLUMNS = {
     "muscle_pct",
     "water_pct",
