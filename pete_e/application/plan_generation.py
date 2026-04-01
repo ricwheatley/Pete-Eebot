@@ -36,7 +36,7 @@ class PlanGenerationService:
             lock_context = holder() if callable(holder) else nullcontext()
 
             with lock_context:
-                plan_id = plan_service.create_and_persist_531_block(start_date)
+                plan_id = plan_service.create_next_plan_for_cycle(start_date=start_date)
                 log_utils.info(f"Successfully created plan_id: {plan_id}")
 
                 export_result = export_service.export_plan_week(

@@ -353,7 +353,7 @@ class Orchestrator:
 
         with self._hold_plan_generation_lock():
             try:
-                plan_id = self.plan_service.create_and_persist_531_block(start_date)
+                plan_id = self.plan_service.create_next_plan_for_cycle(start_date=start_date)
                 self.export_service.export_plan_week(
                     plan_id=plan_id,
                     week_number=1,

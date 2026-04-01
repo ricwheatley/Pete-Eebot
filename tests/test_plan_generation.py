@@ -30,7 +30,7 @@ def test_plan_generation_service_holds_lock(monkeypatch) -> None:
         def __init__(self, dal):
             assert isinstance(dal, StubDal)
 
-        def create_and_persist_531_block(self, start_date: date) -> int:
+        def create_next_plan_for_cycle(self, *, start_date: date) -> int:
             calls.append(("create", start_date))
             return 42
 

@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import json
 
 from pete_e.application.validation_service import ValidationService
+from pete_e.application.strength_test import StrengthTestService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.entities import Plan, Week
 from pete_e.domain.plan_factory import PlanFactory
@@ -27,6 +28,7 @@ class PlanService:
         self.dal = dal
         self.factory = PlanFactory(plan_repository=self.dal)
         self.plan_mapper = PlanMapper()
+        self.strength_test_service = StrengthTestService(dal)
 
     def create_and_persist_531_block(self, start_date: date) -> int:
         """
@@ -62,11 +64,22 @@ class PlanService:
     def create_next_plan_for_cycle(self, *, start_date: date) -> int:
         """Create the next block in the macrocycle and persist it."""
 
-        # Future enhancements may branch between strength-test weeks and 5/3/1 blocks
-        # based on macrocycle state. For now we always generate the next full block.
         log_utils.info(
             "Creating next macrocycle block via PlanService.create_next_plan_for_cycle..."
         )
+        evaluation = self.strength_test_service.evaluate_latest_test_week_and_update_tms()
+        if evaluation is None:
+            log_utils.info("Generating next block from the current stored training maxes.")
+        elif evaluation.lifts_updated == 0:
+            log_utils.info(
+                "Latest strength test week has no completed AMRAP logs yet; using existing training maxes."
+            )
+        else:
+            log_utils.info(
+                "Applied "
+                f"{evaluation.lifts_updated} training max update(s) from strength test plan "
+                f"{evaluation.plan_id} before generating the next block."
+            )
         return self.create_and_persist_531_block(start_date)
 
 
@@ -249,10 +262,17 @@ class WgerExportService:
             week_number,
             plan_id=plan_id,
         )
-        self._annotate_week_payload(payload, week_number)
+        is_test_week = any(bool(row.get("is_test")) for row in rows)
+        self._annotate_week_payload(payload, week_number, is_test=is_test_week)
         return payload
 
-    def _annotate_week_payload(self, payload: Dict[str, Any], week_number: int) -> None:
+    def _annotate_week_payload(
+        self,
+        payload: Dict[str, Any],
+        week_number: int,
+        *,
+        is_test: bool = False,
+    ) -> None:
         """Enrich the payload with protocol notes and rest guidance."""
 
         for day in payload.get("days", []):
@@ -266,12 +286,19 @@ class WgerExportService:
 
                 if role == "main":
                     main_set_index += 1
-                    protocol = schedule_rules.describe_main_set(
-                        week_number=week_number,
-                        set_index=main_set_index,
-                        percent=entry.get("percent_1rm"),
-                        reps=entry.get("reps"),
-                    )
+                    if is_test:
+                        percent = entry.get("percent_1rm")
+                        if percent is None:
+                            protocol = "AMRAP Test"
+                        else:
+                            protocol = f"AMRAP Test @ {float(percent):.1f}% TM"
+                    else:
+                        protocol = schedule_rules.describe_main_set(
+                            week_number=week_number,
+                            set_index=main_set_index,
+                            percent=entry.get("percent_1rm"),
+                            reps=entry.get("reps"),
+                        )
                 elif role == "core":
                     protocol = schedule_rules.describe_core(entry.get("sets"), entry.get("reps"))
                 else:

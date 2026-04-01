@@ -197,6 +197,35 @@ def test_generate_strength_test_week_creates_and_exports():
     ]
 
 
+def test_generate_and_deploy_next_plan_uses_cycle_creation():
+    calls: list[tuple[str, object]] = []
+
+    plan_service = SimpleNamespace(
+        create_next_plan_for_cycle=lambda start_date: calls.append(("cycle", start_date)) or 88,
+        create_and_persist_531_block=lambda start_date: calls.append(("block", start_date)) or 99,
+    )
+    export_service = SimpleNamespace(
+        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: calls.append(
+            ("export", (plan_id, week_number, start_date))
+        )
+    )
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+    )
+    orch = Orchestrator(container=container)
+
+    plan_id = orch.generate_and_deploy_next_plan(start_date=date(2024, 5, 6))
+
+    assert plan_id == 88
+    assert calls == [
+        ("cycle", date(2024, 5, 6)),
+        ("export", (88, 1, date(2024, 5, 6))),
+    ]
+
+
 def test_generate_strength_test_week_serializes_plan_generation():
     calls: list[tuple[str, object]] = []
 

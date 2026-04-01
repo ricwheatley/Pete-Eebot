@@ -310,7 +310,7 @@ class PostgresDal(PlanRepository):
             return cur.fetchone()
 
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        sql = "SELECT tpw.*, tw.week_number FROM training_plan_workouts tpw JOIN training_plan_weeks tw ON tw.id = tpw.week_id WHERE tw.plan_id = %s AND tw.week_number = %s ORDER BY tpw.day_of_week, tpw.id;"
+        sql = "SELECT tpw.*, tw.week_number, tw.is_test FROM training_plan_workouts tpw JOIN training_plan_weeks tw ON tw.id = tpw.week_id WHERE tw.plan_id = %s AND tw.week_number = %s ORDER BY tpw.day_of_week, tpw.id;"
         with self._get_cursor() as cur:
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
@@ -440,12 +440,12 @@ class PostgresDal(PlanRepository):
             return cur.fetchone()
 
     def insert_strength_test_result(self, **kwargs) -> None:
-        sql = "INSERT INTO strength_test_result (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg) VALUES (%(plan_id)s, %(week_number)s, %(lift_code)s, %(test_date)s, %(test_reps)s, %(test_weight_kg)s, %(e1rm_kg)s, %(tm_kg)s) ON CONFLICT (plan_id, week_number, lift_code) DO NOTHING;"
+        sql = "INSERT INTO strength_test_result (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg) VALUES (%(plan_id)s, %(week_number)s, %(lift_code)s, %(test_date)s, %(test_reps)s, %(test_weight_kg)s, %(e1rm_kg)s, %(tm_kg)s) ON CONFLICT (plan_id, week_number, lift_code) DO UPDATE SET test_date = EXCLUDED.test_date, test_reps = EXCLUDED.test_reps, test_weight_kg = EXCLUDED.test_weight_kg, e1rm_kg = EXCLUDED.e1rm_kg, tm_kg = EXCLUDED.tm_kg;"
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
 
     def upsert_training_max(self, lift_code: str, tm_kg: float, measured_at: date, source: str) -> None:
-        sql = "INSERT INTO training_max (lift_code, tm_kg, source, measured_at) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;"
+        sql = "INSERT INTO training_max (lift_code, tm_kg, source, measured_at) VALUES (%s, %s, %s, %s) ON CONFLICT (lift_code, measured_at) DO UPDATE SET tm_kg = EXCLUDED.tm_kg, source = EXCLUDED.source;"
         with self._get_cursor() as cur:
             cur.execute(sql, (lift_code, tm_kg, source, measured_at))
 
