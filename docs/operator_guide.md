@@ -720,9 +720,9 @@ ON CONFLICT DO NOTHING;
 Operator note:
 
 - there is a `strength_test_result` table
-- there is currently no production flow that automatically converts test-week outcomes into new `training_max` rows
-- after a test week, assume TM management is manual unless you add automation
-- if you need to replace a TM for the same `lift_code` and `measured_at`, delete the old row first or insert a newer `measured_at`
+- after you log the AMRAP test week and run sync, the next block-generation path automatically writes `strength_test_result` rows and upserts `training_max` rows with source `AMRAP_EPLEY`
+- if a workout log arrives late or you correct reps/weight and rerun plan generation, Pete updates the same `strength_test_result` / `training_max` rows for that test week
+- if you want to override the automatic TM manually, insert a newer `measured_at` row in `training_max`
 
 ## 9. Adding New Exercises to the Catalogue
 

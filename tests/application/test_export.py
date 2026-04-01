@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.services import WgerExportService
+from pete_e.domain import schedule_rules
 from pete_e.domain.validation import (
     BackoffRecommendation,
     ReadinessSummary,
@@ -79,6 +80,61 @@ def test_export_plan_week_uses_cached_validation() -> None:
 
     assert result["status"] == "exported"
     validation_service.validate_and_adjust_plan.assert_not_called()
+
+
+def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
+    captured_payloads: list[dict] = []
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "week_number": 1,
+                    "is_test": True,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "percent_1rm": 85.0,
+                    "target_weight_kg": 92.5,
+                    "scheduled_time": "07:05:00",
+                    "is_cardio": False,
+                }
+            ]
+
+        def record_wger_export(self, plan_id, week_number, payload_json, response=None, routine_id=None):
+            captured_payloads.append(payload_json)
+
+    class StubClient:
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=StubClient(),
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=1,
+        start_date=date(2024, 8, 5),
+        force_overwrite=False,
+    )
+
+    assert result["status"] == "exported"
+    assert captured_payloads
+    entry = captured_payloads[0]["days"][0]["exercises"][0]
+    assert entry["comment"] == "AMRAP Test @ 85.0% TM | Rest 2m 30s"
 
 
 def test_run_end_to_end_week_passes_cached_validation() -> None:
