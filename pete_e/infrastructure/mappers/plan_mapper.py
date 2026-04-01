@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
 from pete_e.domain.entities import Exercise, Plan, Week, Workout
@@ -124,7 +124,8 @@ class PlanMapper:
             raise PlanMappingError("day_of_week is required for each workout")
 
         workout_id = self._to_int(data.get("id"))
-        slot = data.get("slot") or data.get("scheduled_time")
+        scheduled_time = self._to_time_string(data.get("scheduled_time"))
+        slot = scheduled_time or data.get("slot")
         is_cardio = bool(data.get("is_cardio"))
         workout_type = data.get("type") or ("cardio" if is_cardio else "weights")
         percent_1rm = converters.to_float(data.get("percent_1rm"))
@@ -193,11 +194,12 @@ class PlanMapper:
 
     def _workout_to_payload(self, workout: Workout) -> dict[str, Any]:
         exercise = workout.exercise
+        scheduled_time = self._to_time_string(workout.slot)
         payload: dict[str, Any] = {
             "id": workout.id,
             "day_of_week": workout.day_of_week,
             "slot": workout.slot,
-            "scheduled_time": workout.slot,
+            "scheduled_time": scheduled_time,
             "is_cardio": workout.is_cardio,
             "type": workout.type,
             "percent_1rm": workout.percent_1rm,
@@ -242,6 +244,20 @@ class PlanMapper:
 
     def _to_date(self, value: Any) -> date | None:
         return converters.to_date(value)
+
+    def _to_time_string(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, time):
+            return value.strftime("%H:%M:%S")
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = time.fromisoformat(text)
+        except ValueError:
+            return None
+        return parsed.strftime("%H:%M:%S")
 
     def _validate_metadata(self, metadata: Any) -> MutableMapping[str, Any] | None:
         if metadata is None:

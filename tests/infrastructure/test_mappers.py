@@ -83,3 +83,36 @@ def test_invalid_rows_raise_validation_error() -> None:
             {"start_date": date(2024, 6, 3)},
             [{"week_number": 1, "day_of_week": None}],
         )
+
+
+def test_scheduled_time_wins_over_semantic_slot_for_persistence() -> None:
+    plan_mapper = PlanMapper()
+
+    plan = plan_mapper.from_dict(
+        {
+            "start_date": date(2024, 6, 3),
+            "plan_weeks": [
+                {
+                    "week_number": 1,
+                    "workouts": [
+                        {
+                            "day_of_week": 1,
+                            "exercise_id": 100,
+                            "exercise_name": "Bench Press",
+                            "sets": 1,
+                            "reps": 1,
+                            "slot": "main",
+                            "scheduled_time": "07:05:00",
+                            "is_cardio": False,
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    payload = plan_mapper.to_persistence_payload(plan)
+    workout = payload["plan_weeks"][0]["workouts"][0]
+
+    assert workout["slot"] == "07:05:00"
+    assert workout["scheduled_time"] == "07:05:00"
