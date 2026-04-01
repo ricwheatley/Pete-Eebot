@@ -8,6 +8,7 @@ import pytest
 import tests.config_stub  # noqa: F401
 
 from pete_e.application.orchestrator import Orchestrator
+from pete_e.domain.daily_sync import DailySyncResult
 from tests.di_utils import build_stub_container
 
 
@@ -122,3 +123,74 @@ def test_run_end_to_end_week_exports_when_rollover_skipped(monkeypatch: pytest.M
 
     assert result.rollover_triggered is False
     assert export_calls == [(13, 2, date(2024, 4, 29), None)]
+
+
+def test_run_end_to_end_day_sends_summary(monkeypatch: pytest.MonkeyPatch):
+    sent_messages: list[str] = []
+
+    class StubDailySyncService:
+        def run_full(self, *, days: int) -> DailySyncResult:
+            assert days == 1
+            return DailySyncResult(
+                success=True,
+                failures=(),
+                statuses={"Withings": "ok"},
+                alerts=("Alert A",),
+            )
+
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=SimpleNamespace(),
+        export_service=SimpleNamespace(),
+        daily_sync_service=StubDailySyncService(),
+    )
+    orch = Orchestrator(
+        container=container,
+        telegram_client=SimpleNamespace(
+            send_message=lambda message: sent_messages.append(message) or True
+        ),
+    )
+
+    monkeypatch.setattr(
+        "pete_e.cli.messenger.build_daily_summary",
+        lambda orchestrator=None, target_date=None: "Daily summary ready",
+    )
+
+    result = orch.run_end_to_end_day(days=1, summary_date=date(2024, 5, 2))
+
+    assert result.ingest_success is True
+    assert result.summary_attempted is True
+    assert result.summary_sent is True
+    assert result.summary_target == date(2024, 5, 2)
+    assert result.source_statuses == {"Withings": "ok"}
+    assert result.undelivered_alerts == ["Alert A"]
+    assert sent_messages == ["Daily summary ready"]
+
+
+def test_generate_strength_test_week_creates_and_exports():
+    calls: list[tuple[str, object]] = []
+
+    plan_service = SimpleNamespace(
+        create_and_persist_strength_test_week=lambda start_date: calls.append(("create", start_date)) or 77
+    )
+    export_service = SimpleNamespace(
+        export_plan_week=lambda plan_id, week_number, start_date, force_overwrite=True, validation_decision=None: calls.append(
+            ("export", (plan_id, week_number, start_date))
+        )
+    )
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+    )
+    orch = Orchestrator(container=container)
+
+    result = orch.generate_strength_test_week(start_date=date(2024, 5, 6))
+
+    assert result is True
+    assert calls == [
+        ("create", date(2024, 5, 6)),
+        ("export", (77, 1, date(2024, 5, 6))),
+    ]

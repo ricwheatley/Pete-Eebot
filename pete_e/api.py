@@ -5,6 +5,7 @@ import datetime
 import hmac
 import hashlib
 import subprocess
+from pathlib import Path
 from pete_e.config import settings  # loads .env via BaseSettings
 from pete_e.cli.status import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -15,12 +16,42 @@ from pete_e.application.api_services import MetricsService, PlanService, StatusS
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
 app = FastAPI(title="Pete-Eebot API")
-WEBHOOK_SECRET = b"supersecretwebhooktoken"
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
 _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
+
+
+def _secret_to_str(value) -> str:
+    getter = getattr(value, "get_secret_value", None)
+    if callable(getter):
+        return getter()
+    return "" if value is None else str(value)
+
+
+def _configured_api_key() -> str:
+    configured = (settings.PETEEEBOT_API_KEY or "").strip()
+    if not configured:
+        raise HTTPException(status_code=503, detail="PETEEEBOT_API_KEY is not configured")
+    return configured
+
+
+def _configured_webhook_secret() -> bytes:
+    secret = _secret_to_str(getattr(settings, "GITHUB_WEBHOOK_SECRET", None)).strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="GITHUB_WEBHOOK_SECRET is not configured")
+    return secret.encode("utf-8")
+
+
+def _configured_deploy_script_path() -> Path:
+    raw_path = getattr(settings, "DEPLOY_SCRIPT_PATH", None)
+    deploy_path = Path(str(raw_path)).expanduser() if raw_path else None
+    if deploy_path is None or not str(deploy_path).strip():
+        raise HTTPException(status_code=503, detail="DEPLOY_SCRIPT_PATH is not configured")
+    if not deploy_path.exists():
+        raise HTTPException(status_code=500, detail=f"Deploy script not found: {deploy_path}")
+    return deploy_path
 
 
 def get_dal() -> PostgresDal:
@@ -52,8 +83,9 @@ def get_status_service() -> StatusService:
 
 # Helper to validate API key from header OR query string
 def validate_api_key(request: Request, x_api_key: str | None) -> None:
+    configured_key = _configured_api_key()
     key = x_api_key or request.query_params.get("api_key")
-    if key != settings.PETEEEBOT_API_KEY:
+    if not key or not hmac.compare_digest(key, configured_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
@@ -264,15 +296,17 @@ async def github_webhook(request: Request):
     if sha_name != "sha256":
         raise HTTPException(status_code=403, detail="Unsupported signature type")
 
-    import hmac, hashlib
-    mac = hmac.new(WEBHOOK_SECRET, msg=body, digestmod=hashlib.sha256)
+    webhook_secret = _configured_webhook_secret()
+    deploy_script = _configured_deploy_script_path()
+
+    mac = hmac.new(webhook_secret, msg=body, digestmod=hashlib.sha256)
     if not hmac.compare_digest(mac.hexdigest(), sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
     # Run deploy.sh in the background, don't block response
-    subprocess.Popen(["/home/ricwheatley/pete-eebot/deploy.sh"])
+    subprocess.Popen([str(deploy_script)])
 
     return {
         "status": "Deployment triggered",
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     }

@@ -103,6 +103,8 @@ class Settings(BaseSettings):
 
     # --- API KEYS (from environment) ---
     PETEEEBOT_API_KEY: str | None = None
+    GITHUB_WEBHOOK_SECRET: SecretStr | None = None
+    DEPLOY_SCRIPT_PATH: Path | None = None
     PETE_LOG_LEVEL: str = "INFO"
     PETE_LOG_TO_CONSOLE: bool = True 
 

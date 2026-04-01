@@ -16,20 +16,19 @@ def cli_runner() -> CliRunner:
 def test_lets_begin_seeds_strength_test_week_when_macrocycle_missing(cli_runner, monkeypatch):
     log_messages: list[tuple[str, str]] = []
 
-    class StubPlanGenerationService:
-        def __init__(self) -> None:
-            self.runs: list[date] = []
-
-        def run(self, *, start_date: date) -> None:
-            self.runs.append(start_date)
-
     class StubOrchestrator:
         instances: list["StubOrchestrator"] = []
 
         def __init__(self) -> None:
-            self.plan_generation_service = StubPlanGenerationService()
+            self.plan_generation_service = object()
+            self.runs: list[date] = []
             self.closed = False
             StubOrchestrator.instances.append(self)
+
+        def generate_strength_test_week(self, start_date: date | None = None) -> bool:
+            assert start_date is not None
+            self.runs.append(start_date)
+            return True
 
         def close(self) -> None:
             self.closed = True
@@ -46,7 +45,7 @@ def test_lets_begin_seeds_strength_test_week_when_macrocycle_missing(cli_runner,
     assert result.exit_code == 0
     assert StubOrchestrator.instances, "Orchestrator should be constructed"
     orchestrator = StubOrchestrator.instances[0]
-    assert orchestrator.plan_generation_service.runs == [date(2024, 5, 6)]
+    assert orchestrator.runs == [date(2024, 5, 6)]
     assert orchestrator.closed is True
 
     assert "Starting new 13-week 5/3/1 macrocycle on 2024-05-06" in result.stdout
@@ -67,20 +66,19 @@ def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
 
     log_messages: list[tuple[str, str]] = []
 
-    class StubPlanGenerationService:
-        def __init__(self) -> None:
-            self.runs: list[date] = []
-
-        def run(self, *, start_date: date) -> None:
-            self.runs.append(start_date)
-
     class StubOrchestrator:
         instances: list["StubOrchestrator"] = []
 
         def __init__(self) -> None:
-            self.plan_generation_service = StubPlanGenerationService()
+            self.plan_generation_service = object()
+            self.runs: list[date] = []
             self.closed = False
             StubOrchestrator.instances.append(self)
+
+        def generate_strength_test_week(self, start_date: date | None = None) -> bool:
+            assert start_date is not None
+            self.runs.append(start_date)
+            return True
 
         def close(self) -> None:
             self.closed = True
@@ -98,7 +96,7 @@ def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
     assert result.exit_code == 0
     assert StubOrchestrator.instances, "Orchestrator should be constructed"
     orchestrator = StubOrchestrator.instances[0]
-    assert orchestrator.plan_generation_service.runs == [date(2024, 5, 13)]
+    assert orchestrator.runs == [date(2024, 5, 13)]
     assert orchestrator.closed is True
 
     assert "Starting new 13-week 5/3/1 macrocycle on 2024-05-13" in result.stdout

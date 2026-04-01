@@ -24,7 +24,7 @@ class PlanGenerationService:
         self._dal_factory = dal_factory or PostgresDal
         self._wger_client_factory = wger_client_factory or WgerClient
 
-    def run(self, start_date: dt.date, dry_run: bool = False) -> None:
+    def run(self, start_date: dt.date, dry_run: bool = False) -> int:
         """Create a 5/3/1 block starting at ``start_date`` and export week one."""
         dal = self._dal_factory()
         wger_client = self._wger_client_factory()
@@ -43,6 +43,7 @@ class PlanGenerationService:
                 dry_run=dry_run,
             )
             log_utils.info(f"Export result: {export_result}")
+            return plan_id
         except (psycopg.Error, WgerError) as exc:
             log_utils.error(f"Plan generation failed: {exc}", exc_info=True)
             raise

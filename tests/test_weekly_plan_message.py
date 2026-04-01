@@ -37,7 +37,7 @@ class StubDal:
     def get_active_plan(self):
         return self._plan
 
-    def get_plan_week(self, plan_id: int, week_number: int):
+    def get_plan_week_rows(self, plan_id: int, week_number: int):
         assert plan_id == self._plan["id"]
         assert week_number == 1
         return list(self._week_rows)
