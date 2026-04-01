@@ -60,3 +60,22 @@ def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settin
     )
 
     assert settings.DATABASE_URL == expected
+
+
+def test_log_path_fallback_notice_is_consumed_once(
+    monkeypatch: pytest.MonkeyPatch,
+    base_settings_data: dict,
+    tmp_path,
+) -> None:
+    settings = Settings(**base_settings_data)
+    fallback_path = tmp_path / "pete_history.log"
+
+    monkeypatch.setattr(
+        Settings,
+        "_resolve_log_path",
+        lambda self: (fallback_path, "fallback notice"),
+    )
+
+    assert settings.log_path == fallback_path
+    assert settings.consume_log_path_notice() == "fallback notice"
+    assert settings.consume_log_path_notice() is None

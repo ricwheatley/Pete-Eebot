@@ -89,17 +89,20 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         for workout in week["workouts"]
     ]
 
-    # Blaze (1) + main sets + assistance/core (3) per training day, four training days each week
+    blaze_days = set(schedule_rules.BLAZE_TIMES).intersection(schedule_rules.MAIN_LIFT_BY_DOW)
+
+    # Each training day has main sets plus assistance/core, and Blaze only when enabled for that day.
     expected_total = 0
     for week_idx in range(1, 5):
         main_sets = len(schedule_rules.get_main_set_scheme(week_idx))
-        expected_total += (main_sets + 4) * len(schedule_rules.MAIN_LIFT_BY_DOW)
+        for dow in schedule_rules.MAIN_LIFT_BY_DOW:
+            expected_total += main_sets + 3 + int(dow in blaze_days)
     assert len(all_workouts) == expected_total
 
-    # Blaze cardio sessions should always be present with the correct ID
+    # Blaze cardio sessions should match the currently configured schedule.
     blaze_workouts = [w for w in all_workouts if w["is_cardio"]]
     assert all(w["exercise_id"] == schedule_rules.BLAZE_ID for w in blaze_workouts)
-    assert len(blaze_workouts) == 16 # 4 days * 4 weeks
+    assert len(blaze_workouts) == len(blaze_days) * 4
 
     # Verify that each main lift appears with the 5/3/1 set prescription
     for week_num in range(1, 5):

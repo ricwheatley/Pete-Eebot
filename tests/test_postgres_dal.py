@@ -1,7 +1,6 @@
 import unittest
 from datetime import date
 from unittest.mock import patch, MagicMock
-import pete_e.infrastructure.postgres_dal as postgres_dal
 
 # Assuming your DAL is in this structure
 from pete_e.infrastructure.postgres_dal import PostgresDal
@@ -67,6 +66,49 @@ class TestPostgresDal(unittest.TestCase):
         mock_get_pool.assert_called_once()
         mock_cur.execute.assert_called_once()
         self.assertEqual(result, [{"date": "2025-01-15", "steps": 5000}])
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchone.return_value = ("core_pool",)
+        mock_cur.fetchall.return_value = [(101,), (102,)]
+
+        dal = PostgresDal()
+        result = dal.get_core_pool_ids()
+
+        self.assertEqual(result, [101, 102])
+        executed_sql = [call.args[0] for call in mock_cur.execute.call_args_list]
+        self.assertIn("SELECT to_regclass('public.core_pool');", executed_sql)
+        self.assertIn("SELECT exercise_id FROM core_pool ORDER BY exercise_id", executed_sql)
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_core_pool_ids_falls_back_to_categories_without_core_pool(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        first_cur = MagicMock()
+        second_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.side_effect = [
+            MagicMock(__enter__=MagicMock(return_value=first_cur), __exit__=MagicMock(return_value=False)),
+            MagicMock(__enter__=MagicMock(return_value=second_cur), __exit__=MagicMock(return_value=False)),
+        ]
+        first_cur.fetchone.return_value = (None,)
+        second_cur.fetchall.return_value = [(201,), (202,)]
+
+        dal = PostgresDal()
+        result = dal.get_core_pool_ids()
+
+        self.assertEqual(result, [201, 202])
+        second_cur.execute.assert_called_once()
+        self.assertIn("FROM wger_exercise ex", second_cur.execute.call_args.args[0])
 
 
 

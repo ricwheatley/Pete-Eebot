@@ -10,6 +10,7 @@ import os
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
+
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,15 +18,7 @@ CONFIG_FILE = Path(__file__).resolve()
 
 
 def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
-    """Return a project root and env file path without assuming ``.env`` exists.
-
-    The production deployment stores a ``.env`` file alongside the repository,
-    but that file is intentionally absent in development and CI.  The previous
-    implementation relied on ``next(...)`` to find the first parent directory
-    containing ``.env`` which raised ``StopIteration`` during tests.  Instead we
-    walk the parents looking for a ``.env`` file and gracefully fall back to the
-    repository root (detected via common project markers) when it is missing.
-    """
+    """Return a project root and env file path without assuming ``.env`` exists."""
 
     parents = list(config_file.parents)
 
@@ -34,13 +27,11 @@ def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
         if env_file.exists():
             return parent, env_file
 
-    # Fall back to a sensible default if no .env is present.
     for marker in ("pyproject.toml", ".git", "requirements.txt"):
         for parent in parents:
             if (parent / marker).exists():
                 return parent, parent / ".env"
 
-    # As a last resort, pick the immediate package parent.
     fallback_root = parents[1] if len(parents) > 1 else parents[0]
     return fallback_root, fallback_root / ".env"
 
@@ -63,15 +54,15 @@ APP_ROOT = _discover_app_root(PROJECT_ROOT)
 T = TypeVar("T")
 
 
-
 class Settings(BaseSettings):
-    """
-    Centralised and validated application settings.
-    """
+    """Centralised and validated application settings."""
+
     model_config = SettingsConfigDict(
-        env_file=ENV_FILE_PATH, env_file_encoding="utf-8", case_sensitive=False
+        env_file=ENV_FILE_PATH,
+        env_file_encoding="utf-8",
+        case_sensitive=False,
     )
-    ##print(f"Loading environment from: {ENV_FILE_PATH}")
+
     # --- CORE APP SETTINGS ---
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
     ENVIRONMENT: str = "development"
@@ -93,7 +84,7 @@ class Settings(BaseSettings):
     WGER_BASE_URL: str = "https://wger.de/api/v2"
     WGER_USERNAME: str | None = None
     WGER_PASSWORD: str | None = None
-    
+
     # --- DROPBOX (from environment) ---
     DROPBOX_HEALTH_METRICS_DIR: str
     DROPBOX_WORKOUTS_DIR: str
@@ -106,8 +97,7 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: SecretStr | None = None
     DEPLOY_SCRIPT_PATH: Path | None = None
     PETE_LOG_LEVEL: str = "INFO"
-    PETE_LOG_TO_CONSOLE: bool = True 
-
+    PETE_LOG_TO_CONSOLE: bool = True
 
     # --- SANITY CHECK ALERTS ---
     APPLE_MAX_STALE_DAYS: int = 3
@@ -149,6 +139,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
         """Dynamically construct the ``DATABASE_URL`` after validation."""
+
         db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
         conninfo_params = {
             "user": self.POSTGRES_USER,
@@ -164,28 +155,46 @@ class Settings(BaseSettings):
     # --- DYNAMIC FILE PATHS ---
     @property
     def log_path(self) -> Path:
-        """
-        Path for the main application log file.
-    
-        This version is fail-safe: if /var/log/pete_eebot is not writable,
-        it falls back to a local user directory and never raises exceptions.
-        """
-        try:
-            prod_log_dir = Path("/var/log/pete_eebot")
-            if prod_log_dir.exists() and os.access(prod_log_dir, os.W_OK):
-                return prod_log_dir / "pete_history.log"
-            else:
-                raise PermissionError("No access to /var/log/pete_eebot")
-        except Exception as e:
+        """Return the resolved application log path without writing to stdout."""
+
+        resolved_path, _notice = self._resolve_log_path()
+        return resolved_path
+
+    def consume_log_path_notice(self) -> str | None:
+        """Return any one-time log-path fallback notice."""
+
+        _resolved_path, notice = self._resolve_log_path()
+        if not notice:
+            return None
+        if self.__dict__.get("_log_path_notice_consumed"):
+            return None
+        self.__dict__["_log_path_notice_consumed"] = True
+        return notice
+
+    def _resolve_log_path(self) -> tuple[Path, str | None]:
+        cached = self.__dict__.get("_resolved_log_path")
+        if cached is not None:
+            return cached
+
+        prod_log_dir = Path("/var/log/pete_eebot")
+        if prod_log_dir.exists() and os.access(prod_log_dir, os.W_OK):
+            resolved = (prod_log_dir / "pete_history.log", None)
+        else:
             fallback_dir = Path.home() / "pete_logs"
             fallback_dir.mkdir(parents=True, exist_ok=True)
             fallback_path = fallback_dir / "pete_history.log"
-            print(f"[Pete-Eebot] ⚠️ Falling back to {fallback_path} due to: {e}")
-            return fallback_path
+            resolved = (
+                fallback_path,
+                f"Falling back to {fallback_path} because /var/log/pete_eebot is unavailable.",
+            )
+
+        self.__dict__["_resolved_log_path"] = resolved
+        return resolved
 
     @property
     def phrases_path(self) -> Path:
         """Path to the tagged phrases resource file."""
+
         return APP_ROOT / "pete_e/resources/phrases_tagged.json"
 
 
@@ -211,7 +220,6 @@ def _build_conninfo(params: dict[str, Any]) -> str:
     return " ".join(f"{key}={_quote(value)}" for key, value in params.items())
 
 
-# Create a single, importable instance of the settings for the entire application.
 settings = Settings()
 
 
@@ -243,18 +251,7 @@ def get_env(
     *,
     parser: Callable[[str], T] | None = None,
 ) -> T | Any | None:
-    """Return a configuration value resolving environment overrides consistently.
-
-    The resolution order is:
-
-    1. Explicit environment variable overrides at runtime.
-    2. Typed values provided by the Pydantic ``settings`` object.
-    3. The supplied ``default`` value.
-
-    When an override is read directly from :mod:`os.environ`, ``parser`` (or the
-    inferred type from ``settings``) is used to coerce the string into the
-    expected type.
-    """
+    """Return a configuration value resolving environment overrides consistently."""
 
     if name in os.environ:
         raw_value = os.environ[name]
@@ -272,5 +269,3 @@ def get_env(
         return _coerce_secret(getattr(settings, name))
 
     return default
-
-
