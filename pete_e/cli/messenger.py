@@ -421,11 +421,20 @@ def build_weekly_plan_overview(
     target = target_date or date.today()
 
     dal = getattr(orch, "dal", None)
-    if dal is None or not hasattr(dal, "get_active_plan") or not hasattr(dal, "get_plan_week"):
+    get_active_plan = getattr(dal, "get_active_plan", None) if dal is not None else None
+    load_plan_week = None
+    if dal is not None:
+        for candidate_name in ("get_plan_week", "get_plan_week_rows"):
+            candidate = getattr(dal, candidate_name, None)
+            if callable(candidate):
+                load_plan_week = candidate
+                break
+
+    if not callable(get_active_plan) or not callable(load_plan_week):
         return "Training plan data source is not available."
 
     try:
-        active_plan = dal.get_active_plan()
+        active_plan = get_active_plan()
     except Exception as exc:  # pragma: no cover - defensive logging
         log_utils.log_message(f"Failed to load active plan: {exc}", "ERROR")
         return "Failed to load the active training plan."
@@ -467,7 +476,7 @@ def build_weekly_plan_overview(
         return "The active training plan is missing its identifier."
 
     try:
-        plan_week_rows = dal.get_plan_week(plan_id, week_number)
+        plan_week_rows = load_plan_week(plan_id, week_number)
     except Exception as exc:
         log_utils.log_message(f"Failed to load plan week data: {exc}", "ERROR")
         return f"Could not retrieve workouts for Plan ID {plan_id}, Week {week_number}."
@@ -642,14 +651,21 @@ def plan(
     os.environ["PETE_CLI_MODE"] = "plan"
     plan_id = -1
     try:
-        plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
-    except ApplicationError as exc:
-        _exit_for_application_error(exc, context="Plan deployment")
+        try:
+            plan_id = orchestrator.generate_and_deploy_next_plan(start_date=start_date, weeks=weeks)
+        except ApplicationError as exc:
+            _exit_for_application_error(exc, context="Plan deployment")
     finally:
         if previous_mode is None:
             os.environ.pop("PETE_CLI_MODE", None)
         else:
             os.environ["PETE_CLI_MODE"] = previous_mode
+        closer = getattr(orchestrator, "close", None)
+        if callable(closer):
+            try:
+                closer()
+            except Exception as exc:  # pragma: no cover - defensive logging
+                log_utils.log_message(f"Failed to close plan orchestrator cleanly: {exc}", "WARN")
 
     if plan_id > 0:
         log_utils.log_message(f"New plan (ID: {plan_id}) deployed successfully!", "INFO")
@@ -697,12 +713,12 @@ def lets_begin(
     )
 
     # 🏗️ Use orchestrator’s PlanGenerationService
-    if not getattr(orchestrator, "plan_generation_service", None):
+    if not callable(getattr(orchestrator, "generate_strength_test_week", None)):
         typer.echo("❌ PlanGenerationService unavailable. Check orchestrator wiring.", err=True)
         raise typer.Exit(code=1)
 
     try:
-        orchestrator.plan_generation_service.run(start_date=resolved_start)
+        orchestrator.generate_strength_test_week(start_date=resolved_start)
         typer.echo("✅ Strength test week created and exported successfully!")
         log_utils.log_message(
             f"Strength test week created successfully via lets-begin at {resolved_start}",

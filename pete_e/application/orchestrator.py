@@ -5,7 +5,7 @@ Delegates tasks to specialized services for clarity and maintainability.
 """
 from __future__ import annotations
 from datetime import date, datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
@@ -36,6 +36,17 @@ from pete_e.infrastructure.wger_client import WgerClient
 class WeeklyCalibrationResult:
     message: str
     validation: ValidationDecision | None = None
+
+
+@dataclass(frozen=True)
+class DailyAutomationResult:
+    ingest_success: bool
+    failed_sources: List[str] = field(default_factory=list)
+    source_statuses: Dict[str, str] = field(default_factory=dict)
+    summary_target: date | None = None
+    summary_attempted: bool = False
+    summary_sent: bool = False
+    undelivered_alerts: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -277,6 +288,108 @@ class Orchestrator:
         """Runs only the Withings portion of the sync and refreshes views."""
         result = self.daily_sync_service.run_withings_only(days=days)
         return result.as_tuple()
+
+    def run_end_to_end_day(
+        self,
+        *,
+        days: int = 1,
+        summary_date: date | None = None,
+    ) -> DailyAutomationResult:
+        """Run the daily sync and, when appropriate, send the daily summary."""
+
+        success, failures, statuses, alerts = self.run_daily_sync(days=days)
+        summary_target = summary_date or (date.today() - timedelta(days=1))
+        summary_attempted = bool(success and (summary_date is not None or days == 1))
+        summary_sent = False
+
+        if summary_attempted:
+            try:
+                from pete_e.cli.messenger import build_daily_summary
+
+                summary_text = build_daily_summary(
+                    orchestrator=self,
+                    target_date=summary_target,
+                )
+                if summary_text.strip():
+                    summary_sent = self.send_telegram_message(summary_text)
+                else:
+                    log_utils.warn(
+                        f"Skipping Telegram summary for {summary_target.isoformat()} because it was empty."
+                    )
+            except ApplicationError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                log_utils.error(
+                    f"Failed to send daily summary for {summary_target.isoformat()}: {exc}"
+                )
+
+        return DailyAutomationResult(
+            ingest_success=bool(success),
+            failed_sources=list(failures or []),
+            source_statuses=dict(statuses or {}),
+            summary_target=summary_target,
+            summary_attempted=summary_attempted,
+            summary_sent=summary_sent,
+            undelivered_alerts=list(alerts or []),
+        )
+
+    def generate_and_deploy_next_plan(self, start_date: date, weeks: int = 4) -> int:
+        """Create the next 4-week plan block and export week one."""
+
+        if weeks != 4:
+            raise ValidationError("Only 4-week plan generation is currently supported.")
+
+        log_utils.info(
+            f"Generating and deploying the next plan block starting {start_date.isoformat()}."
+        )
+
+        try:
+            plan_id = self.plan_service.create_and_persist_531_block(start_date)
+            self.export_service.export_plan_week(
+                plan_id=plan_id,
+                week_number=1,
+                start_date=start_date,
+                force_overwrite=True,
+            )
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = (
+                f"Plan generation failed for start date {start_date.isoformat()}: {exc}"
+            )
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
+
+        return plan_id
+
+    def generate_strength_test_week(self, start_date: date | None = None) -> bool:
+        """Create and export a one-week strength-test block."""
+
+        if start_date is None:
+            today = date.today()
+            days_until_monday = (0 - today.weekday()) % 7
+            start_date = today + timedelta(days=days_until_monday)
+
+        log_utils.info(f"Generating strength test week starting {start_date.isoformat()}.")
+
+        try:
+            plan_id = self.plan_service.create_and_persist_strength_test_week(start_date)
+            self.export_service.export_plan_week(
+                plan_id=plan_id,
+                week_number=1,
+                start_date=start_date,
+                force_overwrite=True,
+            )
+        except ApplicationError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            message = (
+                f"Strength test week generation failed for {start_date.isoformat()}: {exc}"
+            )
+            log_utils.error(message, "ERROR")
+            raise PlanRolloverError(message) from exc
+
+        return True
 
     def close(self):
         """Closes any open connections, like the database pool."""

@@ -251,6 +251,10 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
 
+    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        """Compatibility wrapper for callers expecting the legacy DAL name."""
+        return self.get_plan_week_rows(plan_id, week_number)
+
     def get_plan_for_day(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_plan_for_day", target_date)
 

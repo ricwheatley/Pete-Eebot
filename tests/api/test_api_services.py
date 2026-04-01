@@ -1,3 +1,6 @@
+import asyncio
+import hashlib
+import hmac
 import sys
 import types
 from unittest.mock import MagicMock
@@ -104,6 +107,40 @@ def test_plan_for_week_uses_service(monkeypatch, enable_api_key, request_stub):
 
     assert response == expected
     service.for_week.assert_called_once_with("2024-02-05")
+
+
+def test_status_requires_api_key_configuration(monkeypatch, request_stub):
+    monkeypatch.setattr(api.settings, "PETEEEBOT_API_KEY", None, raising=False)
+
+    with pytest.raises(api.HTTPException) as exc:
+        api.status(request=request_stub, x_api_key="test-key")
+
+    assert exc.value.status_code == 503
+
+
+def test_github_webhook_uses_configured_secret_and_deploy_path(monkeypatch, tmp_path):
+    body = b'{"ref":"refs/heads/main"}'
+    deploy_script = tmp_path / "deploy.sh"
+    deploy_script.write_text("#!/bin/sh\n", encoding="utf-8")
+
+    monkeypatch.setattr(api.settings, "GITHUB_WEBHOOK_SECRET", "hook-secret", raising=False)
+    monkeypatch.setattr(api.settings, "DEPLOY_SCRIPT_PATH", deploy_script, raising=False)
+
+    popen_calls: list[list[str]] = []
+    monkeypatch.setattr(api.subprocess, "Popen", lambda args: popen_calls.append(args))
+
+    signature = hmac.new(b"hook-secret", msg=body, digestmod=hashlib.sha256).hexdigest()
+
+    class WebhookRequest:
+        headers = {"X-Hub-Signature-256": f"sha256={signature}"}
+
+        async def body(self):
+            return body
+
+    payload = asyncio.run(api.github_webhook(WebhookRequest()))
+
+    assert payload["status"] == "Deployment triggered"
+    assert popen_calls == [[str(deploy_script)]]
 
 
 def test_api_module_has_no_psycopg_import():
