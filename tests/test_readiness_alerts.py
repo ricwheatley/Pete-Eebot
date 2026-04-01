@@ -32,3 +32,5 @@ def test_create_strength_test_week_persists_plan():
     week = dal.saved["plan_weeks"][0]
     lift_entries = [entry for entry in week["workouts"] if not entry["is_cardio"]]
     assert len(lift_entries) == 4
+    assert all(entry["scheduled_time"] != "main" for entry in lift_entries)
+    assert all(entry["scheduled_time"] in {"06:00:00", "07:05:00"} for entry in lift_entries)

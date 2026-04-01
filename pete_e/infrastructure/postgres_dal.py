@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import hashlib
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from psycopg import sql
@@ -146,6 +146,19 @@ class PostgresDal(PlanRepository):
             except (TypeError, ValueError):
                 return None
 
+        def _coerce_scheduled_time(value: Any) -> time | None:
+            if value is None:
+                return None
+            if isinstance(value, time):
+                return value
+            text = str(value).strip()
+            if not text:
+                return None
+            try:
+                return time.fromisoformat(text)
+            except ValueError:
+                return None
+
         def _persist_workout(cur, week_id: int, payload: Dict[str, Any]) -> None:
             day_of_week = _coerce_int(payload.get("day_of_week"))
             if day_of_week is None:
@@ -160,7 +173,9 @@ class PostgresDal(PlanRepository):
                 rir_cue = rir
             percent_1rm = payload.get("percent_1rm")
             target_weight = payload.get("target_weight_kg")
-            scheduled_time = payload.get("scheduled_time") or payload.get("slot")
+            scheduled_time = _coerce_scheduled_time(payload.get("scheduled_time"))
+            if scheduled_time is None:
+                scheduled_time = _coerce_scheduled_time(payload.get("slot"))
             is_cardio = bool(payload.get("is_cardio"))
 
             cur.execute(
