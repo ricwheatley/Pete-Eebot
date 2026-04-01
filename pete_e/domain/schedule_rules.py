@@ -36,11 +36,11 @@ BLAZE_ID = 1630
 
 # Blaze class start times by weekday (1=Mon ... 7=Sun)
 BLAZE_TIMES = {
-    1: time(6, 15),  # Mon
-    2: time(7, 0),   # Tue
-    3: time(7, 0),   # Wed
-    4: time(6, 15),  # Thu
-    5: time(7, 15),  # Fri
+#    1: time(6, 15),  # Mon
+#    2: time(7, 0),   # Tue
+#    3: time(7, 0),   # Wed
+#    4: time(6, 15),  # Thu
+#    5: time(7, 15),  # Fri
 }
 
 # We treat Blaze duration as 45 minutes. We only store start time in DB.
