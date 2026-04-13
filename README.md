@@ -128,7 +128,21 @@ The daily path chains a sync before messaging and respects the dispatch ledger, 
 
 ### Cron on Raspberry Pi
 
-When you deploy on a Raspberry Pi the CLI is installed as `pete`, so you can drop a ready-made cron file into `/etc/cron.d/pete-eebot` (or use `crontab -e`). The example below assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete`, and `python3` resolves to the interpreter you used during setup. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
+When you deploy on a Raspberry Pi the cron schedule should be installed from the repository manifest, not maintained by hand. The source of truth lives in [`pete_e/resources/pete_crontab.csv`](pete_e/resources/pete_crontab.csv), and [`scripts/install_cron_examples.sh`](scripts/install_cron_examples.sh) installs the generated schedule into the current user's crontab. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
+
+Install or refresh the schedule with:
+
+```bash
+./scripts/install_cron_examples.sh --activate --summary
+```
+
+To inspect the generated crontab before activation:
+
+```bash
+./scripts/install_cron_examples.sh --print
+```
+
+The example below shows the rendered user crontab. It assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete`, and `python3` resolves to the interpreter you used during setup.
 
 ```
 SHELL=/bin/bash
@@ -144,13 +158,7 @@ MAILTO=""
 
 The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.run_sunday_review` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
 
-An optional helper script ships in `scripts/install_cron_examples.sh` to emit the same schedule with override hooks. For example:
-
-```
-./scripts/install_cron_examples.sh | sudo tee /etc/cron.d/pete-eebot
-```
-
-Override `PETE_BIN`, `PYTHON_BIN`, or `PROJECT_DIR` when your paths differ. Ensure the repo contains a writable `logs/` directory so the cron jobs can append to `logs/cron.log`.
+The installer backs up the existing user crontab before activation. It auto-detects `./venv/bin/python3` and `./.venv/bin/python3`; override `PYTHON_BIN` when your interpreter lives somewhere else. Ensure the repo contains a writable `logs/` directory so the cron jobs can append to `logs/cron.log`.
 
 
 Example:

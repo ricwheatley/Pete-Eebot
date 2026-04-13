@@ -1265,6 +1265,12 @@ COMMENT ON COLUMN "ImportLog".last_file_processed_at IS 'The ''client_modified''
 -- =============================================================================
 -- SECTION 5: PERMISSIONS
 -- =============================================================================
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO pete_user;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pete_user') THEN
+        GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;
+        GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;
+        ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO pete_user;
+    END IF;
+END;
+$$;

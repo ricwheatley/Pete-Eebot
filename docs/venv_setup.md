@@ -110,6 +110,14 @@ pete plan --weeks 4
 
 Add the commands to cron as documented in the main README once you are satisfied with the manual runs.
 
+On the Pi, install the scheduler from the repository manifest rather than editing the crontab manually:
+
+```bash
+./scripts/install_cron_examples.sh --activate --summary
+```
+
+Use `./scripts/install_cron_examples.sh --print` first if you want to inspect the generated crontab before it is applied.
+
 ---
 
 ## 9. Updating the environment
