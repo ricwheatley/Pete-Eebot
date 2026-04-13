@@ -592,7 +592,7 @@ def withings_sync(
 def status(
     timeout: Annotated[float, Option('--timeout', help='Override per-dependency timeout in seconds.')] = DEFAULT_TIMEOUT_SECONDS,
 ) -> None:
-    """Quick health check for database, Dropbox, and Withings integrations."""
+    """Quick health check for database and external service integrations."""
     results = run_status_checks(timeout=timeout)
     typer.echo(render_results(results))
     exit_code = 0 if all(result.ok for result in results) else 1

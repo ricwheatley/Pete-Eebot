@@ -96,7 +96,7 @@ The project ships a Typer application under the `pete` entry point. Common comma
 * `pete ingest-apple` â€“ downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
 * `pete sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
 * `pete withings-sync` â€“ executes the Withings-only branch of the pipeline.
-* `pete status` - prints a three-line health check for Postgres, Dropbox, and Withings, exiting non-zero on the first failure (use `--timeout` to adjust the 3s per dependency cap).
+* `pete status` - prints a five-service health check for Postgres, Dropbox, Withings, Telegram, and wger, exiting non-zero if any dependency fails (use `--timeout` to adjust the per-dependency timeout).
 * `pete plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
 * `pete message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
 
@@ -168,6 +168,8 @@ $ pete status
 DB       OK   9ms
 Dropbox  OK   demo@account
 Withings OK   scale reachable
+Telegram OK   @peteeebot chat configured
+Wger     OK   wger.de (api-key)
 ```
 
 Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.

@@ -10,7 +10,9 @@ import psycopg
 
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
+from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.infrastructure.wger_client import WgerClient
 
 DEFAULT_TIMEOUT_SECONDS = 3.0
 
@@ -74,6 +76,30 @@ def check_withings(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     return CheckResult(name="Withings", ok=True, detail=detail)
 
 
+def check_telegram(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
+    start = perf_counter()
+    try:
+        client = TelegramClient(request_timeout=timeout)
+        detail = client.ping()
+    except Exception as exc:  # pragma: no cover - handled via result
+        return CheckResult(name="Telegram", ok=False, detail=_format_exception(exc))
+    if not detail:
+        detail = _format_duration(start)
+    return CheckResult(name="Telegram", ok=True, detail=detail)
+
+
+def check_wger(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
+    start = perf_counter()
+    try:
+        client = WgerClient(timeout=timeout)
+        detail = client.ping()
+    except Exception as exc:  # pragma: no cover - handled via result
+        return CheckResult(name="Wger", ok=False, detail=_format_exception(exc))
+    if not detail:
+        detail = _format_duration(start)
+    return CheckResult(name="Wger", ok=True, detail=detail)
+
+
 def run_status_checks(
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -86,6 +112,8 @@ def run_status_checks(
             lambda: check_database(timeout),
             lambda: check_dropbox(timeout),
             lambda: check_withings(timeout),
+            lambda: check_telegram(timeout),
+            lambda: check_wger(timeout),
         )
 
     return [check() for check in checks]

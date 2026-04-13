@@ -58,3 +58,33 @@ def test_get_updates_calls_expected_url_and_params(monkeypatch: pytest.MonkeyPat
         "params": {"offset": 7, "limit": 100, "timeout": 10},
         "timeout": 15,
     }
+
+
+def test_ping_calls_get_me_and_reports_configured_bot(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_get(url: str, *, timeout: float) -> _DummyResponse:
+        calls.update({"url": url, "timeout": timeout})
+        payload = {"ok": True, "result": {"username": "peteeebot"}}
+        return _DummyResponse(payload)
+
+    monkeypatch.setattr("pete_e.infrastructure.telegram_client.requests.get", fake_get)
+
+    client = TelegramClient(token="abc123", chat_id="chat-1", request_timeout=2.5)
+    detail = client.ping()
+
+    assert detail == "@peteeebot chat configured"
+    assert calls == {
+        "url": "https://api.telegram.org/botabc123/getMe",
+        "timeout": 2.5,
+    }
+
+
+def test_ping_requires_chat_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("pete_e.infrastructure.telegram_client.settings.TELEGRAM_CHAT_ID", "")
+    client = TelegramClient(token="abc123")
+
+    with pytest.raises(RuntimeError) as exc:
+        client.ping()
+
+    assert "chat_id missing" in str(exc.value)
