@@ -89,7 +89,7 @@ Run a simple health check before scheduling cron jobs:
 pete status
 ```
 
-You should see a three-line summary reporting on Postgres, Dropbox, and Withings connectivity. If the command is not found, confirm that the virtual environment is active and `~/.local/bin` is on your `$PATH`.
+You should see a summary reporting on Postgres, Dropbox, Withings, Telegram, and wger connectivity. If the command is not found, confirm that the virtual environment is active and `~/.local/bin` is on your `$PATH`.
 
 ---
 

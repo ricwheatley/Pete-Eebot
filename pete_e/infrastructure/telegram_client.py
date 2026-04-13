@@ -54,10 +54,12 @@ class TelegramClient:
         token: str | None = None,
         chat_id: str | None = None,
         http_client: Any | None = None,
+        request_timeout: float = _REQUEST_TIMEOUT_SECONDS,
     ) -> None:
         self._token_override = _secret_to_str(token) if token is not None else None
         self._chat_id_override = _secret_to_str(chat_id) if chat_id is not None else None
         self._http = http_client or requests
+        self._request_timeout = request_timeout
 
     def _resolve_token(self) -> str:
         return self._token_override or _secret_to_str(getattr(settings, "TELEGRAM_TOKEN", None))
@@ -73,6 +75,46 @@ class TelegramClient:
             self._resolve_chat_id(),
         ) if candidate]
         return _scrub_sensitive(text, extras=extras)
+
+    def ping(self) -> str:
+        """Confirm Telegram bot reachability without sending a message."""
+
+        token = self._resolve_token()
+        target_chat_id = self._resolve_chat_id()
+
+        if not token:
+            raise RuntimeError("Telegram token missing.")
+        if not target_chat_id:
+            raise RuntimeError("Telegram chat_id missing.")
+
+        url = f"https://api.telegram.org/bot{token}/getMe"
+        try:
+            response = self._http.get(url, timeout=self._request_timeout)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            error_details = self._scrub(str(exc).strip() or exc.__class__.__name__)
+            raise RuntimeError(f"Telegram ping failed: {error_details}") from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Telegram ping returned invalid JSON.") from exc
+
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            description = payload.get("description") if isinstance(payload, dict) else "unknown error"
+            raise RuntimeError(self._scrub(f"Telegram ping failed: {description}"))
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("Telegram ping payload missing bot details.")
+
+        username = result.get("username")
+        if username:
+            return f"@{username} chat configured"
+        first_name = result.get("first_name")
+        if first_name:
+            return f"{first_name} chat configured"
+        return "bot reachable, chat configured"
 
     def send_message(self, message: str, *, chat_id: str | None = None) -> bool:
         """Send a message to the configured Telegram chat."""
@@ -99,12 +141,12 @@ class TelegramClient:
                     self._http.post(
                         url,
                         json={**payload, "text": chunk},
-                        timeout=_REQUEST_TIMEOUT_SECONDS,
+                        timeout=self._request_timeout,
                     ).raise_for_status()
                 log_utils.log_message("Message split + sent in chunks.", "INFO")
                 return True
 
-            response = self._http.post(url, json=payload, timeout=_REQUEST_TIMEOUT_SECONDS)
+            response = self._http.post(url, json=payload, timeout=self._request_timeout)
             response.raise_for_status()
             log_utils.log_message("Successfully sent message to Telegram.", "INFO")
             return True
@@ -136,7 +178,7 @@ class TelegramClient:
             response = self._http.get(
                 url,
                 params=params,
-                timeout=max(1, wait_timeout + 5),
+                timeout=max(self._request_timeout, wait_timeout + 5),
             )
             response.raise_for_status()
         except requests.exceptions.RequestException as exc:

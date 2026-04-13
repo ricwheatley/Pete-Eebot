@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -139,6 +140,16 @@ class WgerClient:
             return None
 
         raise WgerError(f"{method} {path} failed with {response.status_code}", response)
+
+    def ping(self) -> str:
+        """Confirm authenticated connectivity to the wger API."""
+
+        self._request("GET", "/routine/", params={"limit": 1})
+
+        parsed = urlparse(self.base_url)
+        host = parsed.netloc or parsed.path or self.base_url
+        auth_mode = "api-key" if _unwrap_secret(self.api_key) else "jwt"
+        return f"{host} ({auth_mode})"
 
     def get_all_pages(self, path: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Fetches and aggregates results from all pages of a paginated endpoint."""

@@ -10,11 +10,15 @@ runner = CliRunner()
 
 def test_status_cli_all_ok(monkeypatch):
     """CLI exits with code 0 when all dependencies are healthy."""
-    stub = lambda *, timeout=status.DEFAULT_TIMEOUT_SECONDS, checks=None: [
-        CheckResult("DB", True, "3ms"),
-        CheckResult("Dropbox", True, "demo@account"),
-        CheckResult("Withings", True, "scale reachable"),
-    ]
+    def stub(*, timeout=status.DEFAULT_TIMEOUT_SECONDS, checks=None):
+        return [
+            CheckResult("DB", True, "3ms"),
+            CheckResult("Dropbox", True, "demo@account"),
+            CheckResult("Withings", True, "scale reachable"),
+            CheckResult("Telegram", True, "@peteeebot chat configured"),
+            CheckResult("Wger", True, "wger.de (api-key)"),
+        ]
+
     monkeypatch.setattr(status, "run_status_checks", stub)
     monkeypatch.setattr(messenger, "run_status_checks", stub)
 
@@ -24,6 +28,8 @@ def test_status_cli_all_ok(monkeypatch):
     assert "DB" in result.stdout
     assert "Dropbox" in result.stdout
     assert "Withings" in result.stdout
+    assert "Telegram" in result.stdout
+    assert "Wger" in result.stdout
     assert "OK" in result.stdout
 
 
@@ -37,6 +43,8 @@ def test_status_cli_failure_propagates(monkeypatch):
             CheckResult("DB", False, "connection refused"),
             CheckResult("Dropbox", True, "demo"),
             CheckResult("Withings", True, "scale reachable"),
+            CheckResult("Telegram", True, "@peteeebot chat configured"),
+            CheckResult("Wger", True, "wger.de (api-key)"),
         ]
 
     monkeypatch.setattr(status, "run_status_checks", fake_checks)
