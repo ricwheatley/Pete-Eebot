@@ -137,12 +137,12 @@ MAILTO=""
 
 @reboot   sleep 120 && cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 3 --retries 3 >> logs/cron.log 2>&1
 5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 1 --retries 3 && /home/pi/.local/bin/pete message --summary --send >> logs/cron.log 2>&1
-0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.weekly_calibration >> logs/cron.log 2>&1
+0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
 5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
 * * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
 ```
 
-The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.weekly_calibration` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
+The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.run_sunday_review` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
 
 An optional helper script ships in `scripts/install_cron_examples.sh` to emit the same schedule with override hooks. For example:
 
