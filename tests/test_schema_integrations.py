@@ -72,6 +72,14 @@ def test_training_plan_schema_includes_single_active_index_and_core_pool() -> No
     assert core_pool_columns == ["exercise_id"]
 
 
+def test_schema_permissions_block_only_grants_to_pete_user_when_role_exists() -> None:
+    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+
+    assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pete_user') THEN" in schema_sql
+    assert "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;" in schema_sql
+    assert "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;" in schema_sql
+
+
 _EXPECTED_DAILY_SUMMARY_COLUMNS = {
     "muscle_pct",
     "water_pct",
