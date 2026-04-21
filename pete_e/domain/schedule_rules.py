@@ -222,9 +222,20 @@ def format_rest_seconds(seconds: int | None) -> str | None:
     return f"Rest {secs}s"
 
 
+def format_weight_kg(weight_kg: float | None) -> str | None:
+    if weight_kg is None:
+        return None
+    rounded = round(float(weight_kg), 2)
+    if rounded.is_integer():
+        return f"{int(rounded)} kg"
+    text = f"{rounded:.2f}".rstrip("0").rstrip(".")
+    return f"{text} kg"
+
+
 def workout_display_order(
     *,
     is_cardio: bool,
+    exercise_id: int | None = None,
     workout_type: str | None = None,
     details: Mapping[str, Any] | None = None,
 ) -> int:
@@ -240,7 +251,224 @@ def workout_display_order(
         return 15
     if session_type == STRETCH_SESSION_TYPE or workout_kind == MOBILITY_WORKOUT_TYPE:
         return 30
+
+    role = classify_exercise(exercise_id)
+    if role == "main":
+        return 20
+    if role in {"assistance", "core"}:
+        return 25
     return 20
+
+
+def _clean_number_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        text = str(value).strip()
+        return text or None
+    if numeric.is_integer():
+        return str(int(numeric))
+    return f"{numeric:.1f}".rstrip("0").rstrip(".")
+
+
+def _speed_range_text(step: Mapping[str, Any]) -> str | None:
+    minimum = _clean_number_text(step.get("min_speed_kph"))
+    maximum = _clean_number_text(step.get("max_speed_kph"))
+    exact = _clean_number_text(step.get("speed_kph"))
+
+    if minimum and maximum:
+        return f"{minimum}-{maximum} km/h"
+    if exact:
+        return f"{exact} km/h"
+    return None
+
+
+def running_session_summary(details: Mapping[str, Any] | None) -> str | None:
+    details_map = details if isinstance(details, Mapping) else {}
+    session_type = str(details_map.get("session_type") or "").strip().lower()
+    steps = details_map.get("steps")
+    if session_type not in RUN_SESSION_TYPES or not isinstance(steps, list):
+        return None
+
+    if session_type == "intervals" and len(steps) >= 3:
+        warmup = steps[0] if isinstance(steps[0], Mapping) else {}
+        repeat = steps[1] if isinstance(steps[1], Mapping) else {}
+        cooldown = steps[2] if isinstance(steps[2], Mapping) else {}
+        repeat_steps = repeat.get("steps") if isinstance(repeat, Mapping) else None
+        work = repeat_steps[0] if isinstance(repeat_steps, list) and len(repeat_steps) > 0 and isinstance(repeat_steps[0], Mapping) else {}
+        recovery = repeat_steps[1] if isinstance(repeat_steps, list) and len(repeat_steps) > 1 and isinstance(repeat_steps[1], Mapping) else {}
+        repeats = _clean_number_text(repeat.get("repeats"))
+        work_duration = _clean_number_text(work.get("duration_minutes"))
+        work_speed = _clean_number_text(work.get("speed_kph"))
+        recovery_duration = _clean_number_text(recovery.get("duration_minutes"))
+        recovery_speed = _clean_number_text(recovery.get("speed_kph"))
+        warmup_duration = _clean_number_text(warmup.get("duration_minutes"))
+        cooldown_duration = _clean_number_text(cooldown.get("duration_minutes"))
+        if all((repeats, work_duration, work_speed, recovery_duration, recovery_speed, warmup_duration, cooldown_duration)):
+            return (
+                f"Intervals {repeats} x ({work_duration}m @ {work_speed} km/h, "
+                f"{recovery_duration}m @ {recovery_speed} km/h) after "
+                f"{warmup_duration}m warmup and {cooldown_duration}m cooldown"
+            )
+
+    if session_type == "tempo" and len(steps) >= 3:
+        warmup = steps[0] if isinstance(steps[0], Mapping) else {}
+        steady = steps[1] if isinstance(steps[1], Mapping) else {}
+        cooldown = steps[2] if isinstance(steps[2], Mapping) else {}
+        warmup_duration = _clean_number_text(warmup.get("duration_minutes"))
+        steady_duration = _clean_number_text(steady.get("duration_minutes"))
+        steady_speed = _clean_number_text(steady.get("speed_kph"))
+        cooldown_duration = _clean_number_text(cooldown.get("duration_minutes"))
+        if all((warmup_duration, steady_duration, steady_speed, cooldown_duration)):
+            return (
+                f"Tempo {steady_duration}m @ {steady_speed} km/h after "
+                f"{warmup_duration}m warmup and {cooldown_duration}m cooldown"
+            )
+
+    if session_type in {"easy", "steady", "recovery"} and steps:
+        first = steps[0] if isinstance(steps[0], Mapping) else {}
+        duration = _clean_number_text(first.get("duration_minutes"))
+        min_duration = _clean_number_text(first.get("min_duration_minutes"))
+        max_duration = _clean_number_text(first.get("max_duration_minutes"))
+        speed = _speed_range_text(first)
+        label = {
+            "easy": "Easy run",
+            "steady": "Steady run",
+            "recovery": "Recovery run",
+        }[session_type]
+        duration_text = None
+        if duration:
+            duration_text = f"{duration}m"
+        elif min_duration and max_duration:
+            duration_text = f"{min_duration}-{max_duration}m"
+        if duration_text and speed:
+            return f"{label} {duration_text} @ {speed}"
+
+    if session_type == "long_run" and steps:
+        first = steps[0] if isinstance(steps[0], Mapping) else {}
+        distance = _clean_number_text(first.get("distance_km"))
+        speed = _speed_range_text(first)
+        if distance and speed:
+            return f"Long run {distance} km @ {speed}"
+        if distance:
+            return f"Long run {distance} km"
+
+    label = {
+        "intervals": "Intervals",
+        "tempo": "Tempo run",
+        "easy": "Easy run",
+        "steady": "Steady run",
+        "recovery": "Recovery run",
+        "long_run": "Long run",
+    }.get(session_type)
+    return label
+
+
+def _stretch_step_label(step: Mapping[str, Any]) -> str | None:
+    name = str(step.get("name") or "").strip()
+    if not name:
+        return None
+    if step.get("is_isometric"):
+        return f"{name} [isometric]"
+    if step.get("includes_isometric_hold"):
+        hold_seconds = _clean_number_text(step.get("hold_seconds"))
+        if hold_seconds:
+            return f"{name} [dynamic + {hold_seconds}s hold]"
+        return f"{name} [dynamic + hold]"
+    movement_type = str(step.get("movement_type") or "").strip()
+    if movement_type:
+        return f"{name} [{movement_type}]"
+    return name
+
+
+def stretch_routine_summary(details: Mapping[str, Any] | None) -> str | None:
+    details_map = details if isinstance(details, Mapping) else {}
+    if str(details_map.get("session_type") or "").strip().lower() != STRETCH_SESSION_TYPE:
+        return None
+
+    display_name = str(details_map.get("display_name") or "Stretch routine").strip()
+    steps = details_map.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return display_name
+
+    step_count = len(steps)
+    isometric_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, Mapping) and step.get("is_isometric")
+        ),
+        None,
+    )
+    mixed_hold_step = next(
+        (
+            step
+            for step in steps
+            if isinstance(step, Mapping) and step.get("includes_isometric_hold")
+        ),
+        None,
+    )
+
+    snippets: List[str] = [f"{step_count}-step mobility flow"]
+    if isinstance(isometric_step, Mapping):
+        label = _stretch_step_label(isometric_step)
+        if label:
+            snippets.append(label)
+    if isinstance(mixed_hold_step, Mapping):
+        label = _stretch_step_label(mixed_hold_step)
+        if label:
+            snippets.append(label)
+    return f"{display_name}: " + "; ".join(snippets)
+
+
+def stretch_routine_description(details: Mapping[str, Any] | None) -> str:
+    details_map = details if isinstance(details, Mapping) else {}
+    display_name = str(details_map.get("display_name") or "Stretch routine").strip()
+    source = str(details_map.get("source") or "").strip()
+    steps = details_map.get("steps")
+
+    lines: List[str] = [display_name]
+    if source:
+        lines.append(f"Source: {source}")
+
+    if isinstance(steps, list) and steps:
+        lines.append("")
+        for index, step in enumerate(steps, start=1):
+            if not isinstance(step, Mapping):
+                continue
+            label = _stretch_step_label(step)
+            prescription = str(step.get("prescription") or "").strip()
+            if label and prescription:
+                lines.append(f"{index}. {label} - {prescription}")
+            elif label:
+                lines.append(f"{index}. {label}")
+
+    return "\n".join(lines).strip()
+
+
+def build_export_comment(
+    *,
+    base_comment: str | None,
+    details: Mapping[str, Any] | None,
+) -> str | None:
+    comment = str(base_comment or "").strip()
+    details_map = details if isinstance(details, Mapping) else None
+    if details_map is None:
+        return comment or None
+
+    run_summary = running_session_summary(details_map)
+    if run_summary:
+        return f"{comment}: {run_summary}" if comment else run_summary
+
+    stretch_summary = stretch_routine_summary(details_map)
+    if stretch_summary:
+        if comment and stretch_summary.lower().startswith(comment.lower()):
+            return stretch_summary
+        return f"{comment}: {stretch_summary}" if comment else stretch_summary
+
+    return comment or None
 
 
 # ------------------------------------------------------------------------------

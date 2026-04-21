@@ -45,17 +45,17 @@ class PlanFactory:
             
         return self._round_to_2p5(training_max * percent / 100.0)
 
-    def _workout_sort_key(self, workout: Dict[str, Any]) -> tuple[int, int, str, str]:
+    def _workout_sort_key(self, workout: Dict[str, Any]) -> tuple[int, int, str]:
         details = workout.get("details")
         return (
             int(workout.get("day_of_week") or 0),
             schedule_rules.workout_display_order(
                 is_cardio=bool(workout.get("is_cardio")),
+                exercise_id=workout.get("exercise_id"),
                 workout_type=workout.get("type"),
                 details=details if isinstance(details, dict) else None,
             ),
             str(workout.get("scheduled_time") or ""),
-            str(workout.get("exercise_id") or ""),
         )
 
     def create_531_block_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:

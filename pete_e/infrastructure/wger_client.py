@@ -37,6 +37,9 @@ class WgerError(RuntimeError):
 
 
 class WgerClient:
+    DEFAULT_CUSTOM_EXERCISE_CATEGORY = 9
+    DEFAULT_CUSTOM_EXERCISE_LANGUAGE = 2
+
     def __init__(self, *, timeout: float | None = None):
         api_suffix = "/api/v2"
         raw_base = settings.WGER_BASE_URL.rstrip("/")
@@ -174,6 +177,81 @@ class WgerClient:
             else:
                 break
         return items
+
+    def find_exercise_translation(
+        self,
+        *,
+        name: str,
+        language_id: int | None = None,
+    ) -> Dict[str, Any] | None:
+        params: Dict[str, Any] = {"name": name}
+        if language_id is not None:
+            params["language"] = language_id
+
+        response = self._request("GET", "/exercise-translation/", params=params)
+        results = response.get("results", []) if isinstance(response, dict) else []
+        target = name.strip().lower()
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            candidate = str(item.get("name") or "").strip().lower()
+            if candidate != target:
+                continue
+            if language_id is not None and item.get("language") != language_id:
+                continue
+            return item
+        return None
+
+    def ensure_custom_exercise(
+        self,
+        *,
+        name: str,
+        description: str,
+        category_id: int | None = None,
+        language_id: int | None = None,
+        license_author: str = "Pete-E automation",
+    ) -> int:
+        resolved_category = category_id or self.DEFAULT_CUSTOM_EXERCISE_CATEGORY
+        resolved_language = language_id or self.DEFAULT_CUSTOM_EXERCISE_LANGUAGE
+
+        translation = self.find_exercise_translation(
+            name=name,
+            language_id=resolved_language,
+        )
+        if translation and translation.get("exercise") is not None:
+            if str(translation.get("description") or "").strip() != description.strip():
+                self._request(
+                    "PATCH",
+                    f"/exercise-translation/{translation['id']}/",
+                    json={
+                        "name": name,
+                        "exercise": int(translation["exercise"]),
+                        "description": description,
+                        "language": resolved_language,
+                        "license_author": license_author,
+                    },
+                )
+            return int(translation["exercise"])
+
+        exercise_payload = {
+            "category": resolved_category,
+            "muscles": [],
+            "muscles_secondary": [],
+            "equipment": [],
+            "license_author": license_author,
+        }
+        exercise = self._request("POST", "/exercise/", json=exercise_payload)
+        exercise_id = int(exercise["id"])
+
+        translation_payload = {
+            "name": name,
+            "exercise": exercise_id,
+            "description": description,
+            "language": resolved_language,
+            "license_author": license_author,
+        }
+        self._request("POST", "/exercise-translation/", json=translation_payload)
+        return exercise_id
 
     # --- Catalog & Log Reading ---
     def get_workout_logs(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
