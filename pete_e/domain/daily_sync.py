@@ -80,6 +80,14 @@ class DailyMetricsRepository(Protocol):
     ) -> None:
         """Persist a Withings daily summary."""
 
+    def save_withings_measure_groups(
+        self,
+        *,
+        day: date,
+        measure_groups: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Persist raw Withings measure groups for future-proof analysis."""
+
     def refresh_daily_summary(self, *, days: int) -> None:
         """Refresh the reporting view that powers the daily summary."""
 
@@ -146,6 +154,10 @@ class DailySyncService:
                     body_fat_pct=summary.get("fat_percent"),
                     muscle_pct=summary.get("muscle_percent"),
                     water_pct=summary.get("water_percent"),
+                )
+                self._repository.save_withings_measure_groups(
+                    day=day,
+                    measure_groups=list(summary.get("measure_groups") or []),
                 )
         except Exception:
             return DailySyncSourceResult(

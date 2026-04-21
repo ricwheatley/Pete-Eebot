@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import hashlib
 from contextlib import contextmanager
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from psycopg import sql
@@ -475,6 +475,88 @@ class PostgresDal(PlanRepository):
         sql = "INSERT INTO withings_daily (date, weight_kg, body_fat_pct, muscle_pct, water_pct) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (date) DO UPDATE SET weight_kg = EXCLUDED.weight_kg, body_fat_pct = EXCLUDED.body_fat_pct, muscle_pct = EXCLUDED.muscle_pct, water_pct = EXCLUDED.water_pct;"
         with self._get_cursor() as cur:
             cur.execute(sql, (day, weight_kg, body_fat_pct, muscle_pct, water_pct))
+
+    @staticmethod
+    def _epoch_to_timestamp(value: Any) -> Optional[datetime]:
+        if value in (None, ""):
+            return None
+        try:
+            return datetime.fromtimestamp(int(value), tz=timezone.utc)
+        except (TypeError, ValueError, OSError):
+            return None
+
+    def save_withings_measure_groups(
+        self,
+        *,
+        day: date,
+        measure_groups: List[Dict[str, Any]],
+    ) -> None:
+        if not measure_groups:
+            return
+
+        sql_text = """
+            INSERT INTO withings_measure_groups (
+                grpid,
+                day,
+                measured_at,
+                created_at_source,
+                modified_at_source,
+                category,
+                attrib,
+                comment,
+                device_id,
+                hash_device_id,
+                model,
+                model_id,
+                timezone_name,
+                raw_payload_json
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            ON CONFLICT (grpid) DO UPDATE SET
+                day = EXCLUDED.day,
+                measured_at = EXCLUDED.measured_at,
+                created_at_source = EXCLUDED.created_at_source,
+                modified_at_source = EXCLUDED.modified_at_source,
+                category = EXCLUDED.category,
+                attrib = EXCLUDED.attrib,
+                comment = EXCLUDED.comment,
+                device_id = EXCLUDED.device_id,
+                hash_device_id = EXCLUDED.hash_device_id,
+                model = EXCLUDED.model,
+                model_id = EXCLUDED.model_id,
+                timezone_name = EXCLUDED.timezone_name,
+                raw_payload_json = EXCLUDED.raw_payload_json;
+        """
+        values: List[tuple[Any, ...]] = []
+        for group in measure_groups:
+            grpid = group.get("grpid")
+            if grpid is None:
+                continue
+            values.append(
+                (
+                    int(grpid),
+                    day,
+                    self._epoch_to_timestamp(group.get("date")),
+                    self._epoch_to_timestamp(group.get("created")),
+                    self._epoch_to_timestamp(group.get("modified")),
+                    group.get("category"),
+                    group.get("attrib"),
+                    group.get("comment"),
+                    group.get("deviceid"),
+                    group.get("hash_deviceid"),
+                    group.get("model"),
+                    group.get("modelid"),
+                    group.get("timezone"),
+                    Json(group),
+                )
+            )
+
+        if not values:
+            return
+
+        with self._get_cursor() as cur:
+            cur.executemany(sql_text, values)
 
     def save_wger_log(self, day: date, exercise_id: int, set_number: int, reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         sql = "INSERT INTO wger_logs (date, exercise_id, set_number, reps, weight_kg, rir) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (date, exercise_id, set_number) DO UPDATE SET reps = EXCLUDED.reps, weight_kg = EXCLUDED.weight_kg, rir = EXCLUDED.rir;"

@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS training_max CASCADE;
 DROP TABLE IF EXISTS training_cycle CASCADE;
 DROP TABLE IF EXISTS training_blocks CASCADE;
 DROP TABLE IF EXISTS wger_export_log CASCADE;
+DROP TABLE IF EXISTS withings_measure_groups CASCADE;
 DROP TABLE IF EXISTS training_plan_workouts CASCADE;
 DROP TABLE IF EXISTS training_plan_weeks CASCADE;
 DROP TABLE IF EXISTS training_plans CASCADE;
@@ -144,6 +145,26 @@ CREATE TABLE withings_daily (
     water_pct NUMERIC(4,2)
 );
 COMMENT ON TABLE withings_daily IS 'Stores daily body metrics from Withings. Source of truth for weight/bodyfat.';
+
+CREATE TABLE withings_measure_groups (
+    grpid BIGINT PRIMARY KEY,
+    day DATE NOT NULL,
+    measured_at TIMESTAMPTZ NOT NULL,
+    created_at_source TIMESTAMPTZ,
+    modified_at_source TIMESTAMPTZ,
+    category INT,
+    attrib INT,
+    comment TEXT,
+    device_id TEXT,
+    hash_device_id TEXT,
+    model TEXT,
+    model_id INT,
+    timezone_name TEXT,
+    raw_payload_json JSONB NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE withings_measure_groups IS 'Stores every raw Withings measure group returned by getmeas so newly exposed scale metrics are retained without schema changes.';
+CREATE INDEX idx_withings_measure_groups_day ON withings_measure_groups(day);
 
 -- NEW Apple Health Daily Metrics Tables (Normalized)
 CREATE TABLE "DailyMetric" (

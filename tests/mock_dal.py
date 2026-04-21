@@ -30,6 +30,14 @@ class MockableDal(DataAccessLayer):
     ) -> None:
         pass
 
+    def save_withings_measure_groups(
+        self,
+        *,
+        day: date,
+        measure_groups: List[Dict[str, Any]],
+    ) -> None:
+        pass
+
     def save_wger_log(
         self,
         day: date,

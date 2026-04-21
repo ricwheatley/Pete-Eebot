@@ -122,3 +122,75 @@ def test_withings_client_reloads_tokens_when_storage_changes(monkeypatch):
     assert client.refresh_token == "r2"
     assert client._cached_tokens["access_token"] == "second"
     assert token_storage.read_tokens.call_count == 2
+
+
+def test_withings_summary_collects_all_measure_groups_and_derives_water_percent(monkeypatch):
+    future_expiry = int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp())
+
+    token_storage = Mock(spec=TokenStorage)
+    token_storage.read_tokens.return_value = {
+        "access_token": "token",
+        "refresh_token": "refresh",
+        "expires_at": future_expiry,
+    }
+
+    client = WithingsClient(token_storage=token_storage)
+    monkeypatch.setattr(
+        client,
+        "_fetch_measures",
+        lambda start, end: {
+            "status": 0,
+            "body": {
+                "measuregrps": [
+                    {
+                        "grpid": 7614618996,
+                        "date": 1776051256,
+                        "created": 1776051318,
+                        "modified": 1776051318,
+                        "model": "Body Comp",
+                        "modelid": 18,
+                        "timezone": "Europe/London",
+                        "measures": [
+                            {"type": 167, "value": 51674, "unit": -3},
+                        ],
+                    },
+                    {
+                        "grpid": 7614618991,
+                        "date": 1776051256,
+                        "created": 1776051318,
+                        "modified": 1776051318,
+                        "model": "Body Comp",
+                        "modelid": 18,
+                        "timezone": "Europe/London",
+                        "measures": [
+                            {"type": 1, "value": 92891, "unit": -3},
+                            {"type": 5, "value": 6707, "unit": -2},
+                            {"type": 6, "value": 27785, "unit": -3},
+                            {"type": 8, "value": 2581, "unit": -2},
+                            {"type": 76, "value": 6374, "unit": -2},
+                            {"type": 77, "value": 4735, "unit": -2},
+                            {"type": 88, "value": 333, "unit": -2},
+                            {"type": 170, "value": 48, "unit": -1},
+                            {"type": 226, "value": 1963, "unit": 0},
+                            {"type": 227, "value": 47, "unit": 0},
+                        ],
+                    },
+                ],
+            },
+        },
+    )
+
+    summary = client.get_summary(days_back=0)
+
+    assert summary["weight"] == 92.89
+    assert summary["fat_percent"] == 27.79
+    assert summary["fat_free_mass_kg"] == 67.07
+    assert summary["fat_mass_kg"] == 25.81
+    assert summary["muscle_mass_kg"] == 63.74
+    assert summary["bone_mass_kg"] == 3.33
+    assert summary["visceral_fat_index"] == 4.8
+    assert summary["bmr_kcal_day"] == 1963.0
+    assert summary["nerve_health_score_feet"] == 51.674
+    assert summary["water_percent"] == 50.97
+    assert summary["measure_type_values"]["227"] == 47.0
+    assert len(summary["measure_groups"]) == 2

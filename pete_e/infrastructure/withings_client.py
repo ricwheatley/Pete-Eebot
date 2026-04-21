@@ -355,7 +355,6 @@ class WithingsClient:
 
         params = {
             "action": "getmeas",
-            "meastypes": "1,6,76,77",  # weight, fat %, muscle, water
             "category": 1,
             "startdate": int(start.timestamp()),
             "enddate": int(end.timestamp()),
@@ -412,6 +411,47 @@ class WithingsClient:
             last_response.raise_for_status()
         raise RuntimeError("Unexpected failure fetching Withings measures.")
 
+    @staticmethod
+    def _decode_measure_value(measure: Dict[str, Any]) -> float | None:
+        raw_value = measure.get("value")
+        raw_unit = measure.get("unit", 0)
+        if raw_value is None:
+            return None
+        try:
+            return float(raw_value) * (10 ** int(raw_unit))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _sort_measure_groups(measure_groups: list[dict]) -> list[dict]:
+        return sorted(
+            measure_groups,
+            key=lambda group: (
+                int(group.get("date") or 0),
+                int(group.get("created") or 0),
+                int(group.get("modified") or 0),
+                int(group.get("grpid") or 0),
+            ),
+        )
+
+    def _collect_measure_type_values(self, measure_groups: list[dict]) -> Dict[int, float]:
+        values: Dict[int, float] = {}
+        for group in self._sort_measure_groups(measure_groups):
+            measures = group.get("measures", [])
+            if not isinstance(measures, list):
+                continue
+            for measure in measures:
+                if not isinstance(measure, dict):
+                    continue
+                measure_type = measure.get("type")
+                if not isinstance(measure_type, int):
+                    continue
+                scaled_value = self._decode_measure_value(measure)
+                if scaled_value is None:
+                    continue
+                values[measure_type] = scaled_value
+        return values
+
     def get_summary(self, days_back: int = 1) -> dict:
         """
         Returns a summary dict for a given day.
@@ -430,35 +470,55 @@ class WithingsClient:
         if js.get("status") != 0:
             raise RuntimeError(f"Withings fetch failed: {js}")
 
-        measures = js.get("body", {}).get("measuregrps", [])
-        if not measures:
+        measure_groups = js.get("body", {}).get("measuregrps", [])
+        if not measure_groups:
             log_message(
                 f"No Withings measures found for {target_date.isoformat()}.", "WARN"
             )
-            return {"date": target_date.isoformat()}
+            return {"date": target_date.isoformat(), "measure_groups": []}
 
-        latest = measures[-1]
-        row = {"date": target_date.isoformat()}
+        ordered_groups = self._sort_measure_groups(list(measure_groups))
+        measure_type_values = self._collect_measure_type_values(ordered_groups)
 
-        def val(type_id: int):
-            for m in latest.get("measures", []):
-                if m.get("type") == type_id:
-                    return m["value"] * (10 ** m.get("unit", 0))
-            return None
+        row = {
+            "date": target_date.isoformat(),
+            "measure_groups": ordered_groups,
+            "measure_type_values": {
+                str(type_id): value
+                for type_id, value in sorted(measure_type_values.items())
+            },
+        }
 
-        weight_value = val(1)
-        fat_value = val(6)
-        muscle_value = val(76)
-        water_value = val(77)
+        weight_value = measure_type_values.get(1)
+        fat_free_mass_value = measure_type_values.get(5)
+        fat_value = measure_type_values.get(6)
+        fat_mass_value = measure_type_values.get(8)
+        muscle_value = measure_type_values.get(76)
+        water_mass_value = measure_type_values.get(77)
+        bone_mass_value = measure_type_values.get(88)
+        visceral_fat_value = measure_type_values.get(170)
+        bmr_value = measure_type_values.get(226)
+        nerve_health_value = measure_type_values.get(167)
 
         row["weight"] = round(weight_value, 2) if weight_value is not None else None
         row["fat_percent"] = round(fat_value, 2) if fat_value is not None else None
-        row["muscle_mass"] = round(muscle_value, 2) if muscle_value is not None else None
+        row["fat_free_mass_kg"] = round(fat_free_mass_value, 2) if fat_free_mass_value is not None else None
+        row["fat_mass_kg"] = round(fat_mass_value, 2) if fat_mass_value is not None else None
+        row["muscle_mass_kg"] = round(muscle_value, 2) if muscle_value is not None else None
+        row["muscle_mass"] = row["muscle_mass_kg"]
+        row["water_mass_kg"] = round(water_mass_value, 2) if water_mass_value is not None else None
+        row["bone_mass_kg"] = round(bone_mass_value, 2) if bone_mass_value is not None else None
+        row["visceral_fat_index"] = round(visceral_fat_value, 2) if visceral_fat_value is not None else None
+        row["bmr_kcal_day"] = round(bmr_value, 2) if bmr_value is not None else None
+        row["nerve_health_score_feet"] = round(nerve_health_value, 3) if nerve_health_value is not None else None
         if muscle_value is not None and weight_value not in (None, 0):
             row["muscle_percent"] = round((muscle_value / weight_value) * 100, 2)
         else:
             row["muscle_percent"] = None
-        row["water_percent"] = round(water_value, 2) if water_value is not None else None
+        if water_mass_value is not None and weight_value not in (None, 0):
+            row["water_percent"] = round((water_mass_value / weight_value) * 100, 2)
+        else:
+            row["water_percent"] = None
 
         log_message(
             f"Successfully fetched Withings summary for {target_date.isoformat()}.",

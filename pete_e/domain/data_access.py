@@ -26,6 +26,16 @@ class DataAccessLayer(ABC):
         pass
 
     @abstractmethod
+    def save_withings_measure_groups(
+        self,
+        *,
+        day: date,
+        measure_groups: List[Dict[str, Any]],
+    ) -> None:
+        """Persist raw Withings measure groups for future-proof analysis."""
+        pass
+
+    @abstractmethod
     def save_wger_log(self, day: date, exercise_id: int, set_number: int,
                       reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         pass
