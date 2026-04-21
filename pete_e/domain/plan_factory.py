@@ -123,6 +123,77 @@ class PlanFactory:
                         "scheduled_time": slot_str,
                     })
 
+            # 5. Layer treadmill running around the fixed lifting split
+            quality_details = (
+                schedule_rules.quality_intervals_details()
+                if week_num % 2 == 1
+                else schedule_rules.quality_tempo_details()
+            )
+            week_workouts.append(
+                {
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Quality run",
+                    "details": quality_details,
+                }
+            )
+
+            week_workouts.append(
+                {
+                    "day_of_week": 2,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Easy run",
+                    "details": schedule_rules.easy_run_details(),
+                    "optional": True,
+                    "recovery_focused": True,
+                }
+            )
+
+            week_workouts.append(
+                {
+                    "day_of_week": 4,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Steady run",
+                    "details": schedule_rules.steady_run_details(),
+                }
+            )
+
+            week_workouts.append(
+                {
+                    "day_of_week": 5,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Recovery micro run",
+                    "details": schedule_rules.recovery_micro_run_details(),
+                    "optional": True,
+                    "recovery_focused": True,
+                }
+            )
+
+            long_run_distance = 6 + (week_num - 1)
+            week_workouts.append(
+                {
+                    "day_of_week": 6,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Long run",
+                    "details": schedule_rules.long_run_details(distance_km=long_run_distance),
+                }
+            )
+
             plan_weeks.append({"week_number": week_num, "workouts": week_workouts})
 
         return {"start_date": start_date, "weeks": weeks_in_plan, "plan_weeks": plan_weeks}

@@ -130,6 +130,13 @@ class PlanMapper:
         workout_type = data.get("type") or ("cardio" if is_cardio else "weights")
         percent_1rm = converters.to_float(data.get("percent_1rm"))
         intensity = data.get("intensity")
+        comment = data.get("comment")
+        optional = bool(data.get("optional", False))
+        recovery_focused = bool(data.get("recovery_focused", False))
+        details_raw = data.get("details")
+        details: MutableMapping[str, Any] | None = None
+        if isinstance(details_raw, MutableMapping):
+            details = dict(details_raw)
 
         exercise = self._build_exercise(data)
 
@@ -142,6 +149,10 @@ class PlanMapper:
             percent_1rm=percent_1rm,
             exercise=exercise,
             intensity=intensity,
+            comment=None if comment is None else str(comment),
+            optional=optional,
+            recovery_focused=recovery_focused,
+            details=details,
         )
 
     def _build_exercise(self, data: Mapping[str, Any]) -> Exercise | None:
@@ -204,6 +215,10 @@ class PlanMapper:
             "type": workout.type,
             "percent_1rm": workout.percent_1rm,
             "intensity": workout.intensity,
+            "comment": workout.comment,
+            "optional": workout.optional,
+            "recovery_focused": workout.recovery_focused,
+            "details": None if workout.details is None else dict(workout.details),
         }
 
         if exercise is not None:
