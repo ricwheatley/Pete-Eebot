@@ -322,7 +322,18 @@ class PostgresDal(PlanRepository):
             return cur.fetchone()
 
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        sql = "SELECT tpw.*, tw.week_number, tw.is_test FROM training_plan_workouts tpw JOIN training_plan_weeks tw ON tw.id = tpw.week_id WHERE tw.plan_id = %s AND tw.week_number = %s ORDER BY tpw.day_of_week, tpw.id;"
+        sql = """
+            SELECT tpw.*, tw.week_number, tw.is_test
+            FROM training_plan_workouts tpw
+            JOIN training_plan_weeks tw ON tw.id = tpw.week_id
+            WHERE tw.plan_id = %s
+              AND tw.week_number = %s
+            ORDER BY
+                tpw.day_of_week,
+                COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
+                tpw.scheduled_time NULLS LAST,
+                tpw.id;
+        """
         with self._get_cursor() as cur:
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()

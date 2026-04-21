@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 import tests.config_stub  # noqa: F401
 
 from pete_e.cli import messenger
+from pete_e.domain import schedule_rules
 from pete_e.domain import narrative_builder
 
 
@@ -168,3 +169,52 @@ def test_weekly_plan_legacy_rows_render_without_treadmill_details():
     rows = [{"day_of_week": 1, "exercise_name": "Bench Press", "sets": 5, "reps": 5, "rir": 2}]
     message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
     assert "- Monday: Bench Press (5 x 5 · RIR 2)" in message
+
+
+def test_weekly_plan_formats_limber_11_and_orders_run_weights_stretch():
+    rows = [
+        {
+            "day_of_week": 1,
+            "exercise_name": "Bench Press",
+            "sets": 5,
+            "reps": 5,
+            "rir": 2,
+        },
+        {
+            "day_of_week": 1,
+            "comment": "Limber 11",
+            "details": {
+                "session_type": schedule_rules.STRETCH_SESSION_TYPE,
+                "display_name": "Limber 11",
+                "steps": [
+                    {"name": "Seated Piriformis Stretch", "is_isometric": True},
+                    {
+                        "name": "Rear-foot-elevated Hip Flexor Stretch",
+                        "is_isometric": False,
+                        "includes_isometric_hold": True,
+                        "hold_seconds": 3,
+                    },
+                ],
+            },
+        },
+        {
+            "day_of_week": 1,
+            "comment": "Quality run",
+            "is_cardio": True,
+            "details": {
+                "session_type": "tempo",
+                "steps": [
+                    {"kind": "warmup", "duration_minutes": 5, "speed_kph": 8.5},
+                    {"kind": "steady", "duration_minutes": 20, "speed_kph": 10.5},
+                    {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
+                ],
+            },
+        },
+    ]
+
+    message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
+    monday_line = next(line for line in message.splitlines() if line.startswith("- Monday:"))
+
+    assert monday_line.index("Quality run") < monday_line.index("Bench Press") < monday_line.index("Limber 11")
+    assert "Seated Piriformis Stretch [isometric]" in monday_line
+    assert "Rear-foot-elevated Hip Flexor Stretch [dynamic + 3s hold]" in monday_line

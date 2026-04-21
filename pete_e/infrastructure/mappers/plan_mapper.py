@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, time
 from typing import Any, Iterable, Mapping, MutableMapping, Sequence
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.entities import Exercise, Plan, Week, Workout
 from pete_e.utils import converters
 
@@ -127,16 +128,22 @@ class PlanMapper:
         scheduled_time = self._to_time_string(data.get("scheduled_time"))
         slot = scheduled_time or data.get("slot")
         is_cardio = bool(data.get("is_cardio"))
-        workout_type = data.get("type") or ("cardio" if is_cardio else "weights")
+        details_raw = data.get("details")
+        details: MutableMapping[str, Any] | None = None
+        if isinstance(details_raw, MutableMapping):
+            details = dict(details_raw)
+        workout_type = data.get("type")
+        if workout_type is None:
+            session_type = str((details or {}).get("session_type") or "").strip().lower()
+            if session_type == schedule_rules.STRETCH_SESSION_TYPE:
+                workout_type = schedule_rules.MOBILITY_WORKOUT_TYPE
+            else:
+                workout_type = "cardio" if is_cardio else "weights"
         percent_1rm = converters.to_float(data.get("percent_1rm"))
         intensity = data.get("intensity")
         comment = data.get("comment")
         optional = bool(data.get("optional", False))
         recovery_focused = bool(data.get("recovery_focused", False))
-        details_raw = data.get("details")
-        details: MutableMapping[str, Any] | None = None
-        if isinstance(details_raw, MutableMapping):
-            details = dict(details_raw)
 
         exercise = self._build_exercise(data)
 
@@ -158,6 +165,12 @@ class PlanMapper:
     def _build_exercise(self, data: Mapping[str, Any]) -> Exercise | None:
         exercise_id = self._to_int(data.get("exercise_id"))
         exercise_name = data.get("exercise_name")
+        details_raw = data.get("details")
+        details = details_raw if isinstance(details_raw, Mapping) else None
+        if exercise_name is None and details is not None:
+            display_name = details.get("display_name")
+            if display_name:
+                exercise_name = display_name
 
         if exercise_id is None and exercise_name is None and data.get("is_cardio"):
             return Exercise(id=None, name="Cardio", sets=None, reps=None)

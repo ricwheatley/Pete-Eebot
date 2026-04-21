@@ -218,6 +218,7 @@ class WgerClient:
     def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value: Any, repeat: bool = False):
         """Generic method to post to sets-config, repetitions-config, etc."""
         endpoint_map = {
+            "weight": "/weight-config/",
             "sets": "/sets-config/",
             "reps": "/repetitions-config/",
             "rir": "/rir-config/",
