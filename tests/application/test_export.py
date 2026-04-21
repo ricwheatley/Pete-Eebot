@@ -137,6 +137,92 @@ def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
     assert entry["comment"] == "AMRAP Test @ 85.0% TM | Rest 2m 30s"
 
 
+def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "week_number": 2,
+                    "is_test": False,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "sets": 5,
+                    "reps": 3,
+                    "rir": 2.0,
+                    "percent_1rm": 90.0,
+                    "target_weight_kg": 47.5,
+                    "scheduled_time": "07:05:00",
+                    "is_cardio": False,
+                },
+                {
+                    "id": 2,
+                    "week_number": 2,
+                    "is_test": False,
+                    "day_of_week": 2,
+                    "exercise_id": schedule_rules.OHP_ID,
+                    "sets": 5,
+                    "reps": 5,
+                    "rir": 2.0,
+                    "percent_1rm": 65.0,
+                    "target_weight_kg": 15.0,
+                    "scheduled_time": "06:00:00",
+                    "is_cardio": False,
+                },
+            ]
+
+        def record_wger_export(self, *_, **__):
+            pass
+
+    class StubClient:
+        def __init__(self) -> None:
+            self.set_config_calls: list[tuple[str, int, int, object]] = []
+
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+        def create_day(self, routine_id: int, order: int, name: str):
+            return {"id": 100 + order, "name": name}
+
+        def create_slot(self, day_id: int, order: int, comment=None):
+            return {"id": day_id * 10 + order}
+
+        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+            return {"id": slot_id * 10 + order}
+
+        def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
+            self.set_config_calls.append((config_type, slot_entry_id, iteration, value))
+
+    client = StubClient()
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=client,
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=2,
+        start_date=date(2024, 8, 12),
+        force_overwrite=False,
+    )
+
+    assert result["status"] == "exported"
+    weight_calls = [call for call in client.set_config_calls if call[0] == "weight"]
+    assert weight_calls == [
+        ("weight", 10111, 1, 47.5),
+        ("weight", 10211, 1, 15.0),
+    ]
+
+
 def test_run_end_to_end_week_passes_cached_validation() -> None:
     decision = _make_validation_decision("All clear")
 

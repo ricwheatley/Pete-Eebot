@@ -196,6 +196,9 @@ class WgerExportService:
                         sets = exercise_payload.get("sets")
                         reps = exercise_payload.get("reps")
                         rir = exercise_payload.get("rir")
+                        target_weight = exercise_payload.get("target_weight_kg")
+                        if target_weight is not None:
+                            self.client.set_config("weight", slot_entry_id, 1, target_weight)
                         if sets is not None:
                             self.client.set_config("sets", slot_entry_id, 1, sets)
                         if reps is not None:

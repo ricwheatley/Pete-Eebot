@@ -337,7 +337,7 @@ CREATE TABLE training_plan_workouts (
     id SERIAL PRIMARY KEY,
     week_id INT REFERENCES training_plan_weeks(id) ON DELETE CASCADE,
     day_of_week INT NOT NULL,  -- 1 = Mon … 7 = Sun
-    exercise_id INT NOT NULL REFERENCES wger_exercise(id),
+    exercise_id INT REFERENCES wger_exercise(id),
     sets INT NOT NULL,
     reps INT NOT NULL,
     rir FLOAT,
@@ -1076,14 +1076,14 @@ RETURNS TABLE (
 ) LANGUAGE sql AS $$
     SELECT p_date::date AS workout_date,
            tpw.scheduled_time,
-           e.name AS exercise_name,
+           COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
            tpw.sets,
            tpw.reps,
            tpw.target_weight_kg
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id
-    JOIN wger_exercise e ON tpw.exercise_id = e.id
+    LEFT JOIN wger_exercise e ON tpw.exercise_id = e.id
     WHERE tp.is_active = TRUE
       AND tp.start_date <= p_date
       AND (tp.start_date + ((tw.week_number + 1) * 7)) > p_date
@@ -1104,18 +1104,21 @@ RETURNS TABLE (
     SELECT (p_start_date + (tpw.day_of_week - 1))::date AS workout_date,
            tpw.day_of_week,
            tpw.scheduled_time,
-           e.name AS exercise_name,
+           COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
            tpw.sets,
            tpw.reps,
            tpw.target_weight_kg
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id
-    JOIN wger_exercise e ON tpw.exercise_id = e.id
+    LEFT JOIN wger_exercise e ON tpw.exercise_id = e.id
     WHERE tp.is_active = TRUE
       AND tp.start_date <= p_start_date
       AND (tp.start_date + ((tw.week_number + 1) * 7)) > p_start_date
-    ORDER BY tpw.day_of_week, tpw.scheduled_time;
+    ORDER BY
+        tpw.day_of_week,
+        COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
+        tpw.scheduled_time;
 $$;
 
 

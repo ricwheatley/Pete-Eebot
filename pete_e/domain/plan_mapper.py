@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.entities import Exercise, Plan, Week, Workout
 from pete_e.utils import converters
 
@@ -94,7 +95,15 @@ class PlanMapper:
         workout_id = self._to_int(data.get("id"))
         day_of_week = self._to_int(data.get("day_of_week")) or 0
         is_cardio = bool(data.get("is_cardio"))
-        workout_type = data.get("type") or ("cardio" if is_cardio else "weights")
+        details_raw = data.get("details")
+        details = details_raw if isinstance(details_raw, dict) else None
+        workout_type = data.get("type")
+        if workout_type is None:
+            session_type = str((details or {}).get("session_type") or "").strip().lower()
+            if session_type == schedule_rules.STRETCH_SESSION_TYPE:
+                workout_type = schedule_rules.MOBILITY_WORKOUT_TYPE
+            else:
+                workout_type = "cardio" if is_cardio else "weights"
         percent = converters.to_float(data.get("percent_1rm"))
         slot = data.get("slot")
         intensity = data.get("intensity")
@@ -115,6 +124,10 @@ class PlanMapper:
     def _build_exercise(self, data: Dict[str, Any]) -> Exercise | None:
         exercise_id = self._to_int(data.get("exercise_id"))
         name = data.get("exercise_name")
+        details_raw = data.get("details")
+        details = details_raw if isinstance(details_raw, dict) else None
+        if name is None and details is not None:
+            name = details.get("display_name")
         if exercise_id is None and name is None:
             return None
 

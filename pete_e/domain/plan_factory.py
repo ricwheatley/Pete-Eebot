@@ -6,7 +6,7 @@ persisted by an application service.
 """
 from __future__ import annotations
 import random
-from datetime import date, time
+from datetime import date
 from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
@@ -44,6 +44,19 @@ class PlanFactory:
             return None
             
         return self._round_to_2p5(training_max * percent / 100.0)
+
+    def _workout_sort_key(self, workout: Dict[str, Any]) -> tuple[int, int, str, str]:
+        details = workout.get("details")
+        return (
+            int(workout.get("day_of_week") or 0),
+            schedule_rules.workout_display_order(
+                is_cardio=bool(workout.get("is_cardio")),
+                workout_type=workout.get("type"),
+                details=details if isinstance(details, dict) else None,
+            ),
+            str(workout.get("scheduled_time") or ""),
+            str(workout.get("exercise_id") or ""),
+        )
 
     def create_531_block_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:
         """
@@ -193,6 +206,27 @@ class PlanFactory:
                     "details": schedule_rules.long_run_details(distance_km=long_run_distance),
                 }
             )
+
+            for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):
+                stretch_details = schedule_rules.stretch_routine_for_day(dow)
+                if not stretch_details:
+                    continue
+                week_workouts.append(
+                    {
+                        "day_of_week": dow,
+                        "exercise_id": None,
+                        "exercise_name": stretch_details["display_name"],
+                        "sets": 0,
+                        "reps": 0,
+                        "is_cardio": False,
+                        "type": schedule_rules.MOBILITY_WORKOUT_TYPE,
+                        "comment": stretch_details["display_name"],
+                        "recovery_focused": True,
+                        "details": stretch_details,
+                    }
+                )
+
+            week_workouts.sort(key=self._workout_sort_key)
 
             plan_weeks.append({"week_number": week_num, "workouts": week_workouts})
 

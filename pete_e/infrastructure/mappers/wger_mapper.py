@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import time
 from typing import Any, Dict, List
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.entities import Plan, Week, Workout
 
 
@@ -29,7 +30,20 @@ class WgerPayloadMapper:
         week = self._find_week(plan, week_number)
         days: Dict[int, List[Dict[str, Any]]] = {}
 
-        for workout in week.workouts:
+        ordered_workouts = sorted(
+            week.workouts,
+            key=lambda workout: (
+                workout.day_of_week,
+                schedule_rules.workout_display_order(
+                    is_cardio=workout.is_cardio,
+                    workout_type=workout.type,
+                    details=workout.details,
+                ),
+                str(workout.slot or ""),
+            ),
+        )
+
+        for workout in ordered_workouts:
             entry = self._workout_to_payload(workout)
             days.setdefault(workout.day_of_week, []).append(entry)
 
@@ -82,6 +96,10 @@ class WgerPayloadMapper:
             "slot": slot_value,
             "percent_1rm": workout.percent_1rm,
             "intensity": workout.intensity,
+            "comment": workout.comment,
+            "optional": workout.optional,
+            "recovery_focused": workout.recovery_focused,
+            "details": None if workout.details is None else dict(workout.details),
         }
 
         if exercise is not None:

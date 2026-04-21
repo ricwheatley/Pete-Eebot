@@ -10,7 +10,7 @@ in lockstep with the published template.
 from __future__ import annotations
 
 from datetime import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 
 # ------------------------------------------------------------------------------
 # Exercise identifiers
@@ -38,6 +38,18 @@ BLAZE_ID = 1630
 TREADMILL_RUN_ID = 530
 OUTDOOR_RUN_ID = 527
 RUN_CARDIO_EXERCISE_ID = TREADMILL_RUN_ID
+
+RUN_SESSION_TYPES = {
+    "intervals",
+    "tempo",
+    "easy",
+    "steady",
+    "recovery",
+    "long_run",
+}
+
+STRETCH_SESSION_TYPE = "stretch_routine"
+MOBILITY_WORKOUT_TYPE = "mobility"
 
 # Blaze class start times by weekday (1=Mon ... 7=Sun)
 BLAZE_TIMES = {
@@ -77,6 +89,16 @@ MAIN_LIFT_BY_DOW = {
     2: SQUAT_ID,   # Tue
     4: OHP_ID,     # Thu
     5: DEADLIFT_ID # Fri
+}
+
+# Mobility / stretch routines are layered onto training days after the main work.
+# Edit the mapping or the routine definitions below to add/remove work per day.
+TRAINING_DAY_STRETCH_ROUTINE_BY_DOW = {
+    1: "limber_11",
+    2: "limber_11",
+    4: "limber_11",
+    5: "limber_11",
+    6: "limber_11",
 }
 
 # ------------------------------------------------------------------------------
@@ -200,6 +222,27 @@ def format_rest_seconds(seconds: int | None) -> str | None:
     return f"Rest {secs}s"
 
 
+def workout_display_order(
+    *,
+    is_cardio: bool,
+    workout_type: str | None = None,
+    details: Mapping[str, Any] | None = None,
+) -> int:
+    """Return the intended within-day ordering for a session."""
+
+    details_map = details if isinstance(details, Mapping) else {}
+    session_type = str(details_map.get("session_type") or "").strip().lower()
+    workout_kind = str(workout_type or "").strip().lower()
+
+    if session_type in RUN_SESSION_TYPES:
+        return 10
+    if is_cardio:
+        return 15
+    if session_type == STRETCH_SESSION_TYPE or workout_kind == MOBILITY_WORKOUT_TYPE:
+        return 30
+    return 20
+
+
 # ------------------------------------------------------------------------------
 # Assistance & core pools
 # ------------------------------------------------------------------------------
@@ -275,6 +318,117 @@ ASSISTANCE_2 = {"sets": 3, "reps_low": 8,  "reps_high": 10, "rir_cue": 2.0}
 CORE_SCHEME = {"sets": 3, "reps_low": 10, "reps_high": 15, "rir_cue": 2.0}
 
 # ------------------------------------------------------------------------------
+# Mobility / stretch routines
+# ------------------------------------------------------------------------------
+LIMBER_11_STEPS: List[Dict[str, Any]] = [
+    {
+        "name": "Foam Roll IT Band",
+        "prescription": "10-15 passes",
+        "movement_type": "soft_tissue",
+        "is_isometric": False,
+    },
+    {
+        "name": "Foam Roll Adductors",
+        "prescription": "10-15 passes",
+        "movement_type": "soft_tissue",
+        "is_isometric": False,
+    },
+    {
+        "name": "SMR Glutes (lax ball)",
+        "prescription": "30 sec-2 min",
+        "movement_type": "soft_tissue",
+        "is_isometric": False,
+    },
+    {
+        "name": "Bent-knee Iron Cross",
+        "prescription": "5-10 reps each side",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Roll-overs into V-sits",
+        "prescription": "10 reps",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Rocking Frog Stretch",
+        "prescription": "10 reps",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Fire Hydrant Circles",
+        "prescription": "10 forward / 10 backward",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Mountain Climbers",
+        "prescription": "10 reps each leg",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Cossack Squats",
+        "prescription": "5-10 reps each side",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+    },
+    {
+        "name": "Seated Piriformis Stretch",
+        "prescription": "20-30 sec each side",
+        "movement_type": "static",
+        "is_isometric": True,
+    },
+    {
+        "name": "Rear-foot-elevated Hip Flexor Stretch",
+        "prescription": "5-10 reps each side",
+        "movement_type": "dynamic",
+        "is_isometric": False,
+        "includes_isometric_hold": True,
+        "hold_seconds": 3,
+    },
+]
+
+STRETCH_ROUTINES: Dict[str, Dict[str, Any]] = {
+    "limber_11": {
+        "display_name": "Limber 11",
+        "source": "Joe DeFranco",
+        "estimated_duration_min": 15,
+        "sequence_order": 30,
+        "steps": LIMBER_11_STEPS,
+    }
+}
+
+
+def build_stretch_routine_details(routine_key: str) -> Dict[str, Any] | None:
+    """Return a copy of the configured stretch routine details."""
+
+    routine = STRETCH_ROUTINES.get(routine_key)
+    if not routine:
+        return None
+
+    return {
+        "session_type": STRETCH_SESSION_TYPE,
+        "routine_key": routine_key,
+        "display_name": routine["display_name"],
+        "source": routine.get("source"),
+        "estimated_duration_min": routine.get("estimated_duration_min"),
+        "sequence_order": routine.get("sequence_order", 30),
+        "steps": [dict(step) for step in routine.get("steps", [])],
+    }
+
+
+def stretch_routine_for_day(dow: int) -> Dict[str, Any] | None:
+    """Return the stretch routine configured for a weekday, if any."""
+
+    routine_key = TRAINING_DAY_STRETCH_ROUTINE_BY_DOW.get(dow)
+    if not routine_key:
+        return None
+    return build_stretch_routine_details(routine_key)
+
+# ------------------------------------------------------------------------------
 # Strength test configuration
 # ------------------------------------------------------------------------------
 TEST_WEEK_LIFT_ORDER = [
@@ -302,6 +456,7 @@ ANCHOR_5K_PACE_KPH = 10.0
 def _base_running_details(session_type: str) -> Dict[str, Any]:
     return {
         "session_type": session_type,
+        "sequence_order": 10,
         "treadmill": True,
         "incline_percent": TREADMILL_DEFAULT_INCLINE_PERCENT,
         "anchor_pace_kph": ANCHOR_5K_PACE_KPH,

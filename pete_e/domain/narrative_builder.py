@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.phrase_picker import random_phrase as phrase_for
 from pete_e.domain import narrative_utils
 from pete_e.domain.configuration import get_settings
@@ -758,9 +759,45 @@ def _render_treadmill_instruction(details: Mapping[str, Any]) -> str | None:
         return f"Long run: {distance} km @ {speed} km/h{suffix}"
     return None
 
+
+def _render_stretch_instruction(details: Mapping[str, Any]) -> str | None:
+    session_type = str(details.get("session_type") or "").strip().lower()
+    if session_type != schedule_rules.STRETCH_SESSION_TYPE:
+        return None
+
+    steps = details.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return None
+
+    display_name = str(details.get("display_name") or "Stretch routine").strip()
+    rendered_steps: List[str] = []
+    for raw_step in steps:
+        if not isinstance(raw_step, Mapping):
+            continue
+        name = str(raw_step.get("name") or "").strip()
+        if not name:
+            continue
+
+        if raw_step.get("is_isometric"):
+            style = "isometric"
+        elif raw_step.get("includes_isometric_hold"):
+            hold_seconds = raw_step.get("hold_seconds")
+            if hold_seconds is None:
+                style = "dynamic + holds"
+            else:
+                style = f"dynamic + {hold_seconds}s hold"
+        else:
+            style = "dynamic"
+
+        rendered_steps.append(f"{name} [{style}]")
+
+    if not rendered_steps:
+        return display_name
+    return f"{display_name}: {'; '.join(rendered_steps)}"
+
 def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[str], List[str]]:
-    workouts_by_day: Dict[int, List[str]] = {day: [] for day in range(1, 8)}
-    for entry in plan_week_data:
+    workouts_by_day: Dict[int, List[tuple[int, int, str]]] = {day: [] for day in range(1, 8)}
+    for position, entry in enumerate(plan_week_data):
         day_value = entry.get("day_of_week")
         try:
             day_number = int(day_value)
@@ -778,6 +815,9 @@ def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[
             treadmill_line = _render_treadmill_instruction(details_payload)
             if treadmill_line:
                 details.append(treadmill_line)
+            stretch_line = _render_stretch_instruction(details_payload)
+            if stretch_line:
+                details.append(stretch_line)
         sets = entry.get("sets")
         reps = entry.get("reps")
         if sets is not None and reps is not None and not details:
@@ -791,14 +831,20 @@ def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[
         if entry.get("optional"):
             details.append("optional")
         detail_text = f" ({' · '.join(details)})" if details else ""
-        workouts_by_day[day_number].append(f"{exercise}{detail_text}")
+        order = schedule_rules.workout_display_order(
+            is_cardio=bool(entry.get("is_cardio")),
+            workout_type=entry.get("type"),
+            details=details_payload if isinstance(details_payload, Mapping) else None,
+        )
+        workouts_by_day[day_number].append((order, position, f"{exercise}{detail_text}"))
     bullet_lines: List[str] = []
     rest_days: List[str] = []
     for day_number in range(1, 8):
         label = _DAY_NAMES.get(day_number, f"Day {day_number}")
         entries = workouts_by_day.get(day_number, [])
         if entries:
-            bullet_lines.append(f"- {label}: {' | '.join(entries)}")
+            ordered_entries = [text for _, _, text in sorted(entries, key=lambda item: (item[0], item[1]))]
+            bullet_lines.append(f"- {label}: {' | '.join(ordered_entries)}")
         else:
             rest_days.append(label)
     return bullet_lines, rest_days
