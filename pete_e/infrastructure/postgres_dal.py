@@ -177,6 +177,10 @@ class PostgresDal(PlanRepository):
             if scheduled_time is None:
                 scheduled_time = _coerce_scheduled_time(payload.get("slot"))
             is_cardio = bool(payload.get("is_cardio"))
+            comment = payload.get("comment")
+            optional = bool(payload.get("optional", False))
+            recovery_focused = bool(payload.get("recovery_focused", False))
+            details = payload.get("details")
 
             cur.execute(
                 """
@@ -191,9 +195,13 @@ class PostgresDal(PlanRepository):
                     target_weight_kg,
                     rir_cue,
                     scheduled_time,
-                    is_cardio
+                    is_cardio,
+                    comment,
+                    optional,
+                    recovery_focused,
+                    details
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     week_id,
@@ -207,6 +215,10 @@ class PostgresDal(PlanRepository):
                     rir_cue,
                     scheduled_time,
                     is_cardio,
+                    comment,
+                    optional,
+                    recovery_focused,
+                    Json(details) if details is not None else None,
                 ),
             )
 
@@ -299,7 +311,7 @@ class PostgresDal(PlanRepository):
                     raise
 
     def insert_workout(self, **kwargs) -> None:
-        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s);"
+        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s);"
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
 
