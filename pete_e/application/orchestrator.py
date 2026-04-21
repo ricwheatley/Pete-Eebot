@@ -576,6 +576,40 @@ class Orchestrator:
             candidate += timedelta(days=7)
         return candidate
 
+    @staticmethod
+    def _resolve_export_week_number(
+        *,
+        calculated_week_number: int,
+        validation_decision: ValidationDecision | None,
+    ) -> int:
+        """Determine whether the athlete should advance or repeat the prior week."""
+
+        if calculated_week_number <= 1 or validation_decision is None:
+            return calculated_week_number
+
+        metrics = getattr(validation_decision, "recommendation", None)
+        recommendation_metrics = getattr(metrics, "metrics", {}) if metrics is not None else {}
+        adherence_metrics = (
+            recommendation_metrics.get("adherence", {})
+            if isinstance(recommendation_metrics, dict)
+            else {}
+        )
+        if not isinstance(adherence_metrics, dict):
+            return calculated_week_number
+        if not adherence_metrics.get("available"):
+            return calculated_week_number
+
+        try:
+            adherence_ratio = float(adherence_metrics.get("ratio", 1.0))
+        except (TypeError, ValueError):
+            adherence_ratio = 1.0
+
+        minimum_completion_ratio = 0.70
+        if adherence_ratio >= minimum_completion_ratio:
+            return calculated_week_number
+
+        return max(1, calculated_week_number - 1)
+
     def _export_active_week(
         self,
         *,
@@ -609,22 +643,32 @@ class Orchestrator:
             )
             return
 
+        exported_week_number = self._resolve_export_week_number(
+            calculated_week_number=week_number,
+            validation_decision=validation_decision,
+        )
+        if exported_week_number != week_number:
+            log_utils.info(
+                f"Holding progression for plan {plan_id}: adherence below completion threshold; "
+                f"re-exporting week {exported_week_number} into {week_start.isoformat()}."
+            )
+
         plan_weeks = self._coerce_positive_int(active_plan.get("weeks"))
-        if plan_weeks is not None and week_number > plan_weeks:
+        if plan_weeks is not None and exported_week_number > plan_weeks:
             log_utils.warn(
-                f"Skipping weekly export for plan {plan_id}: week {week_number} exceeds plan length {plan_weeks}",
+                f"Skipping weekly export for plan {plan_id}: week {exported_week_number} exceeds plan length {plan_weeks}",
                 "WARN",
             )
             return
 
         log_utils.info(
-            f"Exporting plan {plan_id} week {week_number} to wger for week starting {week_start.isoformat()}."
+            f"Exporting plan {plan_id} week {exported_week_number} to wger for week starting {week_start.isoformat()}."
         )
 
         try:
             self.export_service.export_plan_week(
                 plan_id=plan_id,
-                week_number=week_number,
+                week_number=exported_week_number,
                 start_date=week_start,
                 force_overwrite=True,
                 validation_decision=validation_decision,
@@ -633,13 +677,13 @@ class Orchestrator:
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             message = (
-                f"Weekly export failed for plan {plan_id} week {week_number} starting {week_start.isoformat()}: {exc}"
+                f"Weekly export failed for plan {plan_id} week {exported_week_number} starting {week_start.isoformat()}: {exc}"
             )
             log_utils.error(message, "ERROR")
             raise PlanRolloverError(message) from exc
         else:
             log_utils.info(
-                f"Exported plan {plan_id} week {week_number} to wger for {week_start.isoformat()}."
+                f"Exported plan {plan_id} week {exported_week_number} to wger for {week_start.isoformat()}."
             )
 
     @staticmethod
