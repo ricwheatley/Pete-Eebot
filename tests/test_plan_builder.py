@@ -97,10 +97,11 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         main_sets = len(schedule_rules.get_main_set_scheme(week_idx))
         for dow in schedule_rules.MAIN_LIFT_BY_DOW:
             expected_total += main_sets + 3 + int(dow in blaze_days)
+        expected_total += 5  # running sessions layered onto Mon/Tue/Thu/Fri/Sat
     assert len(all_workouts) == expected_total
 
     # Blaze cardio sessions should match the currently configured schedule.
-    blaze_workouts = [w for w in all_workouts if w["is_cardio"]]
+    blaze_workouts = [w for w in all_workouts if w["is_cardio"] and not w.get("details")]
     assert all(w["exercise_id"] == schedule_rules.BLAZE_ID for w in blaze_workouts)
     assert len(blaze_workouts) == len(blaze_days) * 4
 
@@ -145,3 +146,34 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         summary = schedule_rules.main_set_summary(1)
         expected_weight = round((tm * summary["percent_1rm"] / 100) / 2.5) * 2.5
         assert heaviest["target_weight_kg"] == expected_weight
+
+    week1 = plan_dict["plan_weeks"][0]["workouts"]
+    week2 = plan_dict["plan_weeks"][1]["workouts"]
+
+    monday_week1 = [w for w in week1 if w["day_of_week"] == 1 and w.get("details")]
+    monday_week2 = [w for w in week2 if w["day_of_week"] == 1 and w.get("details")]
+    assert len(monday_week1) == 1
+    assert len(monday_week2) == 1
+    assert monday_week1[0]["exercise_id"] == schedule_rules.TREADMILL_RUN_ID
+    assert monday_week2[0]["exercise_id"] == schedule_rules.TREADMILL_RUN_ID
+    assert monday_week1[0]["details"]["session_type"] == "intervals"
+    assert monday_week2[0]["details"]["session_type"] == "tempo"
+
+    assert any(w["day_of_week"] == 2 and w.get("details", {}).get("session_type") == "easy" for w in week1)
+    assert any(w["day_of_week"] == 4 and w.get("details", {}).get("session_type") == "steady" for w in week1)
+    assert any(
+        w["day_of_week"] == 5
+        and w.get("details", {}).get("session_type") == "recovery"
+        and w.get("optional") is True
+        for w in week1
+    )
+    assert any(w["day_of_week"] == 6 and w.get("details", {}).get("session_type") == "long_run" for w in week1)
+
+    long_run_week1 = next(
+        w for w in week1 if w["day_of_week"] == 6 and w.get("details", {}).get("session_type") == "long_run"
+    )
+    long_run_week2 = next(
+        w for w in week2 if w["day_of_week"] == 6 and w.get("details", {}).get("session_type") == "long_run"
+    )
+    assert long_run_week1["details"]["steps"][0]["distance_km"] == 6
+    assert long_run_week2["details"]["steps"][0]["distance_km"] == 7

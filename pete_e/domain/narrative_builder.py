@@ -692,6 +692,72 @@ def _format_weekly_heading(week_number: int, week_start: date | None) -> str:
         end=week_end.isoformat(),
     )
 
+
+def _clean_float(value: Any) -> str:
+    number = _to_float(value)
+    if number is None:
+        return str(value)
+    return f"{number:.1f}"
+
+
+def _render_treadmill_instruction(details: Mapping[str, Any]) -> str | None:
+    session_type = str(details.get("session_type") or "").strip().lower()
+    steps = details.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return None
+
+    if session_type == "intervals":
+        warmup = steps[0] if len(steps) > 0 and isinstance(steps[0], Mapping) else {}
+        repeat = steps[1] if len(steps) > 1 and isinstance(steps[1], Mapping) else {}
+        cooldown = steps[2] if len(steps) > 2 and isinstance(steps[2], Mapping) else {}
+        repeat_steps = repeat.get("steps") if isinstance(repeat, Mapping) else None
+        work = repeat_steps[0] if isinstance(repeat_steps, list) and repeat_steps else {}
+        recovery = repeat_steps[1] if isinstance(repeat_steps, list) and len(repeat_steps) > 1 else {}
+        return (
+            f"Warmup {_clean_number(warmup.get('duration_minutes'))} min @ {_clean_float(warmup.get('speed_kph'))} km/h; "
+            f"{_clean_number(repeat.get('repeats'))} × "
+            f"({_clean_number(work.get('duration_minutes'))} min @ {_clean_float(work.get('speed_kph'))} km/h, "
+            f"{_clean_number(recovery.get('duration_minutes'))} min @ {_clean_float(recovery.get('speed_kph'))} km/h); "
+            f"Cooldown {_clean_number(cooldown.get('duration_minutes'))} min @ {_clean_float(cooldown.get('speed_kph'))} km/h"
+        )
+
+    step = steps[0] if isinstance(steps[0], Mapping) else {}
+    speed = _clean_float(step.get("speed_kph"))
+    min_speed = step.get("min_speed_kph")
+    max_speed = step.get("max_speed_kph")
+    speed_range = None
+    if min_speed is not None and max_speed is not None:
+        speed_range = f"{_clean_float(min_speed)}–{_clean_float(max_speed)}"
+
+    if session_type == "tempo":
+        warmup = steps[0] if len(steps) > 0 and isinstance(steps[0], Mapping) else {}
+        main = steps[1] if len(steps) > 1 and isinstance(steps[1], Mapping) else {}
+        cooldown = steps[2] if len(steps) > 2 and isinstance(steps[2], Mapping) else {}
+        return (
+            f"Warmup {_clean_number(warmup.get('duration_minutes'))} min @ {_clean_float(warmup.get('speed_kph'))} km/h; "
+            f"{_clean_number(main.get('duration_minutes'))} min @ {_clean_float(main.get('speed_kph'))} km/h; "
+            f"Cooldown {_clean_number(cooldown.get('duration_minutes'))} min @ {_clean_float(cooldown.get('speed_kph'))} km/h"
+        )
+    if session_type == "easy":
+        duration = _clean_number(step.get("duration_minutes"))
+        suffix = f" (easy range {speed_range})" if speed_range else ""
+        return f"{duration} min @ {speed} km/h{suffix}"
+    if session_type == "steady":
+        duration = _clean_number(step.get("duration_minutes"))
+        suffix = f" (steady range {speed_range})" if speed_range else ""
+        return f"{duration} min @ {speed} km/h{suffix}"
+    if session_type == "recovery":
+        min_duration = step.get("min_duration_minutes")
+        max_duration = step.get("max_duration_minutes")
+        if min_duration is not None and max_duration is not None:
+            return f"{_clean_number(min_duration)}–{_clean_number(max_duration)} min @ {speed} km/h"
+        return f"{_clean_number(step.get('duration_minutes'))} min @ {speed} km/h"
+    if session_type == "long_run":
+        distance = _clean_number(step.get("distance_km"))
+        suffix = f" (range {speed_range})" if speed_range else ""
+        return f"Long run: {distance} km @ {speed} km/h{suffix}"
+    return None
+
 def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[str], List[str]]:
     workouts_by_day: Dict[int, List[str]] = {day: [] for day in range(1, 8)}
     for entry in plan_week_data:
@@ -702,18 +768,28 @@ def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[
             continue
         if day_number not in workouts_by_day:
             continue
-        exercise = entry.get("exercise_name") or f"Exercise {entry.get('exercise_id')}"
+        details_payload = entry.get("details")
+        if isinstance(details_payload, Mapping):
+            exercise = str(entry.get("comment") or entry.get("exercise_name") or "Run")
+        else:
+            exercise = entry.get("exercise_name") or f"Exercise {entry.get('exercise_id')}"
         details: List[str] = []
+        if isinstance(details_payload, Mapping):
+            treadmill_line = _render_treadmill_instruction(details_payload)
+            if treadmill_line:
+                details.append(treadmill_line)
         sets = entry.get("sets")
         reps = entry.get("reps")
-        if sets is not None and reps is not None:
+        if sets is not None and reps is not None and not details:
             details.append(f"{_clean_number(sets)} x {_clean_number(reps)}")
         weight = entry.get("target_weight_kg") or entry.get("weight_kg")
-        if weight is not None:
+        if weight is not None and not details_payload:
             details.append(f"{_clean_number(weight)} kg")
         rir = entry.get("rir")
-        if rir is not None:
+        if rir is not None and not details_payload:
             details.append(f"RIR {_clean_number(rir)}")
+        if entry.get("optional"):
+            details.append("optional")
         detail_text = f" ({' · '.join(details)})" if details else ""
         workouts_by_day[day_number].append(f"{exercise}{detail_text}")
     bullet_lines: List[str] = []
