@@ -345,7 +345,11 @@ CREATE TABLE training_plan_workouts (
     target_weight_kg NUMERIC(6,2),
     rir_cue NUMERIC(3,1),
     scheduled_time TIME,
-    is_cardio BOOLEAN NOT NULL DEFAULT false
+    is_cardio BOOLEAN NOT NULL DEFAULT false,
+    comment TEXT,
+    optional BOOLEAN NOT NULL DEFAULT false,
+    recovery_focused BOOLEAN NOT NULL DEFAULT false,
+    details JSONB
 );
 
 CREATE TABLE assistance_pool (

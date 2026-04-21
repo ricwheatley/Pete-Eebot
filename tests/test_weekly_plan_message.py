@@ -2,6 +2,8 @@
 
 from typer.testing import CliRunner
 
+import tests.config_stub  # noqa: F401
+
 from pete_e.cli import messenger
 from pete_e.domain import narrative_builder
 
@@ -113,3 +115,56 @@ def test_weekly_plan_cli_send_uses_formatted_overview(monkeypatch):
 
     assert result.exit_code == 0
     assert orch.sent_message == expected
+
+
+def test_weekly_plan_formats_interval_treadmill_steps():
+    rows = [
+        {
+            "day_of_week": 1,
+            "comment": "Quality run",
+            "details": {
+                "session_type": "intervals",
+                "steps": [
+                    {"kind": "warmup", "duration_minutes": 5, "speed_kph": 8.5},
+                    {
+                        "kind": "repeat",
+                        "repeats": 5,
+                        "steps": [
+                            {"kind": "work", "duration_minutes": 3, "speed_kph": 11.5},
+                            {"kind": "recovery", "duration_minutes": 2, "speed_kph": 8.5},
+                        ],
+                    },
+                    {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
+                ],
+            },
+        }
+    ]
+
+    message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
+    assert "Warmup 5 min @ 8.5 km/h; 5 × (3 min @ 11.5 km/h, 2 min @ 8.5 km/h); Cooldown 5 min @ 8.5 km/h" in message
+
+
+def test_weekly_plan_formats_tempo_treadmill_steps():
+    rows = [
+        {
+            "day_of_week": 1,
+            "comment": "Quality run",
+            "details": {
+                "session_type": "tempo",
+                "steps": [
+                    {"kind": "warmup", "duration_minutes": 5, "speed_kph": 8.5},
+                    {"kind": "steady", "duration_minutes": 20, "speed_kph": 10.5},
+                    {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
+                ],
+            },
+        }
+    ]
+
+    message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
+    assert "Warmup 5 min @ 8.5 km/h; 20 min @ 10.5 km/h; Cooldown 5 min @ 8.5 km/h" in message
+
+
+def test_weekly_plan_legacy_rows_render_without_treadmill_details():
+    rows = [{"day_of_week": 1, "exercise_name": "Bench Press", "sets": 5, "reps": 5, "rir": 2}]
+    message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
+    assert "- Monday: Bench Press (5 x 5 · RIR 2)" in message

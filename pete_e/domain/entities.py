@@ -132,6 +132,10 @@ class Workout:
     percent_1rm: float | None = None
     exercise: Exercise | None = None
     intensity: str | None = None
+    comment: str | None = None
+    optional: bool = False
+    recovery_focused: bool = False
+    details: MutableMapping[str, object] | None = None
 
     def is_weights_session(self) -> bool:
         return not self.is_cardio and self.type == "weights"
