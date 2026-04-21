@@ -10,7 +10,7 @@ in lockstep with the published template.
 from __future__ import annotations
 
 from datetime import time
-from typing import Dict, List
+from typing import Any, Dict, List
 
 # ------------------------------------------------------------------------------
 # Exercise identifiers
@@ -33,6 +33,11 @@ MAIN_LIFT_IDS: tuple[int, ...] = tuple(LIFT_CODE_BY_ID.keys())
 
 # Blaze is a fixed HIIT class logged as this id
 BLAZE_ID = 1630
+
+# Running exercise IDs from the seeded wger catalogue.
+TREADMILL_RUN_ID = 530
+OUTDOOR_RUN_ID = 527
+RUN_CARDIO_EXERCISE_ID = TREADMILL_RUN_ID
 
 # Blaze class start times by weekday (1=Mon ... 7=Sun)
 BLAZE_TIMES = {
@@ -253,7 +258,7 @@ def default_assistance_for(main_lift_id: int) -> List[int]:
 def classify_exercise(exercise_id: int | None) -> str:
     if exercise_id is None:
         return "other"
-    if exercise_id == BLAZE_ID:
+    if exercise_id in {BLAZE_ID, TREADMILL_RUN_ID, OUTDOOR_RUN_ID}:
         return "cardio"
     if exercise_id in MAIN_LIFT_IDS:
         return "main"
@@ -285,3 +290,108 @@ TEST_WEEK_PCTS = {
     OHP_ID: 85.0,
     DEADLIFT_ID: 90.0,
 }
+
+# ------------------------------------------------------------------------------
+# Treadmill running prescriptions
+# ------------------------------------------------------------------------------
+TREADMILL_DEFAULT_INCLINE_PERCENT = 0.0
+TREADMILL_OPTIONAL_INCLINE_HINT = "Optional: use 1% incline to mimic outdoor feel."
+ANCHOR_5K_PACE_KPH = 10.0
+
+
+def _base_running_details(session_type: str) -> Dict[str, Any]:
+    return {
+        "session_type": session_type,
+        "treadmill": True,
+        "incline_percent": TREADMILL_DEFAULT_INCLINE_PERCENT,
+        "anchor_pace_kph": ANCHOR_5K_PACE_KPH,
+        "incline_hint": TREADMILL_OPTIONAL_INCLINE_HINT,
+    }
+
+
+def quality_intervals_details() -> Dict[str, Any]:
+    details = _base_running_details("intervals")
+    details["steps"] = [
+        {"kind": "warmup", "duration_minutes": 5, "speed_kph": 8.5},
+        {
+            "kind": "repeat",
+            "repeats": 5,
+            "steps": [
+                {"kind": "work", "duration_minutes": 3, "speed_kph": 11.5},
+                {"kind": "recovery", "duration_minutes": 2, "speed_kph": 8.5},
+            ],
+        },
+        {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
+    ]
+    return details
+
+
+def quality_tempo_details() -> Dict[str, Any]:
+    details = _base_running_details("tempo")
+    details["steps"] = [
+        {"kind": "warmup", "duration_minutes": 5, "speed_kph": 8.5},
+        {"kind": "steady", "duration_minutes": 20, "speed_kph": 10.5},
+        {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
+    ]
+    return details
+
+
+def easy_run_details(*, duration_minutes: int = 20) -> Dict[str, Any]:
+    details = _base_running_details("easy")
+    details["steps"] = [
+        {
+            "kind": "steady",
+            "duration_minutes": duration_minutes,
+            "speed_kph": 8.9,
+            "min_speed_kph": 8.8,
+            "max_speed_kph": 9.0,
+        }
+    ]
+    return details
+
+
+def steady_run_details(*, duration_minutes: int = 35) -> Dict[str, Any]:
+    details = _base_running_details("steady")
+    details["steps"] = [
+        {
+            "kind": "steady",
+            "duration_minutes": duration_minutes,
+            "speed_kph": 9.9,
+            "min_speed_kph": 9.8,
+            "max_speed_kph": 10.0,
+        }
+    ]
+    return details
+
+
+def recovery_micro_run_details(*, duration_minutes: int = 12) -> Dict[str, Any]:
+    details = _base_running_details("recovery")
+    details["steps"] = [
+        {
+            "kind": "steady",
+            "duration_minutes": duration_minutes,
+            "min_duration_minutes": 10,
+            "max_duration_minutes": 15,
+            "speed_kph": 8.5,
+        }
+    ]
+    return details
+
+
+def long_run_details(*, distance_km: int) -> Dict[str, Any]:
+    details = _base_running_details("long_run")
+    details["steps"] = [
+        {
+            "kind": "long_run",
+            "distance_km": distance_km,
+            "speed_kph": 9.0,
+            "min_speed_kph": 8.8,
+            "max_speed_kph": 9.2,
+        }
+    ]
+    details["progression"] = {
+        "start_distance_km": 6,
+        "weekly_increment_km": 1,
+        "cap_distance_km": None,
+    }
+    return details

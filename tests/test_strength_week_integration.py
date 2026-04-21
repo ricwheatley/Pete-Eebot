@@ -28,7 +28,9 @@ def test_531_block_plan_includes_blaze_sessions(monkeypatch):
     plan = factory.create_531_block_plan(start_date=date(2024, 6, 3), training_maxes={})
 
     first_week = plan["plan_weeks"][0]
-    blaze_entries = [entry for entry in first_week["workouts"] if entry.get("is_cardio")]
+    blaze_entries = [
+        entry for entry in first_week["workouts"] if entry.get("is_cardio") and not entry.get("details")
+    ]
     expected_blaze_days = set(schedule_rules.BLAZE_TIMES).intersection(
         schedule_rules.MAIN_LIFT_BY_DOW
     )
