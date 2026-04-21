@@ -185,6 +185,8 @@ class WgerExportService:
                     )
 
                     exercise_id = exercise_payload.get("exercise")
+                    if exercise_id is None:
+                        exercise_id = self._resolve_export_exercise_id(exercise_payload)
                     entry_response: Dict[str, Any] | None = None
                     if exercise_id:
                         entry_response = self.client.create_slot_entry(
@@ -199,6 +201,11 @@ class WgerExportService:
                         target_weight = exercise_payload.get("target_weight_kg")
                         if target_weight is not None:
                             self.client.set_config("weight", slot_entry_id, 1, target_weight)
+                        elif schedule_rules.classify_exercise(exercise_id) == "main":
+                            log_utils.warn(
+                                "Skipping weight config for main lift due to missing target weight. "
+                                f"exercise_id={exercise_id}, comment={comment!r}"
+                            )
                         if sets is not None:
                             self.client.set_config("sets", slot_entry_id, 1, sets)
                         if reps is not None:
@@ -206,8 +213,13 @@ class WgerExportService:
                         if rir is not None:
                             self.client.set_config("rir", slot_entry_id, 1, rir)
                     else:
+                        details = exercise_payload.get("details")
+                        session_type = None
+                        if isinstance(details, dict):
+                            session_type = details.get("session_type")
                         log_utils.warn(
-                            "Skipping slot entry creation due to missing exercise ID in payload."
+                            "Skipping slot entry creation due to missing exercise ID in payload. "
+                            f"comment={comment!r}, session_type={session_type!r}"
                         )
 
                     slot_summaries.append(
@@ -228,6 +240,15 @@ class WgerExportService:
                     }
                 )
 
+        created_days = len(api_trace)
+        created_slots = sum(len(day.get("slots", [])) for day in api_trace)
+        created_entries = sum(
+            1
+            for day in api_trace
+            for slot in day.get("slots", [])
+            if slot.get("entry_id") is not None
+        )
+
         # 5. Log the export result
         self.dal.record_wger_export(
             plan_id,
@@ -236,7 +257,12 @@ class WgerExportService:
             response={"routine_id": routine_id, "days": api_trace},
             routine_id=routine_id,
         )
-        log_utils.info(f"Successfully exported plan {plan_id}, week {week_number} to wger routine {routine_id}.")
+        log_utils.info(
+            "Successfully exported plan "
+            f"{plan_id}, week {week_number} to wger routine {routine_id} "
+            f"on {getattr(self.client, 'base_url', 'unknown-host')} "
+            f"(days={created_days}, slots={created_slots}, slot_entries={created_entries})."
+        )
         return {"status": "exported", "routine_id": routine_id}
 
     def _build_payload_from_rows(
@@ -284,7 +310,15 @@ class WgerExportService:
             for entry in exercises:
                 exercise_id = entry.get("exercise")
                 role = schedule_rules.classify_exercise(exercise_id)
-                if role == "cardio":
+                details = entry.get("details")
+                if role == "cardio" or (
+                    isinstance(details, dict)
+                    and str(details.get("session_type") or "").strip().lower() == schedule_rules.STRETCH_SESSION_TYPE
+                ):
+                    entry["comment"] = schedule_rules.build_export_comment(
+                        base_comment=entry.get("comment"),
+                        details=details if isinstance(details, dict) else None,
+                    )
                     continue
 
                 if role == "main":
@@ -302,10 +336,13 @@ class WgerExportService:
                             percent=entry.get("percent_1rm"),
                             reps=entry.get("reps"),
                         )
+                    weight_note = schedule_rules.format_weight_kg(entry.get("target_weight_kg"))
                 elif role == "core":
                     protocol = schedule_rules.describe_core(entry.get("sets"), entry.get("reps"))
+                    weight_note = None
                 else:
                     protocol = schedule_rules.describe_assistance(entry.get("sets"), entry.get("reps"))
+                    weight_note = None
 
                 rest_seconds = schedule_rules.rest_seconds_for(
                     "main" if role == "main" else role,
@@ -314,6 +351,34 @@ class WgerExportService:
                 rest_note = schedule_rules.format_rest_seconds(rest_seconds)
 
                 if protocol or rest_note:
-                    comment_parts = [part for part in (protocol, rest_note) if part]
+                    comment_parts = [part for part in (protocol, weight_note, rest_note) if part]
                     if comment_parts and not entry.get("comment"):
                         entry["comment"] = " | ".join(comment_parts)
+
+                entry["comment"] = schedule_rules.build_export_comment(
+                    base_comment=entry.get("comment"),
+                    details=entry.get("details"),
+                )
+
+    def _resolve_export_exercise_id(self, exercise_payload: Dict[str, Any]) -> int | None:
+        details = exercise_payload.get("details")
+        if not isinstance(details, dict):
+            return None
+
+        session_type = str(details.get("session_type") or "").strip().lower()
+        if session_type != schedule_rules.STRETCH_SESSION_TYPE:
+            return None
+
+        display_name = (
+            str(exercise_payload.get("exercise_name") or "").strip()
+            or str(details.get("display_name") or "").strip()
+            or str(exercise_payload.get("comment") or "").strip()
+        )
+        if not display_name:
+            return None
+
+        description = schedule_rules.stretch_routine_description(details)
+        return self.client.ensure_custom_exercise(
+            name=display_name,
+            description=description,
+        )

@@ -4,6 +4,8 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.services import WgerExportService
 from pete_e.domain import schedule_rules
@@ -134,7 +136,7 @@ def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
     assert result["status"] == "exported"
     assert captured_payloads
     entry = captured_payloads[0]["days"][0]["exercises"][0]
-    assert entry["comment"] == "AMRAP Test @ 85.0% TM | Rest 2m 30s"
+    assert entry["comment"] == "AMRAP Test @ 85.0% TM | 92.5 kg | Rest 2m 30s"
 
 
 def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
@@ -221,6 +223,204 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
         ("weight", 10111, 1, 47.5),
         ("weight", 10211, 1, 15.0),
     ]
+
+
+def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+    infos: list[str] = []
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": 137,
+                    "sets": 3,
+                    "reps": 10,
+                    "rir": 2.0,
+                    "scheduled_time": "07:05:00",
+                    "is_cardio": False,
+                },
+                {
+                    "id": 2,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "sets": 5,
+                    "reps": 5,
+                    "percent_1rm": 50.0,
+                    "target_weight_kg": 80.0,
+                    "scheduled_time": "07:05:00",
+                    "is_cardio": False,
+                },
+                {
+                    "id": 3,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.TREADMILL_RUN_ID,
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "comment": "Quality run",
+                    "details": schedule_rules.quality_intervals_details(),
+                },
+                {
+                    "id": 4,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": None,
+                    "exercise_name": "Limber 11",
+                    "sets": 0,
+                    "reps": 0,
+                    "scheduled_time": None,
+                    "is_cardio": False,
+                    "type": "mobility",
+                    "comment": "Limber 11",
+                    "details": schedule_rules.build_stretch_routine_details("limber_11"),
+                },
+            ]
+
+        def record_wger_export(self, *_, **__):
+            pass
+
+    class StubClient:
+        base_url = "https://example.invalid"
+
+        def __init__(self) -> None:
+            self.slot_comments: list[str | None] = []
+            self.entry_exercise_ids: list[int] = []
+            self.custom_exercises: list[tuple[str, str]] = []
+
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+        def create_day(self, routine_id: int, order: int, name: str):
+            return {"id": 100 + order, "name": name}
+
+        def create_slot(self, day_id: int, order: int, comment=None):
+            self.slot_comments.append(comment)
+            return {"id": day_id * 10 + order}
+
+        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+            self.entry_exercise_ids.append(exercise_id)
+            return {"id": slot_id * 10 + order}
+
+        def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
+            return None
+
+        def ensure_custom_exercise(self, *, name: str, description: str, **kwargs):
+            self.custom_exercises.append((name, description))
+            return 1900
+
+    monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
+    monkeypatch.setattr("pete_e.application.services.log_utils.info", infos.append)
+
+    client = StubClient()
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=client,
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    result = service.export_plan_week(
+        plan_id=72,
+        week_number=1,
+        start_date=date(2026, 4, 20),
+        force_overwrite=False,
+    )
+
+    assert result["status"] == "exported"
+    assert warnings == []
+    assert client.slot_comments[0].startswith("Quality run: Intervals")
+    assert "Set 1 @ 50% TM (5 reps) | 80 kg | Rest 2m 30s" in client.slot_comments[1]
+    assert client.slot_comments[2] == "Assistance 3 x 10 | Rest 1m 15s"
+    assert client.slot_comments[3].startswith("Limber 11: 11-step mobility flow")
+    assert client.entry_exercise_ids == [schedule_rules.TREADMILL_RUN_ID, schedule_rules.BENCH_ID, 137, 1900]
+    assert client.custom_exercises
+    name, description = client.custom_exercises[0]
+    assert name == "Limber 11"
+    assert "Seated Piriformis Stretch [isometric]" in description
+    assert "Rear-foot-elevated Hip Flexor Stretch [dynamic + 3s hold]" in description
+    assert any(
+        "routine 42 on https://example.invalid (days=1, slots=4, slot_entries=4)" in message
+        for message in infos
+    )
+
+
+def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch: pytest.MonkeyPatch) -> None:
+    warnings: list[str] = []
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "sets": 5,
+                    "reps": 5,
+                    "percent_1rm": 50.0,
+                    "target_weight_kg": None,
+                    "scheduled_time": "07:05:00",
+                    "is_cardio": False,
+                }
+            ]
+
+        def record_wger_export(self, *_, **__):
+            pass
+
+    class StubClient:
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+        def create_day(self, routine_id: int, order: int, name: str):
+            return {"id": 100 + order, "name": name}
+
+        def create_slot(self, day_id: int, order: int, comment=None):
+            return {"id": day_id * 10 + order}
+
+        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+            return {"id": slot_id * 10 + order}
+
+        def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
+            return None
+
+    monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=StubClient(),
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    result = service.export_plan_week(
+        plan_id=72,
+        week_number=1,
+        start_date=date(2026, 4, 20),
+        force_overwrite=False,
+    )
+
+    assert result["status"] == "exported"
+    assert any("Skipping weight config for main lift due to missing target weight" in message for message in warnings)
 
 
 def test_run_end_to_end_week_passes_cached_validation() -> None:

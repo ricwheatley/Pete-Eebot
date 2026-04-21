@@ -19,6 +19,7 @@ from psycopg_pool import ConnectionPool
 from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
+from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
 
@@ -322,7 +323,8 @@ class PostgresDal(PlanRepository):
             return cur.fetchone()
 
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        sql = """
+        main_lift_ids = ", ".join(str(exercise_id) for exercise_id in schedule_rules.MAIN_LIFT_IDS)
+        sql = f"""
             SELECT tpw.*, tw.week_number, tw.is_test
             FROM training_plan_workouts tpw
             JOIN training_plan_weeks tw ON tw.id = tpw.week_id
@@ -330,7 +332,14 @@ class PostgresDal(PlanRepository):
               AND tw.week_number = %s
             ORDER BY
                 tpw.day_of_week,
-                COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
+                COALESCE(
+                    (tpw.details ->> 'sequence_order')::int,
+                    CASE
+                        WHEN tpw.is_cardio THEN 15
+                        WHEN tpw.exercise_id IN ({main_lift_ids}) THEN 20
+                        ELSE 25
+                    END
+                ),
                 tpw.scheduled_time NULLS LAST,
                 tpw.id;
         """

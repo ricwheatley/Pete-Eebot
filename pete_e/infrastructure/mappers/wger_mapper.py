@@ -36,6 +36,7 @@ class WgerPayloadMapper:
                 workout.day_of_week,
                 schedule_rules.workout_display_order(
                     is_cardio=workout.is_cardio,
+                    exercise_id=None if workout.exercise is None else workout.exercise.id,
                     workout_type=workout.type,
                     details=workout.details,
                 ),

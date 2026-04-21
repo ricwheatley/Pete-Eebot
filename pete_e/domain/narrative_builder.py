@@ -833,6 +833,7 @@ def _format_weekly_workouts(plan_week_data: List[Dict[str, Any]]) -> tuple[List[
         detail_text = f" ({' · '.join(details)})" if details else ""
         order = schedule_rules.workout_display_order(
             is_cardio=bool(entry.get("is_cardio")),
+            exercise_id=entry.get("exercise_id"),
             workout_type=entry.get("type"),
             details=details_payload if isinstance(details_payload, Mapping) else None,
         )
