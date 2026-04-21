@@ -35,6 +35,45 @@ class TestPostgresDal(unittest.TestCase):
         mock_conn.cursor.assert_called_once()
         mock_cur.execute.assert_called_once()
 
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_save_withings_measure_groups(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.save_withings_measure_groups(
+            day=date(2026, 4, 13),
+            measure_groups=[
+                {
+                    "grpid": 7614618991,
+                    "date": 1776051256,
+                    "created": 1776051318,
+                    "modified": 1776051318,
+                    "category": 1,
+                    "attrib": 0,
+                    "comment": None,
+                    "deviceid": "device-1",
+                    "hash_deviceid": "device-1",
+                    "model": "Body Comp",
+                    "modelid": 18,
+                    "timezone": "Europe/London",
+                    "measures": [{"type": 1, "value": 92891, "unit": -3}],
+                }
+            ],
+        )
+
+        mock_cur.executemany.assert_called_once()
+        sql_text = mock_cur.executemany.call_args.args[0]
+        self.assertIn("INSERT INTO withings_measure_groups", sql_text)
+        values = mock_cur.executemany.call_args.args[1]
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0][0], 7614618991)
+
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_historical_data(self, mock_get_pool):

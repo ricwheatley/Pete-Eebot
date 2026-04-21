@@ -64,6 +64,14 @@ def test_withings_daily_table_includes_body_composition_columns():
     assert "water_pct" in columns
 
 
+def test_withings_raw_measure_group_table_is_present() -> None:
+    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+    columns = _extract_table_columns(schema_sql, "withings_measure_groups")
+
+    assert columns[:4] == ["grpid", "day", "measured_at", "created_at_source"]
+    assert "raw_payload_json" in columns
+
+
 def test_training_plan_schema_includes_single_active_index_and_core_pool() -> None:
     schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
 

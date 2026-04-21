@@ -74,9 +74,9 @@ jobs:
               with conn.cursor() as cur:
                   cur.execute(schema_sql)
                   cur.execute(
-                      "SELECT to_regclass('public.training_plans'), to_regclass('public.core_pool');"
+                      "SELECT to_regclass('public.training_plans'), to_regclass('public.core_pool'), to_regclass('public.withings_measure_groups');"
                   )
-                  assert cur.fetchone() == ("training_plans", "core_pool")
+                  assert cur.fetchone() == ("training_plans", "core_pool", "withings_measure_groups")
           PY
 
       - name: Run tests
