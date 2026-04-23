@@ -1,0 +1,541 @@
+{
+  "info": {
+    "_postman_id": "944d1dbf-ebaf-4f69-8f6b-c8b4bc8aa4cd",
+    "name": "Pete-E Withings API",
+    "description": "Withings OAuth and measure requests configured to match Pete-E's Withings client. Fill the Pete-E Withings environment from .env and the local token file before sending requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const now = Math.floor(Date.now() / 1000);",
+          "pm.environment.set('now_unix', String(now));",
+          "pm.environment.set('one_day_ago_unix', String(now - 86400));",
+          "",
+          "const daysBackRaw = pm.environment.get('days_back') || '1';",
+          "const daysBack = Number.parseInt(daysBackRaw, 10);",
+          "const safeDaysBack = Number.isFinite(daysBack) ? daysBack : 1;",
+          "const target = new Date();",
+          "target.setUTCDate(target.getUTCDate() - safeDaysBack);",
+          "const start = Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), target.getUTCDate()) / 1000;",
+          "pm.environment.set('target_start_unix', String(Math.floor(start)));",
+          "pm.environment.set('target_end_unix', String(Math.floor(start + 86400)));"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "OAuth",
+      "item": [
+        {
+          "name": "1. Open Authorize URL In Browser (HTML Expected)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{withings_auth_base_url}}/oauth2_user/authorize2?response_type=code&client_id={{withings_client_id}}&redirect_uri={{withings_redirect_uri}}&scope={{withings_scope}}&state={{withings_state}}",
+              "host": [
+                "{{withings_auth_base_url}}"
+              ],
+              "path": [
+                "oauth2_user",
+                "authorize2"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{withings_client_id}}"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{withings_redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "{{withings_scope}}"
+                },
+                {
+                  "key": "state",
+                  "value": "{{withings_state}}"
+                }
+              ]
+            },
+            "description": "This endpoint returns the Withings login/consent HTML page. Do not expect JSON from this request. Copy the full request URL into a normal browser, log in, approve the app, then copy the code query parameter from the redirect URL into withings_authorization_code."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Exchange Authorization Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});",
+                  "",
+                  "if (data.status === 0 && data.body) {",
+                  "  const body = data.body;",
+                  "  if (body.access_token) pm.environment.set('withings_access_token', body.access_token);",
+                  "  if (body.refresh_token) pm.environment.set('withings_refresh_token', body.refresh_token);",
+                  "  if (body.userid) pm.environment.set('withings_userid', String(body.userid));",
+                  "  if (body.expires_in) {",
+                  "    const expiresAt = Math.floor(Date.now() / 1000) + Number(body.expires_in);",
+                  "    pm.environment.set('withings_access_token_expires_at', String(expiresAt));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "action",
+                  "value": "requesttoken",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{withings_client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{withings_client_secret}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{withings_authorization_code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{withings_redirect_uri}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{withings_base_url}}/v2/oauth2",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "v2",
+                "oauth2"
+              ]
+            },
+            "description": "Matches pete_e.infrastructure.withings_oauth_helper.exchange_code_for_tokens. Test script saves access_token and refresh_token into the selected Postman environment."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Refresh Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});",
+                  "",
+                  "if (data.status === 0 && data.body) {",
+                  "  const body = data.body;",
+                  "  if (body.access_token) pm.environment.set('withings_access_token', body.access_token);",
+                  "  if (body.refresh_token) pm.environment.set('withings_refresh_token', body.refresh_token);",
+                  "  if (body.userid) pm.environment.set('withings_userid', String(body.userid));",
+                  "  if (body.expires_in) {",
+                  "    const expiresAt = Math.floor(Date.now() / 1000) + Number(body.expires_in);",
+                  "    pm.environment.set('withings_access_token_expires_at', String(expiresAt));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "action",
+                  "value": "requesttoken",
+                  "type": "text"
+                },
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{withings_client_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{withings_client_secret}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{withings_refresh_token}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{withings_base_url}}/v2/oauth2",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "v2",
+                "oauth2"
+              ]
+            },
+            "description": "Matches WithingsClient._refresh_access_token. Withings rotates refresh tokens; copy the returned refresh token back to the app token file or .env if you use this request."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Measure",
+      "item": [
+        {
+          "name": "Ping - Weight Measure",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{withings_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "action",
+                  "value": "getmeas",
+                  "type": "text"
+                },
+                {
+                  "key": "meastype",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "category",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "limit",
+                  "value": "1",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{withings_base_url}}/measure",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "measure"
+              ]
+            },
+            "description": "Matches WithingsClient.ping: action=getmeas, meastype=1, category=1, limit=1."
+          },
+          "response": []
+        },
+        {
+          "name": "Raw GetMeas - All Measures (Use This)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});",
+                  "",
+                  "const handled = {",
+                  "  '1': 'weight_kg',",
+                  "  '5': 'fat_free_mass_kg',",
+                  "  '6': 'fat_percent',",
+                  "  '8': 'fat_mass_kg',",
+                  "  '76': 'muscle_mass_kg',",
+                  "  '77': 'water_mass_kg',",
+                  "  '88': 'bone_mass_kg',",
+                  "  '167': 'nerve_health_score_feet',",
+                  "  '170': 'visceral_fat_index',",
+                  "  '226': 'bmr_kcal_day'",
+                  "};",
+                  "const groups = (((data || {}).body || {}).measuregrps || []);",
+                  "const counts = {};",
+                  "groups.forEach(group => {",
+                  "  (group.measures || []).forEach(measure => {",
+                  "    const typeId = String(measure.type);",
+                  "    counts[typeId] = (counts[typeId] || 0) + 1;",
+                  "  });",
+                  "});",
+                  "const seen = Object.keys(counts).sort((a, b) => Number(a) - Number(b));",
+                  "const unhandled = seen.filter(typeId => !handled[typeId]);",
+                  "pm.environment.set('measure_type_counts', JSON.stringify(counts));",
+                  "pm.environment.set('unhandled_measure_types_seen', unhandled.join(','));",
+                  "console.log('Withings measure type counts', counts);",
+                  "console.log('Pete-E unhandled measure type IDs', unhandled);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{withings_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{withings_base_url}}/measure?action=getmeas&category=1&startdate={{target_start_unix}}&enddate={{target_end_unix}}",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "measure"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "getmeas"
+                },
+                {
+                  "key": "category",
+                  "value": "1"
+                },
+                {
+                  "key": "startdate",
+                  "value": "{{target_start_unix}}"
+                },
+                {
+                  "key": "enddate",
+                  "value": "{{target_end_unix}}"
+                }
+              ]
+            },
+            "description": "Raw Withings measure response with no meastypes filter. This is the request to use when checking whether a new scale emits extra measurement type IDs. Set days_back in the environment; the collection pre-request script computes the target UTC day window. The Tests tab stores measure_type_counts and unhandled_measure_types_seen in the environment and logs both to the Postman Console."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Body Composition Measures - Target UTC Day",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{withings_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{withings_base_url}}/measure?action=getmeas&category=1&meastypes={{measure_types}}&startdate={{target_start_unix}}&enddate={{target_end_unix}}",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "measure"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "getmeas"
+                },
+                {
+                  "key": "category",
+                  "value": "1"
+                },
+                {
+                  "key": "meastypes",
+                  "value": "{{measure_types}}"
+                },
+                {
+                  "key": "startdate",
+                  "value": "{{target_start_unix}}"
+                },
+                {
+                  "key": "enddate",
+                  "value": "{{target_end_unix}}"
+                }
+              ]
+            },
+            "description": "Convenience request for the measure types decoded in WithingsClient.get_summary."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Measures Updated Since Yesterday",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "pm.test('Withings status is 0', function () {",
+                  "  pm.expect(data.status).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{withings_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "action",
+                  "value": "getmeas",
+                  "type": "text"
+                },
+                {
+                  "key": "category",
+                  "value": "1",
+                  "type": "text"
+                },
+                {
+                  "key": "lastupdate",
+                  "value": "{{one_day_ago_unix}}",
+                  "type": "text"
+                },
+                {
+                  "key": "meastypes",
+                  "value": "{{measure_types}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{withings_base_url}}/measure",
+              "host": [
+                "{{withings_base_url}}"
+              ],
+              "path": [
+                "measure"
+              ]
+            },
+            "description": "Similar to the official Withings Postman example: action=getmeas, category=1, lastupdate, and meastypes."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

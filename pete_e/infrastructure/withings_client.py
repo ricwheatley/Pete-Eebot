@@ -455,7 +455,7 @@ class WithingsClient:
     def get_summary(self, days_back: int = 1) -> dict:
         """
         Returns a summary dict for a given day.
-        Includes: weight, fat %, muscle mass, and water %.
+        Includes decoded Withings measure values and derived body composition percentages.
         """
         # Ensure tokens are valid before fetching measures
         self.ensure_fresh_token()
@@ -498,6 +498,7 @@ class WithingsClient:
         bone_mass_value = measure_type_values.get(88)
         visceral_fat_value = measure_type_values.get(170)
         bmr_value = measure_type_values.get(226)
+        metabolic_age_value = measure_type_values.get(227)
         nerve_health_value = measure_type_values.get(167)
 
         row["weight"] = round(weight_value, 2) if weight_value is not None else None
@@ -510,6 +511,7 @@ class WithingsClient:
         row["bone_mass_kg"] = round(bone_mass_value, 2) if bone_mass_value is not None else None
         row["visceral_fat_index"] = round(visceral_fat_value, 2) if visceral_fat_value is not None else None
         row["bmr_kcal_day"] = round(bmr_value, 2) if bmr_value is not None else None
+        row["metabolic_age_years"] = round(metabolic_age_value, 2) if metabolic_age_value is not None else None
         row["nerve_health_score_feet"] = round(nerve_health_value, 3) if nerve_health_value is not None else None
         if muscle_value is not None and weight_value not in (None, 0):
             row["muscle_percent"] = round((muscle_value / weight_value) * 100, 2)

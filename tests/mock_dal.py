@@ -27,6 +27,16 @@ class MockableDal(DataAccessLayer):
         body_fat_pct: Optional[float],
         muscle_pct: Optional[float],
         water_pct: Optional[float],
+        *,
+        fat_free_mass_kg: Optional[float] = None,
+        fat_mass_kg: Optional[float] = None,
+        muscle_mass_kg: Optional[float] = None,
+        water_mass_kg: Optional[float] = None,
+        bone_mass_kg: Optional[float] = None,
+        visceral_fat_index: Optional[float] = None,
+        bmr_kcal_day: Optional[float] = None,
+        nerve_health_score_feet: Optional[float] = None,
+        metabolic_age_years: Optional[float] = None,
     ) -> None:
         pass
 

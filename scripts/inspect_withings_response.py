@@ -2,7 +2,7 @@
 """Fetch and print the raw Withings measure payload for inspection.
 
 Examples:
-    python -m scripts.inspect_withings_response --days-back 0
+    python -m scripts.inspect_withings_response --days-back 0 --show-types
     python -m scripts.inspect_withings_response --start-date 2026-04-13 --end-date 2026-04-14
     python -m scripts.inspect_withings_response --days-back 0 --latest-group-only --output withings_latest.json
 """
@@ -17,7 +17,36 @@ from typing import Any
 
 import requests
 
-from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.infrastructure.withings_client import WithingsClient, WithingsReauthRequired
+from pete_e.infrastructure.token_storage import JsonFileTokenStorage
+
+
+PETE_E_HANDLED_MEASURE_TYPES: dict[int, str] = {
+    1: "weight_kg",
+    5: "fat_free_mass_kg",
+    6: "fat_percent",
+    8: "fat_mass_kg",
+    76: "muscle_mass_kg",
+    77: "water_mass_kg",
+    88: "bone_mass_kg",
+    167: "nerve_health_score_feet",
+    170: "visceral_fat_index",
+    226: "bmr_kcal_day",
+    227: "metabolic_age_years",
+}
+
+
+class _EnvRefreshTokenBootstrapStorage:
+    """Ignore stale persisted tokens once, but save fresh tokens normally."""
+
+    def __init__(self) -> None:
+        self._writer = JsonFileTokenStorage(WithingsClient.TOKEN_FILE)
+
+    def read_tokens(self) -> None:
+        return None
+
+    def save_tokens(self, tokens: dict[str, object]) -> None:
+        self._writer.save_tokens(tokens)
 
 
 def _parse_iso_date(value: str) -> date:
@@ -56,8 +85,10 @@ def _fetch_payload(
     end_dt: datetime,
     category: int,
     meastypes: str | None,
+    ignore_token_file: bool,
 ) -> dict[str, Any]:
-    client = WithingsClient()
+    token_storage = _EnvRefreshTokenBootstrapStorage() if ignore_token_file else None
+    client = WithingsClient(token_storage=token_storage)
     client.ensure_fresh_token()
 
     params: dict[str, Any] = {
@@ -127,6 +158,24 @@ def _measure_type_counts(payload: dict[str, Any]) -> dict[int, int]:
     return counts
 
 
+def _measure_type_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    counts = _measure_type_counts(payload)
+    seen_types = sorted(counts)
+    unhandled_types = [
+        measure_type
+        for measure_type in seen_types
+        if measure_type not in PETE_E_HANDLED_MEASURE_TYPES
+    ]
+    return {
+        "measure_type_counts": {str(key): counts[key] for key in seen_types},
+        "pete_e_handled_types": {
+            str(key): PETE_E_HANDLED_MEASURE_TYPES[key]
+            for key in sorted(PETE_E_HANDLED_MEASURE_TYPES)
+        },
+        "unhandled_measure_types": [str(key) for key in unhandled_types],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Dump raw Withings measure payloads for inspection.")
     parser.add_argument("--days-back", type=int, default=0, help="Fetch a window ending today-N days back. Default: 0.")
@@ -146,9 +195,17 @@ def main() -> int:
     parser.add_argument(
         "--show-types",
         action="store_true",
-        help="Print a simple measure-type count summary before the JSON output.",
+        help="Print measure-type counts and flag types not currently integrated by Pete-E.",
     )
     parser.add_argument("--output", type=Path, help="Optional file path to write the JSON payload.")
+    parser.add_argument(
+        "--ignore-token-file",
+        action="store_true",
+        help=(
+            "Ignore ~/.config/pete_eebot/.withings_tokens.json for this run and "
+            "bootstrap from WITHINGS_REFRESH_TOKEN in .env instead. Fresh tokens are still saved."
+        ),
+    )
     args = parser.parse_args()
 
     start_dt, end_dt = _resolve_window(
@@ -157,23 +214,35 @@ def main() -> int:
         start_date=args.start_date,
         end_date=args.end_date,
     )
-    payload = _fetch_payload(
-        start_dt=start_dt,
-        end_dt=end_dt,
-        category=args.category,
-        meastypes=args.meastypes,
-    )
+    try:
+        payload = _fetch_payload(
+            start_dt=start_dt,
+            end_dt=end_dt,
+            category=args.category,
+            meastypes=args.meastypes,
+            ignore_token_file=args.ignore_token_file,
+        )
+    except WithingsReauthRequired as exc:
+        raise SystemExit(
+            "Withings re-authorisation required: "
+            f"{exc}\n\n"
+            "Run:\n"
+            "  pete withings-auth\n"
+            "  pete withings-code <code-from-browser-redirect>\n\n"
+            "Then rerun this inspection command. If `pete` is not on PATH, use:\n"
+            "  python -m pete_e.cli.messenger withings-auth\n"
+            "  python -m pete_e.cli.messenger withings-code <code-from-browser-redirect>"
+        ) from exc
 
     if args.latest_group_only:
         payload = _trim_to_latest_group(payload)
 
     if args.show_types:
-        counts = _measure_type_counts(payload)
         summary = {
             "window_start_utc": start_dt.isoformat(),
             "window_end_utc": end_dt.isoformat(),
             "measure_group_count": len((payload.get("body") or {}).get("measuregrps", []) or []),
-            "measure_type_counts": {str(key): counts[key] for key in sorted(counts)},
+            **_measure_type_summary(payload),
         }
         print(json.dumps(summary, indent=2, sort_keys=True))
 

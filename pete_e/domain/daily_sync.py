@@ -77,6 +77,15 @@ class DailyMetricsRepository(Protocol):
         body_fat_pct: float | None,
         muscle_pct: float | None,
         water_pct: float | None,
+        fat_free_mass_kg: float | None = None,
+        fat_mass_kg: float | None = None,
+        muscle_mass_kg: float | None = None,
+        water_mass_kg: float | None = None,
+        bone_mass_kg: float | None = None,
+        visceral_fat_index: float | None = None,
+        bmr_kcal_day: float | None = None,
+        nerve_health_score_feet: float | None = None,
+        metabolic_age_years: float | None = None,
     ) -> None:
         """Persist a Withings daily summary."""
 
@@ -154,6 +163,15 @@ class DailySyncService:
                     body_fat_pct=summary.get("fat_percent"),
                     muscle_pct=summary.get("muscle_percent"),
                     water_pct=summary.get("water_percent"),
+                    fat_free_mass_kg=summary.get("fat_free_mass_kg"),
+                    fat_mass_kg=summary.get("fat_mass_kg"),
+                    muscle_mass_kg=summary.get("muscle_mass_kg"),
+                    water_mass_kg=summary.get("water_mass_kg"),
+                    bone_mass_kg=summary.get("bone_mass_kg"),
+                    visceral_fat_index=summary.get("visceral_fat_index"),
+                    bmr_kcal_day=summary.get("bmr_kcal_day"),
+                    nerve_health_score_feet=summary.get("nerve_health_score_feet"),
+                    metabolic_age_years=summary.get("metabolic_age_years"),
                 )
                 self._repository.save_withings_measure_groups(
                     day=day,

@@ -503,10 +503,77 @@ class PostgresDal(PlanRepository):
     # ----------------------------------------------
     # --- Wger & Withings Log Management ---
     # ----------------------------------------------
-    def save_withings_daily(self, day: date, weight_kg: Optional[float], body_fat_pct: Optional[float], muscle_pct: Optional[float], water_pct: Optional[float]) -> None:
-        sql = "INSERT INTO withings_daily (date, weight_kg, body_fat_pct, muscle_pct, water_pct) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (date) DO UPDATE SET weight_kg = EXCLUDED.weight_kg, body_fat_pct = EXCLUDED.body_fat_pct, muscle_pct = EXCLUDED.muscle_pct, water_pct = EXCLUDED.water_pct;"
+    def save_withings_daily(
+        self,
+        day: date,
+        weight_kg: Optional[float],
+        body_fat_pct: Optional[float],
+        muscle_pct: Optional[float],
+        water_pct: Optional[float],
+        *,
+        fat_free_mass_kg: Optional[float] = None,
+        fat_mass_kg: Optional[float] = None,
+        muscle_mass_kg: Optional[float] = None,
+        water_mass_kg: Optional[float] = None,
+        bone_mass_kg: Optional[float] = None,
+        visceral_fat_index: Optional[float] = None,
+        bmr_kcal_day: Optional[float] = None,
+        nerve_health_score_feet: Optional[float] = None,
+        metabolic_age_years: Optional[float] = None,
+    ) -> None:
+        sql = """
+            INSERT INTO withings_daily (
+                date,
+                weight_kg,
+                body_fat_pct,
+                muscle_pct,
+                water_pct,
+                fat_free_mass_kg,
+                fat_mass_kg,
+                muscle_mass_kg,
+                water_mass_kg,
+                bone_mass_kg,
+                visceral_fat_index,
+                bmr_kcal_day,
+                nerve_health_score_feet,
+                metabolic_age_years
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (date) DO UPDATE SET
+                weight_kg = EXCLUDED.weight_kg,
+                body_fat_pct = EXCLUDED.body_fat_pct,
+                muscle_pct = EXCLUDED.muscle_pct,
+                water_pct = EXCLUDED.water_pct,
+                fat_free_mass_kg = EXCLUDED.fat_free_mass_kg,
+                fat_mass_kg = EXCLUDED.fat_mass_kg,
+                muscle_mass_kg = EXCLUDED.muscle_mass_kg,
+                water_mass_kg = EXCLUDED.water_mass_kg,
+                bone_mass_kg = EXCLUDED.bone_mass_kg,
+                visceral_fat_index = EXCLUDED.visceral_fat_index,
+                bmr_kcal_day = EXCLUDED.bmr_kcal_day,
+                nerve_health_score_feet = EXCLUDED.nerve_health_score_feet,
+                metabolic_age_years = EXCLUDED.metabolic_age_years;
+        """
         with self._get_cursor() as cur:
-            cur.execute(sql, (day, weight_kg, body_fat_pct, muscle_pct, water_pct))
+            cur.execute(
+                sql,
+                (
+                    day,
+                    weight_kg,
+                    body_fat_pct,
+                    muscle_pct,
+                    water_pct,
+                    fat_free_mass_kg,
+                    fat_mass_kg,
+                    muscle_mass_kg,
+                    water_mass_kg,
+                    bone_mass_kg,
+                    visceral_fat_index,
+                    bmr_kcal_day,
+                    nerve_health_score_feet,
+                    metabolic_age_years,
+                ),
+            )
 
     @staticmethod
     def _epoch_to_timestamp(value: Any) -> Optional[datetime]:
