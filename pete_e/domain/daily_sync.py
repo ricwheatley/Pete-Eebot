@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, Mapping, Protocol, Sequence
 
+from pete_e.domain import logging as domain_logging
+
 
 @dataclass(frozen=True)
 class AppleHealthImportSummary:
@@ -177,7 +179,8 @@ class DailySyncService:
                     day=day,
                     measure_groups=list(summary.get("measure_groups") or []),
                 )
-        except Exception:
+        except Exception as exc:
+            domain_logging.log_message(f"Withings sync failed: {exc}", "ERROR")
             return DailySyncSourceResult(
                 success=False,
                 failures=("Withings",),
