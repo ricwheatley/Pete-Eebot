@@ -110,6 +110,29 @@ class TestPostgresDal(unittest.TestCase):
         self.assertEqual(result, [{"date": "2025-01-15", "steps": 5000}])
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_refresh_daily_summary_refreshes_inputs_before_body_age(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.refresh_daily_summary(days=7)
+
+        statements = [call.args[0] for call in mock_cur.execute.call_args_list]
+        self.assertEqual(
+            statements,
+            [
+                "SELECT sp_refresh_daily_summary(%s, %s);",
+                "SELECT sp_upsert_body_age_range(%s, %s, %s);",
+                "SELECT sp_refresh_daily_summary(%s, %s);",
+            ],
+        )
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()

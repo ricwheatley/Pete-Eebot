@@ -81,6 +81,16 @@ def test_withings_raw_measure_group_table_is_present() -> None:
     assert "raw_payload_json" in columns
 
 
+def test_body_age_table_tracks_enriched_body_comp_usage() -> None:
+    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+    columns = _extract_table_columns(schema_sql, "body_age_daily")
+
+    assert "used_enriched_body_comp" in columns
+    assert "v_enriched_body_comp_rows" in schema_sql
+    assert "visceral_fat_index" in schema_sql
+    assert "used_enriched_body_comp = EXCLUDED.used_enriched_body_comp" in schema_sql
+
+
 def test_training_plan_schema_includes_single_active_index_and_core_pool() -> None:
     schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
 
