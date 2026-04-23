@@ -25,6 +25,99 @@ class BodyAgeTrend:
     delta: Optional[float]
 
 
+BODY_COMP_ENRICHED_START_DATE = date(2026, 4, 6)
+BODY_COMP_ENRICHED_MIN_TARGET_DATE = BODY_COMP_ENRICHED_START_DATE + timedelta(days=6)
+MIN_ENRICHED_BODY_COMP_ROWS = 3
+
+
+def _clamp_score(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def _score_body_fat_percent(bodyfat: Optional[float]) -> float:
+    if bodyfat is None:
+        return 50.0
+    if bodyfat <= 15:
+        return 100.0
+    if bodyfat >= 30:
+        return 0.0
+    return _clamp_score((30 - bodyfat) / 15 * 100)
+
+
+def _score_visceral_fat_index(visceral_fat: Optional[float]) -> Optional[float]:
+    if visceral_fat is None:
+        return None
+    if visceral_fat <= 5:
+        return 100.0
+    if visceral_fat >= 20:
+        return 0.0
+    return _clamp_score((20 - visceral_fat) / 15 * 100)
+
+
+def _score_muscle_percent(muscle_percent: Optional[float]) -> Optional[float]:
+    if muscle_percent is None:
+        return None
+    if muscle_percent >= 75:
+        return 100.0
+    if muscle_percent <= 60:
+        return 0.0
+    return _clamp_score((muscle_percent - 60) / 15 * 100)
+
+
+def _row_muscle_percent(row: Dict[str, Any]) -> Optional[float]:
+    for key in ("muscle_percent", "muscle_pct"):
+        value = row.get(key)
+        if value is not None:
+            return converters.to_float(value)
+    muscle_mass = converters.to_float(row.get("muscle_mass_kg"))
+    weight = converters.to_float(row.get("weight_kg") or row.get("weight"))
+    if muscle_mass is None or weight in (None, 0):
+        return None
+    return (muscle_mass / weight) * 100
+
+
+def _has_enriched_body_comp(row: Dict[str, Any]) -> bool:
+    return any(
+        row.get(key) is not None
+        for key in (
+            "visceral_fat_index",
+            "muscle_percent",
+            "muscle_pct",
+            "muscle_mass_kg",
+        )
+    )
+
+
+def _calculate_body_comp_score(
+    *,
+    bodyfat: Optional[float],
+    visceral_fat: Optional[float],
+    muscle_percent: Optional[float],
+    enriched_rows: int,
+    target_date: Optional[date],
+) -> tuple[float, bool]:
+    bodyfat_score = _score_body_fat_percent(bodyfat)
+    visceral_score = _score_visceral_fat_index(visceral_fat)
+    muscle_score = _score_muscle_percent(muscle_percent)
+
+    can_use_enriched = (
+        target_date is not None
+        and target_date >= BODY_COMP_ENRICHED_MIN_TARGET_DATE
+        and enriched_rows >= MIN_ENRICHED_BODY_COMP_ROWS
+        and bodyfat is not None
+        and (visceral_score is not None or muscle_score is not None)
+    )
+    if not can_use_enriched:
+        return bodyfat_score, False
+
+    score = (
+        0.60 * bodyfat_score
+        + 0.25 * (visceral_score if visceral_score is not None else bodyfat_score)
+        + 0.15 * (muscle_score if muscle_score is not None else bodyfat_score)
+    )
+    return _clamp_score(score), True
+
+
 def _extract_body_age_value(row: Dict[str, Any]) -> Optional[float]:
     """Pull a body age value from a summary row."""
     value = row.get("body_age_years")
@@ -150,6 +243,15 @@ def calculate_body_age(
             lambda r: r.get("body_fat_pct"),
         )
     )
+    visceral_fat = avg_from((lambda r: r.get("visceral_fat_index"),))
+    muscle_percent = avg_from((_row_muscle_percent,))
+    enriched_body_comp_rows = sum(
+        1
+        for row in windowed
+        if _has_enriched_body_comp(row)
+        and (converters.to_date(row.get("date")) or BODY_COMP_ENRICHED_START_DATE)
+        >= BODY_COMP_ENRICHED_START_DATE
+    )
     steps = avg_from((lambda r: r.get("steps"),))
     exmin = avg_from((lambda r: r.get("exercise_minutes"),))
 
@@ -260,15 +362,15 @@ def calculate_body_age(
         vo2 = 35
     crf = max(0, min(100, ((vo2 - 20) / (60 - 20) * 100)))
 
-    # Body composition score
-    if bodyfat is None:
-        body_comp = 50
-    elif bodyfat <= 15:
-        body_comp = 100
-    elif bodyfat >= 30:
-        body_comp = 0
-    else:
-        body_comp = (30 - bodyfat) / (30 - 15) * 100
+    # Body composition score. From 2026-04-12 onward this can use the first
+    # full seven-day Body Comp window from the scale that started on 2026-04-06.
+    body_comp, used_enriched_body_comp = _calculate_body_comp_score(
+        bodyfat=bodyfat,
+        visceral_fat=visceral_fat,
+        muscle_percent=muscle_percent,
+        enriched_rows=enriched_body_comp_rows,
+        target_date=last_date,
+    )
 
     # Activity score (weighted between steps and exercise minutes)
     steps_score = 0 if steps is None else max(0, min(100, (steps / 12000) * 100))
@@ -337,6 +439,7 @@ def calculate_body_age(
         "age_delta_years": round(age_delta, 1),
         "assumptions": {
             "used_vo2max_direct": used_vo2max_direct,
+            "used_enriched_body_comp": used_enriched_body_comp,
             "cap_minus_10_applied": cap_applied,
         },
     }

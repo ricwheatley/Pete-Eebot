@@ -114,3 +114,47 @@ def test_body_age_uses_direct_vo2_max(monkeypatch):
     assert result["assumptions"]["used_vo2max_direct"] is True
     assert result["subscores"]["crf"] > 0
 
+
+def test_body_age_uses_enriched_withings_body_comp_after_first_full_window():
+    profile = {"birth_date": date(1985, 5, 1).isoformat()}
+    withings_history = [
+        {
+            "date": date(2026, 4, day),
+            "body_fat_pct": 27.0,
+            "visceral_fat_index": 4.6,
+            "muscle_pct": 69.0,
+        }
+        for day in range(6, 13)
+    ]
+
+    result = body_age.calculate_body_age(
+        withings_history=withings_history,
+        apple_history=[],
+        profile=profile,
+    )
+
+    assert result["assumptions"]["used_enriched_body_comp"] is True
+    assert result["subscores"]["body_comp"] == 46.0
+
+
+def test_body_age_falls_back_before_enriched_withings_window_is_complete():
+    profile = {"birth_date": date(1985, 5, 1).isoformat()}
+    withings_history = [
+        {
+            "date": date(2026, 4, day),
+            "body_fat_pct": 27.0,
+            "visceral_fat_index": 4.6,
+            "muscle_pct": 69.0,
+        }
+        for day in range(6, 12)
+    ]
+
+    result = body_age.calculate_body_age(
+        withings_history=withings_history,
+        apple_history=[],
+        profile=profile,
+    )
+
+    assert result["assumptions"]["used_enriched_body_comp"] is False
+    assert result["subscores"]["body_comp"] == 20.0
+

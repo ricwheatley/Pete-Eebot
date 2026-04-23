@@ -242,6 +242,7 @@ CREATE TABLE body_age_daily (
     body_age_years NUMERIC(6,1),
     age_delta_years NUMERIC(6,1),
     used_vo2max_direct BOOLEAN NOT NULL DEFAULT false,
+    used_enriched_body_comp BOOLEAN NOT NULL DEFAULT false,
     cap_minus_10_applied BOOLEAN NOT NULL DEFAULT false,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1302,6 +1303,8 @@ RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     v_start               date := p_target_date - INTERVAL '6 days';
     v_bodyfat_avg         double precision;
+    v_muscle_pct_avg      double precision;
+    v_visceral_fat_avg    double precision;
     v_steps_avg           double precision;
     v_ex_min_avg          double precision;
     v_rhr_avg             double precision;
@@ -1311,6 +1314,9 @@ DECLARE
     v_vo2                 double precision;
     v_crf                 double precision;
     v_body_comp           double precision;
+    v_bodyfat_score       double precision;
+    v_visceral_score      double precision;
+    v_muscle_score        double precision;
     v_steps_score         double precision;
     v_ex_score            double precision;
     v_activity            double precision;
@@ -1323,6 +1329,8 @@ DECLARE
     v_cap_min             double precision;
     v_cap_applied         boolean;
     v_used_vo2_direct     boolean := false;
+    v_used_enriched_body_comp boolean := false;
+    v_enriched_body_comp_rows integer := 0;
     v_any_rows            integer;
 BEGIN
     IF p_target_date IS NULL OR p_birth_date IS NULL THEN
@@ -1332,19 +1340,39 @@ BEGIN
     IF v_any_rows = 0 THEN RETURN; END IF;
     SELECT
         avg(ds.body_fat_pct)::double precision,
+        avg(COALESCE(
+            ds.muscle_pct,
+            CASE
+                WHEN ds.weight_kg > 0 AND ds.muscle_mass_kg IS NOT NULL
+                THEN (ds.muscle_mass_kg / ds.weight_kg) * 100.0
+                ELSE NULL
+            END
+        ))::double precision,
+        avg(ds.visceral_fat_index)::double precision,
         avg(ds.steps)::double precision,
         avg(ds.exercise_minutes)::double precision,
         avg(ds.hr_resting)::double precision,
         avg(ds.sleep_asleep_minutes)::double precision,
         avg(ds.vo2_max)::double precision,
-        avg(ds.hrv_sdnn_ms)::double precision
+        avg(ds.hrv_sdnn_ms)::double precision,
+        count(*) FILTER (
+            WHERE ds.date >= DATE '2026-04-06'
+              AND (
+                  ds.visceral_fat_index IS NOT NULL
+                  OR ds.muscle_pct IS NOT NULL
+                  OR ds.muscle_mass_kg IS NOT NULL
+              )
+        )::integer
     INTO v_bodyfat_avg,
+         v_muscle_pct_avg,
+         v_visceral_fat_avg,
          v_steps_avg,
          v_ex_min_avg,
          v_rhr_avg,
          v_sleep_asleep_avg,
          v_vo2_direct,
-         v_hrv_avg
+         v_hrv_avg,
+         v_enriched_body_comp_rows
     FROM daily_summary ds
     WHERE ds.date BETWEEN v_start AND p_target_date;
     v_chrono_years := EXTRACT(EPOCH FROM (p_target_date::timestamp - p_birth_date::timestamp)) / 31557600.0;
@@ -1358,8 +1386,37 @@ BEGIN
         v_vo2 := 35;
     END IF;
     v_crf := GREATEST(0.0, LEAST(100.0, ((v_vo2 - 20.0) / 40.0) * 100.0));
-    IF v_bodyfat_avg IS NULL THEN v_body_comp := 50.0; ELSIF v_bodyfat_avg <= 15.0 THEN v_body_comp := 100.0; ELSIF v_bodyfat_avg >= 30.0 THEN v_body_comp := 0.0;
-    ELSE v_body_comp := (30.0 - v_bodyfat_avg) / 15.0 * 100.0; END IF;
+    v_bodyfat_score := CASE
+        WHEN v_bodyfat_avg IS NULL THEN 50.0
+        WHEN v_bodyfat_avg <= 15.0 THEN 100.0
+        WHEN v_bodyfat_avg >= 30.0 THEN 0.0
+        ELSE GREATEST(0.0, LEAST(100.0, (30.0 - v_bodyfat_avg) / 15.0 * 100.0))
+    END;
+    v_visceral_score := CASE
+        WHEN v_visceral_fat_avg IS NULL THEN NULL
+        WHEN v_visceral_fat_avg <= 5.0 THEN 100.0
+        WHEN v_visceral_fat_avg >= 20.0 THEN 0.0
+        ELSE GREATEST(0.0, LEAST(100.0, (20.0 - v_visceral_fat_avg) / 15.0 * 100.0))
+    END;
+    v_muscle_score := CASE
+        WHEN v_muscle_pct_avg IS NULL THEN NULL
+        WHEN v_muscle_pct_avg >= 75.0 THEN 100.0
+        WHEN v_muscle_pct_avg <= 60.0 THEN 0.0
+        ELSE GREATEST(0.0, LEAST(100.0, (v_muscle_pct_avg - 60.0) / 15.0 * 100.0))
+    END;
+    IF p_target_date >= DATE '2026-04-12'
+       AND v_enriched_body_comp_rows >= 3
+       AND v_bodyfat_avg IS NOT NULL
+       AND (v_visceral_score IS NOT NULL OR v_muscle_score IS NOT NULL) THEN
+        v_body_comp := GREATEST(0.0, LEAST(100.0,
+            0.60 * v_bodyfat_score
+            + 0.25 * COALESCE(v_visceral_score, v_bodyfat_score)
+            + 0.15 * COALESCE(v_muscle_score, v_bodyfat_score)
+        ));
+        v_used_enriched_body_comp := true;
+    ELSE
+        v_body_comp := v_bodyfat_score;
+    END IF;
     v_steps_score := CASE WHEN v_steps_avg IS NULL THEN 0.0 ELSE GREATEST(0.0, LEAST(100.0, (v_steps_avg / 12000.0) * 100.0)) END;
     v_ex_score := CASE WHEN v_ex_min_avg IS NULL THEN 0.0 ELSE GREATEST(0.0, LEAST(100.0, (v_ex_min_avg / 30.0) * 100.0)) END;
     v_activity := 0.6 * v_steps_score + 0.4 * v_ex_score;
@@ -1382,11 +1439,11 @@ BEGIN
     v_body_age := v_chrono_years - 0.2 * (v_composite - 50.0);
     v_cap_min := v_chrono_years - 10.0;
     IF v_body_age < v_cap_min THEN v_body_age := v_cap_min; v_cap_applied := true; ELSE v_cap_applied := false; END IF;
-    INSERT INTO body_age_daily (date, input_window_days, crf_score, body_comp_score, activity_score, recovery_score, composite_score, body_age_years, age_delta_years, used_vo2max_direct, cap_minus_10_applied, updated_at)
-    VALUES (p_target_date, 7, ROUND(v_crf::numeric, 1), ROUND(v_body_comp::numeric, 1), ROUND(v_activity::numeric, 1), ROUND(v_recovery::numeric, 1), ROUND(v_composite::numeric, 1), ROUND(v_body_age::numeric, 1), ROUND((v_body_age - v_chrono_years)::numeric, 1), v_used_vo2_direct, v_cap_applied, now())
+    INSERT INTO body_age_daily (date, input_window_days, crf_score, body_comp_score, activity_score, recovery_score, composite_score, body_age_years, age_delta_years, used_vo2max_direct, used_enriched_body_comp, cap_minus_10_applied, updated_at)
+    VALUES (p_target_date, 7, ROUND(v_crf::numeric, 1), ROUND(v_body_comp::numeric, 1), ROUND(v_activity::numeric, 1), ROUND(v_recovery::numeric, 1), ROUND(v_composite::numeric, 1), ROUND(v_body_age::numeric, 1), ROUND((v_body_age - v_chrono_years)::numeric, 1), v_used_vo2_direct, v_used_enriched_body_comp, v_cap_applied, now())
     ON CONFLICT (date) DO UPDATE SET
         input_window_days = EXCLUDED.input_window_days, crf_score = EXCLUDED.crf_score, body_comp_score = EXCLUDED.body_comp_score, activity_score = EXCLUDED.activity_score, recovery_score = EXCLUDED.recovery_score, composite_score = EXCLUDED.composite_score,
-        body_age_years = EXCLUDED.body_age_years, age_delta_years = EXCLUDED.age_delta_years, used_vo2max_direct = EXCLUDED.used_vo2max_direct, cap_minus_10_applied = EXCLUDED.cap_minus_10_applied, updated_at = now();
+        body_age_years = EXCLUDED.body_age_years, age_delta_years = EXCLUDED.age_delta_years, used_vo2max_direct = EXCLUDED.used_vo2max_direct, used_enriched_body_comp = EXCLUDED.used_enriched_body_comp, cap_minus_10_applied = EXCLUDED.cap_minus_10_applied, updated_at = now();
 END;
 $$;
 
