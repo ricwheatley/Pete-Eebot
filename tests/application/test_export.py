@@ -182,6 +182,7 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
     class StubClient:
         def __init__(self) -> None:
             self.set_config_calls: list[tuple[str, int, int, object]] = []
+            self.slot_entry_kwargs: list[dict[str, object]] = []
 
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
@@ -195,7 +196,14 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
         def create_slot(self, day_id: int, order: int, comment=None):
             return {"id": day_id * 10 + order}
 
-        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+        def create_slot_entry(
+            self,
+            slot_id: int,
+            exercise_id: int,
+            order: int = 1,
+            **kwargs,
+        ):
+            self.slot_entry_kwargs.append(kwargs)
             return {"id": slot_id * 10 + order}
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
@@ -223,6 +231,12 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
         ("weight", 10111, 1, 47.5),
         ("weight", 10211, 1, 15.0),
     ]
+    rest_calls = [call for call in client.set_config_calls if call[0] == "rest"]
+    assert rest_calls == [
+        ("rest", 10111, 1, 165),
+        ("rest", 10211, 1, 165),
+    ]
+    assert client.slot_entry_kwargs[0]["comment"].startswith("Set 1 @ 90% TM")
 
 
 def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -294,6 +308,8 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
         def __init__(self) -> None:
             self.slot_comments: list[str | None] = []
             self.entry_exercise_ids: list[int] = []
+            self.entry_comments: list[str | None] = []
+            self.entry_types: list[str | None] = []
             self.custom_exercises: list[tuple[str, str]] = []
 
         def find_or_create_routine(self, **kwargs):
@@ -309,8 +325,16 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
             self.slot_comments.append(comment)
             return {"id": day_id * 10 + order}
 
-        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+        def create_slot_entry(
+            self,
+            slot_id: int,
+            exercise_id: int,
+            order: int = 1,
+            **kwargs,
+        ):
             self.entry_exercise_ids.append(exercise_id)
+            self.entry_comments.append(kwargs.get("comment"))
+            self.entry_types.append(kwargs.get("entry_type"))
             return {"id": slot_id * 10 + order}
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
@@ -342,17 +366,25 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
     assert result["status"] == "exported"
     assert warnings == []
     assert client.slot_comments[0].startswith("Quality run: Intervals")
+    assert client.entry_comments[0].startswith("Quality run: Intervals")
     assert "Set 1 @ 50% TM (5 reps) | 80 kg | Rest 2m 30s" in client.slot_comments[1]
+    assert client.entry_types[1] == "warmup"
     assert client.slot_comments[2] == "Assistance 3 x 10 | Rest 1m 15s"
-    assert client.slot_comments[3].startswith("Limber 11: 11-step mobility flow")
-    assert client.entry_exercise_ids == [schedule_rules.TREADMILL_RUN_ID, schedule_rules.BENCH_ID, 137, 1900]
+    assert client.slot_comments[3].startswith("Limber 11 1/11: Foam Roll IT Band")
+    assert client.entry_comments[3] == "10-15 passes"
+    assert client.entry_exercise_ids == [
+        schedule_rules.TREADMILL_RUN_ID,
+        schedule_rules.BENCH_ID,
+        137,
+        *([1900] * 11),
+    ]
     assert client.custom_exercises
     name, description = client.custom_exercises[0]
-    assert name == "Limber 11"
-    assert "Seated Piriformis Stretch [isometric]" in description
-    assert "Rear-foot-elevated Hip Flexor Stretch [dynamic + 3s hold]" in description
+    assert name == "Foam Roll IT Band"
+    assert "Part of: Limber 11" in description
+    assert "Prescription: 10-15 passes" in description
     assert any(
-        "routine 42 on https://example.invalid (days=1, slots=4, slot_entries=4)" in message
+        "routine 42 on https://example.invalid (days=1, slots=14, slot_entries=14)" in message
         for message in infos
     )
 
@@ -396,7 +428,13 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
         def create_slot(self, day_id: int, order: int, comment=None):
             return {"id": day_id * 10 + order}
 
-        def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1):
+        def create_slot_entry(
+            self,
+            slot_id: int,
+            exercise_id: int,
+            order: int = 1,
+            **kwargs,
+        ):
             return {"id": slot_id * 10 + order}
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):

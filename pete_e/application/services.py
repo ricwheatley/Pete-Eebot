@@ -188,30 +188,21 @@ class WgerExportService:
                     if exercise_id is None:
                         exercise_id = self._resolve_export_exercise_id(exercise_payload)
                     entry_response: Dict[str, Any] | None = None
+                    configs_sent: list[dict[str, Any]] = []
                     if exercise_id:
                         entry_response = self.client.create_slot_entry(
                             slot_response["id"],
                             exercise_id=exercise_id,
                             order=1,
+                            entry_type=exercise_payload.get("entry_type"),
+                            comment=self._entry_comment_for_api(exercise_payload),
                         )
                         slot_entry_id = entry_response["id"]
-                        sets = exercise_payload.get("sets")
-                        reps = exercise_payload.get("reps")
-                        rir = exercise_payload.get("rir")
-                        target_weight = exercise_payload.get("target_weight_kg")
-                        if target_weight is not None:
-                            self.client.set_config("weight", slot_entry_id, 1, target_weight)
-                        elif schedule_rules.classify_exercise(exercise_id) == "main":
-                            log_utils.warn(
-                                "Skipping weight config for main lift due to missing target weight. "
-                                f"exercise_id={exercise_id}, comment={comment!r}"
-                            )
-                        if sets is not None:
-                            self.client.set_config("sets", slot_entry_id, 1, sets)
-                        if reps is not None:
-                            self.client.set_config("reps", slot_entry_id, 1, reps)
-                        if rir is not None:
-                            self.client.set_config("rir", slot_entry_id, 1, rir)
+                        configs_sent = self._apply_slot_entry_configs(
+                            exercise_payload=exercise_payload,
+                            exercise_id=exercise_id,
+                            slot_entry_id=slot_entry_id,
+                        )
                     else:
                         details = exercise_payload.get("details")
                         session_type = None
@@ -228,6 +219,9 @@ class WgerExportService:
                             "exercise_id": exercise_id,
                             "entry_id": None if entry_response is None else entry_response.get("id"),
                             "comment": comment,
+                            "entry_comment": self._entry_comment_for_api(exercise_payload),
+                            "entry_type": exercise_payload.get("entry_type"),
+                            "configs": configs_sent,
                         }
                     )
 
@@ -293,6 +287,7 @@ class WgerExportService:
         )
         is_test_week = any(bool(row.get("is_test")) for row in rows)
         self._annotate_week_payload(payload, week_number, is_test=is_test_week)
+        self._expand_stretch_routines_for_export(payload)
         return payload
 
     def _annotate_week_payload(
@@ -319,10 +314,13 @@ class WgerExportService:
                         base_comment=entry.get("comment"),
                         details=details if isinstance(details, dict) else None,
                     )
+                    entry["entry_comment"] = entry["comment"]
                     continue
 
                 if role == "main":
                     main_set_index += 1
+                    if not is_test and week_number != 4 and main_set_index <= 3:
+                        entry["entry_type"] = "warmup"
                     if is_test:
                         percent = entry.get("percent_1rm")
                         if percent is None:
@@ -348,6 +346,7 @@ class WgerExportService:
                     "main" if role == "main" else role,
                     week_number,
                 )
+                entry["rest_seconds"] = rest_seconds
                 rest_note = schedule_rules.format_rest_seconds(rest_seconds)
 
                 if protocol or rest_note:
@@ -359,6 +358,116 @@ class WgerExportService:
                     base_comment=entry.get("comment"),
                     details=entry.get("details"),
                 )
+                entry["entry_comment"] = entry["comment"]
+
+    def _entry_comment_for_api(self, exercise_payload: Dict[str, Any]) -> str | None:
+        raw_comment = exercise_payload.get("entry_comment") or exercise_payload.get("comment")
+        if raw_comment is None:
+            return None
+        comment = str(raw_comment).strip()
+        return comment[:100] or None
+
+    def _apply_slot_entry_configs(
+        self,
+        *,
+        exercise_payload: Dict[str, Any],
+        exercise_id: int,
+        slot_entry_id: int,
+    ) -> list[dict[str, Any]]:
+        configs_sent: list[dict[str, Any]] = []
+
+        def send(config_type: str, value: Any) -> None:
+            self.client.set_config(config_type, slot_entry_id, 1, value)
+            configs_sent.append({"type": config_type, "iteration": 1, "value": value})
+
+        target_weight = exercise_payload.get("target_weight_kg")
+        if target_weight is not None:
+            send("weight", target_weight)
+        elif schedule_rules.classify_exercise(exercise_id) == "main":
+            log_utils.warn(
+                "Skipping weight config for main lift due to missing target weight. "
+                f"exercise_id={exercise_id}, comment={exercise_payload.get('comment')!r}"
+            )
+
+        for config_type, payload_key in (
+            ("sets", "sets"),
+            ("reps", "reps"),
+            ("rir", "rir"),
+            ("rest", "rest_seconds"),
+        ):
+            value = exercise_payload.get(payload_key)
+            if value is not None:
+                send(config_type, value)
+
+        return configs_sent
+
+    def _expand_stretch_routines_for_export(self, payload: Dict[str, Any]) -> None:
+        for day in payload.get("days", []):
+            expanded: list[dict[str, Any]] = []
+            for entry in day.get("exercises", []):
+                expanded.extend(self._expand_stretch_entry(entry))
+            day["exercises"] = expanded
+
+    def _expand_stretch_entry(self, entry: Dict[str, Any]) -> list[dict[str, Any]]:
+        details = entry.get("details")
+        if not isinstance(details, dict):
+            return [entry]
+        session_type = str(details.get("session_type") or "").strip().lower()
+        if session_type != schedule_rules.STRETCH_SESSION_TYPE:
+            return [entry]
+
+        steps = details.get("steps")
+        if not isinstance(steps, list) or not steps:
+            return [entry]
+
+        parent_name = str(
+            details.get("display_name")
+            or entry.get("exercise_name")
+            or entry.get("comment")
+            or "Stretch routine"
+        ).strip()
+        valid_steps = [step for step in steps if isinstance(step, dict) and step.get("name")]
+        total_steps = len(valid_steps)
+        if not valid_steps:
+            return [entry]
+
+        expanded: list[dict[str, Any]] = []
+        for index, step in enumerate(valid_steps, start=1):
+            step_name = str(step["name"]).strip()
+            prescription = str(step.get("prescription") or "").strip()
+            slot_comment = f"{parent_name} {index}/{total_steps}: {step_name}"
+            if prescription:
+                slot_comment = f"{slot_comment} - {prescription}"
+
+            step_payload = dict(entry)
+            step_payload.update(
+                {
+                    "exercise": None,
+                    "exercise_name": step_name,
+                    "sets": 1,
+                    "reps": None,
+                    "rir": None,
+                    "target_weight_kg": None,
+                    "percent_1rm": None,
+                    "comment": slot_comment,
+                    "entry_comment": prescription or slot_comment,
+                    "details": {
+                        "session_type": schedule_rules.STRETCH_SESSION_TYPE,
+                        "routine_key": details.get("routine_key"),
+                        "parent_routine": parent_name,
+                        "source": details.get("source"),
+                        "display_name": step_name,
+                        "step_index": index,
+                        "step_count": total_steps,
+                        "step": dict(step),
+                    },
+                }
+            )
+            step_payload.pop("rest_seconds", None)
+            step_payload.pop("entry_type", None)
+            expanded.append(step_payload)
+
+        return expanded
 
     def _resolve_export_exercise_id(self, exercise_payload: Dict[str, Any]) -> int | None:
         details = exercise_payload.get("details")
@@ -377,8 +486,38 @@ class WgerExportService:
         if not display_name:
             return None
 
-        description = schedule_rules.stretch_routine_description(details)
+        description = self._stretch_export_description(details)
         return self.client.ensure_custom_exercise(
             name=display_name,
             description=description,
         )
+
+    def _stretch_export_description(self, details: Dict[str, Any]) -> str:
+        step = details.get("step")
+        if isinstance(step, dict):
+            name = str(details.get("display_name") or step.get("name") or "Stretch exercise").strip()
+            parent = str(details.get("parent_routine") or "").strip()
+            source = str(details.get("source") or "").strip()
+            prescription = str(step.get("prescription") or "").strip()
+            movement_type = str(step.get("movement_type") or "").strip()
+
+            lines = [name]
+            if parent:
+                lines.append(f"Part of: {parent}")
+            if source:
+                lines.append(f"Source: {source}")
+            if prescription:
+                lines.append(f"Prescription: {prescription}")
+            if movement_type:
+                lines.append(f"Type: {movement_type}")
+            if step.get("is_isometric"):
+                lines.append("Includes isometric hold.")
+            if step.get("includes_isometric_hold"):
+                hold_seconds = step.get("hold_seconds")
+                if hold_seconds:
+                    lines.append(f"Includes dynamic movement plus {hold_seconds}s hold.")
+                else:
+                    lines.append("Includes dynamic movement plus hold.")
+            return "\n".join(lines).strip()
+
+        return schedule_rules.stretch_routine_description(details)

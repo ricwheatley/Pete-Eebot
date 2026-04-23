@@ -289,8 +289,20 @@ class WgerClient:
         payload = {"day": day_id, "order": order, "comment": (comment or "")[:200]}
         return self._request("POST", "/slot/", json=payload)
 
-    def create_slot_entry(self, slot_id: int, exercise_id: int, order: int = 1) -> Dict[str, Any]:
+    def create_slot_entry(
+        self,
+        slot_id: int,
+        exercise_id: int,
+        order: int = 1,
+        *,
+        entry_type: str | None = None,
+        comment: str | None = None,
+    ) -> Dict[str, Any]:
         payload = {"slot": slot_id, "exercise": exercise_id, "order": order}
+        if entry_type:
+            payload["type"] = entry_type
+        if comment:
+            payload["comment"] = comment[:100]
         return self._request("POST", "/slot-entry/", json=payload)
 
     def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value: Any, repeat: bool = False):
@@ -299,15 +311,21 @@ class WgerClient:
             "weight": "/weight-config/",
             "sets": "/sets-config/",
             "reps": "/repetitions-config/",
+            "rest": "/rest-config/",
             "rir": "/rir-config/",
         }
         if config_type not in endpoint_map:
             raise ValueError(f"Invalid config_type: {config_type}")
 
+        if config_type in {"sets", "rest"}:
+            config_value: Any = int(value)
+        else:
+            config_value = str(value)
+
         payload = {
             "slot_entry": slot_entry_id,
             "iteration": iteration,
-            "value": str(value),  # API expects string values for these
+            "value": config_value,
             "operation": "r",
             "step": "na",
             "repeat": repeat,
