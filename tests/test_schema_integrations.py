@@ -62,6 +62,15 @@ def test_withings_daily_table_includes_body_composition_columns():
 
     assert "muscle_pct" in columns
     assert "water_pct" in columns
+    assert "fat_free_mass_kg" in columns
+    assert "fat_mass_kg" in columns
+    assert "muscle_mass_kg" in columns
+    assert "water_mass_kg" in columns
+    assert "bone_mass_kg" in columns
+    assert "visceral_fat_index" in columns
+    assert "bmr_kcal_day" in columns
+    assert "nerve_health_score_feet" in columns
+    assert "metabolic_age_years" in columns
 
 
 def test_withings_raw_measure_group_table_is_present() -> None:
@@ -91,6 +100,15 @@ def test_schema_permissions_block_only_grants_to_pete_user_when_role_exists() ->
 _EXPECTED_DAILY_SUMMARY_COLUMNS = {
     "muscle_pct",
     "water_pct",
+    "fat_free_mass_kg",
+    "fat_mass_kg",
+    "muscle_mass_kg",
+    "water_mass_kg",
+    "bone_mass_kg",
+    "visceral_fat_index",
+    "bmr_kcal_day",
+    "nerve_health_score_feet",
+    "metabolic_age_years",
     "hrv_sdnn_ms",
     "vo2_max",
     "flights_climbed",

@@ -190,6 +190,7 @@ def test_withings_summary_collects_all_measure_groups_and_derives_water_percent(
     assert summary["bone_mass_kg"] == 3.33
     assert summary["visceral_fat_index"] == 4.8
     assert summary["bmr_kcal_day"] == 1963.0
+    assert summary["metabolic_age_years"] == 47.0
     assert summary["nerve_health_score_feet"] == 51.674
     assert summary["water_percent"] == 50.97
     assert summary["measure_type_values"]["227"] == 47.0

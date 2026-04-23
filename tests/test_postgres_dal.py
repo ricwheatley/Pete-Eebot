@@ -34,6 +34,9 @@ class TestPostgresDal(unittest.TestCase):
         mock_pool.connection.assert_called_once()
         mock_conn.cursor.assert_called_once()
         mock_cur.execute.assert_called_once()
+        sql_text, params = mock_cur.execute.call_args.args
+        self.assertIn("metabolic_age_years", sql_text)
+        self.assertEqual(len(params), 14)
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_save_withings_measure_groups(self, mock_get_pool):
