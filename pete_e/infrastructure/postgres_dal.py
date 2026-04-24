@@ -933,7 +933,9 @@ class PostgresDal(PlanRepository):
         end_date = date.today()
         with self._get_cursor() as cur:
             cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
+        with self._get_cursor() as cur:
             cur.execute("SELECT sp_upsert_body_age_range(%s, %s, %s);", (start_date, end_date, settings.USER_DATE_OF_BIRTH))
+        with self._get_cursor() as cur:
             cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
         log_utils.info(f"Refreshed body_age_daily and daily_summary for last {days} days.")
 
