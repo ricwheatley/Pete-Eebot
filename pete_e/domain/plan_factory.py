@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
+from pete_e.domain.running_planner import RunningPlanner
 
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
@@ -21,6 +22,7 @@ class PlanFactory:
         and core exercise IDs.
         """
         self.plan_repository = plan_repository
+        self.running_planner = RunningPlanner()
 
     def _pick_random(self, items: List[Any], k: int) -> List[Any]:
         """Safely picks k random items from a list."""
@@ -136,75 +138,9 @@ class PlanFactory:
                         "scheduled_time": slot_str,
                     })
 
-            # 5. Layer treadmill running around the fixed lifting split
-            quality_details = (
-                schedule_rules.quality_intervals_details()
-                if week_num % 2 == 1
-                else schedule_rules.quality_tempo_details()
-            )
-            week_workouts.append(
-                {
-                    "day_of_week": 1,
-                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
-                    "sets": 1,
-                    "reps": 1,
-                    "is_cardio": True,
-                    "comment": "Quality run",
-                    "details": quality_details,
-                }
-            )
-
-            week_workouts.append(
-                {
-                    "day_of_week": 2,
-                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
-                    "sets": 1,
-                    "reps": 1,
-                    "is_cardio": True,
-                    "comment": "Easy run",
-                    "details": schedule_rules.easy_run_details(),
-                    "optional": True,
-                    "recovery_focused": True,
-                }
-            )
-
-            week_workouts.append(
-                {
-                    "day_of_week": 4,
-                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
-                    "sets": 1,
-                    "reps": 1,
-                    "is_cardio": True,
-                    "comment": "Steady run",
-                    "details": schedule_rules.steady_run_details(),
-                }
-            )
-
-            week_workouts.append(
-                {
-                    "day_of_week": 5,
-                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
-                    "sets": 1,
-                    "reps": 1,
-                    "is_cardio": True,
-                    "comment": "Recovery micro run",
-                    "details": schedule_rules.recovery_micro_run_details(),
-                    "optional": True,
-                    "recovery_focused": True,
-                }
-            )
-
-            long_run_distance = 6 + (week_num - 1)
-            week_workouts.append(
-                {
-                    "day_of_week": 6,
-                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
-                    "sets": 1,
-                    "reps": 1,
-                    "is_cardio": True,
-                    "comment": "Long run",
-                    "details": schedule_rules.long_run_details(distance_km=long_run_distance),
-                }
+            # 5. Layer running sessions around the fixed lifting split.
+            week_workouts.extend(
+                self.running_planner.build_week_sessions(week_number=week_num)
             )
 
             for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):
