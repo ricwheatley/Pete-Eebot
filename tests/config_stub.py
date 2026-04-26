@@ -61,6 +61,7 @@ class Settings:
             "CYCLE_DAYS": 28,
             "PETE_LOG_LEVEL": "INFO",
             "PETE_LOG_TO_CONSOLE": True,
+            "WGER_EXPAND_STRETCH_ROUTINES": False,
         }
         defaults.update(overrides)
 

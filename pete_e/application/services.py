@@ -415,7 +415,8 @@ class WgerExportService:
         )
         is_test_week = any(bool(row.get("is_test")) for row in rows)
         self._annotate_week_payload(payload, week_number, is_test=is_test_week)
-        self._expand_stretch_routines_for_export(payload)
+        if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
+            self._expand_stretch_routines_for_export(payload)
         return payload
 
     def _annotate_week_payload(
@@ -516,6 +517,14 @@ class WgerExportService:
                 "Skipping weight config for main lift due to missing target weight. "
                 f"exercise_id={exercise_id}, comment={exercise_payload.get('comment')!r}"
             )
+
+        details = exercise_payload.get("details")
+        if (
+            isinstance(details, dict)
+            and str(details.get("session_type") or "").strip().lower()
+            == schedule_rules.STRETCH_SESSION_TYPE
+        ):
+            return configs_sent
 
         for config_type, payload_key in (
             ("sets", "sets"),
