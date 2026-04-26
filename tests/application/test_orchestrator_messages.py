@@ -52,6 +52,43 @@ class _TrainerDal(_SummaryDal):
         ]
 
 
+class _RunGuidanceDal(_SummaryDal):
+    def __init__(self, overview_rows: list[dict[str, object]], *, action_date: date):
+        super().__init__(overview_rows)
+        self.action_date = action_date
+
+    def get_historical_data(self, start_date: date, end_date: date):
+        rows = []
+        for idx in range(60, 7, -1):
+            rows.append(
+                {
+                    "date": self.action_date - timedelta(days=idx),
+                    "hr_resting": 50.0,
+                    "sleep_total_minutes": 420.0,
+                    "hrv_sdnn_ms": 60.0,
+                }
+            )
+        for idx in range(7, 0, -1):
+            rows.append(
+                {
+                    "date": self.action_date - timedelta(days=idx),
+                    "hr_resting": 54.0,
+                    "sleep_total_minutes": 400.0,
+                    "hrv_sdnn_ms": 56.0,
+                }
+            )
+        return [row for row in rows if start_date <= row["date"] <= end_date]
+
+    def get_recent_running_workouts(self, *, days: int, end_date: date):
+        return [
+            {"workout_date": end_date - timedelta(days=idx), "total_distance_km": distance}
+            for idx, distance in enumerate([5.0, 4.0, 3.0])
+        ]
+
+    def get_plan_for_day(self, target_date: date):
+        return ["workout_date", "exercise_name"], [(target_date, "Quality run")]
+
+
 class _NarrativeBuilder:
     def __init__(self):
         self.calls: list[dict[str, object]] = []
@@ -107,6 +144,21 @@ def test_get_daily_summary_uses_builder():
     assert result == "rendered-narrative"
     assert dal.overview_requests == [date(2024, 5, 2)]
     assert builder.calls and "metrics" in builder.calls[0]
+
+
+def test_get_daily_summary_appends_running_backoff_guidance():
+    action_date = date(2024, 6, 10)
+    overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
+    dal = _RunGuidanceDal(overview_rows, action_date=action_date)
+    builder = _NarrativeBuilder()
+
+    orch = _orchestrator_for(dal, narrative_builder=builder)
+
+    result = orch.get_daily_summary(target_date=action_date)
+
+    assert result.startswith("rendered-narrative")
+    assert "Run adjustment for Quality run" in result
+    assert "swap today's run" in result
 
 
 @pytest.mark.parametrize(

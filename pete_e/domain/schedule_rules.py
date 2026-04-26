@@ -719,35 +719,51 @@ def quality_tempo_details() -> Dict[str, Any]:
     return details
 
 
-def easy_run_details(*, duration_minutes: int = 20) -> Dict[str, Any]:
+def easy_run_details(
+    *,
+    duration_minutes: int = 20,
+    speed_kph: float = 8.9,
+    min_speed_kph: float | None = 8.8,
+    max_speed_kph: float | None = 9.0,
+) -> Dict[str, Any]:
     details = _base_running_details("easy")
     details["steps"] = [
         {
             "kind": "steady",
             "duration_minutes": duration_minutes,
-            "speed_kph": 8.9,
-            "min_speed_kph": 8.8,
-            "max_speed_kph": 9.0,
+            "speed_kph": speed_kph,
+            "min_speed_kph": min_speed_kph,
+            "max_speed_kph": max_speed_kph,
         }
     ]
     return details
 
 
-def steady_run_details(*, duration_minutes: int = 35) -> Dict[str, Any]:
+def steady_run_details(
+    *,
+    duration_minutes: int = 35,
+    speed_kph: float = 9.9,
+    min_speed_kph: float | None = 9.8,
+    max_speed_kph: float | None = 10.0,
+) -> Dict[str, Any]:
     details = _base_running_details("steady")
     details["steps"] = [
         {
             "kind": "steady",
             "duration_minutes": duration_minutes,
-            "speed_kph": 9.9,
-            "min_speed_kph": 9.8,
-            "max_speed_kph": 10.0,
+            "speed_kph": speed_kph,
+            "min_speed_kph": min_speed_kph,
+            "max_speed_kph": max_speed_kph,
         }
     ]
     return details
 
 
-def recovery_micro_run_details(*, duration_minutes: int = 12) -> Dict[str, Any]:
+def recovery_micro_run_details(
+    *,
+    duration_minutes: int = 12,
+    speed_kph: float = 8.5,
+) -> Dict[str, Any]:
     details = _base_running_details("recovery")
     details["steps"] = [
         {
@@ -755,25 +771,31 @@ def recovery_micro_run_details(*, duration_minutes: int = 12) -> Dict[str, Any]:
             "duration_minutes": duration_minutes,
             "min_duration_minutes": 10,
             "max_duration_minutes": 15,
-            "speed_kph": 8.5,
+            "speed_kph": speed_kph,
         }
     ]
     return details
 
 
-def long_run_details(*, distance_km: int) -> Dict[str, Any]:
+def long_run_details(
+    *,
+    distance_km: int,
+    speed_kph: float = 9.0,
+    min_speed_kph: float | None = 8.8,
+    max_speed_kph: float | None = 9.2,
+) -> Dict[str, Any]:
     details = _base_running_details("long_run")
     details["steps"] = [
         {
             "kind": "long_run",
             "distance_km": distance_km,
-            "speed_kph": 9.0,
-            "min_speed_kph": 8.8,
-            "max_speed_kph": 9.2,
+            "speed_kph": speed_kph,
+            "min_speed_kph": min_speed_kph,
+            "max_speed_kph": max_speed_kph,
         }
     ]
     details["progression"] = {
-        "start_distance_km": 6,
+        "start_distance_km": distance_km,
         "weekly_increment_km": 1,
         "cap_distance_km": None,
     }

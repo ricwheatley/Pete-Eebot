@@ -925,6 +925,55 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (days,))
             return list(reversed(cur.fetchall()))
 
+    def get_recent_running_workouts(
+        self,
+        *,
+        days: int = 180,
+        end_date: date | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent Apple workouts that are explicitly running sessions."""
+
+        resolved_end = end_date or date.today()
+        resolved_start = resolved_end - timedelta(days=max(1, days) - 1)
+        sql = """
+            SELECT
+                w.workout_id,
+                w.start_time::date AS workout_date,
+                w.start_time,
+                wt.name AS workout_type,
+                w.duration_sec,
+                w.total_distance_km,
+                CASE
+                    WHEN w.total_distance_km > 0
+                    THEN ROUND((w.duration_sec / 60.0 / w.total_distance_km)::numeric, 2)
+                    ELSE NULL
+                END AS pace_min_per_km,
+                ROUND(avg(hr.hr_avg)::numeric, 1) AS avg_hr,
+                max(hr.hr_max) AS max_hr,
+                ROUND(w.elevation_gain_m::numeric, 1) AS elevation_gain_m
+            FROM "Workout" w
+            JOIN "WorkoutType" wt ON wt.type_id = w.type_id
+            LEFT JOIN "WorkoutHeartRate" hr ON hr.workout_id = w.workout_id
+            WHERE w.start_time::date BETWEEN %s AND %s
+              AND w.total_distance_km IS NOT NULL
+              AND w.total_distance_km > 0
+              AND (
+                  lower(wt.name) LIKE '%%run%%'
+                  OR lower(wt.name) LIKE '%%jog%%'
+              )
+            GROUP BY
+                w.workout_id,
+                w.start_time,
+                wt.name,
+                w.duration_sec,
+                w.total_distance_km,
+                w.elevation_gain_m
+            ORDER BY w.start_time DESC;
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql, (resolved_start, resolved_end))
+            return cur.fetchall()
+
     def get_metrics_overview(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_metrics_overview", target_date)
     
