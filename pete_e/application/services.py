@@ -5,7 +5,7 @@ This layer is responsible for coordinating tasks like plan creation and export.
 """
 
 from __future__ import annotations
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 import json
 
@@ -192,7 +192,25 @@ class WgerExportService:
         routine_id = routine['id']
 
         if force_overwrite:
-            self.client.delete_all_days_in_routine(routine_id)
+            try:
+                self.client.delete_all_days_in_routine(routine_id)
+            except Exception as exc:
+                fallback_name = self._fallback_routine_name(routine_name)
+                log_utils.warn(
+                    "Failed to clean existing wger routine "
+                    f"{routine_id} for {start_date.isoformat()}: {exc}. "
+                    f"Creating fallback routine {fallback_name!r}."
+                )
+                routine = self.client.find_or_create_routine(
+                    name=fallback_name,
+                    description=(
+                        "Automated plan for week starting "
+                        f"{start_date.isoformat()} after cleanup fallback"
+                    ),
+                    start=start_date,
+                    end=start_date + timedelta(days=6),
+                )
+                routine_id = routine["id"]
 
         api_trace: list[dict[str, Any]] = []
         supports_full_export = all(
@@ -299,6 +317,11 @@ class WgerExportService:
             f"(days={created_days}, slots={created_slots}, slot_entries={created_entries})."
         )
         return {"status": "exported", "routine_id": routine_id}
+
+    @staticmethod
+    def _fallback_routine_name(base_name: str) -> str:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return f"{base_name} retry {stamp}"
 
     def _apply_running_backoff_to_payload(
         self,

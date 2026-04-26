@@ -141,6 +141,9 @@ class Settings(BaseSettings):
     WGER_EXPORT_DEBUG: bool = False
     WGER_BLAZE_MODE: str = "exercise"
     WGER_ROUTINE_PREFIX: str | None = None
+    WGER_TIMEOUT: float = 30.0
+    WGER_MAX_RETRIES: int = 3
+    WGER_BACKOFF_BASE: float = 1.0
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":
