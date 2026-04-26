@@ -97,7 +97,7 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
         main_sets = len(schedule_rules.get_main_set_scheme(week_idx))
         for dow in schedule_rules.MAIN_LIFT_BY_DOW:
             expected_total += main_sets + 3 + int(dow in blaze_days)
-        expected_total += 5  # running sessions layered onto Mon/Tue/Thu/Fri/Sat
+        expected_total += 3  # conservative foundation running sessions layered onto Mon/Thu/Sat
         expected_total += len(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW)
     assert len(all_workouts) == expected_total
 
@@ -160,22 +160,15 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
     week2 = plan_dict["plan_weeks"][1]["workouts"]
 
     monday_week1_run = next(
-        w for w in week1 if w["day_of_week"] == 1 and w.get("details", {}).get("session_type") == "intervals"
+        w for w in week1 if w["day_of_week"] == 1 and w.get("details", {}).get("session_type") == "easy"
     )
     monday_week2_run = next(
-        w for w in week2 if w["day_of_week"] == 1 and w.get("details", {}).get("session_type") == "tempo"
+        w for w in week2 if w["day_of_week"] == 1 and w.get("details", {}).get("session_type") == "easy"
     )
     assert monday_week1_run["exercise_id"] == schedule_rules.TREADMILL_RUN_ID
     assert monday_week2_run["exercise_id"] == schedule_rules.TREADMILL_RUN_ID
 
-    assert any(w["day_of_week"] == 2 and w.get("details", {}).get("session_type") == "easy" for w in week1)
-    assert any(w["day_of_week"] == 4 and w.get("details", {}).get("session_type") == "steady" for w in week1)
-    assert any(
-        w["day_of_week"] == 5
-        and w.get("details", {}).get("session_type") == "recovery"
-        and w.get("optional") is True
-        for w in week1
-    )
+    assert any(w["day_of_week"] == 4 and w.get("details", {}).get("session_type") == "easy" for w in week1)
     assert any(w["day_of_week"] == 6 and w.get("details", {}).get("session_type") == "long_run" for w in week1)
 
     long_run_week1 = next(
@@ -184,8 +177,8 @@ def test_plan_factory_builds_correct_block_structure(repo: DummyRepo):
     long_run_week2 = next(
         w for w in week2 if w["day_of_week"] == 6 and w.get("details", {}).get("session_type") == "long_run"
     )
-    assert long_run_week1["details"]["steps"][0]["distance_km"] == 6
-    assert long_run_week2["details"]["steps"][0]["distance_km"] == 7
+    assert long_run_week1["details"]["steps"][0]["distance_km"] == 4
+    assert long_run_week2["details"]["steps"][0]["distance_km"] == 5
 
     monday_stretch = next(
         w for w in week1 if w["day_of_week"] == 1 and w.get("details", {}).get("session_type") == schedule_rules.STRETCH_SESSION_TYPE

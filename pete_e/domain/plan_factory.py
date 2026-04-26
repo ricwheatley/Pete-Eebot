@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
-from pete_e.domain.running_planner import RunningPlanner
+from pete_e.domain.running_planner import RunningGoal, RunningPlanner
 
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
@@ -60,7 +60,15 @@ class PlanFactory:
             str(workout.get("scheduled_time") or ""),
         )
 
-    def create_531_block_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:
+    def create_531_block_plan(
+        self,
+        start_date: date,
+        training_maxes: Dict[str, float],
+        *,
+        running_goal: RunningGoal | None = None,
+        health_metrics: List[Dict[str, Any]] | None = None,
+        recent_runs: List[Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
         """
         Builds a 4-week, 5/3/1 training block. Returns a structured dictionary
         representing the full plan, ready for persistence.
@@ -140,7 +148,13 @@ class PlanFactory:
 
             # 5. Layer running sessions around the fixed lifting split.
             week_workouts.extend(
-                self.running_planner.build_week_sessions(week_number=week_num)
+                self.running_planner.build_week_sessions(
+                    week_number=week_num,
+                    goal=running_goal,
+                    health_metrics=health_metrics,
+                    recent_runs=recent_runs,
+                    plan_start_date=start_date,
+                )
             )
 
             for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):

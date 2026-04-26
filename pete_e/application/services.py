@@ -14,7 +14,9 @@ from pete_e.application.strength_test import StrengthTestService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.entities import Plan, Week
 from pete_e.domain.plan_factory import PlanFactory
+from pete_e.domain.running_planner import RunningGoal
 from pete_e.domain import schedule_rules
+from pete_e.config import settings
 from pete_e.infrastructure.mappers import PlanMapper, WgerPayloadMapper
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
@@ -38,9 +40,18 @@ class PlanService:
         log_utils.info(f"Creating new 5/3/1 block starting {start_date.isoformat()}...")
         # 1. Get latest TMs from DAL
         tms = self.dal.get_latest_training_maxes()
+        health_metrics = self._load_recent_health_metrics()
+        recent_runs = self._load_recent_running_workouts(end_date=start_date - timedelta(days=1))
+        running_goal = self._running_goal_from_settings()
         
         # 2. Use PlanFactory to build the plan dictionary
-        plan_dict = self.factory.create_531_block_plan(start_date, tms)
+        plan_dict = self.factory.create_531_block_plan(
+            start_date,
+            tms,
+            running_goal=running_goal,
+            health_metrics=health_metrics,
+            recent_runs=recent_runs,
+        )
         plan_entity = self.plan_mapper.from_dict(plan_dict)
         payload = self.plan_mapper.to_persistence_payload(plan_entity)
 
@@ -49,6 +60,35 @@ class PlanService:
         plan_id = self.dal.save_full_plan(payload)
         log_utils.info(f"Successfully created and persisted plan_id: {plan_id}")
         return plan_id
+
+    def _load_recent_health_metrics(self) -> List[Dict[str, Any]]:
+        loader = getattr(self.dal, "get_historical_metrics", None)
+        if not callable(loader):
+            return []
+        try:
+            return list(loader(180) or [])
+        except Exception as exc:  # pragma: no cover - environment specific
+            log_utils.warn(f"Running planner could not load health metrics: {exc}")
+            return []
+
+    def _load_recent_running_workouts(self, *, end_date: date) -> List[Dict[str, Any]]:
+        loader = getattr(self.dal, "get_recent_running_workouts", None)
+        if not callable(loader):
+            return []
+        try:
+            return list(loader(days=180, end_date=end_date) or [])
+        except Exception as exc:  # pragma: no cover - environment specific
+            log_utils.warn(f"Running planner could not load recent run workouts: {exc}")
+            return []
+
+    @staticmethod
+    def _running_goal_from_settings() -> RunningGoal:
+        return RunningGoal(
+            target_race=getattr(settings, "RUNNING_TARGET_RACE", "marathon"),
+            race_date=getattr(settings, "RUNNING_RACE_DATE", None),
+            target_time=getattr(settings, "RUNNING_TARGET_TIME", None),
+            weight_loss_target_kg=getattr(settings, "RUNNING_WEIGHT_LOSS_TARGET_KG", None),
+        )
 
     def create_and_persist_strength_test_week(self, start_date: date) -> int:
         """Creates and persists a new 1-week strength test plan."""
@@ -135,6 +175,7 @@ class WgerExportService:
             week_rows,
             plan_start_date=start_date,
         )
+        self._apply_running_backoff_to_payload(payload, decision)
 
         if dry_run:
             log_utils.info(f"[DRY RUN] Would export payload: {json.dumps(payload, indent=2)}")
@@ -258,6 +299,70 @@ class WgerExportService:
             f"(days={created_days}, slots={created_slots}, slot_entries={created_entries})."
         )
         return {"status": "exported", "routine_id": routine_id}
+
+    def _apply_running_backoff_to_payload(
+        self,
+        payload: Dict[str, Any],
+        decision: ValidationDecision | None,
+    ) -> None:
+        """Downgrade run intensity in the exported week when readiness is poor."""
+
+        if decision is None or not decision.needs_backoff:
+            return
+
+        readiness = getattr(decision, "readiness", None)
+        severity = str(getattr(readiness, "severity", "") or "mild").lower()
+        if severity not in {"mild", "moderate", "severe"}:
+            severity = "mild"
+
+        for day in payload.get("days", []):
+            for entry in day.get("exercises", []):
+                details = entry.get("details")
+                if not isinstance(details, dict):
+                    continue
+                session_type = str(details.get("session_type") or "").strip().lower()
+                if session_type not in schedule_rules.RUN_SESSION_TYPES:
+                    continue
+
+                original_comment = str(entry.get("comment") or "Run").strip()
+                if session_type in {"intervals", "tempo", "steady"}:
+                    duration = 20 if severity in {"moderate", "severe"} else 25
+                    replacement = schedule_rules.easy_run_details(
+                        duration_minutes=duration,
+                        speed_kph=8.0,
+                        min_speed_kph=7.8,
+                        max_speed_kph=8.2,
+                    )
+                    entry["details"] = replacement
+                    entry["comment"] = (
+                        f"{original_comment} - backed off for recovery: "
+                        f"{duration} min easy only."
+                    )
+                    entry["entry_comment"] = entry["comment"]
+                    entry["recovery_focused"] = True
+                    continue
+
+                if session_type == "long_run" and severity in {"moderate", "severe"}:
+                    steps = details.get("steps")
+                    first = steps[0] if isinstance(steps, list) and steps and isinstance(steps[0], dict) else {}
+                    try:
+                        distance = float(first.get("distance_km") or 0)
+                    except (TypeError, ValueError):
+                        distance = 0.0
+                    capped = max(4, round(distance * (0.70 if severity == "severe" else 0.80)))
+                    replacement = schedule_rules.long_run_details(
+                        distance_km=capped,
+                        speed_kph=8.0,
+                        min_speed_kph=7.8,
+                        max_speed_kph=8.2,
+                    )
+                    entry["details"] = replacement
+                    entry["comment"] = (
+                        f"{original_comment} - backed off for recovery: "
+                        f"cap at {capped} km easy."
+                    )
+                    entry["entry_comment"] = entry["comment"]
+                    entry["recovery_focused"] = True
 
     def _build_payload_from_rows(
         self,

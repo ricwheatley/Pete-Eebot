@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     VO2_HIGH_THRESHOLD: float = 48.0
     VO2_LOW_THRESHOLD: float = 36.0
 
+    # --- RUNNING GOAL ---
+    RUNNING_TARGET_RACE: str | None = "marathon"
+    RUNNING_RACE_DATE: date | None = date(2027, 4, 18)
+    RUNNING_TARGET_TIME: str | None = None
+    RUNNING_WEIGHT_LOSS_TARGET_KG: float | None = 22.0
+
     # --- WGER EXPORT CONTROLS ---
     WGER_DRY_RUN: bool = False
     WGER_FORCE_OVERWRITE: bool = False

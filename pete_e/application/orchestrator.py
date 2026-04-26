@@ -24,6 +24,7 @@ from pete_e.domain import french_trainer, metrics_service
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.narrative_builder import NarrativeBuilder, build_daily_narrative
+from pete_e.domain.running_planner import assess_morning_run_adjustment
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import Container, get_container
@@ -432,12 +433,22 @@ class Orchestrator:
         builder = self.narrative_builder or NarrativeBuilder()
         try:
             if hasattr(builder, "build_daily_narrative"):
-                return builder.build_daily_narrative(metrics_payload)
-            return build_daily_narrative(metrics=metrics_payload)
+                report = builder.build_daily_narrative(metrics_payload)
+            else:
+                report = build_daily_narrative(metrics=metrics_payload)
         except Exception as exc:  # pragma: no cover - defensive guard
             message = f"Failed to build daily narrative for {target.isoformat()}: {exc}"
             log_utils.error(message)
             raise ApplicationError(message) from exc
+
+        action_date = date.today() if target_date is None else target
+        guidance = self._build_morning_run_guidance(
+            report_date=target,
+            action_date=action_date,
+        )
+        if guidance:
+            return f"{report.rstrip()}\n{guidance}"
+        return report
 
     def build_trainer_message(self, message_date: date | None = None) -> str:
         """Compose Pierre's trainer check-in for the supplied date."""
@@ -478,6 +489,57 @@ class Orchestrator:
         except Exception as exc:  # pragma: no cover - defensive guard
             log_utils.error(f"Telegram send failed: {exc}")
             return False
+
+    def _build_morning_run_guidance(
+        self,
+        *,
+        report_date: date,
+        action_date: date,
+    ) -> str | None:
+        """Return run-specific back-off advice for the morning report."""
+
+        dal = getattr(self, "dal", None)
+        if dal is None:
+            return None
+
+        try:
+            history_loader = getattr(dal, "get_historical_data", None)
+            if not callable(history_loader):
+                return None
+            history_start = action_date - timedelta(days=180)
+            history_end = min(report_date, action_date - timedelta(days=1))
+            historical_rows = history_loader(history_start, history_end)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.warn(f"Failed to load running readiness history: {exc}")
+            return None
+
+        try:
+            run_loader = getattr(dal, "get_recent_running_workouts", None)
+            recent_runs = (
+                run_loader(days=90, end_date=history_end)
+                if callable(run_loader)
+                else []
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.warn(f"Failed to load recent running workouts: {exc}")
+            recent_runs = []
+
+        plan_rows = list(self._load_plan_for_day(action_date))
+        planned_names = [
+            str(row.get("exercise_name"))
+            for row in plan_rows
+            if row.get("exercise_name")
+        ]
+
+        adjustment = assess_morning_run_adjustment(
+            health_metrics=historical_rows,
+            recent_runs=recent_runs,
+            action_date=action_date,
+            planned_session_names=planned_names,
+        )
+        if adjustment is None or not adjustment.should_backoff:
+            return None
+        return adjustment.message
 
     # ------------------------------------------------------------------
     # Internal helpers
