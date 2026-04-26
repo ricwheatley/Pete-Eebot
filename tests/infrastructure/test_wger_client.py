@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.wger_client import WgerClient, WgerError
 
 
 def test_ping_checks_authenticated_endpoint_and_reports_host(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,6 +35,47 @@ def test_ping_checks_authenticated_endpoint_and_reports_host(monkeypatch: pytest
 
     assert detail == "wger.de (api-key)"
     assert calls == [("GET", "/routine/", {"params": {"limit": 1}})]
+
+
+def test_delete_all_days_ignores_stale_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "pete_e.infrastructure.wger_client.settings",
+        SimpleNamespace(
+            WGER_BASE_URL="https://wger.de/api/v2",
+            WGER_API_KEY="dummy-key",
+            WGER_USERNAME=None,
+            WGER_PASSWORD=None,
+            WGER_TIMEOUT=5.0,
+            WGER_MAX_RETRIES=3,
+            WGER_BACKOFF_BASE=0.5,
+            DEBUG_API=False,
+        ),
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr("pete_e.infrastructure.wger_client.log_utils.warn", warnings.append)
+
+    client = WgerClient(timeout=2.5)
+    monkeypatch.setattr(
+        client,
+        "get_all_pages",
+        lambda path, params=None: [{"id": 111}, {"id": 222}],
+    )
+
+    deleted: list[str] = []
+
+    def fake_request(method: str, path: str, **kwargs):
+        deleted.append(path)
+        if path == "/day/111/":
+            response = SimpleNamespace(status_code=404, text='{"detail":"Not found."}')
+            raise WgerError("DELETE /day/111/ failed with 404", response)
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.delete_all_days_in_routine(42)
+
+    assert deleted == ["/day/111/", "/day/222/"]
+    assert warnings == ["Skipping stale wger day 111 for routine 42: already deleted."]
 
 
 def test_ensure_custom_exercise_reuses_existing_translation(monkeypatch: pytest.MonkeyPatch) -> None:
