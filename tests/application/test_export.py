@@ -84,6 +84,66 @@ def test_export_plan_week_uses_cached_validation() -> None:
     validation_service.validate_and_adjust_plan.assert_not_called()
 
 
+def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warnings: list[str] = []
+    recorded: list[dict[str, object]] = []
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return []
+
+        def record_wger_export(self, plan_id, week_number, payload_json, response=None, routine_id=None):
+            recorded.append({"response": response, "routine_id": routine_id})
+
+    class StubClient:
+        base_url = "https://example.invalid"
+
+        def __init__(self) -> None:
+            self.routine_names: list[str] = []
+
+        def find_or_create_routine(self, **kwargs):
+            self.routine_names.append(kwargs["name"])
+            return {"id": 1000 + len(self.routine_names)}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            raise RuntimeError("DELETE /day/333279/ failed with 500")
+
+    monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
+    monkeypatch.setattr(
+        "pete_e.application.services.WgerExportService._fallback_routine_name",
+        staticmethod(lambda base_name: f"{base_name} retry test"),
+    )
+
+    client = StubClient()
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=client,
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=1,
+        start_date=date(2026, 4, 27),
+        force_overwrite=True,
+    )
+
+    assert result == {"status": "exported", "routine_id": 1002}
+    assert client.routine_names == [
+        "Pete-E Week 2026-04-27",
+        "Pete-E Week 2026-04-27 retry test",
+    ]
+    assert recorded and recorded[0]["routine_id"] == 1002
+    assert any("Creating fallback routine" in warning for warning in warnings)
+
+
 def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
     captured_payloads: list[dict] = []
 
