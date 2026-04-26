@@ -371,6 +371,7 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
             self.entry_comments: list[str | None] = []
             self.entry_types: list[str | None] = []
             self.custom_exercises: list[tuple[str, str]] = []
+            self.set_config_calls: list[tuple[str, int, int, object]] = []
 
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
@@ -398,7 +399,7 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
             return {"id": slot_id * 10 + order}
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
-            return None
+            self.set_config_calls.append((config_type, slot_entry_id, iteration, value))
 
         def ensure_custom_exercise(self, *, name: str, description: str, **kwargs):
             self.custom_exercises.append((name, description))
@@ -430,23 +431,64 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
     assert "Set 1 @ 50% TM (5 reps) | 80 kg | Rest 2m 30s" in client.slot_comments[1]
     assert client.entry_types[1] == "warmup"
     assert client.slot_comments[2] == "Assistance 3 x 10 | Rest 1m 15s"
-    assert client.slot_comments[3].startswith("Limber 11 1/11: Foam Roll IT Band")
-    assert client.entry_comments[3] == "10-15 passes"
+    assert client.slot_comments[3].startswith("Limber 11: 11-step mobility flow")
+    assert client.entry_comments[3].startswith("Limber 11: 11-step mobility flow")
     assert client.entry_exercise_ids == [
         schedule_rules.TREADMILL_RUN_ID,
         schedule_rules.BENCH_ID,
         137,
-        *([1900] * 11),
+        1900,
     ]
+    assert all(call[1] != 10141 for call in client.set_config_calls)
     assert client.custom_exercises
     name, description = client.custom_exercises[0]
-    assert name == "Foam Roll IT Band"
-    assert "Part of: Limber 11" in description
-    assert "Prescription: 10-15 passes" in description
+    assert name == "Limber 11"
+    assert "Source: Joe DeFranco" in description
+    assert "1. Foam Roll IT Band [soft_tissue] - 10-15 passes" in description
     assert any(
-        "routine 42 on https://example.invalid (days=1, slots=14, slot_entries=14)" in message
+        "routine 42 on https://example.invalid (days=1, slots=4, slot_entries=4)" in message
         for message in infos
     )
+
+
+def test_build_payload_expands_stretch_routines_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "pete_e.application.services.settings.WGER_EXPAND_STRETCH_ROUTINES",
+        True,
+    )
+    service = WgerExportService(
+        dal=SimpleNamespace(),
+        wger_client=SimpleNamespace(),
+        validation_service=SimpleNamespace(
+            validate_and_adjust_plan=lambda start_date: _make_validation_decision()
+        ),
+    )
+
+    payload = service._build_payload_from_rows(
+        72,
+        1,
+        [
+            {
+                "id": 1,
+                "week_number": 1,
+                "day_of_week": 1,
+                "exercise_id": None,
+                "exercise_name": "Limber 11",
+                "sets": 0,
+                "reps": 0,
+                "is_cardio": False,
+                "type": "mobility",
+                "comment": "Limber 11",
+                "details": schedule_rules.build_stretch_routine_details("limber_11"),
+            }
+        ],
+        plan_start_date=date(2026, 4, 20),
+    )
+
+    exercises = payload["days"][0]["exercises"]
+    assert len(exercises) == 11
+    assert exercises[0]["comment"].startswith("Limber 11 1/11: Foam Roll IT Band")
+    assert exercises[0]["entry_comment"] == "10-15 passes"
 
 
 def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch: pytest.MonkeyPatch) -> None:

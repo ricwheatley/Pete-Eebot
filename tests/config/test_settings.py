@@ -60,6 +60,7 @@ def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settin
     )
 
     assert settings.DATABASE_URL == expected
+    assert settings.WGER_EXPAND_STRETCH_ROUTINES is False
 
 
 def test_log_path_fallback_notice_is_consumed_once(
