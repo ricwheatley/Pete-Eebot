@@ -279,7 +279,16 @@ class WgerClient:
         """Wipes all Day objects associated with a routine."""
         days = self.get_all_pages("/day/", params={"routine": routine_id})
         for day in days:
-            self._request("DELETE", f"/day/{day['id']}/")
+            day_id = day["id"]
+            try:
+                self._request("DELETE", f"/day/{day_id}/")
+            except WgerError as exc:
+                if exc.status_code == 404:
+                    log_utils.warn(
+                        f"Skipping stale wger day {day_id} for routine {routine_id}: already deleted."
+                    )
+                    continue
+                raise
 
     def create_day(self, routine_id: int, order: int, name: str) -> Dict[str, Any]:
         payload = {"routine": routine_id, "order": order, "name": name}
