@@ -15,7 +15,13 @@ paths:
       summary: Get compact derived coaching state
       description: Default first call for the GPT. Returns readiness, trend deltas, load, data quality, goals, plan context, and missing subjective inputs.
       parameters:
-        - $ref: "#/components/parameters/Date"
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date in YYYY-MM-DD format. Use the most recent complete date for coaching decisions.
       responses:
         "200":
           description: Coach-ready state for the requested date.
@@ -33,7 +39,13 @@ paths:
       summary: Get normalized daily metric summary
       description: Returns the daily summary with metric values, units, source labels, trust levels, and completeness metadata.
       parameters:
-        - $ref: "#/components/parameters/Date"
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date in YYYY-MM-DD format.
       responses:
         "200":
           description: Normalized daily summary.
@@ -94,7 +106,13 @@ paths:
       operationId: get_plan_context
       summary: Get current plan phase and deload context
       parameters:
-        - $ref: "#/components/parameters/Date"
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Date in YYYY-MM-DD format.
       responses:
         "200":
           description: Active plan context for the requested date.
@@ -126,8 +144,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: "#/components/schemas/UserNotes"
         "401":
           $ref: "#/components/responses/Unauthorized"
 components:
@@ -136,15 +153,6 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-  parameters:
-    Date:
-      name: date
-      in: query
-      required: true
-      schema:
-        type: string
-        format: date
-      description: Date in YYYY-MM-DD format. Use the most recent complete date for coaching decisions.
   responses:
     BadRequest:
       description: Invalid request parameter.
@@ -188,17 +196,23 @@ components:
           type: object
           properties:
             weight_rate_pct_bw_per_week:
-              type: [number, "null"]
+              type: number
+              nullable: true
             sleep_debt_7d_minutes:
-              type: [number, "null"]
+              type: number
+              nullable: true
             rhr_delta_vs_28d_bpm:
-              type: [number, "null"]
+              type: number
+              nullable: true
             hrv_delta_vs_28d_ms:
-              type: [number, "null"]
+              type: number
+              nullable: true
             run_load_7d_km:
-              type: [number, "null"]
+              type: number
+              nullable: true
             strength_load_7d_kg:
-              type: [number, "null"]
+              type: number
+              nullable: true
         missing_subjective_inputs:
           type: array
           items:
@@ -217,13 +231,27 @@ components:
         data_quality:
           type: object
           additionalProperties: true
+          properties:
+            status:
+              type: string
+            completeness_pct:
+              type: number
+            missing_fields:
+              type: array
+              items:
+                type: string
     MetricValue:
       type: object
       properties:
         value:
-          type: [number, string, boolean, "null"]
+          nullable: true
+          oneOf:
+            - type: number
+            - type: string
+            - type: boolean
         unit:
-          type: [string, "null"]
+          type: string
+          nullable: true
         source:
           type: string
         trust_level:
@@ -240,19 +268,71 @@ components:
         window:
           type: object
           additionalProperties: true
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+            days:
+              type: integer
         running:
           type: array
           items:
             type: object
             additionalProperties: true
+            properties:
+              workout_id:
+                type: string
+              workout_date:
+                type: string
+                format: date
+              workout_type:
+                type: string
+              duration_sec:
+                type: number
+              total_distance_km:
+                type: number
+              pace_min_per_km:
+                type: number
+              avg_hr:
+                type: number
+              max_hr:
+                type: number
+              elevation_gain_m:
+                type: number
         strength:
           type: array
           items:
             type: object
             additionalProperties: true
+            properties:
+              workout_date:
+                type: string
+                format: date
+              exercise_id:
+                type: integer
+              exercise_name:
+                type: string
+              sets:
+                type: integer
+              reps:
+                type: integer
+              volume_kg:
+                type: number
+              top_weight_kg:
+                type: number
+              avg_rir:
+                type: number
         data_quality:
           type: object
           additionalProperties: true
+          properties:
+            running_available:
+              type: boolean
+            strength_available:
+              type: boolean
     GoalState:
       type: object
       additionalProperties: true
@@ -260,15 +340,47 @@ components:
         running_goal:
           type: object
           additionalProperties: true
+          properties:
+            target_race:
+              type: string
+            race_date:
+              type: string
+              format: date
+            target_time:
+              type: string
+              nullable: true
+            weight_loss_target_kg:
+              type: number
+              nullable: true
         body_composition_goal:
           type: object
           additionalProperties: true
+          properties:
+            goal_weight_kg:
+              type: number
+              nullable: true
         strength:
           type: object
           additionalProperties: true
+          properties:
+            training_maxes_kg:
+              type: object
+              additionalProperties:
+                type: number
+            training_max_last_measured_at:
+              type: string
+              format: date
+              nullable: true
         performance_anchors:
           type: object
           additionalProperties: true
+          properties:
+            current_half_marathon_marker:
+              type: string
+            historical_half_marathon_pb:
+              type: string
+            sub_3_marathon_half_equivalent:
+              type: string
     PlanContext:
       type: object
       additionalProperties: true
@@ -277,7 +389,8 @@ components:
           type: string
           format: date
         current_week_number:
-          type: [integer, "null"]
+          type: integer
+          nullable: true
         mesocycle:
           type: string
         strength_phase:
@@ -286,3 +399,30 @@ components:
           type: boolean
         data_quality:
           type: string
+    UserNotes:
+      type: object
+      additionalProperties: true
+      properties:
+        window_days:
+          type: integer
+        notes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              date:
+                type: string
+                format: date
+              note_type:
+                type: string
+              text:
+                type: string
+        data_quality:
+          type: object
+          additionalProperties: true
+          properties:
+            status:
+              type: string
+            message:
+              type: string
