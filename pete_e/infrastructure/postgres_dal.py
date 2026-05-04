@@ -974,6 +974,36 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (resolved_start, resolved_end))
             return cur.fetchall()
 
+    def get_recent_strength_workouts(
+        self,
+        *,
+        days: int = 14,
+        end_date: date | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent strength logs grouped by day and exercise."""
+
+        resolved_end = end_date or date.today()
+        resolved_start = resolved_end - timedelta(days=max(1, days) - 1)
+        sql = """
+            SELECT
+                wl.date AS workout_date,
+                wl.exercise_id,
+                ex.name AS exercise_name,
+                COUNT(*)::int AS sets,
+                SUM(wl.reps)::int AS reps,
+                ROUND(SUM(COALESCE(wl.weight_kg, 0) * wl.reps)::numeric, 1) AS volume_kg,
+                ROUND(MAX(wl.weight_kg)::numeric, 1) AS top_weight_kg,
+                ROUND(AVG(wl.rir)::numeric, 1) AS avg_rir
+            FROM wger_logs wl
+            LEFT JOIN wger_exercise ex ON ex.id = wl.exercise_id
+            WHERE wl.date BETWEEN %s AND %s
+            GROUP BY wl.date, wl.exercise_id, ex.name
+            ORDER BY wl.date DESC, volume_kg DESC NULLS LAST, wl.exercise_id;
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql, (resolved_start, resolved_end))
+            return cur.fetchall()
+
     def get_metrics_overview(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_metrics_overview", target_date)
     

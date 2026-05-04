@@ -83,6 +83,37 @@ def test_metrics_overview_uses_service(monkeypatch, enable_api_key, request_stub
     service.overview.assert_called_once_with("2024-01-01")
 
 
+def test_coach_state_uses_service(monkeypatch, enable_api_key, request_stub):
+    expected = {"summary": {"readiness_state": "green"}}
+    service = MagicMock()
+    service.coach_state.return_value = expected
+
+    monkeypatch.setattr(api, "get_metrics_service", lambda: service)
+
+    response = api.coach_state(request=request_stub, date="2024-01-08", x_api_key="test-key")
+
+    assert response == expected
+    service.coach_state.assert_called_once_with("2024-01-08")
+
+
+def test_recent_workouts_uses_service(monkeypatch, enable_api_key, request_stub):
+    expected = {"running": [], "strength": []}
+    service = MagicMock()
+    service.recent_workouts.return_value = expected
+
+    monkeypatch.setattr(api, "get_metrics_service", lambda: service)
+
+    response = api.recent_workouts(
+        request=request_stub,
+        days=7,
+        end_date="2024-01-08",
+        x_api_key="test-key",
+    )
+
+    assert response == expected
+    service.recent_workouts.assert_called_once_with(days=7, iso_end_date="2024-01-08")
+
+
 def test_plan_for_day_uses_service(monkeypatch, enable_api_key, request_stub):
     expected = {"columns": ["col"], "rows": [["value"]]}
     service = MagicMock()

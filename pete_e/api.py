@@ -124,6 +124,107 @@ def metrics_overview(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/daily_summary")
+def daily_summary(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD"),
+    x_api_key: str = Header(None),
+):
+    """Return one normalized daily summary with units, source and quality metadata."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().daily_summary(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/recent_workouts")
+def recent_workouts(
+    request: Request,
+    days: int = Query(14, ge=1, le=90, description="Lookback window in days."),
+    end_date: str | None = Query(None, description="Optional end date in YYYY-MM-DD."),
+    x_api_key: str = Header(None),
+):
+    """Return recent running and strength sessions for coaching context."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().recent_workouts(days=days, iso_end_date=end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/coach_state")
+def coach_state(
+    request: Request,
+    date: str = Query(..., description="Most recent complete date in YYYY-MM-DD."),
+    x_api_key: str = Header(None),
+):
+    """Return compact derived coaching state for a custom GPT action."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().coach_state(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/goal_state")
+def goal_state(request: Request, x_api_key: str = Header(None)):
+    """Return long-range goals, target dates and strength training maxes."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().goal_state()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/user_notes")
+def user_notes(
+    request: Request,
+    days: int = Query(14, ge=1, le=90, description="Lookback window in days."),
+    x_api_key: str = Header(None),
+):
+    """Return persisted subjective notes when configured, otherwise an empty placeholder."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().user_notes(days=days)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/plan_context")
+def plan_context(
+    request: Request,
+    date: str = Query(..., description="Date in YYYY-MM-DD."),
+    x_api_key: str = Header(None),
+):
+    """Return current plan phase and deload context."""
+
+    validate_api_key(request, x_api_key)
+
+    try:
+        return get_metrics_service().plan_context(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # SSE endpoint for streaming (demo)
 @app.get("/sse")
 def sse(request: Request, x_api_key: str = Header(None)):

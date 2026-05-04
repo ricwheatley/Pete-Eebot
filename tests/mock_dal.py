@@ -81,6 +81,22 @@ class MockableDal(DataAccessLayer):
     ) -> List[Dict[str, Any]]:
         return []
 
+    def get_recent_running_workouts(
+        self,
+        *,
+        days: int = 14,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        return []
+
+    def get_recent_strength_workouts(
+        self,
+        *,
+        days: int = 14,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        return []
+
     def get_metrics_overview(self, target_date: date):
         return ["metric_name"], []
 
