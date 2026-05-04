@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+from pete_e.application.api_services import MetricsService
+
+
+class CoachDal:
+    def __init__(self):
+        self.base = date(2024, 1, 1)
+
+    def get_metrics_overview(self, target_date):
+        return ["metric_name"], []
+
+    def get_daily_summary(self, target_date):
+        return {
+            "date": target_date,
+            "weight_kg": 89.5,
+            "sleep_asleep_minutes": 410,
+            "hr_resting": 52,
+            "hrv_sdnn_ms": 45,
+            "strength_volume_kg": 12000,
+            "body_fat_pct": 22.1,
+        }
+
+    def get_historical_data(self, start_date, end_date):
+        rows = []
+        for offset in range((end_date - start_date).days + 1):
+            day = start_date + timedelta(days=offset)
+            recent = day >= end_date - timedelta(days=6)
+            rows.append(
+                {
+                    "date": day,
+                    "weight_kg": 90.0 if recent else 91.0,
+                    "sleep_asleep_minutes": 390 if recent else 420,
+                    "hr_resting": 53 if recent else 51,
+                    "hrv_sdnn_ms": 44 if recent else 46,
+                    "strength_volume_kg": 1000 if recent else 500,
+                }
+            )
+        return rows
+
+    def get_recent_running_workouts(self, *, days, end_date):
+        return [
+            {
+                "workout_date": end_date,
+                "workout_type": "Outdoor Run",
+                "duration_sec": 1800,
+                "total_distance_km": 5.0,
+                "pace_min_per_km": 6.0,
+            }
+        ]
+
+    def get_recent_strength_workouts(self, *, days, end_date):
+        return [
+            {
+                "workout_date": end_date,
+                "exercise_name": "Squat",
+                "sets": 3,
+                "reps": 15,
+                "volume_kg": 1500,
+            }
+        ]
+
+    def get_active_plan(self):
+        return {"id": 10, "start_date": date(2024, 1, 1), "weeks": 4, "is_active": True}
+
+    def get_latest_training_maxes(self):
+        return {"squat": 120}
+
+    def get_latest_training_max_date(self):
+        return date(2023, 12, 15)
+
+
+def test_daily_summary_adds_units_sources_and_quality():
+    payload = MetricsService(CoachDal()).daily_summary("2024-01-08")
+
+    assert payload["metrics"]["weight_kg"]["unit"] == "kg"
+    assert payload["metrics"]["weight_kg"]["source"] == "withings_or_body_age"
+    assert payload["metrics"]["body_fat_pct"]["trust_level"] == "low"
+    assert payload["data_quality"]["status"] == "complete"
+
+
+def test_coach_state_exposes_derived_flags_and_context():
+    payload = MetricsService(CoachDal()).coach_state("2024-01-08")
+
+    assert payload["derived"]["run_load_7d_km"] == 5.0
+    assert payload["derived"]["strength_load_7d_kg"] == 7000.0
+    assert payload["summary"]["readiness_state"] in {"green", "amber", "red"}
+    assert payload["plan_context"]["current_week_number"] == 2
+    assert payload["goal_state"]["strength"]["training_maxes_kg"] == {"squat": 120}

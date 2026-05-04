@@ -75,6 +75,22 @@ class DataAccessLayer(ABC):
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         pass
 
+    def get_recent_running_workouts(
+        self,
+        *,
+        days: int = 14,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        return []
+
+    def get_recent_strength_workouts(
+        self,
+        *,
+        days: int = 14,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        return []
+
     @abstractmethod
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         """Return all data required for validation for the supplied week."""

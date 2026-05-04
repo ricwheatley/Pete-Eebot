@@ -1,0 +1,288 @@
+openapi: 3.1.0
+info:
+  title: Pete-Eebot Coach API
+  version: 1.0.0
+  description: Read-only coaching endpoints for a private Custom GPT action.
+servers:
+  - url: https://api.myroadmapp.com
+    description: HTTPS base URL that fronts Pete-Eebot.
+security:
+  - ApiKeyAuth: []
+paths:
+  /coach_state:
+    get:
+      operationId: get_coach_state
+      summary: Get compact derived coaching state
+      description: Default first call for the GPT. Returns readiness, trend deltas, load, data quality, goals, plan context, and missing subjective inputs.
+      parameters:
+        - $ref: "#/components/parameters/Date"
+      responses:
+        "200":
+          description: Coach-ready state for the requested date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoachState"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /daily_summary:
+    get:
+      operationId: get_daily_summary
+      summary: Get normalized daily metric summary
+      description: Returns the daily summary with metric values, units, source labels, trust levels, and completeness metadata.
+      parameters:
+        - $ref: "#/components/parameters/Date"
+      responses:
+        "200":
+          description: Normalized daily summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailySummary"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /recent_workouts:
+    get:
+      operationId: get_recent_workouts
+      summary: Get recent running and strength workouts
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 14
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Optional inclusive end date. Defaults to today on the server.
+      responses:
+        "200":
+          description: Recent workouts split into running and strength arrays.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecentWorkouts"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /goal_state:
+    get:
+      operationId: get_goal_state
+      summary: Get long-range goals and training maxes
+      responses:
+        "200":
+          description: Current goals and strength training max context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoalState"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /plan_context:
+    get:
+      operationId: get_plan_context
+      summary: Get current plan phase and deload context
+      parameters:
+        - $ref: "#/components/parameters/Date"
+      responses:
+        "200":
+          description: Active plan context for the requested date.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanContext"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /user_notes:
+    get:
+      operationId: get_user_notes
+      summary: Get recent subjective notes
+      description: Currently returns an empty not-configured payload until subjective notes persistence is added.
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 14
+      responses:
+        "200":
+          description: Subjective notes payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    Date:
+      name: date
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date
+      description: Date in YYYY-MM-DD format. Use the most recent complete date for coaching decisions.
+  responses:
+    BadRequest:
+      description: Invalid request parameter.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+    CoachState:
+      type: object
+      additionalProperties: true
+      properties:
+        date:
+          type: string
+          format: date
+        summary:
+          type: object
+          properties:
+            readiness_state:
+              type: string
+              enum: [green, amber, red]
+            data_reliability_flag:
+              type: string
+              enum: [high, moderate, low]
+            possible_underfueling_flag:
+              type: boolean
+            deload_due:
+              type: boolean
+        derived:
+          type: object
+          properties:
+            weight_rate_pct_bw_per_week:
+              type: [number, "null"]
+            sleep_debt_7d_minutes:
+              type: [number, "null"]
+            rhr_delta_vs_28d_bpm:
+              type: [number, "null"]
+            hrv_delta_vs_28d_ms:
+              type: [number, "null"]
+            run_load_7d_km:
+              type: [number, "null"]
+            strength_load_7d_kg:
+              type: [number, "null"]
+        missing_subjective_inputs:
+          type: array
+          items:
+            type: string
+    DailySummary:
+      type: object
+      additionalProperties: true
+      properties:
+        date:
+          type: string
+          format: date
+        metrics:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/MetricValue"
+        data_quality:
+          type: object
+          additionalProperties: true
+    MetricValue:
+      type: object
+      properties:
+        value:
+          type: [number, string, boolean, "null"]
+        unit:
+          type: [string, "null"]
+        source:
+          type: string
+        trust_level:
+          type: string
+          enum: [high, moderate, low]
+        is_imputed:
+          type: boolean
+        data_quality:
+          type: string
+    RecentWorkouts:
+      type: object
+      additionalProperties: true
+      properties:
+        window:
+          type: object
+          additionalProperties: true
+        running:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        strength:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        data_quality:
+          type: object
+          additionalProperties: true
+    GoalState:
+      type: object
+      additionalProperties: true
+      properties:
+        running_goal:
+          type: object
+          additionalProperties: true
+        body_composition_goal:
+          type: object
+          additionalProperties: true
+        strength:
+          type: object
+          additionalProperties: true
+        performance_anchors:
+          type: object
+          additionalProperties: true
+    PlanContext:
+      type: object
+      additionalProperties: true
+      properties:
+        date:
+          type: string
+          format: date
+        current_week_number:
+          type: [integer, "null"]
+        mesocycle:
+          type: string
+        strength_phase:
+          type: string
+        deload_due:
+          type: boolean
+        data_quality:
+          type: string
