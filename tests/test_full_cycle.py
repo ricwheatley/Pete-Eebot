@@ -11,12 +11,14 @@ def test_cycle_service_detects_four_week_rollover():
     reference = date(2024, 1, 28)  # Sunday of week four
 
     assert service.check_and_rollover(active_plan, reference) is True
+    """Perform test cycle service detects four week rollover."""
 
 
 def test_cycle_service_requires_active_plan():
     service = CycleService()
 
     assert service.check_and_rollover(None, date.today()) is False
+    """Perform test cycle service requires active plan."""
 
 
 def test_cycle_service_waits_until_end_of_block():
@@ -25,3 +27,4 @@ def test_cycle_service_waits_until_end_of_block():
     reference = active_plan["start_date"] + timedelta(days=7)
 
     assert service.check_and_rollover(active_plan, reference) is False
+    """Perform test cycle service waits until end of block."""

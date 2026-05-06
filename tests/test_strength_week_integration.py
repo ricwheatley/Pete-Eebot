@@ -10,15 +10,20 @@ from pete_e.domain.repositories import PlanRepository
 class StaticRepository(PlanRepository):
     def get_assistance_pool_for(self, main_lift_id: int):
         return []
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self):
         return [800]
+        """Perform get core pool ids."""
 
     def get_latest_training_maxes(self):
         return {}
+        """Perform get latest training maxes."""
 
     def save_full_plan(self, plan_dict):
         return 0
+        """Perform save full plan."""
+    """Represent StaticRepository."""
 
 
 def test_531_block_plan_includes_blaze_sessions(monkeypatch):
@@ -37,6 +42,7 @@ def test_531_block_plan_includes_blaze_sessions(monkeypatch):
 
     assert len(blaze_entries) == len(expected_blaze_days)
     assert all(entry["exercise_id"] == schedule_rules.BLAZE_ID for entry in blaze_entries)
+    """Perform test 531 block plan includes blaze sessions."""
 
 
 def test_531_block_plan_includes_core_work(monkeypatch):
@@ -48,3 +54,4 @@ def test_531_block_plan_includes_core_work(monkeypatch):
     first_week = plan["plan_weeks"][0]
     core_entries = [entry for entry in first_week["workouts"] if entry.get("exercise_id") == 800]
     assert core_entries
+    """Perform test 531 block plan includes core work."""

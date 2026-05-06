@@ -22,21 +22,26 @@ class PlanBuilderStubRepo(PlanRepository):
         self._metrics = metrics
         self.saved_plan: Dict[str, Any] | None = None
         self.saved_start_date: date | None = None
+        """Initialize this object."""
 
     def get_latest_training_maxes(self) -> Dict[str, float | None]:
         # Provide some dummy training maxes as required by the factory
         return {"squat": 180.0, "bench": 120.0, "deadlift": 220.0, "ohp": 70.0}
+        """Perform get latest training maxes."""
 
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
         self.saved_plan = plan_dict
         self.saved_start_date = plan_dict.get("start_date")
         return 404
+        """Perform save full plan."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
         return [901, 902, 903]  # Dummy IDs
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self) -> List[int]:
         return [999] # Dummy ID
+        """Perform get core pool ids."""
 
 
 def _hrv_row(day: date, *, rhr: float = 50.0, sleep: float = 420.0, hrv: float = 60.0) -> Dict[str, Any]:
@@ -46,6 +51,7 @@ def _hrv_row(day: date, *, rhr: float = 50.0, sleep: float = 420.0, hrv: float =
         "sleep_total_minutes": sleep,
         "hrv_sdnn_ms": hrv,
     }
+    """Perform hrv row."""
 
 
 @pytest.mark.parametrize("drop_percent, expected_severity", [(0.18, True), (0.30, True)])
@@ -69,6 +75,7 @@ def test_downward_hrv_trend_triggers_backoff(drop_percent: float, expected_sever
     assert any("hrv" in reason.lower() for reason in rec.reasons)
     assert "avg_hrv_7d" in rec.metrics
     assert rec.metrics["avg_hrv_7d"] == pytest.approx(drop_value)
+    """Perform test downward hrv trend triggers backoff."""
 
 
 def test_high_vo2_increases_conditioning_volume() -> None:

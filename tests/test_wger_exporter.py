@@ -11,6 +11,7 @@ def test_set_config_posts_payload(monkeypatch):
         captured["path"] = path
         captured["kwargs"] = kwargs
         return {}
+        """Perform fake request."""
 
     monkeypatch.setattr(WgerClient, "_request", fake_request)
 
@@ -24,6 +25,7 @@ def test_set_config_posts_payload(monkeypatch):
     payload = captured["kwargs"]["json"]
     assert payload["slot_entry"] == 321
     assert payload["value"] == 5
+    """Perform test set config posts payload."""
 
 
 def test_set_config_posts_weight_payload(monkeypatch):
@@ -34,6 +36,7 @@ def test_set_config_posts_weight_payload(monkeypatch):
         captured["path"] = path
         captured["kwargs"] = kwargs
         return {}
+        """Perform fake request."""
 
     monkeypatch.setattr(WgerClient, "_request", fake_request)
 
@@ -47,6 +50,7 @@ def test_set_config_posts_weight_payload(monkeypatch):
     payload = captured["kwargs"]["json"]
     assert payload["slot_entry"] == 654
     assert payload["value"] == "47.5"
+    """Perform test set config posts weight payload."""
 
 
 def test_set_config_posts_rest_payload(monkeypatch):
@@ -57,6 +61,7 @@ def test_set_config_posts_rest_payload(monkeypatch):
         captured["path"] = path
         captured["kwargs"] = kwargs
         return {}
+        """Perform fake request."""
 
     monkeypatch.setattr(WgerClient, "_request", fake_request)
 
@@ -70,3 +75,4 @@ def test_set_config_posts_rest_payload(monkeypatch):
     payload = captured["kwargs"]["json"]
     assert payload["slot_entry"] == 987
     assert payload["value"] == 150
+    """Perform test set config posts rest payload."""

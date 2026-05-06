@@ -15,6 +15,7 @@ def _unwrap_secret(value):
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     return value
+    """Perform unwrap secret."""
 
 TOKEN_FILE = Path.home() / ".config" / "pete_eebot" / ".withings_tokens.json"
 
@@ -30,6 +31,7 @@ def build_authorize_url():
         "state": "peteebot"
     }
     return f"{AUTH_URL}?{urlencode(params)}"
+    """Perform build authorize url."""
 
 def exchange_code_for_tokens(code: str):
     data = {
@@ -59,6 +61,7 @@ def exchange_code_for_tokens(code: str):
         log_message(f"Could not set permissions on {TOKEN_FILE}: {exc}", "WARN")
 
     return tokens
+    """Perform exchange code for tokens."""
 
 if __name__ == "__main__":
     print("Step 1: Visit this URL in your browser and approve access:")

@@ -9,9 +9,12 @@ from pete_e.application import sync
 class _StubOrchestrator:
     def __init__(self, responses: Iterable[Tuple[bool, List[str], dict, List[str]]]):
         self._responses = iter(responses)
+        """Initialize this object."""
 
     def run_daily_sync(self, days: int):  # pragma: no cover - simple stub
         return next(self._responses)
+        """Perform run daily sync."""
+    """Represent StubOrchestrator."""
 
 
 def _final_summary_bundle(log_path):
@@ -29,6 +32,7 @@ def _final_summary_bundle(log_path):
 
     summary_lines = [lines[i] for i in summary_indices]
     return summary_line, trailing_lines, lines, summary_lines
+    """Perform final summary bundle."""
 
 
 def test_run_sync_logs_single_summary_line_success(tmp_path, monkeypatch):
@@ -75,6 +79,7 @@ def test_run_sync_logs_single_summary_line_success(tmp_path, monkeypatch):
     for handler in list(logger.handlers):
         handler.close()
         logger.removeHandler(handler)
+    """Perform test run sync logs single summary line success."""
 
 
 def test_run_sync_logs_failure_summary_once(tmp_path, monkeypatch):
@@ -119,4 +124,5 @@ def test_run_sync_logs_failure_summary_once(tmp_path, monkeypatch):
     for handler in list(logger.handlers):
         handler.close()
         logger.removeHandler(handler)
+    """Perform test run sync logs failure summary once."""
 

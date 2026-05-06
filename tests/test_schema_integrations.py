@@ -17,12 +17,16 @@ class _DeterministicRandom:
         if not seq:
             raise ValueError("choice sequence was empty")
         return seq[0]
+        """Perform choice."""
 
     def randint(self, a, b):
         return a
+        """Perform randint."""
 
     def random(self):
         return 0.0
+        """Perform random."""
+    """Represent DeterministicRandom."""
 
 
 @pytest.fixture
@@ -32,11 +36,13 @@ def fixed_random(monkeypatch):
     monkeypatch.setattr(narrative_builder.narrative_utils.random, "random", lambda: 0.99)
     monkeypatch.setattr(narrative_builder.narrative_utils.random, "choice", lambda seq: seq[0])
     return deterministic
+    """Perform fixed random."""
 
 
 @pytest.fixture(autouse=True)
 def stub_phrase_picker(monkeypatch):
     monkeypatch.setattr(narrative_builder, "phrase_for", lambda *_, **__: "Keep composing!")
+    """Perform stub phrase picker."""
 
 
 def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
@@ -54,6 +60,7 @@ def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
         column_name = stripped.split()[0].strip('"')
         columns.append(column_name)
     return columns
+    """Perform extract table columns."""
 
 
 def test_withings_daily_table_includes_body_composition_columns():
@@ -71,6 +78,7 @@ def test_withings_daily_table_includes_body_composition_columns():
     assert "bmr_kcal_day" in columns
     assert "nerve_health_score_feet" in columns
     assert "metabolic_age_years" in columns
+    """Perform test withings daily table includes body composition columns."""
 
 
 def test_withings_raw_measure_group_table_is_present() -> None:
@@ -79,6 +87,7 @@ def test_withings_raw_measure_group_table_is_present() -> None:
 
     assert columns[:4] == ["grpid", "day", "measured_at", "created_at_source"]
     assert "raw_payload_json" in columns
+    """Perform test withings raw measure group table is present."""
 
 
 def test_body_age_table_tracks_enriched_body_comp_usage() -> None:
@@ -89,6 +98,7 @@ def test_body_age_table_tracks_enriched_body_comp_usage() -> None:
     assert "v_enriched_body_comp_rows" in schema_sql
     assert "visceral_fat_index" in schema_sql
     assert "used_enriched_body_comp = EXCLUDED.used_enriched_body_comp" in schema_sql
+    """Perform test body age table tracks enriched body comp usage."""
 
 
 def test_training_plan_schema_includes_single_active_index_and_core_pool() -> None:
@@ -97,6 +107,7 @@ def test_training_plan_schema_includes_single_active_index_and_core_pool() -> No
     assert "CREATE UNIQUE INDEX ux_training_plans_single_active" in schema_sql
     core_pool_columns = _extract_table_columns(schema_sql, "core_pool")
     assert core_pool_columns == ["exercise_id"]
+    """Perform test training plan schema includes single active index and core pool."""
 
 
 def test_schema_permissions_block_only_grants_to_pete_user_when_role_exists() -> None:
@@ -105,6 +116,7 @@ def test_schema_permissions_block_only_grants_to_pete_user_when_role_exists() ->
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pete_user') THEN" in schema_sql
     assert "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;" in schema_sql
     assert "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pete_user;" in schema_sql
+    """Perform test schema permissions block only grants to pete user when role exists."""
 
 
 _EXPECTED_DAILY_SUMMARY_COLUMNS = {
@@ -158,6 +170,7 @@ def test_daily_summary_view_select_includes_expected_columns() -> None:
         assert column in table_columns, (
             f"Expected column '{column}' in daily_summary table definition."
         )
+    """Perform test daily summary view select includes expected columns."""
 
 
 def test_daily_summary_pipeline_surfaces_new_schema_fields(monkeypatch, fixed_random):
@@ -190,28 +203,36 @@ def test_daily_summary_pipeline_surfaces_new_schema_fields(monkeypatch, fixed_ra
         def __init__(self):
             self.summary_calls: list[date | None] = []
             self.history_requests: list[int] = []
+            """Initialize this object."""
 
         def get_daily_summary(self, target_date: date | None) -> dict[str, Any]:
             self.summary_calls.append(target_date)
             return dict(summary_row)
+            """Perform get daily summary."""
 
         def get_historical_metrics(self, days: int) -> list[dict[str, Any]]:
             self.history_requests.append(days)
             return list(history_rows)
+            """Perform get historical metrics."""
 
         def get_historical_data(self, start_date: date, end_date: date) -> list[dict[str, Any]]:
             return []
+            """Perform get historical data."""
+        """Represent StubDal."""
 
     class StubOrchestrator:
         def __init__(self):
             self.dal = StubDal()
             self.narrative_builder = NarrativeBuilder()
             self.summary_requests: list[date | None] = []
+            """Initialize this object."""
 
         def get_daily_summary(self, target_date: date | None = None) -> str:
             self.summary_requests.append(target_date)
             summary_data = self.dal.get_daily_summary(target_date)
             return self.narrative_builder.build_daily_summary(summary_data)
+            """Perform get daily summary."""
+        """Represent StubOrchestrator."""
 
     monkeypatch.setattr(messenger.body_age, "get_body_age_trend", lambda *_, **__: None)
 
@@ -226,3 +247,4 @@ def test_daily_summary_pipeline_surfaces_new_schema_fields(monkeypatch, fixed_ra
     assert orch.summary_requests == [target]
     assert orch.dal.summary_calls == [target]
     assert 14 in orch.dal.history_requests
+    """Perform test daily summary pipeline surfaces new schema fields."""

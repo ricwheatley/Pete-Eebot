@@ -46,6 +46,7 @@ def _format_day_list(days: Iterable[int]) -> str:
     ordered = sorted(days)
     names = [_DAY_NAME_BY_NUMBER.get(day, str(day)) for day in ordered]
     return ', '.join(names)
+    """Perform format day list."""
 
 @dataclass(frozen=True)
 class WindowStats:
@@ -55,12 +56,14 @@ class WindowStats:
     values: List[float]
     median_value: float
     mean_value: float
+    """Represent WindowStats."""
 
 
 @dataclass(frozen=True)
 class BaselineResult:
     value: Optional[float]
     by_window: Dict[int, WindowStats]  # keyed by window length (days)
+    """Represent BaselineResult."""
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,7 @@ class BackoffRecommendation:
     set_multiplier: float
     rir_increment: int
     metrics: Dict[str, Any]  # observed and baseline metrics for transparency
+    """Represent BackoffRecommendation."""
 
 @dataclass(frozen=True)
 class ReadinessSummary:
@@ -80,6 +84,7 @@ class ReadinessSummary:
     severity: str
     breach_ratio: float
     reasons: List[str]
+    """Represent ReadinessSummary."""
 
 
 @dataclass(frozen=True)
@@ -110,6 +115,7 @@ class MuscleBalanceReport:
     imbalance_ratio: float
     missing_groups: List[str]
     tolerance: float
+    """Represent MuscleBalanceReport."""
 
 
 def collect_adherence_snapshot(
@@ -279,6 +285,7 @@ def _evaluate_adherence_adjustment(
         }
     )
     return base_result
+    """Perform evaluate adherence adjustment."""
 
 def ensure_muscle_balance(
     plan: Plan,
@@ -308,6 +315,7 @@ def ensure_muscle_balance(
         missing_groups=missing,
         tolerance=tolerance,
     )
+    """Perform ensure muscle balance."""
 
 
 
@@ -440,6 +448,7 @@ def _build_readiness_tip(reasons: List[str], severity: str) -> Optional[str]:
     if severity == "severe":
         return "Swap intense work for pure recovery until metrics rebound."
     return None
+    """Perform build readiness tip."""
 
 
 def _build_readiness_summary(rec: BackoffRecommendation) -> ReadinessSummary:
@@ -467,6 +476,7 @@ def _build_readiness_summary(rec: BackoffRecommendation) -> ReadinessSummary:
         breach_ratio=breach_ratio,
         reasons=reasons,
     )
+    """Perform build readiness summary."""
 
 
 
@@ -535,6 +545,7 @@ def _window_stats(
         median_value=median(vals),
         mean_value=mean(vals),
     )
+    """Perform window stats."""
 
 
 def _weighted_baseline(

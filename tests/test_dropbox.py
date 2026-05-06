@@ -49,6 +49,7 @@ def main() -> int:
     except Exception as err:
         print(f"\n❌ An unexpected error occurred: {err}")
         return 1
+    """Perform main."""
 
 
 if __name__ == "__main__":

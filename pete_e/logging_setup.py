@@ -31,6 +31,7 @@ class TaggedLogger(logging.LoggerAdapter):
             extra["tag"] = self.extra.get("tag", "GEN")
         kwargs["extra"] = extra
         return msg, kwargs
+        """Perform process."""
 
 def _resolve_level(level: Optional[str]) -> int:
     """Translate a textual level into the numeric value logging expects."""
@@ -54,6 +55,7 @@ def _build_formatter() -> logging.Formatter:
     )
     formatter.converter = time.gmtime
     return formatter
+    """Perform build formatter."""
 
 
 def configure_logging(

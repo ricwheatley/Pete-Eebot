@@ -15,6 +15,7 @@ from pete_e.domain import schedule_rules
 def _expected_tm(weight_kg: float, reps: int) -> float:
     e1rm = weight_kg * (1.0 + reps / 30.0)
     return round((e1rm * 0.90) / 2.5) * 2.5
+    """Perform expected tm."""
 
 
 class StrengthTestDal:
@@ -28,6 +29,7 @@ class StrengthTestDal:
         self.saved_plan: Dict[str, Any] = {}
         self.inserted_results: List[Dict[str, Any]] = []
         self.upserted_tms: List[tuple[str, float, date, str]] = []
+        """Initialize this object."""
 
     def get_latest_test_week(self) -> Dict[str, Any]:
         return {
@@ -35,6 +37,7 @@ class StrengthTestDal:
             "week_number": 1,
             "start_date": date(2024, 8, 5),
         }
+        """Perform get latest test week."""
 
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         assert plan_id == 17
@@ -45,6 +48,7 @@ class StrengthTestDal:
             {"exercise_id": schedule_rules.OHP_ID, "day_of_week": 4},
             {"exercise_id": schedule_rules.DEADLIFT_ID, "day_of_week": 5},
         ]
+        """Perform get plan week rows."""
 
     def load_lift_log(
         self,
@@ -70,26 +74,34 @@ class StrengthTestDal:
                 {"date": date(2024, 8, 9), "reps": 4, "weight_kg": 170.0},
             ],
         }
+        """Perform load lift log."""
 
     def insert_strength_test_result(self, **kwargs) -> None:
         self.inserted_results.append(kwargs)
+        """Perform insert strength test result."""
 
     def upsert_training_max(self, lift_code: str, tm_kg: float, measured_at: date, source: str) -> None:
         self.training_maxes[lift_code] = tm_kg
         self.upserted_tms.append((lift_code, tm_kg, measured_at, source))
+        """Perform upsert training max."""
 
     def get_latest_training_maxes(self) -> Dict[str, float]:
         return dict(self.training_maxes)
+        """Perform get latest training maxes."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
         return []
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self) -> List[int]:
         return [800]
+        """Perform get core pool ids."""
 
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
         self.saved_plan = plan_dict
         return 42
+        """Perform save full plan."""
+    """Represent StrengthTestDal."""
 
 
 def test_strength_test_service_updates_training_maxes_from_logged_amraps() -> None:
@@ -107,6 +119,7 @@ def test_strength_test_service_updates_training_maxes_from_logged_amraps() -> No
     assert bench_result["tm_kg"] == pytest.approx(_expected_tm(92.5, 6))
     assert dal.training_maxes["bench"] == pytest.approx(_expected_tm(92.5, 6))
     assert all(source == "AMRAP_EPLEY" for _, _, _, source in dal.upserted_tms)
+    """Perform test strength test service updates training maxes from logged amraps."""
 
 
 def test_create_next_plan_for_cycle_uses_refreshed_training_maxes(
@@ -133,3 +146,4 @@ def test_create_next_plan_for_cycle_uses_refreshed_training_maxes(
 
     assert top_set["target_weight_kg"] == pytest.approx(expected_target)
     assert top_set["target_weight_kg"] > 80.0
+    """Perform test create next plan for cycle uses refreshed training maxes."""

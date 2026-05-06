@@ -9,15 +9,20 @@ from pete_e.domain.repositories import PlanRepository
 class StubRepository(PlanRepository):
     def get_assistance_pool_for(self, main_lift_id: int):
         return []
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self):
         return []
+        """Perform get core pool ids."""
 
     def get_latest_training_maxes(self):
         return {}
+        """Perform get latest training maxes."""
 
     def save_full_plan(self, plan_dict):
         return 0
+        """Perform save full plan."""
+    """Represent StubRepository."""
 
 
 def test_strength_test_plan_contains_all_main_lifts():
@@ -29,3 +34,4 @@ def test_strength_test_plan_contains_all_main_lifts():
     lift_ids = {entry["exercise_id"] for entry in week["workouts"] if not entry["is_cardio"]}
     # Strength test should schedule four main lifts
     assert len(lift_ids) == 4
+    """Perform test strength test plan contains all main lifts."""

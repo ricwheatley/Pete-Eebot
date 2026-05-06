@@ -82,10 +82,12 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return value
+    """Perform json safe."""
 
 
 def _avg(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
+    """Perform avg."""
 
 
 def _window_rows(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[str, Any]]:
@@ -95,6 +97,7 @@ def _window_rows(rows: list[dict[str, Any]], start: date, end: date) -> list[dic
         if row_date is not None and start <= row_date <= end:
             selected.append(row)
     return selected
+    """Perform window rows."""
 
 
 def _numeric_values(rows: list[dict[str, Any]], field: str) -> list[float]:
@@ -104,11 +107,13 @@ def _numeric_values(rows: list[dict[str, Any]], field: str) -> list[float]:
         if value is not None:
             values.append(value)
     return values
+    """Perform numeric values."""
 
 
 def _sum_field(rows: list[dict[str, Any]], field: str) -> float | None:
     values = _numeric_values(rows, field)
     return sum(values) if values else None
+    """Perform sum field."""
 
 
 class _DateParserMixin:
@@ -120,6 +125,7 @@ class _DateParserMixin:
             return date.fromisoformat(value)
         except ValueError as exc:  # pragma: no cover - defensive re-raise
             raise ValueError(f"Invalid date value for '{field}': {value}") from exc
+        """Perform parse iso date."""
 
 
 class MetricsService(_DateParserMixin):
@@ -127,11 +133,13 @@ class MetricsService(_DateParserMixin):
 
     def __init__(self, dal: PostgresDal):
         self._dal = dal
+        """Initialize this object."""
 
     def overview(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
         columns, rows = self._dal.get_metrics_overview(target_date)
         return {"columns": columns, "rows": rows}
+        """Perform overview."""
 
     def daily_summary(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
@@ -177,6 +185,7 @@ class MetricsService(_DateParserMixin):
                 "missing_fields": missing,
             },
         }
+        """Perform daily summary."""
 
     def recent_workouts(self, days: int = 14, iso_end_date: str | None = None) -> Dict[str, Any]:
         resolved_days = max(1, min(days, 90))
@@ -198,6 +207,7 @@ class MetricsService(_DateParserMixin):
                 "strength_available": bool(strength),
             },
         }
+        """Perform recent workouts."""
 
     def coach_state(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
@@ -287,6 +297,7 @@ class MetricsService(_DateParserMixin):
                 "Do not progress running intensity when sleep debt and recovery deltas are adverse.",
             ],
         }
+        """Perform coach state."""
 
     def goal_state(self) -> Dict[str, Any]:
         return {
@@ -309,6 +320,7 @@ class MetricsService(_DateParserMixin):
                 "sub_3_marathon_half_equivalent": "01:26:20",
             },
         }
+        """Perform goal state."""
 
     def user_notes(self, days: int = 14) -> Dict[str, Any]:
         return {
@@ -319,6 +331,7 @@ class MetricsService(_DateParserMixin):
                 "message": "Subjective notes are not currently persisted by Pete-Eebot.",
             },
         }
+        """Perform user notes."""
 
     def plan_context(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
@@ -347,6 +360,7 @@ class MetricsService(_DateParserMixin):
             "next_deload_week_number": self._next_deload_week(current_week, weeks),
             "data_quality": "observed",
         }
+        """Perform plan context."""
 
     @staticmethod
     def _source_for_metric(key: str) -> str:
@@ -355,6 +369,7 @@ class MetricsService(_DateParserMixin):
         if key == "strength_volume_kg":
             return "wger_logs"
         return "apple_health"
+        """Perform source for metric."""
 
     @staticmethod
     def _completeness_pct(rows: list[dict[str, Any]], fields: tuple[str, ...]) -> float:
@@ -365,6 +380,7 @@ class MetricsService(_DateParserMixin):
         for row in rows:
             observed += sum(1 for field in fields if row.get(field) is not None)
         return round((observed / possible) * 100.0, 1) if possible else 0.0
+        """Perform completeness pct."""
 
     @staticmethod
     def _run_load(workouts: list[dict[str, Any]], *, target_date: date, days: int) -> float | None:
@@ -380,6 +396,7 @@ class MetricsService(_DateParserMixin):
                 total += distance
                 seen = True
         return total if seen else None
+        """Perform run load."""
 
     def _coach_data_quality(
         self,
@@ -404,6 +421,7 @@ class MetricsService(_DateParserMixin):
             "reliability_flag": reliability,
             "primary_fields": list(_PRIMARY_FIELDS),
         }
+        """Perform coach data quality."""
 
     @staticmethod
     def _possible_underfueling(
@@ -418,6 +436,7 @@ class MetricsService(_DateParserMixin):
             rhr_delta is not None and rhr_delta >= 4 and hrv_delta is not None and hrv_delta <= -5
         )
         return bool(rapid_loss and recovery_worse)
+        """Perform possible underfueling."""
 
     @staticmethod
     def _readiness_state(
@@ -443,14 +462,17 @@ class MetricsService(_DateParserMixin):
         if (sleep_debt is not None and sleep_debt >= 120) or (rhr_delta is not None and rhr_delta >= 3):
             return "amber"
         return "green"
+        """Perform readiness state."""
 
     def _latest_training_maxes(self) -> Dict[str, Any]:
         getter = getattr(self._dal, "get_latest_training_maxes", None)
         return getter() if callable(getter) else {}
+        """Perform latest training maxes."""
 
     def _latest_training_max_date(self) -> date | None:
         getter = getattr(self._dal, "get_latest_training_max_date", None)
         return getter() if callable(getter) else None
+        """Perform latest training max date."""
 
     @staticmethod
     def _next_deload_week(current_week: int | None, total_weeks: int) -> int | None:
@@ -462,6 +484,7 @@ class MetricsService(_DateParserMixin):
                 return week
             week += 1
         return None
+        """Perform next deload week."""
 
 
 class PlanService(_DateParserMixin):
@@ -469,16 +492,19 @@ class PlanService(_DateParserMixin):
 
     def __init__(self, dal: PostgresDal):
         self._dal = dal
+        """Initialize this object."""
 
     def for_day(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
         columns, rows = self._dal.get_plan_for_day(target_date)
         return {"columns": columns, "rows": rows}
+        """Perform for day."""
 
     def for_week(self, iso_start_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_start_date, "start_date")
         columns, rows = self._dal.get_plan_for_week(target_date)
         return {"columns": columns, "rows": rows}
+        """Perform for week."""
 
 
 class StatusService:
@@ -486,9 +512,11 @@ class StatusService:
 
     def __init__(self, dal: PostgresDal):
         self._dal = dal
+        """Initialize this object."""
 
     def run_checks(self, timeout: float):  # pragma: no cover - integration exercised elsewhere
         # Deferred import to avoid a circular dependency during module import in tests
         from pete_e.cli.status import run_status_checks
 
         return run_status_checks(timeout=timeout)
+        """Perform run checks."""

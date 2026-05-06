@@ -11,6 +11,7 @@ from pete_e.cli import messenger
 @pytest.fixture()
 def cli_runner() -> CliRunner:
     return CliRunner()
+    """Perform cli runner."""
 
 
 def test_lets_begin_seeds_strength_test_week_when_macrocycle_missing(cli_runner, monkeypatch):
@@ -24,14 +25,18 @@ def test_lets_begin_seeds_strength_test_week_when_macrocycle_missing(cli_runner,
             self.runs: list[date] = []
             self.closed = False
             StubOrchestrator.instances.append(self)
+            """Initialize this object."""
 
         def generate_strength_test_week(self, start_date: date | None = None) -> bool:
             assert start_date is not None
             self.runs.append(start_date)
             return True
+            """Perform generate strength test week."""
 
         def close(self) -> None:
             self.closed = True
+            """Perform close."""
+        """Represent StubOrchestrator."""
 
     monkeypatch.setattr("pete_e.application.orchestrator.Orchestrator", StubOrchestrator)
     monkeypatch.setattr(
@@ -56,6 +61,7 @@ def test_lets_begin_seeds_strength_test_week_when_macrocycle_missing(cli_runner,
         and message == "Strength test week created successfully via lets-begin at 2024-05-06"
         for level, message in log_messages
     )
+    """Perform test lets begin seeds strength test week when macrocycle missing."""
 
 
 def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
@@ -63,6 +69,8 @@ def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
         @classmethod
         def today(cls) -> "FixedDate":
             return cls(2024, 5, 7)  # Tuesday
+            """Perform today."""
+        """Represent FixedDate."""
 
     log_messages: list[tuple[str, str]] = []
 
@@ -74,14 +82,18 @@ def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
             self.runs: list[date] = []
             self.closed = False
             StubOrchestrator.instances.append(self)
+            """Initialize this object."""
 
         def generate_strength_test_week(self, start_date: date | None = None) -> bool:
             assert start_date is not None
             self.runs.append(start_date)
             return True
+            """Perform generate strength test week."""
 
         def close(self) -> None:
             self.closed = True
+            """Perform close."""
+        """Represent StubOrchestrator."""
 
     monkeypatch.setattr("pete_e.application.orchestrator.Orchestrator", StubOrchestrator)
     monkeypatch.setattr(
@@ -107,3 +119,4 @@ def test_lets_begin_defaults_to_next_monday(cli_runner, monkeypatch):
         and message == "Strength test week created successfully via lets-begin at 2024-05-13"
         for level, message in log_messages
     )
+    """Perform test lets begin defaults to next monday."""

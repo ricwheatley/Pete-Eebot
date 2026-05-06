@@ -30,12 +30,14 @@ _PLAN_GENERATION_LOCK_KEY = 7041917001
 def _create_pool() -> ConnectionPool:
     db_url = get_database_url()
     return ConnectionPool(conninfo=db_url, min_size=1, max_size=5)
+    """Perform create pool."""
 
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
         _pool = _create_pool()
     return _pool
+    """Perform get pool."""
 
 # --- Data Access Layer ---
 class PostgresDal(PlanRepository):
@@ -43,6 +45,7 @@ class PostgresDal(PlanRepository):
 
     def __init__(self, pool: Optional[ConnectionPool] = None):
         self.pool = pool or get_pool()
+        """Initialize this object."""
 
     @contextmanager
     def _get_cursor(self, use_dict_row: bool = True):
@@ -53,6 +56,7 @@ class PostgresDal(PlanRepository):
                 if use_dict_row:
                     cur.row_factory = dict_row
                 yield cur
+        """Perform get cursor."""
 
     def connection(self):
         """Provide a context manager for a pooled database connection."""
@@ -62,6 +66,7 @@ class PostgresDal(PlanRepository):
         if self.pool and not self.pool.closed:
             self.pool.close()
             log_utils.info("Database connection pool closed.")
+        """Perform close."""
 
     @staticmethod
     def _ensure_single_active_plan_invariant(cur) -> None:
@@ -88,6 +93,7 @@ class PostgresDal(PlanRepository):
             WHERE is_active = true;
             """
         )
+        """Perform ensure single active plan invariant."""
 
     @staticmethod
     def _core_pool_table_exists(cur) -> bool:
@@ -96,6 +102,7 @@ class PostgresDal(PlanRepository):
         if not row:
             return False
         return bool(row[0])
+        """Perform core pool table exists."""
 
     @contextmanager
     def hold_plan_generation_lock(self):
@@ -146,6 +153,7 @@ class PostgresDal(PlanRepository):
                 return int(value)
             except (TypeError, ValueError):
                 return None
+            """Perform coerce int."""
 
         def _coerce_scheduled_time(value: Any) -> time | None:
             if value is None:
@@ -159,6 +167,7 @@ class PostgresDal(PlanRepository):
                 return time.fromisoformat(text)
             except ValueError:
                 return None
+            """Perform coerce scheduled time."""
 
         def _persist_workout(cur, week_id: int, payload: Dict[str, Any]) -> None:
             day_of_week = _coerce_int(payload.get("day_of_week"))
@@ -222,6 +231,7 @@ class PostgresDal(PlanRepository):
                     Json(details) if details is not None else None,
                 ),
             )
+            """Perform persist workout."""
 
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=None) as cur:
@@ -260,6 +270,7 @@ class PostgresDal(PlanRepository):
                 except Exception:
                     conn.rollback()
                     raise
+        """Perform save full plan."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
         sql = (
@@ -269,6 +280,7 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (main_lift_id,))
             rows = cur.fetchall()
             return [row[0] for row in rows]
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self) -> List[int]:
         sql_primary = "SELECT exercise_id FROM core_pool ORDER BY exercise_id"
@@ -291,6 +303,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor(use_dict_row=False) as cur:
             cur.execute(sql_fallback)
             return [row[0] for row in cur.fetchall()]
+        """Perform get core pool ids."""
 
     def create_block_and_plan(self, start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
         with self.pool.connection() as conn:
@@ -310,17 +323,20 @@ class PostgresDal(PlanRepository):
                 except Exception:
                     conn.rollback()
                     raise
+        """Perform create block and plan."""
 
     def insert_workout(self, **kwargs) -> None:
         sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s);"
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
+        """Perform insert workout."""
 
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM training_plans WHERE is_active = true ORDER BY id DESC LIMIT 1;"
         with self._get_cursor() as cur:
             cur.execute(sql)
             return cur.fetchone()
+        """Perform get active plan."""
 
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         main_lift_ids = ", ".join(str(exercise_id) for exercise_id in schedule_rules.MAIN_LIFT_IDS)
@@ -346,6 +362,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
+        """Perform get plan week rows."""
 
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         """Compatibility wrapper for callers expecting the legacy DAL name."""
@@ -353,9 +370,11 @@ class PostgresDal(PlanRepository):
 
     def get_plan_for_day(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_plan_for_day", target_date)
+        """Perform get plan for day."""
 
     def get_plan_for_week(self, start_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_plan_for_week", start_date)
+        """Perform get plan for week."""
 
     def get_week_ids_for_plan(self, plan_id: int) -> Dict[int, int]:
         sql = "SELECT id, week_number FROM training_plan_weeks WHERE plan_id = %s;"
@@ -365,18 +384,21 @@ class PostgresDal(PlanRepository):
             for r in cur.fetchall():
                 out[r["week_number"]] = r["id"]
         return out
+        """Perform get week ids for plan."""
 
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
         sql = "SELECT * FROM training_plans WHERE start_date = %s ORDER BY id DESC LIMIT 1;"
         with self._get_cursor() as cur:
             cur.execute(sql, (start_date,))
             return cur.fetchone()
+        """Perform find plan by start date."""
 
     def has_any_plan(self) -> bool:
         with self._get_cursor(use_dict_row=False) as cur:
             cur.execute("SELECT EXISTS (SELECT 1 FROM training_plans);")
             row = cur.fetchone()
             return bool(row[0]) if row else False
+        """Perform has any plan."""
 
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
         if not updates:
@@ -393,6 +415,7 @@ class PostgresDal(PlanRepository):
                 "UPDATE training_plan_workouts SET target_weight_kg = %s WHERE id = %s",
                 payload,
             )
+        """Perform update workout targets."""
 
     def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
         with self._get_cursor() as cur:
@@ -444,6 +467,7 @@ class PostgresDal(PlanRepository):
                 (set_multiplier, rir_increment, rir_increment, week["id"]),
             )
             log_utils.info(f"Applied plan back-off to week {week_number} (plan_id={plan['id']}).")
+        """Perform apply plan backoff."""
 
     # ----------------------------------------------
     # --- Strength Test & Training Max Management ---
@@ -464,22 +488,26 @@ class PostgresDal(PlanRepository):
                 except Exception:
                     conn.rollback()
                     raise
+        """Perform create test week plan."""
 
     def get_latest_test_week(self) -> Optional[Dict[str, Any]]:
         sql = "SELECT tw.id AS week_id, tw.week_number, tw.is_test, tp.id AS plan_id, tp.start_date, tp.weeks FROM training_plan_weeks tw JOIN training_plans tp ON tp.id = tw.plan_id WHERE tw.is_test = true ORDER BY tp.start_date DESC LIMIT 1;"
         with self._get_cursor() as cur:
             cur.execute(sql)
             return cur.fetchone()
+        """Perform get latest test week."""
 
     def insert_strength_test_result(self, **kwargs) -> None:
         sql = "INSERT INTO strength_test_result (plan_id, week_number, lift_code, test_date, test_reps, test_weight_kg, e1rm_kg, tm_kg) VALUES (%(plan_id)s, %(week_number)s, %(lift_code)s, %(test_date)s, %(test_reps)s, %(test_weight_kg)s, %(e1rm_kg)s, %(tm_kg)s) ON CONFLICT (plan_id, week_number, lift_code) DO UPDATE SET test_date = EXCLUDED.test_date, test_reps = EXCLUDED.test_reps, test_weight_kg = EXCLUDED.test_weight_kg, e1rm_kg = EXCLUDED.e1rm_kg, tm_kg = EXCLUDED.tm_kg;"
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
+        """Perform insert strength test result."""
 
     def upsert_training_max(self, lift_code: str, tm_kg: float, measured_at: date, source: str) -> None:
         sql = "INSERT INTO training_max (lift_code, tm_kg, source, measured_at) VALUES (%s, %s, %s, %s) ON CONFLICT (lift_code, measured_at) DO UPDATE SET tm_kg = EXCLUDED.tm_kg, source = EXCLUDED.source;"
         with self._get_cursor() as cur:
             cur.execute(sql, (lift_code, tm_kg, source, measured_at))
+        """Perform upsert training max."""
 
     def get_latest_training_maxes(self) -> Dict[str, Optional[float]]:
         sql = "SELECT DISTINCT ON (lift_code) lift_code, tm_kg FROM training_max ORDER BY lift_code, measured_at DESC;"
@@ -489,6 +517,7 @@ class PostgresDal(PlanRepository):
             for row in cur.fetchall():
                 out[row["lift_code"]] = row["tm_kg"]
         return out
+        """Perform get latest training maxes."""
 
     def get_latest_training_max_date(self) -> Optional[date]:
         sql = "SELECT MAX(measured_at) AS latest FROM training_max;"
@@ -499,6 +528,7 @@ class PostgresDal(PlanRepository):
                 return None
             latest = row["latest"]
             return latest.date() if isinstance(latest, datetime) else latest
+        """Perform get latest training max date."""
     
     # ----------------------------------------------
     # --- Wger & Withings Log Management ---
@@ -574,6 +604,7 @@ class PostgresDal(PlanRepository):
                     metabolic_age_years,
                 ),
             )
+        """Perform save withings daily."""
 
     @staticmethod
     def _epoch_to_timestamp(value: Any) -> Optional[datetime]:
@@ -583,6 +614,7 @@ class PostgresDal(PlanRepository):
             return datetime.fromtimestamp(int(value), tz=timezone.utc)
         except (TypeError, ValueError, OSError):
             return None
+        """Perform epoch to timestamp."""
 
     def save_withings_measure_groups(
         self,
@@ -656,11 +688,13 @@ class PostgresDal(PlanRepository):
 
         with self._get_cursor() as cur:
             cur.executemany(sql_text, values)
+        """Perform save withings measure groups."""
 
     def save_wger_log(self, day: date, exercise_id: int, set_number: int, reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         sql = "INSERT INTO wger_logs (date, exercise_id, set_number, reps, weight_kg, rir) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (date, exercise_id, set_number) DO UPDATE SET reps = EXCLUDED.reps, weight_kg = EXCLUDED.weight_kg, rir = EXCLUDED.rir;"
         with self._get_cursor() as cur:
             cur.execute(sql, (day, exercise_id, set_number, reps, weight_kg, rir))
+        """Perform save wger log."""
 
     def load_lift_log(self, exercise_ids: List[int], start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
         out: Dict[str, List[Dict[str, Any]]] = {}
@@ -679,6 +713,7 @@ class PostgresDal(PlanRepository):
             for row in cur.fetchall():
                 out.setdefault(str(row["exercise_id"]), []).append(row)
         return out
+        """Perform load lift log."""
         
     # ----------------------------------------------
     # --- Wger Catalog & Seeding ---
@@ -694,6 +729,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.executemany(stmt, values)
             log_utils.info(f"Upserted {len(data)} rows into \"{table_name}\".")
+        """Perform bulk upsert."""
 
     def upsert_wger_exercises_and_relations(self, exercises: List[Dict[str, Any]]):
         if not exercises:
@@ -742,6 +778,7 @@ class PostgresDal(PlanRepository):
                 ["exercise_id", "muscle_id"],
                 [],
             )
+        """Perform upsert wger exercises and relations."""
 
     def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[int]]]):
         with self._get_cursor() as cur:
@@ -751,6 +788,7 @@ class PostgresDal(PlanRepository):
                 stmt = sql.SQL("INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES (%s, %s) ON CONFLICT DO NOTHING")
                 cur.executemany(stmt, assistance_values)
         log_utils.info("Seeding of main lifts and assistance pools complete.")
+        """Perform seed main lifts and assistance."""
 
     # ----------------------------------------------
     # --- Metrics, Summaries & Views ---
@@ -774,6 +812,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (start_date, end_date))
             return cur.fetchall()
+        """Perform get historical data."""
 
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         """Return all historical, planned, and actual data required for validation."""
@@ -924,6 +963,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (days,))
             return list(reversed(cur.fetchall()))
+        """Perform get historical metrics."""
 
     def get_recent_running_workouts(
         self,
@@ -1006,6 +1046,7 @@ class PostgresDal(PlanRepository):
 
     def get_metrics_overview(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_metrics_overview", target_date)
+        """Perform get metrics overview."""
     
     def refresh_daily_summary(self, days: int = 7) -> None:
         start_date = date.today() - timedelta(days=days)
@@ -1017,26 +1058,31 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
         log_utils.info(f"Refreshed body_age_daily and daily_summary for last {days} days.")
+        """Perform refresh daily summary."""
 
     def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM plan_muscle_volume WHERE plan_id = %s AND week_number = %s;"
         with self._get_cursor() as cur:
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
+        """Perform get plan muscle volume."""
 
     def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM actual_muscle_volume WHERE date BETWEEN %s AND %s;"
         with self._get_cursor() as cur:
             cur.execute(sql, (start_date, end_date))
             return cur.fetchall()
+        """Perform get actual muscle volume."""
 
     def refresh_plan_view(self) -> None:
         with self._get_cursor() as cur:
             cur.execute("REFRESH MATERIALIZED VIEW plan_muscle_volume;")
+        """Perform refresh plan view."""
     
     def refresh_actual_view(self) -> None:
         with self._get_cursor() as cur:
             cur.execute("REFRESH MATERIALIZED VIEW actual_muscle_volume;")
+        """Perform refresh actual view."""
 
     # ----------------------------------------------
     # --- Export & Validation Logging ---
@@ -1046,6 +1092,7 @@ class PostgresDal(PlanRepository):
         with self._get_cursor(use_dict_row=False) as cur:
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchone() is not None
+        """Perform was week exported."""
 
     def record_wger_export(self, plan_id: int, week_number: int, payload: Dict[str, Any], response: Optional[Dict[str, Any]] = None, routine_id: Optional[int] = None):
         body = json.dumps(payload, sort_keys=True)
@@ -1053,10 +1100,12 @@ class PostgresDal(PlanRepository):
         sql = "INSERT INTO wger_export_log(plan_id, week_number, payload_json, response_json, checksum, routine_id) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (plan_id, week_number, checksum) DO NOTHING;"
         with self._get_cursor() as cur:
             cur.execute(sql, (plan_id, week_number, Json(payload), Json(response or {}), checksum, routine_id))
+        """Perform record wger export."""
     
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         # This was just a log message, so we'll keep it that way.
         log_utils.info(f"[VALIDATION] {tag}: {adjustments}")
+        """Perform save validation log."""
     def _call_function(self, function_name: str, *params: Any) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         """Execute a SQL function and return column names and rows."""
         with self._get_cursor(use_dict_row=False) as cur:

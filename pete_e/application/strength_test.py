@@ -31,6 +31,7 @@ class _LoggedSet:
     reps: int
     weight_kg: float
     e1rm_kg: float
+    """Represent LoggedSet."""
 
 
 class StrengthTestService:
@@ -38,6 +39,7 @@ class StrengthTestService:
 
     def __init__(self, dal: PostgresDal):
         self.dal = dal
+        """Initialize this object."""
 
     def evaluate_latest_test_week_and_update_tms(self) -> StrengthTestEvaluationResult | None:
         """Evaluate the latest test week, if available, and upsert training maxes."""
@@ -139,6 +141,7 @@ class StrengthTestService:
                 continue
             planned[exercise_id] = week_start + timedelta(days=day_of_week - 1)
         return planned
+        """Perform planned test dates."""
 
     def _best_logged_set(
         self,
@@ -163,6 +166,7 @@ class StrengthTestService:
                 candidates = exact_day_candidates
 
         return max(candidates, key=lambda item: (item.e1rm_kg, item.weight_kg, item.reps))
+        """Perform best logged set."""
 
     def _row_to_logged_set(self, row: Mapping[str, Any]) -> _LoggedSet | None:
         test_date = self._coerce_date(row.get("date"))
@@ -178,14 +182,17 @@ class StrengthTestService:
             weight_kg=weight_kg,
             e1rm_kg=self._e1rm_epley(weight_kg, reps),
         )
+        """Perform row to logged set."""
 
     @staticmethod
     def _round_to_2p5(value: float) -> float:
         return round(value / 2.5) * 2.5
+        """Perform round to 2p5."""
 
     @staticmethod
     def _e1rm_epley(weight_kg: float, reps: int) -> float:
         return weight_kg * (1.0 + reps / 30.0)
+        """Perform e1rm epley."""
 
     @staticmethod
     def _coerce_date(value: Any) -> date | None:
@@ -201,6 +208,7 @@ class StrengthTestService:
             except ValueError:
                 return None
         return None
+        """Perform coerce date."""
 
     @staticmethod
     def _coerce_int(value: Any) -> int | None:
@@ -214,6 +222,7 @@ class StrengthTestService:
             return int(value)
         except (TypeError, ValueError):
             return None
+        """Perform coerce int."""
 
     @staticmethod
     def _coerce_float(value: Any) -> float | None:
@@ -223,3 +232,4 @@ class StrengthTestService:
             return float(value)
         except (TypeError, ValueError):
             return None
+        """Perform coerce float."""

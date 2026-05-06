@@ -155,6 +155,7 @@ _FIVE_THREE_ONE_TEMPLATE: Dict[int, Dict[str, object]] = {
 
 def _normalise_week_number(week_number: int) -> int:
     return week_number if week_number in _FIVE_THREE_ONE_TEMPLATE else 1
+    """Perform normalise week number."""
 
 
 def get_main_set_scheme(week_number: int) -> List[Dict[str, float]]:
@@ -201,14 +202,17 @@ def describe_main_set(
     set_reps = reps if reps is not None else entry["reps"]
     tag = "AMRAP" if entry.get("amrap") else f"{int(set_reps)} reps"
     return f"{entry.get('label') or f'Set {set_index}'} @ {set_percent:.0f}% TM ({tag})"
+    """Perform describe main set."""
 
 
 def describe_assistance(sets: int | None, reps: int | None) -> str:
     return f"Assistance {sets or 3} x {reps or 10}"
+    """Perform describe assistance."""
 
 
 def describe_core(sets: int | None, reps: int | None) -> str:
     return f"Core {sets or 3} x {reps or 12}"
+    """Perform describe core."""
 
 
 def format_rest_seconds(seconds: int | None) -> str | None:
@@ -220,6 +224,7 @@ def format_rest_seconds(seconds: int | None) -> str | None:
     if minutes:
         return f"Rest {minutes}m"
     return f"Rest {secs}s"
+    """Perform format rest seconds."""
 
 
 def format_weight_kg(weight_kg: float | None) -> str | None:
@@ -230,6 +235,7 @@ def format_weight_kg(weight_kg: float | None) -> str | None:
         return f"{int(rounded)} kg"
     text = f"{rounded:.2f}".rstrip("0").rstrip(".")
     return f"{text} kg"
+    """Perform format weight kg."""
 
 
 def workout_display_order(
@@ -271,6 +277,7 @@ def _clean_number_text(value: Any) -> str | None:
     if numeric.is_integer():
         return str(int(numeric))
     return f"{numeric:.1f}".rstrip("0").rstrip(".")
+    """Perform clean number text."""
 
 
 def _speed_range_text(step: Mapping[str, Any]) -> str | None:
@@ -283,6 +290,7 @@ def _speed_range_text(step: Mapping[str, Any]) -> str | None:
     if exact:
         return f"{exact} km/h"
     return None
+    """Perform speed range text."""
 
 
 def running_session_summary(details: Mapping[str, Any] | None) -> str | None:
@@ -364,6 +372,7 @@ def running_session_summary(details: Mapping[str, Any] | None) -> str | None:
         "long_run": "Long run",
     }.get(session_type)
     return label
+    """Perform running session summary."""
 
 
 def _stretch_step_label(step: Mapping[str, Any]) -> str | None:
@@ -381,6 +390,7 @@ def _stretch_step_label(step: Mapping[str, Any]) -> str | None:
     if movement_type:
         return f"{name} [{movement_type}]"
     return name
+    """Perform stretch step label."""
 
 
 def stretch_routine_summary(details: Mapping[str, Any] | None) -> str | None:
@@ -421,6 +431,7 @@ def stretch_routine_summary(details: Mapping[str, Any] | None) -> str | None:
         if label:
             snippets.append(label)
     return f"{display_name}: " + "; ".join(snippets)
+    """Perform stretch routine summary."""
 
 
 def stretch_routine_description(details: Mapping[str, Any] | None) -> str:
@@ -446,6 +457,7 @@ def stretch_routine_description(details: Mapping[str, Any] | None) -> str:
                 lines.append(f"{index}. {label}")
 
     return "\n".join(lines).strip()
+    """Perform stretch routine description."""
 
 
 def build_export_comment(
@@ -469,6 +481,7 @@ def build_export_comment(
         return f"{comment}: {stretch_summary}" if comment else stretch_summary
 
     return comment or None
+    """Perform build export comment."""
 
 
 # ------------------------------------------------------------------------------
@@ -524,6 +537,7 @@ DEFAULT_CORE_POOL_IDS: List[int] = [458, 500, 580, 1001, 1410]
 
 def default_assistance_for(main_lift_id: int) -> List[int]:
     return list(_ASSISTANCE_FALLBACK.get(main_lift_id, []))
+    """Perform default assistance for."""
 
 
 def classify_exercise(exercise_id: int | None) -> str:
@@ -536,6 +550,7 @@ def classify_exercise(exercise_id: int | None) -> str:
     if exercise_id in DEFAULT_CORE_POOL_IDS:
         return "core"
     return "assistance"
+    """Perform classify exercise."""
 
 
 # Assistance prescriptions
@@ -690,6 +705,7 @@ def _base_running_details(session_type: str) -> Dict[str, Any]:
         "anchor_pace_kph": ANCHOR_5K_PACE_KPH,
         "incline_hint": TREADMILL_OPTIONAL_INCLINE_HINT,
     }
+    """Perform base running details."""
 
 
 def quality_intervals_details() -> Dict[str, Any]:
@@ -707,6 +723,7 @@ def quality_intervals_details() -> Dict[str, Any]:
         {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
     ]
     return details
+    """Perform quality intervals details."""
 
 
 def quality_tempo_details() -> Dict[str, Any]:
@@ -717,6 +734,7 @@ def quality_tempo_details() -> Dict[str, Any]:
         {"kind": "cooldown", "duration_minutes": 5, "speed_kph": 8.5},
     ]
     return details
+    """Perform quality tempo details."""
 
 
 def easy_run_details(
@@ -737,6 +755,7 @@ def easy_run_details(
         }
     ]
     return details
+    """Perform easy run details."""
 
 
 def steady_run_details(
@@ -757,6 +776,7 @@ def steady_run_details(
         }
     ]
     return details
+    """Perform steady run details."""
 
 
 def recovery_micro_run_details(
@@ -775,6 +795,7 @@ def recovery_micro_run_details(
         }
     ]
     return details
+    """Perform recovery micro run details."""
 
 
 def long_run_details(
@@ -800,3 +821,4 @@ def long_run_details(
         "cap_distance_km": None,
     }
     return details
+    """Perform long run details."""

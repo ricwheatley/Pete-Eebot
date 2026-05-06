@@ -22,38 +22,49 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environme
         def print(self, *args, **kwargs):  # noqa: D401 - mimic ``rich`` signature
             text = " ".join(str(arg) for arg in args)
             print(text)
+            """Perform print."""
 
         def print_json(self, data):
             print(data)
+            """Perform print json."""
 
     class Table:  # type: ignore[override]
         def __init__(self, *columns, **_kwargs):
             self._columns = list(columns)
             self._rows: list[tuple[str, ...]] = []
+            """Initialize this object."""
 
         def add_column(self, column):
             self._columns.append(str(column))
+            """Perform add column."""
 
         def add_row(self, *row):
             self._rows.append(tuple(str(item) for item in row))
+            """Perform add row."""
 
         def __str__(self):
             header = " | ".join(self._columns)
             rows = [" | ".join(row) for row in self._rows]
             body = "\n".join(rows)
             return "\n".join(filter(None, [header, body])) or "(table output unavailable)"
+            """Implement the `__str__` dunder method behavior."""
+        """Represent Table."""
 
     class Text:  # type: ignore[override]
         def __init__(self, initial: str | None = None):
             self._parts: list[str] = []
             if initial:
                 self._parts.append(str(initial))
+            """Initialize this object."""
 
         def append(self, text, style=None):  # noqa: D401 - match ``rich`` API subset
             self._parts.append(str(text))
+            """Perform append."""
 
         def __str__(self):
             return "".join(self._parts)
+            """Implement the `__str__` dunder method behavior."""
+        """Represent Text."""
 from pathlib import Path
 
 from typing_extensions import Annotated
@@ -110,6 +121,7 @@ def _echo_error(message: str) -> None:
         secho(message, err=True, fg="red")
     else:  # pragma: no cover - exercised via typer test stubs
         typer.echo(message)
+    """Perform echo error."""
 
 
 def _exit_for_application_error(exc: ApplicationError, *, context: str) -> None:
@@ -144,6 +156,7 @@ def _format_body_age_line(trend) -> str | None:
     if delta is None:
         return f"{line} (7d delta n/a)"
     return f"{line} (7d delta {delta:+.1f}y)"
+    """Perform format body age line."""
 
 
 def _coerce_summary_date(value: Any) -> date | None:
@@ -157,6 +170,7 @@ def _coerce_summary_date(value: Any) -> date | None:
         except ValueError:
             return None
     return None
+    """Perform coerce summary date."""
 
 
 def _format_body_comp_line(dal: Any, target_date: date) -> str | None:
@@ -205,6 +219,7 @@ def _format_body_comp_line(dal: Any, target_date: date) -> str | None:
         return f"Muscle trend: {avg_current:.1f}% avg this week (steady vs prior)."
 
     return f"Muscle trend: {avg_current:.1f}% avg this week."
+    """Perform format body comp line."""
 
 
 def _format_hrv_line(dal: Any, target_date: date) -> str | None:
@@ -262,6 +277,7 @@ def _format_hrv_line(dal: Any, target_date: date) -> str | None:
     if avg_previous is not None:
         line += f" (7d avg {avg_previous:.0f} ms)"
     return line
+    """Perform format hrv line."""
 
 
 def _collect_trend_samples(dal: Any, target_date: date) -> List[tuple[date, dict]]:
@@ -283,6 +299,7 @@ def _collect_trend_samples(dal: Any, target_date: date) -> List[tuple[date, dict
         samples.append((row_date, row))
     samples.sort(key=lambda item: item[0])
     return samples
+    """Perform collect trend samples."""
 
 
 def _build_trend_paragraph(dal: Any, target_date: date) -> str | None:
@@ -294,6 +311,7 @@ def _build_trend_paragraph(dal: Any, target_date: date) -> str | None:
         return None
     sentences = ["Trend check: " + lines[0]] + lines[1:]
     return " ".join(sentences)
+    """Perform build trend paragraph."""
 
 def _append_line(base: str | None, addition: str) -> str:
     base_text = "" if base is None else str(base)
@@ -304,6 +322,7 @@ def _append_line(base: str | None, addition: str) -> str:
     if not base_text.endswith("\n"):
         base_text = f"{base_text}\n"
     return f"{base_text}{addition}"
+    """Perform append line."""
 
 _HRV_METRIC_KEYS = ("hrv_sdnn_ms", "hrv_rmssd_ms", "hrv_daily_ms", "hrv")
 
@@ -539,9 +558,11 @@ def _patch_cli_runner_boolean_flags() -> None:
                 i += 1
             args_list = normalized
         return original_invoke(self, app, args_list, **kwargs)
+        """Perform patched invoke."""
 
     setattr(patched_invoke, "__pete_flag_patch__", True)
     CliRunner.invoke = patched_invoke  # type: ignore[attr-defined]
+    """Perform patch cli runner boolean flags."""
 
 
 _patch_cli_runner_boolean_flags()

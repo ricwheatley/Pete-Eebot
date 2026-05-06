@@ -30,6 +30,7 @@ class AppleHealthWriter:
         self._device_cache: Dict[str, int] = {}
         self._metric_type_cache: Dict[str, int] = {}
         self._workout_type_cache: Dict[str, int] = {}
+        """Initialize this object."""
 
     def _ensure_ids_cached(self, data: dict) -> None:
         """Efficiently pre-fetches all required device and type IDs."""

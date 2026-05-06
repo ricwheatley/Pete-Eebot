@@ -10,6 +10,8 @@ config_stub = types.ModuleType("pete_e.config")
 class _StubSettings:
     def __init__(self):
         self.log_path = Path("/tmp/pete_eebot-test.log")
+        """Initialize this object."""
+    """Represent StubSettings."""
 
 config_stub.Settings = _StubSettings
 config_stub.settings = _StubSettings()
@@ -31,6 +33,7 @@ class DummyRepo(PlanRepository):
         self.assist_calls = []
         self.saved_plans = []
         self.saved_workouts = []
+        """Initialize this object."""
 
     def get_latest_training_maxes(self) -> dict[str, float | None]:
         # This method is required by the PlanRepository interface
@@ -40,20 +43,24 @@ class DummyRepo(PlanRepository):
             "deadlift": 120.0,
             "ohp": 60.0,
         }
+        """Perform get latest training maxes."""
 
     def save_full_plan(self, plan_dict: dict) -> int:
         # This method is required by the PlanRepository interface
         self.saved_plans.append(plan_dict)
         return 1 # Return a dummy plan ID
+        """Perform save full plan."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> list[int]:
         # Mimic the old behavior for fetching assistance exercises
         self.assist_calls.append(main_lift_id)
         return [100 + main_lift_id, 200 + main_lift_id, 300 + main_lift_id]
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self) -> list[int]:
         # Mimic the old behavior for fetching core exercises
         return [999, 998, 997]
+        """Perform get core pool ids."""
 
 
 @pytest.fixture

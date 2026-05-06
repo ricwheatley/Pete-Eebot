@@ -16,6 +16,7 @@ class JsonFileTokenStorage(TokenStorage):
 
     def __init__(self, path: Path | str) -> None:
         self._path = Path(path)
+        """Initialize this object."""
 
     def read_tokens(self) -> Optional[Dict[str, object]]:
         if not self._path.exists():
@@ -26,6 +27,7 @@ class JsonFileTokenStorage(TokenStorage):
         except Exception as exc:  # pragma: no cover - defensive logging
             log_message(f"Failed to read tokens from {self._path}: {exc}", "WARN")
             return None
+        """Perform read tokens."""
 
     def save_tokens(self, tokens: Dict[str, object]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,7 @@ class JsonFileTokenStorage(TokenStorage):
             os.chmod(self._path, 0o600)
         except OSError as exc:  # pragma: no cover - depends on platform
             log_message(f"Could not set permissions on {self._path}: {exc}", "WARN")
+        """Perform save tokens."""
 
 
 __all__ = ["JsonFileTokenStorage"]

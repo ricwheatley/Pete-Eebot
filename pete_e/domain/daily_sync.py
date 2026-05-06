@@ -129,6 +129,7 @@ class DailySyncService:
         self._repository = repository
         self._withings = withings_source
         self._apple = apple_ingestor
+        """Initialize this object."""
 
     def run_full(self, *, days: int) -> DailySyncResult:
         """Run the full multi-source sync."""
@@ -194,6 +195,7 @@ class DailySyncService:
             statuses={"Withings": "ok"},
             alerts=(),
         )
+        """Perform sync withings."""
 
     def _refresh_views(self, *, days: int, include_actual: bool) -> DailySyncSourceResult:
         try:
@@ -216,6 +218,7 @@ class DailySyncService:
             statuses={label: "ok"},
             alerts=(),
         )
+        """Perform refresh views."""
 
     def _ingest_apple(self) -> AppleHealthIngestResult:
         try:
@@ -228,6 +231,7 @@ class DailySyncService:
                 statuses={"Apple Health": "failed"},
                 alerts=(),
             )
+        """Perform ingest apple."""
 
     def _combine(self, parts: Sequence[DailySyncSourceResult | AppleHealthIngestResult]) -> DailySyncResult:
         success = True
@@ -247,6 +251,7 @@ class DailySyncService:
             statuses=dict(statuses),
             alerts=tuple(alerts),
         )
+        """Perform combine."""
 
 
 __all__ = [

@@ -31,6 +31,7 @@ class AppleIngestError(Exception):
 
     def __post_init__(self) -> None:  # pragma: no cover - simple data plumbing
         super().__init__(self._compose_message())
+        """Implement the `__post_init__` dunder method behavior."""
 
     def _compose_message(self) -> str:
         parts = [self.stage, self.reason]
@@ -38,9 +39,11 @@ class AppleIngestError(Exception):
         if self.file_path:
             message = f"{message} [{self.file_path}]"
         return message
+        """Perform compose message."""
 
     def __str__(self) -> str:  # pragma: no cover - defers to _compose_message
         return self._compose_message()
+        """Implement the `__str__` dunder method behavior."""
 
 
 def _get_json_from_content(path: str, content_bytes: bytes) -> Optional[Dict]:
@@ -85,6 +88,7 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
         self._client = client
         self._parser = parser or AppleHealthParser()
         self._writer_factory = writer_factory or AppleHealthWriter
+        """Initialize this object."""
 
     def ingest(self) -> AppleHealthIngestResult:
         try:
@@ -93,6 +97,7 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
             raise
         except Exception as exc:  # pragma: no cover - defensive
             raise AppleIngestError(stage="unexpected", reason=str(exc)) from exc
+        """Perform ingest."""
 
     def get_last_import_timestamp(self) -> datetime | None:
         try:
@@ -105,6 +110,7 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
         if timestamp and timestamp.tzinfo is None:
             return timestamp.replace(tzinfo=timezone.utc)
         return timestamp
+        """Perform get last import timestamp."""
 
     # The heavy lifting lives in a helper to keep exception boundaries tight.
     def _run_ingest(self) -> AppleHealthIngestResult:
@@ -219,12 +225,14 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
             statuses={"Apple Health": "ok"},
             alerts=(),
         )
+        """Perform run ingest."""
 
     def _download_file(self, path: str) -> bytes:
         try:
             return self._client.download_as_bytes(path)
         except Exception as exc:
             raise AppleIngestError(stage="download", reason=str(exc), file_path=path) from exc
+        """Perform download file."""
 
 
 def build_ingestor(

@@ -118,6 +118,7 @@ class PlanMapper:
         workouts = [self._build_workout(item) for item in workouts_payload]
 
         return Week(week_number=week_number, start_date=start_date, workouts=workouts)
+        """Perform build week."""
 
     def _build_workout(self, data: Mapping[str, Any]) -> Workout:
         day_of_week = self._to_int(data.get("day_of_week"))
@@ -161,6 +162,7 @@ class PlanMapper:
             recovery_focused=recovery_focused,
             details=details,
         )
+        """Perform build workout."""
 
     def _build_exercise(self, data: Mapping[str, Any]) -> Exercise | None:
         exercise_id = self._to_int(data.get("exercise_id"))
@@ -204,6 +206,7 @@ class PlanMapper:
             weight_target=weight_target,
             muscle_group=muscle_group,
         )
+        """Perform build exercise."""
 
     def _iter_week_payloads(self, payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
         weeks = payload.get("plan_weeks")
@@ -215,6 +218,7 @@ class PlanMapper:
             return weeks_alt
 
         return []
+        """Perform iter week payloads."""
 
     def _workout_to_payload(self, workout: Workout) -> dict[str, Any]:
         exercise = workout.exercise
@@ -247,6 +251,7 @@ class PlanMapper:
                 }
             )
         return payload
+        """Perform workout to payload."""
 
     def _to_int(self, value: Any) -> int | None:
         if value is None:
@@ -269,9 +274,11 @@ class PlanMapper:
                 except ValueError as exc:  # pragma: no cover - defensive
                     raise PlanMappingError(f"Cannot convert '{value}' to int") from exc
         raise PlanMappingError(f"Cannot convert type {type(value)!r} to int")
+        """Perform to int."""
 
     def _to_date(self, value: Any) -> date | None:
         return converters.to_date(value)
+        """Perform to date."""
 
     def _to_time_string(self, value: Any) -> str | None:
         if value is None:
@@ -286,6 +293,7 @@ class PlanMapper:
         except ValueError:
             return None
         return parsed.strftime("%H:%M:%S")
+        """Perform to time string."""
 
     def _validate_metadata(self, metadata: Any) -> MutableMapping[str, Any] | None:
         if metadata is None:
@@ -293,3 +301,4 @@ class PlanMapper:
         if isinstance(metadata, MutableMapping):
             return metadata
         raise PlanMappingError("metadata must be a mapping when provided")
+        """Perform validate metadata."""

@@ -20,9 +20,12 @@ class StubValidationService:
             applied=False,
             needs_backoff=False,
         )
+        """Perform validate and adjust plan."""
 
     def get_adherence_snapshot(self, start_date: date):
         return None
+        """Perform get adherence snapshot."""
+    """Represent StubValidationService."""
 
 
 class DryRunDal:
@@ -30,15 +33,20 @@ class DryRunDal:
         self.rows: List[Dict[str, Any]] = [
             {"day_of_week": 1, "exercise_id": 10, "sets": 3, "reps": 5},
         ]
+        """Initialize this object."""
 
     def was_week_exported(self, plan_id: int, week_number: int) -> bool:
         return False
+        """Perform was week exported."""
 
     def get_plan_week_rows(self, plan_id: int, week_number: int):
         return list(self.rows)
+        """Perform get plan week rows."""
 
     def record_wger_export(self, *_, **__):  # pragma: no cover - dry run path should skip persistence
         raise AssertionError("dry run should not persist")
+        """Perform record wger export."""
+    """Represent DryRunDal."""
 
 
 def test_export_service_dry_run_returns_payload():
@@ -55,3 +63,4 @@ def test_export_service_dry_run_returns_payload():
 
     assert result["status"] == "dry-run"
     assert result["payload"]["week_number"] == 1
+    """Perform test export service dry run returns payload."""

@@ -33,26 +33,33 @@ class StubDal(MockableDal):
         self.history_calls: List[Dict[str, Any]] = []
         self.validation_calls: List[Dict[str, Any]] = []
         self.backoff_calls: List[Dict[str, Any]] = []
+        """Initialize this object."""
 
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         self.history_calls.append({"start": start_date, "end": end_date})
         return list(self._historical_rows)
+        """Perform get historical data."""
 
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         return self._plan
+        """Perform get active plan."""
 
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:  # noqa: ARG002
         return None
+        """Perform find plan by start date."""
 
     def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:  # noqa: ARG002
         return list(self._planned_volume)
+        """Perform get plan muscle volume."""
 
     def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:  # noqa: ARG002
         return list(self._actual_volume)
+        """Perform get actual muscle volume."""
 
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         self.validation_calls.append({"week_start": week_start})
         return super().get_data_for_validation(week_start)
+        """Perform get data for validation."""
 
     def apply_plan_backoff(self, week_start_date: date, *, set_multiplier: float, rir_increment: int) -> None:
         self.backoff_calls.append(
@@ -62,6 +69,8 @@ class StubDal(MockableDal):
                 "rir_increment": rir_increment,
             }
         )
+        """Perform apply plan backoff."""
+    """Represent StubDal."""
 
 
 def _make_decision(should_apply: bool) -> ValidationDecision:
@@ -90,6 +99,7 @@ def _make_decision(should_apply: bool) -> ValidationDecision:
         recommendation=recommendation,
         applied=False,
     )
+    """Perform make decision."""
 
 
 def test_validation_service_applies_adjustment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,6 +137,7 @@ def test_validation_service_applies_adjustment(monkeypatch: pytest.MonkeyPatch) 
             }
         )
         return _make_decision(should_apply=True)
+        """Perform fake validate."""
 
     monkeypatch.setattr(
         "pete_e.application.validation_service.domain_validate_and_adjust",
@@ -145,6 +156,7 @@ def test_validation_service_applies_adjustment(monkeypatch: pytest.MonkeyPatch) 
     assert len(dal.validation_calls) == 1
     assert decision.applied is True
     assert decision.should_apply is True
+    """Perform test validation service applies adjustment."""
 
 
 def test_validation_service_handles_no_application(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -162,6 +174,7 @@ def test_validation_service_handles_no_application(monkeypatch: pytest.MonkeyPat
     assert decision.applied is False
     assert not dal.backoff_calls
     assert len(dal.validation_calls) == 1
+    """Perform test validation service handles no application."""
 
 
 class ComprehensiveDal(MockableDal):
@@ -178,24 +191,31 @@ class ComprehensiveDal(MockableDal):
             {"muscle_id": 1, "date": date(2024, 6, 5), "actual_volume_kg": 180.0}
         ]
         self.calls: Dict[str, Any] = {}
+        """Initialize this object."""
 
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         return self.plan_record
+        """Perform get active plan."""
 
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:  # noqa: ARG002
         return None
+        """Perform find plan by start date."""
 
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         self.calls["history"] = (start_date, end_date)
         return list(self.history)
+        """Perform get historical data."""
 
     def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         self.calls.setdefault("planned", []).append((plan_id, week_number))
         return list(self.planned_by_week.get(week_number, []))
+        """Perform get plan muscle volume."""
 
     def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         self.calls["actual"] = (start_date, end_date)
         return list(self.actual_rows)
+        """Perform get actual muscle volume."""
+    """Represent ComprehensiveDal."""
 
 
 def test_mock_dal_get_data_for_validation_compiles_expected_payload() -> None:
@@ -217,3 +237,4 @@ def test_mock_dal_get_data_for_validation_compiles_expected_payload() -> None:
     assert dal.calls["history"] == (base_start, week_start - timedelta(days=1))
     assert dal.calls["planned"] == [(dal.plan_record["id"], 2)]
     assert dal.calls["actual"] == (week_start - timedelta(days=7), week_start - timedelta(days=1))
+    """Perform test mock dal get data for validation compiles expected payload."""

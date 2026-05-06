@@ -7,6 +7,7 @@ import pytest
 @pytest.fixture()
 def sync_module():
     return importlib.import_module("scripts.sync_wger_catalog")
+    """Perform sync module."""
 
 
 def test_catalog_sync_cli_invokes_service(monkeypatch, sync_module):
@@ -17,3 +18,4 @@ def test_catalog_sync_cli_invokes_service(monkeypatch, sync_module):
     sync_module.main()
 
     mock_service.run.assert_called_once_with()
+    """Perform test catalog sync cli invokes service."""

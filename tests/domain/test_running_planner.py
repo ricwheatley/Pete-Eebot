@@ -14,6 +14,7 @@ def _recent_beginner_runs(as_of: date):
         {"workout_date": as_of - timedelta(days=idx * 3), "total_distance_km": distance}
         for idx, distance in enumerate(distances)
     ]
+    """Perform recent beginner runs."""
 
 
 def test_running_planner_builds_foundation_block_from_low_run_base() -> None:
@@ -47,6 +48,7 @@ def test_running_planner_builds_foundation_block_from_low_run_base() -> None:
     long_run_week2 = next(session for session in week2 if session["day_of_week"] == 6)
     assert long_run_week1["details"]["steps"][0]["distance_km"] == 6
     assert long_run_week2["details"]["steps"][0]["distance_km"] == 7
+    """Perform test running planner builds foundation block from low run base."""
 
 
 def test_running_planner_builds_recovery_week_when_health_metrics_are_poor() -> None:
@@ -83,6 +85,7 @@ def test_running_planner_builds_recovery_week_when_health_metrics_are_poor() -> 
     assert week[0]["comment"] == "Recovery run-walk"
     assert week[0]["optional"] is True
     assert week[0]["recovery_focused"] is True
+    """Perform test running planner builds recovery week when health metrics are poor."""
 
 
 def test_morning_run_adjustment_downgrades_planned_quality_when_recovery_dips() -> None:
@@ -118,3 +121,4 @@ def test_morning_run_adjustment_downgrades_planned_quality_when_recovery_dips() 
     assert adjustment.should_backoff is True
     assert "Quality run" in adjustment.message
     assert "swap today's run" in adjustment.message
+    """Perform test morning run adjustment downgrades planned quality when recovery dips."""

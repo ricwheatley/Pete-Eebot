@@ -6,6 +6,7 @@ from pete_e.application.catalog_sync import CatalogSyncService
 
 def main() -> None:
     CatalogSyncService().run()
+    """Perform main."""
 
 
 if __name__ == "__main__":
