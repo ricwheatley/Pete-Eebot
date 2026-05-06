@@ -62,6 +62,7 @@ def main():
             msg = f"❌ CRITICAL: {SERVICE} is DOWN and restart failed"
             logger.error(msg)
             send_telegram_alert(msg)
+    """Perform main."""
 
 if __name__ == "__main__":
     main()

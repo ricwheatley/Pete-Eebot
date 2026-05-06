@@ -9,6 +9,7 @@ from pete_e.domain import body_age, narrative_builder
 class StubDal:
     def __init__(self, rows):
         self._rows = rows
+        """Initialize this object."""
 
     def get_historical_data(self, start_date, end_date):
         return [
@@ -16,10 +17,13 @@ class StubDal:
             for row in self._rows
             if start_date <= row["date"] <= end_date
         ]
+        """Perform get historical data."""
+    """Represent StubDal."""
 
 
 def make_row(day: date, value: float | None):
     return {"date": day, "body_age_years": value}
+    """Perform make row."""
 
 
 class StubOrchestrator:
@@ -27,10 +31,13 @@ class StubOrchestrator:
         self._daily_summary = daily_summary
         self.dal = dal
         self.requested_dates: list[date | None] = []
+        """Initialize this object."""
 
     def get_daily_summary(self, target_date: date | None = None) -> str:
         self.requested_dates.append(target_date)
         return self._daily_summary
+        """Perform get daily summary."""
+    """Represent StubOrchestrator."""
 
 
 def test_get_body_age_trend_computes_delta():
@@ -48,6 +55,7 @@ def test_get_body_age_trend_computes_delta():
     assert trend.sample_date == target
     assert trend.value == pytest.approx(38.6)
     assert trend.delta == pytest.approx(-0.6)
+    """Perform test get body age trend computes delta."""
 
 
 def test_get_body_age_trend_handles_missing_history():
@@ -58,6 +66,7 @@ def test_get_body_age_trend_handles_missing_history():
 
     assert trend.value == pytest.approx(38.6)
     assert trend.delta is None
+    """Perform test get body age trend handles missing history."""
 
 
 def test_build_daily_summary_appends_body_age_line():
@@ -75,6 +84,7 @@ def test_build_daily_summary_appends_body_age_line():
     assert "Body Age: 38.6y" in summary
     assert "7d delta -0.6y" in summary
     assert orch.requested_dates == [target]
+    """Perform test build daily summary appends body age line."""
 
 
 def test_build_daily_summary_shows_na_when_missing():
@@ -85,6 +95,7 @@ def test_build_daily_summary_shows_na_when_missing():
     summary = messenger.build_daily_summary(orchestrator=orch, target_date=target)
 
     assert "Body Age: n/a" in summary
+    """Perform test build daily summary shows na when missing."""
 
 
 def test_weekly_narrative_includes_body_age_trend(monkeypatch):
@@ -94,6 +105,8 @@ def test_weekly_narrative_includes_body_age_trend(monkeypatch):
         @classmethod
         def utcnow(cls):
             return datetime.combine(fake_today, datetime.min.time())
+            """Perform utcnow."""
+        """Represent FakeDateTime."""
 
     monkeypatch.setattr(narrative_builder, "datetime", _FakeDateTime)
     monkeypatch.setattr(narrative_builder.random, "choice", lambda seq: seq[0])
@@ -113,3 +126,4 @@ def test_weekly_narrative_includes_body_age_trend(monkeypatch):
 
     assert "Body Age averaged 38.5y this week" in narrative
     assert "down 0.6y from last week" in narrative
+    """Perform test weekly narrative includes body age trend."""

@@ -28,6 +28,7 @@ def test_ping_checks_authenticated_endpoint_and_reports_host(monkeypatch: pytest
     def fake_request(method: str, path: str, **kwargs):
         calls.append((method, path, kwargs))
         return {"results": []}
+        """Perform fake request."""
 
     monkeypatch.setattr(client, "_request", fake_request)
 
@@ -35,6 +36,7 @@ def test_ping_checks_authenticated_endpoint_and_reports_host(monkeypatch: pytest
 
     assert detail == "wger.de (api-key)"
     assert calls == [("GET", "/routine/", {"params": {"limit": 1}})]
+    """Perform test ping checks authenticated endpoint and reports host."""
 
 
 def test_delete_all_days_ignores_stale_404(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,6 +71,7 @@ def test_delete_all_days_ignores_stale_404(monkeypatch: pytest.MonkeyPatch) -> N
             response = SimpleNamespace(status_code=404, text='{"detail":"Not found."}')
             raise WgerError("DELETE /day/111/ failed with 404", response)
         return None
+        """Perform fake request."""
 
     monkeypatch.setattr(client, "_request", fake_request)
 
@@ -76,6 +79,7 @@ def test_delete_all_days_ignores_stale_404(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert deleted == ["/day/111/", "/day/222/"]
     assert warnings == ["Skipping stale wger day 111 for routine 42: already deleted."]
+    """Perform test delete all days ignores stale 404."""
 
 
 def test_ensure_custom_exercise_reuses_existing_translation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,6 +115,7 @@ def test_ensure_custom_exercise_reuses_existing_translation(monkeypatch: pytest.
                 ]
             }
         raise AssertionError("unexpected write call")
+        """Perform fake request."""
 
     monkeypatch.setattr(client, "_request", fake_request)
 
@@ -123,6 +128,7 @@ def test_ensure_custom_exercise_reuses_existing_translation(monkeypatch: pytest.
     assert calls == [
         ("GET", "/exercise-translation/", {"params": {"name": "Limber 11", "language": 2}})
     ]
+    """Perform test ensure custom exercise reuses existing translation."""
 
 
 def test_ensure_custom_exercise_updates_existing_translation_when_description_changes(
@@ -162,6 +168,7 @@ def test_ensure_custom_exercise_updates_existing_translation_when_description_ch
         if method == "PATCH":
             return {"id": 3100}
         raise AssertionError(f"unexpected call {method} {path}")
+        """Perform fake request."""
 
     monkeypatch.setattr(client, "_request", fake_request)
 
@@ -187,6 +194,7 @@ def test_ensure_custom_exercise_updates_existing_translation_when_description_ch
             },
         ),
     ]
+    """Perform test ensure custom exercise updates existing translation when description changes."""
 
 
 def test_ensure_custom_exercise_creates_exercise_and_translation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -216,6 +224,7 @@ def test_ensure_custom_exercise_creates_exercise_and_translation(monkeypatch: py
         if method == "POST" and path == "/exercise-translation/":
             return {"id": 9001}
         raise AssertionError(f"unexpected call {method} {path}")
+        """Perform fake request."""
 
     monkeypatch.setattr(client, "_request", fake_request)
 
@@ -254,3 +263,4 @@ def test_ensure_custom_exercise_creates_exercise_and_translation(monkeypatch: py
             },
         ),
     ]
+    """Perform test ensure custom exercise creates exercise and translation."""

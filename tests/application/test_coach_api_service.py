@@ -8,9 +8,11 @@ from pete_e.application.api_services import MetricsService
 class CoachDal:
     def __init__(self):
         self.base = date(2024, 1, 1)
+        """Initialize this object."""
 
     def get_metrics_overview(self, target_date):
         return ["metric_name"], []
+        """Perform get metrics overview."""
 
     def get_daily_summary(self, target_date):
         return {
@@ -22,6 +24,7 @@ class CoachDal:
             "strength_volume_kg": 12000,
             "body_fat_pct": 22.1,
         }
+        """Perform get daily summary."""
 
     def get_historical_data(self, start_date, end_date):
         rows = []
@@ -39,6 +42,7 @@ class CoachDal:
                 }
             )
         return rows
+        """Perform get historical data."""
 
     def get_recent_running_workouts(self, *, days, end_date):
         return [
@@ -50,6 +54,7 @@ class CoachDal:
                 "pace_min_per_km": 6.0,
             }
         ]
+        """Perform get recent running workouts."""
 
     def get_recent_strength_workouts(self, *, days, end_date):
         return [
@@ -61,15 +66,20 @@ class CoachDal:
                 "volume_kg": 1500,
             }
         ]
+        """Perform get recent strength workouts."""
 
     def get_active_plan(self):
         return {"id": 10, "start_date": date(2024, 1, 1), "weeks": 4, "is_active": True}
+        """Perform get active plan."""
 
     def get_latest_training_maxes(self):
         return {"squat": 120}
+        """Perform get latest training maxes."""
 
     def get_latest_training_max_date(self):
         return date(2023, 12, 15)
+        """Perform get latest training max date."""
+    """Represent CoachDal."""
 
 
 def test_daily_summary_adds_units_sources_and_quality():
@@ -79,6 +89,7 @@ def test_daily_summary_adds_units_sources_and_quality():
     assert payload["metrics"]["weight_kg"]["source"] == "withings_or_body_age"
     assert payload["metrics"]["body_fat_pct"]["trust_level"] == "low"
     assert payload["data_quality"]["status"] == "complete"
+    """Perform test daily summary adds units sources and quality."""
 
 
 def test_coach_state_exposes_derived_flags_and_context():
@@ -89,3 +100,4 @@ def test_coach_state_exposes_derived_flags_and_context():
     assert payload["summary"]["readiness_state"] in {"green", "amber", "red"}
     assert payload["plan_context"]["current_week_number"] == 2
     assert payload["goal_state"]["strength"]["training_maxes_kg"] == {"squat": 120}
+    """Perform test coach state exposes derived flags and context."""

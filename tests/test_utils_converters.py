@@ -15,6 +15,8 @@ def test_to_float_handles_various_inputs():
     class Convertible:
         def __float__(self):
             return 3.25
+            """Implement the `__float__` dunder method behavior."""
+        """Represent Convertible."""
 
     assert converters.to_float(None) is None
     assert converters.to_float(2.5) == 2.5
@@ -24,6 +26,7 @@ def test_to_float_handles_various_inputs():
     assert converters.to_float(" ") is None
     assert converters.to_float("not-a-number") is None
     assert converters.to_float(Convertible()) == pytest.approx(3.25)
+    """Perform test to float handles various inputs."""
 
 
 def test_to_date_accepts_common_representations():
@@ -37,6 +40,7 @@ def test_to_date_accepts_common_representations():
     assert converters.to_date("not-a-date") is None
     assert converters.to_date(42) is None
     assert converters.to_date("") is None
+    """Perform test to date accepts common representations."""
 
 
 def test_minutes_to_hours_normalises_to_float():
@@ -44,12 +48,14 @@ def test_minutes_to_hours_normalises_to_float():
     assert converters.minutes_to_hours("90") == pytest.approx(1.5)
     assert converters.minutes_to_hours(None) is None
     assert converters.minutes_to_hours("not-minutes") is None
+    """Perform test minutes to hours normalises to float."""
 
 
 def test_ensure_sentence_appends_punctuation():
     assert formatters.ensure_sentence("Bonjour") == "Bonjour."
     assert formatters.ensure_sentence("Already done!") == "Already done!"
     assert formatters.ensure_sentence(" ") == ""
+    """Perform test ensure sentence appends punctuation."""
 
 
 def test_choose_from_respects_defaults():
@@ -58,6 +64,7 @@ def test_choose_from_respects_defaults():
     assert helpers.choose_from(["one", "two", "three"], rand=rng) == "one"
     # Empty options fall back to the provided default.
     assert helpers.choose_from([], default="fallback", rand=rng) == "fallback"
+    """Perform test choose from respects defaults."""
 
 
 @pytest.mark.parametrize(
@@ -74,6 +81,7 @@ def test_average_skips_none(values: Iterable[float | None], expected: float | No
         assert result is None
     else:
         assert result == pytest.approx(expected)
+    """Perform test average skips none."""
 
 
 def test_mean_or_none_and_near_helpers():
@@ -82,3 +90,4 @@ def test_mean_or_none_and_near_helpers():
     assert math.near(1.000001, 1.000002, tolerance=1e-3)
     assert not math.near(None, 1.0)
     assert not math.near(1.0, 1.1, tolerance=1e-3)
+    """Perform test mean or none and near helpers."""

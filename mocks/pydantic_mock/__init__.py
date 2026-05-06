@@ -12,6 +12,7 @@ class FieldInfo:
     def __init__(self, default: Any = None, **kwargs: Dict[str, Any]) -> None:
         self.default = default
         self.metadata = kwargs
+        """Initialize this object."""
 
 
 def Field(default: Any = None, **kwargs: Dict[str, Any]) -> FieldInfo:
@@ -26,6 +27,7 @@ def model_validator(*, mode: str | None = None) -> Callable[[Callable[..., Any]]
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         setattr(func, "__pydantic_model_validator__", {"mode": mode or "after"})
         return func
+        """Perform decorator."""
 
     return decorator
 
@@ -38,12 +40,15 @@ class SecretStr:
 
     def __init__(self, value: Any) -> None:
         object.__setattr__(self, "_secret_value", "" if value is None else str(value))
+        """Initialize this object."""
 
     def get_secret_value(self) -> str:
         return self._secret_value
+        """Perform get secret value."""
 
     def __str__(self) -> str:  # pragma: no cover - parity with real SecretStr
         return "********"
+        """Implement the `__str__` dunder method behavior."""
 
 
 __all__ = ["Field", "FieldInfo", "SecretStr", "model_validator"]

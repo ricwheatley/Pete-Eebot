@@ -56,6 +56,7 @@ def _coerce_value(annotation: Any, raw: Any) -> Any:
         return str(raw)
 
     return raw
+    """Perform coerce value."""
 
 
 class BaseSettings:
@@ -75,6 +76,7 @@ class BaseSettings:
             setattr(self, name, value)
 
         self._run_model_validators()
+        """Initialize this object."""
 
     def _run_model_validators(self) -> None:
         """Execute any validators registered via ``model_validator``."""
@@ -103,6 +105,7 @@ class BaseSettings:
         if default is not _MISSING:
             return default
         raise ValueError(f"Missing configuration value: {name}")
+        """Perform load value."""
 
 
 __all__ = ["BaseSettings", "SettingsConfigDict"]

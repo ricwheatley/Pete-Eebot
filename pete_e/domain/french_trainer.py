@@ -19,6 +19,7 @@ class Highlight:
     name: str
     score: float
     records: Set[str]
+    """Represent Highlight."""
 def _collect_records(stats: Mapping[str, Any]) -> Set[str]:
     records: Set[str] = set()
     latest = converters.to_float(stats.get("yesterday_value"))
@@ -36,6 +37,7 @@ def _collect_records(stats: Mapping[str, Any]) -> Set[str]:
         if math_utils.near(latest, converters.to_float(stats.get(column))):
             records.add(flag)
     return records
+    """Perform collect records."""
 
 
 def _score_metric(name: str, stats: Mapping[str, Any]) -> Highlight:
@@ -59,6 +61,7 @@ def _score_metric(name: str, stats: Mapping[str, Any]) -> Highlight:
     if name in {"weight", "resting_heart_rate"} and pct_change is not None:
         score += abs(pct_change) * 0.25
     return Highlight(name=name, score=score, records=records)
+    """Perform score metric."""
 
 
 def _select_highlights(metrics: MetricMap, limit: int = 3) -> List[Highlight]:
@@ -84,6 +87,7 @@ def _select_highlights(metrics: MetricMap, limit: int = 3) -> List[Highlight]:
         if len(used) == min(limit, len(fallback_order)):
             break
     return used
+    """Perform select highlights."""
 
 
 def _format_delta(value: float | None, unit: str) -> str:
@@ -102,6 +106,7 @@ def _format_delta(value: float | None, unit: str) -> str:
     if unit == "steps":
         return f" {direction} {magnitude:,.0f}"
     return f" {direction} {magnitude:.1f}"
+    """Perform format delta."""
 
 
 def _record_suffix(records: Set[str]) -> str:
@@ -118,6 +123,7 @@ def _record_suffix(records: Set[str]) -> str:
     if "six_month_high" in records:
         return " (peak for 6 months)"
     return ""
+    """Perform record suffix."""
 
 
 def _build_weight_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -134,6 +140,7 @@ def _build_weight_line(stats: Mapping[str, Any], records: Set[str]) -> str | Non
     if suffix:
         pieces[-1] += suffix
     return " ".join(pieces)
+    """Perform build weight line."""
 
 
 def _build_body_fat_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -149,6 +156,7 @@ def _build_body_fat_line(stats: Mapping[str, Any], records: Set[str]) -> str | N
     if suffix:
         message += suffix
     return message
+    """Perform build body fat line."""
 
 
 def _build_muscle_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -164,6 +172,7 @@ def _build_muscle_line(stats: Mapping[str, Any], records: Set[str]) -> str | Non
     if suffix:
         message += suffix
     return message
+    """Perform build muscle line."""
 
 
 def _build_rhr_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -184,6 +193,7 @@ def _build_rhr_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
     if suffix:
         line += suffix
     return line
+    """Perform build rhr line."""
 
 
 def _build_steps_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -199,6 +209,7 @@ def _build_steps_line(stats: Mapping[str, Any], records: Set[str]) -> str | None
     if suffix:
         line += suffix
     return line
+    """Perform build steps line."""
 
 
 def _build_sleep_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -214,6 +225,7 @@ def _build_sleep_line(stats: Mapping[str, Any], records: Set[str]) -> str | None
     if suffix:
         line += suffix
     return line
+    """Perform build sleep line."""
 
 
 def _build_strength_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -229,6 +241,7 @@ def _build_strength_line(stats: Mapping[str, Any], records: Set[str]) -> str | N
     if suffix:
         line += suffix
     return line
+    """Perform build strength line."""
 
 
 def _build_squat_line(stats: Mapping[str, Any], records: Set[str]) -> str | None:
@@ -250,6 +263,7 @@ def _build_squat_line(stats: Mapping[str, Any], records: Set[str]) -> str | None
     if suffix:
         line += suffix
     return line
+    """Perform build squat line."""
 
 
 _BUILDER_MAP = {
@@ -277,6 +291,7 @@ def _build_generic_line(name: str, stats: Mapping[str, Any], records: Set[str]) 
     if suffix:
         line += suffix
     return line
+    """Perform build generic line."""
 
 
 def _format_highlight_paragraph(
@@ -289,6 +304,7 @@ def _format_highlight_paragraph(
     if builder is None:
         return _build_generic_line(highlight.name, stats, highlight.records)
     return builder(stats, highlight.records)
+    """Perform format highlight paragraph."""
 
 
 def _closing_phrase() -> str:
@@ -300,6 +316,7 @@ def _closing_phrase() -> str:
     if not phrase.endswith("!"):
         phrase += "!"
     return f"Pierre dit: {phrase}"
+    """Perform closing phrase."""
 
 
 def _today_session_message(session_type: str | None) -> str | None:
@@ -311,6 +328,7 @@ def _today_session_message(session_type: str | None) -> str | None:
     if session.lower() in {"rest", "rest_day"}:
         return "Aujourd'hui c'est repos. Recharge les batteries et garde une balade legere."
     return f"Aujourd'hui: {session}. On y va fort - focus et bonne technique!"
+    """Perform today session message."""
 
 
 def compose_daily_message(metrics: MetricMap, calendar_context: ContextMap | None = None) -> str:
@@ -339,3 +357,4 @@ def compose_daily_message(metrics: MetricMap, calendar_context: ContextMap | Non
     lines.append(_closing_phrase())
 
     return "\n".join(lines).strip()
+    """Perform compose daily message."""

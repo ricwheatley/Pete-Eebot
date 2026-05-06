@@ -18,6 +18,7 @@ def _resolve_level(level: str | int) -> int:
     if isinstance(level, int):
         return level
     return _LEVEL_MAP.get(str(level).upper(), logging.INFO)
+    """Perform resolve level."""
 
 
 def log_message(message: str, level: str | int = "INFO") -> None:
@@ -28,15 +29,19 @@ def log_message(message: str, level: str | int = "INFO") -> None:
 
 def debug(message: str) -> None:
     log_message(message, "DEBUG")
+    """Perform debug."""
 
 
 def info(message: str) -> None:
     log_message(message, "INFO")
+    """Perform info."""
 
 
 def warn(message: str) -> None:
     log_message(message, "WARNING")
+    """Perform warn."""
 
 
 def error(message: str) -> None:
     log_message(message, "ERROR")
+    """Perform error."""

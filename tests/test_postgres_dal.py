@@ -76,6 +76,7 @@ class TestPostgresDal(unittest.TestCase):
         values = mock_cur.executemany.call_args.args[1]
         self.assertEqual(len(values), 1)
         self.assertEqual(values[0][0], 7614618991)
+        """Perform test save withings measure groups."""
 
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
@@ -131,6 +132,7 @@ class TestPostgresDal(unittest.TestCase):
                 "SELECT sp_refresh_daily_summary(%s, %s);",
             ],
         )
+        """Perform test refresh daily summary refreshes inputs before body age."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
@@ -151,6 +153,7 @@ class TestPostgresDal(unittest.TestCase):
         executed_sql = [call.args[0] for call in mock_cur.execute.call_args_list]
         self.assertIn("SELECT to_regclass('public.core_pool');", executed_sql)
         self.assertIn("SELECT exercise_id FROM core_pool ORDER BY exercise_id", executed_sql)
+        """Perform test get core pool ids reads core pool table when present."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_core_pool_ids_falls_back_to_categories_without_core_pool(self, mock_get_pool):
@@ -174,6 +177,8 @@ class TestPostgresDal(unittest.TestCase):
         self.assertEqual(result, [201, 202])
         second_cur.execute.assert_called_once()
         self.assertIn("FROM wger_exercise ex", second_cur.execute.call_args.args[0])
+        """Perform test get core pool ids falls back to categories without core pool."""
+    """Represent TestPostgresDal."""
 
 
 

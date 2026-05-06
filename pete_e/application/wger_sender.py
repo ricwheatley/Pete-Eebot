@@ -27,10 +27,12 @@ def _summarize_adherence(adherence_snapshot: Optional[Dict[str, Any]]) -> str:
         f" Adherence ratio {ratio:.2f} "
         f"(actual {actual_total:.1f}kg vs planned {planned_total:.1f}kg)."
     )
+    """Perform summarize adherence."""
 
 def _payload_checksum(payload: Dict[str, Any]) -> str:
     body = json.dumps(payload, sort_keys=True)
     return hashlib.sha1(body.encode("utf-8")).hexdigest()
+    """Perform payload checksum."""
 
 def _normalise_weight(value: Any) -> Optional[float]:
     if value is None:
@@ -39,6 +41,7 @@ def _normalise_weight(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+    """Perform normalise weight."""
 
 
 def _flatten_week_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -66,6 +69,7 @@ def _flatten_week_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "week_number": week_number,
         "sets": sets,
     }
+    """Perform flatten week payload."""
 
 
 def _summarize_adherence(adherence_snapshot: Optional[Dict[str, Any]]) -> str:
@@ -83,6 +87,7 @@ def _summarize_adherence(adherence_snapshot: Optional[Dict[str, Any]]) -> str:
         f" Adherence ratio {ratio:.2f} "
         f"(actual {actual_total:.1f}kg vs planned {planned_total:.1f}kg)."
     )
+    """Perform summarize adherence."""
 
 
 def push_week(

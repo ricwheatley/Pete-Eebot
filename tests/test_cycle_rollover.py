@@ -16,15 +16,19 @@ class StubPlanService:
     def __init__(self, plan_id: int = 123) -> None:
         self.plan_id = plan_id
         self.calls: list[date] = []
+        """Initialize this object."""
 
     def create_next_plan_for_cycle(self, *, start_date: date) -> int:
         self.calls.append(start_date)
         return self.plan_id
+        """Perform create next plan for cycle."""
+    """Represent StubPlanService."""
 
 
 class StubExportService:
     def __init__(self) -> None:
         self.calls: list[tuple[int, int, date]] = []
+        """Initialize this object."""
 
     def export_plan_week(
         self,
@@ -37,17 +41,23 @@ class StubExportService:
     ):
         self.calls.append((plan_id, week_number, start_date, validation_decision))
         return {"status": "exported"}
+        """Perform export plan week."""
+    """Represent StubExportService."""
 
 
 class StubDal:
     def __init__(self, active_plan: dict | None = None) -> None:
         self._active_plan = active_plan or {"id": 7, "start_date": date(2024, 1, 1), "weeks": 4}
+        """Initialize this object."""
 
     def get_active_plan(self) -> dict | None:
         return self._active_plan
+        """Perform get active plan."""
 
     def close(self) -> None:  # pragma: no cover - not used in tests
         pass
+        """Perform close."""
+    """Represent StubDal."""
 
 
 def make_orchestrator(plan_service: StubPlanService | None = None, export_service: StubExportService | None = None, dal: StubDal | None = None) -> Orchestrator:
@@ -59,6 +69,7 @@ def make_orchestrator(plan_service: StubPlanService | None = None, export_servic
         export_service=export_service or StubExportService(),
     )
     return Orchestrator(container=container)
+    """Perform make orchestrator."""
 
 
 def test_run_cycle_rollover_creates_plan_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,12 +84,15 @@ def test_run_cycle_rollover_creates_plan_and_exports(monkeypatch: pytest.MonkeyP
     assert result.exported is True
     assert plan_service.calls == [date(2024, 5, 6)]
     assert export_service.calls == [(77, 1, date(2024, 5, 6), None)]
+    """Perform test run cycle rollover creates plan and exports."""
 
 
 def test_run_cycle_rollover_raises_when_plan_creation_errors() -> None:
     class ExplodingPlanService(StubPlanService):
         def create_next_plan_for_cycle(self, *, start_date: date) -> int:
             raise RuntimeError("boom")
+            """Perform create next plan for cycle."""
+        """Represent ExplodingPlanService."""
 
     orch = make_orchestrator(plan_service=ExplodingPlanService())
 
@@ -86,6 +100,7 @@ def test_run_cycle_rollover_raises_when_plan_creation_errors() -> None:
         orch.run_cycle_rollover(reference_date=date(2024, 9, 1))
 
     assert "boom" in str(excinfo.value)
+    """Perform test run cycle rollover raises when plan creation errors."""
 
 
 def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,6 +123,7 @@ def test_run_end_to_end_week_triggers_rollover_when_due(monkeypatch: pytest.Monk
     assert isinstance(outcome, WeeklyAutomationResult)
     assert outcome.rollover_triggered is True
     assert outcome.rollover.plan_id == 400
+    """Perform test run end to end week triggers rollover when due."""
 
 
 def test_run_end_to_end_week_exports_next_week_when_rollover_not_due(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,6 +143,7 @@ def test_run_end_to_end_week_exports_next_week_when_rollover_not_due(monkeypatch
 
     assert outcome.rollover_triggered is False
     assert export_service.calls == [(7, 2, date(2024, 1, 8), None)]
+    """Perform test run end to end week exports next week when rollover not due."""
 
 
 def test_run_end_to_end_week_aligns_to_previous_sunday(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,6 +161,7 @@ def test_run_end_to_end_week_aligns_to_previous_sunday(monkeypatch: pytest.Monke
     def fake_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
         captured_reference_dates.append(reference_date)
         return WeeklyCalibrationResult(message="ok", validation=None)
+        """Perform fake calibration."""
 
     monkeypatch.setattr(Orchestrator, "run_weekly_calibration", fake_calibration, raising=False)
 

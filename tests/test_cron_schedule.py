@@ -14,6 +14,7 @@ CRON_CSV = REPO_ROOT / "pete_e" / "resources" / "pete_crontab.csv"
 def _load_rows() -> list[dict[str, str]]:
     with CRON_CSV.open(encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+    """Perform load rows."""
 
 
 def test_core_automation_jobs_are_present_and_enabled() -> None:
@@ -28,6 +29,7 @@ def test_core_automation_jobs_are_present_and_enabled() -> None:
     assert jobs["sunday review"]["enabled"].lower() == "true"
     assert jobs["weekly plan message"]["enabled"].lower() == "true"
     assert jobs["telegram listener"]["enabled"].lower() == "true"
+    """Perform test core automation jobs are present and enabled."""
 
 
 def test_core_automation_jobs_point_to_live_entry_points() -> None:
@@ -37,6 +39,7 @@ def test_core_automation_jobs_point_to_live_entry_points() -> None:
     assert "python3 -m scripts.run_sunday_review" in jobs["sunday review"]["command"]
     assert "pete message --plan --send" in jobs["weekly plan message"]["command"]
     assert "pete telegram --listen-once" in jobs["telegram listener"]["command"]
+    """Perform test core automation jobs point to live entry points."""
 
 
 def test_enabled_python_module_jobs_point_to_existing_scripts() -> None:
@@ -49,6 +52,7 @@ def test_enabled_python_module_jobs_point_to_existing_scripts() -> None:
         for module_name in module_names:
             module_path = REPO_ROOT / f"{module_name.replace('.', '/')}.py"
             assert module_path.exists(), f"{row['name']} targets missing module {module_name}"
+    """Perform test enabled python module jobs point to existing scripts."""
 
 
 def test_rendered_crontab_includes_core_jobs_and_omits_disabled_entries() -> None:
@@ -60,3 +64,4 @@ def test_rendered_crontab_includes_core_jobs_and_omits_disabled_entries() -> Non
     assert "pete telegram --listen-once" in crontab
     assert "scripts.log_rotate" not in crontab
     assert "scripts.check_for_updates" not in crontab
+    """Perform test rendered crontab includes core jobs and omits disabled entries."""

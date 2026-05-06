@@ -14,9 +14,12 @@ if "rich.console" not in sys.modules:
     class _Console:
         def __init__(self, *args, **kwargs):  # pragma: no cover - simple stub
             pass
+            """Initialize this object."""
 
         def print(self, *args, **kwargs):  # pragma: no cover - mimic Console API
             pass
+            """Perform print."""
+        """Represent Console."""
 
     console_module.Console = _Console
     rich_module.console = console_module
@@ -24,12 +27,16 @@ if "rich.console" not in sys.modules:
     class _Table:
         def __init__(self, *args, **kwargs):  # pragma: no cover - simple stub
             pass
+            """Initialize this object."""
 
         def add_column(self, *args, **kwargs):  # pragma: no cover - mimic API
             pass
+            """Perform add column."""
 
         def add_row(self, *args, **kwargs):  # pragma: no cover - mimic API
             pass
+            """Perform add row."""
+        """Represent Table."""
 
     table_module.Table = _Table
     rich_module.table = table_module
@@ -37,9 +44,12 @@ if "rich.console" not in sys.modules:
     class _Text:
         def __init__(self, *args, **kwargs):  # pragma: no cover - simple stub
             pass
+            """Initialize this object."""
 
         def append(self, *args, **kwargs):  # pragma: no cover - mimic API
             pass
+            """Perform append."""
+        """Represent Text."""
 
     text_module.Text = _Text
     rich_module.text = text_module

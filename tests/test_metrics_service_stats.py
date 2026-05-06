@@ -14,6 +14,7 @@ def sample_series():
     start = date(2024, 1, 1)
     values = [float(n) for n in range(1, 11)]  # 1..10
     return {start + timedelta(days=idx): value for idx, value in enumerate(values)}
+    """Perform sample series."""
 
 
 def test_calculate_moving_averages(sample_series):
@@ -26,6 +27,7 @@ def test_calculate_moving_averages(sample_series):
     assert averages["avg_14d"] == pytest.approx(sum(range(1, 11)) / 10)
     assert averages["avg_28d"] == pytest.approx(sum(range(1, 11)) / 10)
     assert averages["avg_90d"] == pytest.approx(sum(range(1, 11)) / 10)
+    """Perform test calculate moving averages."""
 
 
 def test_find_historical_extremes(sample_series):
@@ -38,6 +40,7 @@ def test_find_historical_extremes(sample_series):
     assert extremes["six_month_low"] == pytest.approx(1.0)
     assert extremes["all_time_high"] == pytest.approx(10.0)
     assert extremes["all_time_low"] == pytest.approx(1.0)
+    """Perform test find historical extremes."""
 
 
 def test_build_metric_stats_coerces_to_floats(sample_series):
@@ -48,12 +51,14 @@ def test_build_metric_stats_coerces_to_floats(sample_series):
     assert stats["pct_change_7d"] == pytest.approx(((sum(range(4, 11)) / 7) - (sum(range(1, 11)) / 10)) / (sum(range(1, 11)) / 10) * 100.0)
     assert stats["all_time_high"] == pytest.approx(10.0)
     assert stats["all_time_low"] == pytest.approx(1.0)
+    """Perform test build metric stats coerces to floats."""
 
 
 def test_get_metrics_overview_integration(monkeypatch):
     class DummyDal:
         def __init__(self):
             self.calls = []
+            """Initialize this object."""
 
         def get_historical_data(self, start, end):
             self.calls.append((start, end))
@@ -68,6 +73,8 @@ def test_get_metrics_overview_integration(monkeypatch):
                     }
                 )
             return rows
+            """Perform get historical data."""
+        """Represent DummyDal."""
 
     dummy = DummyDal()
     overview = metrics_service.get_metrics_overview(dummy, reference_date=date(2024, 1, 11))
@@ -77,3 +84,4 @@ def test_get_metrics_overview_integration(monkeypatch):
     assert overview["steps"]["yesterday_value"] == pytest.approx(1900.0)
     # Ensure values are coerced to floats even for integers.
     assert isinstance(overview["steps"]["avg_7d"], float)
+    """Perform test get metrics overview integration."""

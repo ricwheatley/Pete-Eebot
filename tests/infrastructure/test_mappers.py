@@ -44,6 +44,7 @@ def sample_rows() -> tuple[dict[str, object], list[dict[str, object]]]:
         },
     ]
     return plan_row, workout_rows
+    """Perform sample rows."""
 
 
 def test_database_rows_to_payload_round_trip(sample_rows: tuple[dict[str, object], list[dict[str, object]]]) -> None:
@@ -70,6 +71,7 @@ def test_database_rows_to_payload_round_trip(sample_rows: tuple[dict[str, object
     assert squat_entry["sets"] == 5
     assert squat_entry["reps"] == 5
     assert squat_entry["rir"] == 2
+    """Perform test database rows to payload round trip."""
 
 
 def test_invalid_rows_raise_validation_error() -> None:
@@ -83,6 +85,7 @@ def test_invalid_rows_raise_validation_error() -> None:
             {"start_date": date(2024, 6, 3)},
             [{"week_number": 1, "day_of_week": None}],
         )
+    """Perform test invalid rows raise validation error."""
 
 
 def test_scheduled_time_wins_over_semantic_slot_for_persistence() -> None:
@@ -116,3 +119,4 @@ def test_scheduled_time_wins_over_semantic_slot_for_persistence() -> None:
 
     assert workout["slot"] == "07:05:00"
     assert workout["scheduled_time"] == "07:05:00"
+    """Perform test scheduled time wins over semantic slot for persistence."""

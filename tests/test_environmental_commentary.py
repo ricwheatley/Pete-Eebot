@@ -11,12 +11,16 @@ class _DeterministicRandom:
         if not seq:
             raise ValueError('choice sequence was empty')
         return seq[0]
+        """Perform choice."""
 
     def randint(self, a, b):
         return a
+        """Perform randint."""
 
     def random(self):
         return 0.0
+        """Perform random."""
+    """Represent DeterministicRandom."""
 
 
 @pytest.fixture
@@ -26,11 +30,13 @@ def fixed_random(monkeypatch):
     monkeypatch.setattr(narrative_builder.narrative_utils.random, 'random', lambda: 0.0)
     monkeypatch.setattr(narrative_builder.narrative_utils.random, 'choice', lambda seq: seq[0])
     return deterministic
+    """Perform fixed random."""
 
 
 @pytest.fixture(autouse=True)
 def stub_phrase_picker(monkeypatch):
     monkeypatch.setattr(narrative_builder, 'phrase_for', lambda *_, **__: 'Consistency is queen, volume is king!')
+    """Perform stub phrase picker."""
 
 
 def _base_summary():
@@ -47,6 +53,7 @@ def _base_summary():
         'readiness_headline': 'Primed',
         'readiness_tip': 'Keep the pace steady.',
     }
+    """Perform base summary."""
 
 
 def test_daily_summary_includes_environment_colour(fixed_random):
@@ -60,6 +67,7 @@ def test_daily_summary_includes_environment_colour(fixed_random):
 
     expected_line = '- Environment: 18.6 degC and 64% humidity reported for the workout.'
     assert expected_line in message.splitlines()
+    """Perform test daily summary includes environment colour."""
 
 
 def test_daily_summary_skips_environment_when_absent(fixed_random):
@@ -67,3 +75,4 @@ def test_daily_summary_skips_environment_when_absent(fixed_random):
     message = NarrativeBuilder().build_daily_summary(summary_data)
 
     assert all('Environment:' not in line for line in message.splitlines())
+    """Perform test daily summary skips environment when absent."""

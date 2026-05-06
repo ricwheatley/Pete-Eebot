@@ -13,12 +13,15 @@ class _DeterministicRandom:
         if not seq:
             raise ValueError("choice sequence was empty")
         return seq[0]
+        """Perform choice."""
 
     def randint(self, a, b):
         return a
+        """Perform randint."""
 
     def random(self):
         return 0.42
+        """Perform random."""
 
 
 @pytest.fixture
@@ -33,9 +36,11 @@ def snapshot_context(monkeypatch):
             "#Humour": "Keep the energy cheeky and the effort honest.",
         }
         return mapping.get(tags[0], "Consistency is queen, volume is king!")
+        """Perform fake phrase."""
 
     monkeypatch.setattr(narrative_builder, "phrase_for", fake_phrase)
     return deterministic
+    """Perform snapshot context."""
 
 
 def test_daily_message_snapshot(snapshot_context):
@@ -71,6 +76,7 @@ def test_daily_message_snapshot(snapshot_context):
         "Consistency is queen, volume is king!"
     )
     assert message == expected
+    """Perform test daily message snapshot."""
 
 
 def test_weekly_message_snapshot(snapshot_context, monkeypatch):
@@ -80,6 +86,8 @@ def test_weekly_message_snapshot(snapshot_context, monkeypatch):
         @classmethod
         def utcnow(cls):
             return datetime(fake_today.year, fake_today.month, fake_today.day)
+            """Perform utcnow."""
+        """Represent FixedDateTime."""
 
     monkeypatch.setattr(narrative_builder, "datetime", _FixedDateTime)
 
@@ -128,3 +136,4 @@ def test_weekly_message_snapshot(snapshot_context, monkeypatch):
         "Keep grinding or the gains train leaves without you 🚂💪"
     )
     assert message == expected
+    """Perform test weekly message snapshot."""

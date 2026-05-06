@@ -43,14 +43,18 @@ class _NoopDailySyncService:
     def __init__(self) -> None:
         self.full_calls: list[int] = []
         self.withings_calls: list[int] = []
+        """Initialize this object."""
 
     def run_full(self, *, days: int) -> DailySyncResult:
         self.full_calls.append(days)
         return DailySyncResult(success=True, failures=(), statuses={}, alerts=())
+        """Perform run full."""
 
     def run_withings_only(self, *, days: int) -> DailySyncResult:
         self.withings_calls.append(days)
         return DailySyncResult(success=True, failures=(), statuses={}, alerts=())
+        """Perform run withings only."""
+    """Represent NoopDailySyncService."""
 
 
 __all__ = ["build_stub_container"]

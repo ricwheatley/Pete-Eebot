@@ -70,6 +70,7 @@ class PlanService:
         except Exception as exc:  # pragma: no cover - environment specific
             log_utils.warn(f"Running planner could not load health metrics: {exc}")
             return []
+        """Perform load recent health metrics."""
 
     def _load_recent_running_workouts(self, *, end_date: date) -> List[Dict[str, Any]]:
         loader = getattr(self.dal, "get_recent_running_workouts", None)
@@ -80,6 +81,7 @@ class PlanService:
         except Exception as exc:  # pragma: no cover - environment specific
             log_utils.warn(f"Running planner could not load recent run workouts: {exc}")
             return []
+        """Perform load recent running workouts."""
 
     @staticmethod
     def _running_goal_from_settings() -> RunningGoal:
@@ -89,6 +91,7 @@ class PlanService:
             target_time=getattr(settings, "RUNNING_TARGET_TIME", None),
             weight_loss_target_kg=getattr(settings, "RUNNING_WEIGHT_LOSS_TARGET_KG", None),
         )
+        """Perform running goal from settings."""
 
     def create_and_persist_strength_test_week(self, start_date: date) -> int:
         """Creates and persists a new 1-week strength test plan."""
@@ -139,6 +142,7 @@ class WgerExportService:
         self.validation_service = validation_service or ValidationService(dal)
         self.plan_mapper = plan_mapper or PlanMapper()
         self.payload_mapper = payload_mapper or WgerPayloadMapper()
+        """Initialize this object."""
 
     def export_plan_week(
         self,
@@ -322,6 +326,7 @@ class WgerExportService:
     def _fallback_routine_name(base_name: str) -> str:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         return f"{base_name} retry {stamp}"
+        """Perform fallback routine name."""
 
     def _apply_running_backoff_to_payload(
         self,
@@ -495,6 +500,7 @@ class WgerExportService:
             return None
         comment = str(raw_comment).strip()
         return comment[:100] or None
+        """Perform entry comment for api."""
 
     def _apply_slot_entry_configs(
         self,
@@ -508,6 +514,7 @@ class WgerExportService:
         def send(config_type: str, value: Any) -> None:
             self.client.set_config(config_type, slot_entry_id, 1, value)
             configs_sent.append({"type": config_type, "iteration": 1, "value": value})
+            """Perform send."""
 
         target_weight = exercise_payload.get("target_weight_kg")
         if target_weight is not None:
@@ -537,6 +544,7 @@ class WgerExportService:
                 send(config_type, value)
 
         return configs_sent
+        """Perform apply slot entry configs."""
 
     def _expand_stretch_routines_for_export(self, payload: Dict[str, Any]) -> None:
         for day in payload.get("days", []):
@@ -544,6 +552,7 @@ class WgerExportService:
             for entry in day.get("exercises", []):
                 expanded.extend(self._expand_stretch_entry(entry))
             day["exercises"] = expanded
+        """Perform expand stretch routines for export."""
 
     def _expand_stretch_entry(self, entry: Dict[str, Any]) -> list[dict[str, Any]]:
         details = entry.get("details")
@@ -605,6 +614,7 @@ class WgerExportService:
             expanded.append(step_payload)
 
         return expanded
+        """Perform expand stretch entry."""
 
     def _resolve_export_exercise_id(self, exercise_payload: Dict[str, Any]) -> int | None:
         details = exercise_payload.get("details")
@@ -628,6 +638,7 @@ class WgerExportService:
             name=display_name,
             description=description,
         )
+        """Perform resolve export exercise id."""
 
     def _stretch_export_description(self, details: Dict[str, Any]) -> str:
         step = details.get("step")
@@ -658,3 +669,4 @@ class WgerExportService:
             return "\n".join(lines).strip()
 
         return schedule_rules.stretch_routine_description(details)
+        """Perform stretch export description."""

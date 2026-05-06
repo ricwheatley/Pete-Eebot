@@ -34,6 +34,7 @@ class WgerError(RuntimeError):
         self.resp = resp
         self.status_code = None if resp is None else resp.status_code
         self.text = None if resp is None else (resp.text or "")
+        """Initialize this object."""
 
 
 class WgerClient:
@@ -67,6 +68,7 @@ class WgerClient:
         self._token_expiry: datetime | None = None
 
         self.debug_api = bool(getattr(settings, "DEBUG_API", False))
+        """Initialize this object."""
 
     def _get_jwt_token(self) -> str:
         if self._access_token and self._token_expiry and datetime.now(timezone.utc) < self._token_expiry:
@@ -87,6 +89,7 @@ class WgerClient:
         # JWT default expiry is 5 minutes; refresh slightly early.
         self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=4)
         return self._access_token
+        """Perform get jwt token."""
 
     def _headers(self) -> Dict[str, str]:
         headers: Dict[str, str] = {
@@ -104,6 +107,7 @@ class WgerClient:
             return headers
 
         raise WgerError("No authentication method configured for WgerClient.")
+        """Perform headers."""
 
     def _url(self, path: str) -> str:
         if path.startswith("http://") or path.startswith("https://"):
@@ -111,9 +115,11 @@ class WgerClient:
 
         normalized = path if path.startswith("/") else f"/{path}"
         return f"{self.api_root}{normalized}"
+        """Perform url."""
 
     def _should_retry(self, status: int) -> bool:
         return status in (408, 429, 500, 502, 503, 504)
+        """Perform should retry."""
 
     @retry_on_network_error(lambda self, status: self._should_retry(status), exception_types=(WgerError,))
     def _request(self, method: str, path: str, **kwargs) -> Any:
@@ -201,6 +207,7 @@ class WgerClient:
                 continue
             return item
         return None
+        """Perform find exercise translation."""
 
     def ensure_custom_exercise(
         self,
@@ -252,6 +259,7 @@ class WgerClient:
         }
         self._request("POST", "/exercise-translation/", json=translation_payload)
         return exercise_id
+        """Perform ensure custom exercise."""
 
     # --- Catalog & Log Reading ---
     def get_workout_logs(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
@@ -293,10 +301,12 @@ class WgerClient:
     def create_day(self, routine_id: int, order: int, name: str) -> Dict[str, Any]:
         payload = {"routine": routine_id, "order": order, "name": name}
         return self._request("POST", "/day/", json=payload)
+        """Perform create day."""
 
     def create_slot(self, day_id: int, order: int, comment: Optional[str] = None) -> Dict[str, Any]:
         payload = {"day": day_id, "order": order, "comment": (comment or "")[:200]}
         return self._request("POST", "/slot/", json=payload)
+        """Perform create slot."""
 
     def create_slot_entry(
         self,
@@ -313,6 +323,7 @@ class WgerClient:
         if comment:
             payload["comment"] = comment[:100]
         return self._request("POST", "/slot-entry/", json=payload)
+        """Perform create slot entry."""
 
     def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value: Any, repeat: bool = False):
         """Generic method to post to sets-config, repetitions-config, etc."""
@@ -340,3 +351,4 @@ class WgerClient:
             "repeat": repeat,
         }
         self._request("POST", endpoint_map[config_type], json=payload)
+    """Represent WgerClient."""

@@ -23,6 +23,7 @@ def _metric_values(metrics: Sequence[Mapping[str, object]], key: str) -> list[fl
         except (TypeError, ValueError):
             continue
     return values
+    """Perform metric values."""
 
 
 @dataclass
@@ -139,6 +140,7 @@ class Workout:
 
     def is_weights_session(self) -> bool:
         return not self.is_cardio and self.type == "weights"
+        """Perform is weights session."""
 
     def apply_progression(
         self,
@@ -163,6 +165,7 @@ class Workout:
     @property
     def weight_target(self) -> float | None:
         return self.exercise.weight_target if self.exercise else None
+        """Perform weight target."""
 
 
 @dataclass
@@ -177,6 +180,7 @@ class Week:
         for workout in self.workouts:
             if workout.is_weights_session():
                 yield workout
+        """Perform weights workouts."""
 
     def apply_progression(
         self,
@@ -226,6 +230,7 @@ class Plan:
         for group in required_groups:
             totals.setdefault(group, 0.0)
         return totals
+        """Perform muscle totals."""
 
 
 def compute_recovery_flag(

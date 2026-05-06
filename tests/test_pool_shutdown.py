@@ -50,16 +50,20 @@ def test_run_sync_with_retries_closes_orchestrator_and_pool(monkeypatch):
         def __init__(self):
             # This flag will let us simulate a failure
             self.should_fail = False
+            """Initialize this object."""
 
         def run_daily_sync(self, days):
             if self.should_fail:
                 raise RuntimeError("Simulated sync failure")
             # Return a successful result tuple
             return True, [], {}, []
+            """Perform run daily sync."""
 
         def close(self):
             # Record when the close method is called
             close_calls.append("closed")
+            """Perform close."""
+        """Represent StubOrchestrator."""
 
     # The _build_orchestrator factory in the sync module is the key to mocking
     stub_instance = StubOrchestrator()

@@ -10,18 +10,24 @@ from tests.di_utils import build_stub_container
 class DummyDal:
     def get_active_plan(self):
         return {"start_date": date(2024, 1, 1), "weeks": 4}
+        """Perform get active plan."""
 
     def close(self):  # pragma: no cover
         pass
+        """Perform close."""
+    """Represent DummyDal."""
 
 
 class StubValidationService:
     def __init__(self):
         self.calls: list[date] = []
+        """Initialize this object."""
 
     def validate_and_adjust_plan(self, week_start: date):
         self.calls.append(week_start)
         return SimpleNamespace(explanation="ok", needs_backoff=False)
+        """Perform validate and adjust plan."""
+    """Represent StubValidationService."""
 
 
 def build_orchestrator(validation_service: StubValidationService | None = None):
@@ -35,6 +41,7 @@ def build_orchestrator(validation_service: StubValidationService | None = None):
         ),
     )
     return Orchestrator(container=container, validation_service=validation_service)
+    """Perform build orchestrator."""
 
 
 def test_run_weekly_calibration_uses_next_monday(monkeypatch):
@@ -43,3 +50,4 @@ def test_run_weekly_calibration_uses_next_monday(monkeypatch):
     orch.run_weekly_calibration(reference_date=date(2024, 3, 6))  # Wednesday
 
     assert validation_service.calls == [date(2024, 3, 11)]
+    """Perform test run weekly calibration uses next monday."""

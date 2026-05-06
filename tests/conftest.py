@@ -48,12 +48,15 @@ if "psycopg" not in sys.modules:
 
     def _dict_row(*args, **kwargs):  # pragma: no cover - placeholder
         return {}
+        """Perform dict row."""
 
     def _make_conninfo(*args, **kwargs):  # pragma: no cover - placeholder
         return ""
+        """Perform make conninfo."""
 
     class _Json(dict):  # pragma: no cover - metadata container
         pass
+        """Represent Json."""
 
     rows_module.dict_row = _dict_row
     conninfo_module.make_conninfo = _make_conninfo
@@ -69,12 +72,15 @@ if "psycopg" not in sys.modules:
                 fetchone=lambda: None,
                 fetchall=lambda: [],
             )
+            """Perform cursor."""
         
         def close(self): pass
+        """Represent Connection."""
 
     # Fake connect for "from psycopg import connect"
     def _fake_connect(*args, **kwargs):
         return _Connection()
+        """Perform fake connect."""
 
     psycopg.Connection = _Connection
     psycopg.connect = _fake_connect
@@ -85,6 +91,7 @@ if "psycopg" not in sys.modules:
 
     def _sql_identity(value):  # pragma: no cover - placeholder
         return value
+        """Perform sql identity."""
 
     sql_module.SQL = _sql_identity
     sql_module.Identifier = _sql_identity
@@ -113,9 +120,12 @@ if "psycopg_pool" not in sys.modules:
     class ConnectionPool:  # pragma: no cover - stub implementation
         def __init__(self, *args, **kwargs):
             pass
+            """Initialize this object."""
 
         def close(self) -> None:
             pass
+            """Perform close."""
+        """Represent ConnectionPool."""
 
     psycopg_pool_module.ConnectionPool = ConnectionPool
 
@@ -133,9 +143,11 @@ if "dropbox" not in sys.modules:
 
     class DropboxException(Exception):  # pragma: no cover - stub
         pass
+        """Represent DropboxException."""
 
     class AuthError(DropboxException):  # pragma: no cover - stub
         pass
+        """Represent AuthError."""
 
     class FileMetadata:  # pragma: no cover - stub type
         def __init__(self, name: str = "stub", client_modified=None, path_display: str = "/stub"):
@@ -143,19 +155,26 @@ if "dropbox" not in sys.modules:
             self.name = name
             self.client_modified = client_modified or datetime.now(timezone.utc)
             self.path_display = path_display
+            """Initialize this object."""
+        """Represent FileMetadata."""
 
     class ListFolderResult:  # pragma: no cover - stub type
         def __init__(self, entries=None, cursor="cursor", has_more=False):
             self.entries = entries or []
             self.has_more = has_more
             self.cursor = cursor
+            """Initialize this object."""
+        """Represent ListFolderResult."""
 
     class Dropbox:  # pragma: no cover - stub client
         def __init__(self, *args, **kwargs):
             pass
+            """Initialize this object."""
 
         def users_get_current_account(self):
             return types.SimpleNamespace(name=types.SimpleNamespace(display_name="Stub"))
+            """Perform users get current account."""
+        """Represent Dropbox."""
 
     dropbox_module.Dropbox = Dropbox
     dropbox_module.exceptions = exceptions_module
@@ -182,21 +201,28 @@ if "tenacity" not in sys.modules:
         def __init__(self, last_attempt=None):
             super().__init__("Retry failed")
             self.last_attempt = last_attempt
+            """Initialize this object."""
+        """Represent RetryError."""
 
     class RetryCallState:  # pragma: no cover - stub for logging hooks
         def __init__(self, attempt_number: int = 1, exception: Exception | None = None, sleep: float = 0.0):
             self.attempt_number = attempt_number
             self.outcome = types.SimpleNamespace(exception=lambda: exception)
             self.next_action = types.SimpleNamespace(sleep=sleep)
+            """Initialize this object."""
+        """Represent RetryCallState."""
 
     class _WaitSpec:  # pragma: no cover - supports addition
         def __add__(self, other):
             return self
+            """Implement the `__add__` dunder method behavior."""
+        """Represent WaitSpec."""
 
     class Retrying:  # pragma: no cover - simplistic retry shim
         def __init__(self, *, before_sleep=None, reraise=True, **kwargs):
             self._before_sleep = before_sleep
             self._reraise = reraise
+            """Initialize this object."""
 
         def __call__(self, func):
             try:
@@ -210,15 +236,20 @@ if "tenacity" not in sys.modules:
                 if self._reraise:
                     raise RetryError(last_attempt=attempt) from exc
                 raise
+            """Implement the `__call__` dunder method behavior."""
+        """Represent Retrying."""
 
     def stop_after_attempt(*args, **kwargs):  # pragma: no cover - metadata only
         return None
+        """Perform stop after attempt."""
 
     def wait_exponential(*args, **kwargs):  # pragma: no cover - metadata only
         return _WaitSpec()
+        """Perform wait exponential."""
 
     def wait_random(*args, **kwargs):  # pragma: no cover - metadata only
         return _WaitSpec()
+        """Perform wait random."""
 
     tenacity_module.RetryError = RetryError
     tenacity_module.RetryCallState = RetryCallState
@@ -236,29 +267,38 @@ if "requests" not in sys.modules:
 
     class RequestException(Exception):  # pragma: no cover - stub hierarchy
         pass
+        """Represent RequestException."""
 
     class HTTPError(RequestException):  # pragma: no cover - mimics requests.HTTPError
         def __init__(self, message: str | None = None, *, response=None):
             super().__init__(message or "HTTP error")
             self.response = response
+            """Initialize this object."""
+        """Represent HTTPError."""
 
     class Response:  # pragma: no cover - basic response container
         def __init__(self, status_code: int = 200, json_data: dict | None = None):
             self.status_code = status_code
             self._json_data = json_data or {}
+            """Initialize this object."""
 
         def json(self):
             return self._json_data
+            """Perform json."""
 
         def raise_for_status(self):
             if self.status_code >= 400:
                 raise HTTPError(f"HTTP {self.status_code}", response=self)
+            """Perform raise for status."""
+        """Represent Response."""
 
     def _fake_get(*args, **kwargs):  # pragma: no cover - patched in tests
         raise NotImplementedError
+        """Perform fake get."""
 
     def _fake_post(*args, **kwargs):  # pragma: no cover - patched in tests
         raise NotImplementedError
+        """Perform fake post."""
 
     requests_module.get = _fake_get
     requests_module.post = _fake_post
@@ -284,28 +324,37 @@ if "typer" not in sys.modules:
         def __init__(self, code: int = 0):
             super().__init__(code)
             self.exit_code = code
+            """Initialize this object."""
+        """Represent Exit."""
 
     class TyperApp:
         def __init__(self, *args, **kwargs):
             self._commands: dict[str, callable] = {}
+            """Initialize this object."""
 
         def command(self, name: str | None = None, **kwargs):
             def decorator(func):
                 command_name = name or func.__name__.replace("_", "-")
                 self._commands[command_name] = func
                 return func
+                """Perform decorator."""
             return decorator
+            """Perform command."""
+        """Represent TyperApp."""
 
     def option(*args, **kwargs):
         return {"args": args, "kwargs": kwargs}
+        """Perform option."""
 
     def argument(*args, **kwargs):
         return {"args": args, "kwargs": kwargs}
+        """Perform argument."""
 
     _echo_messages: list[str] = []
 
     def echo(message: object) -> None:
         _echo_messages.append(str(message))
+        """Perform echo."""
 
     typer_module.Exit = Exit
     typer_module.Typer = TyperApp
@@ -319,6 +368,8 @@ if "typer" not in sys.modules:
             self.exit_code = exit_code
             self.stdout = stdout
             self.exception = exception
+            """Initialize this object."""
+        """Represent CliResult."""
 
     class CliRunner:
         def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
@@ -382,6 +433,7 @@ if "typer" not in sys.modules:
             if stdout:
                 stdout += "\n"
             return CliResult(0, stdout, exception=None if result is None else result)
+        """Represent CliRunner."""
 
     testing_module = types.ModuleType("typer.testing")
     testing_module.CliRunner = CliRunner
@@ -396,14 +448,17 @@ if "typer" not in sys.modules:
 
     def option(*args, **kwargs):  # pragma: no cover - metadata only
         return {"args": args, "kwargs": kwargs}
+        """Perform option."""
 
     def argument(*args, **kwargs):  # pragma: no cover - metadata only
         return {"args": args, "kwargs": kwargs}
+        """Perform argument."""
 
     _echo_messages: list[str] = []
 
     def echo(message: object) -> None:
         _echo_messages.append(str(message))
+        """Perform echo."""
 
     typer_module.Exit = Exit
     typer_module.Typer = TyperApp
@@ -417,6 +472,8 @@ if "typer" not in sys.modules:
             self.exit_code = exit_code
             self.stdout = stdout
             self.exception = exception
+            """Initialize this object."""
+        """Represent CliResult."""
 
     class CliRunner:
         def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
@@ -483,6 +540,7 @@ if "typer" not in sys.modules:
             if stdout:
                 stdout += "\n"
             return CliResult(0, stdout, exception=None if result is None else result)
+        """Represent CliRunner."""
 
 
     testing_module = types.ModuleType("typer.testing")

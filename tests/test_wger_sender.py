@@ -13,6 +13,7 @@ def stub_validation(monkeypatch):
     class StubValidationService:
         def __init__(self, dal):
             self.dal = dal
+            """Initialize this object."""
 
         def validate_and_adjust_plan(self, start_date):
             return SimpleNamespace(
@@ -24,25 +25,34 @@ def stub_validation(monkeypatch):
                 applied=False,
                 needs_backoff=False,
             )
+            """Perform validate and adjust plan."""
 
         def get_adherence_snapshot(self, start_date):
             return None
+            """Perform get adherence snapshot."""
+        """Represent StubValidationService."""
 
     monkeypatch.setattr(wger_sender, "ValidationService", StubValidationService)
+    """Perform stub validation."""
 
 
 class RecordingDal:
     def __init__(self, exported: bool = False) -> None:
         self._exported = exported
+        """Initialize this object."""
 
     def was_week_exported(self, plan_id: int, week_number: int) -> bool:
         return self._exported
+        """Perform was week exported."""
 
     def get_plan_week_rows(self, plan_id: int, week_number: int):
         return [{"day_of_week": 1, "exercise_id": 100, "sets": 3, "reps": 5}]
+        """Perform get plan week rows."""
 
     def record_wger_export(self, *_, **__):
         pass
+        """Perform record wger export."""
+    """Represent RecordingDal."""
 
 
 def test_push_week_forwards_to_export_service(monkeypatch):
@@ -51,6 +61,7 @@ def test_push_week_forwards_to_export_service(monkeypatch):
     class StubExportService:
         def __init__(self, dal, client):
             pass
+            """Initialize this object."""
 
         def export_plan_week(
             self,
@@ -63,6 +74,8 @@ def test_push_week_forwards_to_export_service(monkeypatch):
         ):
             calls["export"].append((plan_id, week_number, start_date, force_overwrite, validation_decision))
             return {"status": "exported"}
+            """Perform export plan week."""
+        """Represent StubExportService."""
 
     monkeypatch.setattr(wger_sender, "WgerClient", lambda: SimpleNamespace())
     monkeypatch.setattr(wger_sender, "WgerExportService", StubExportService)
@@ -81,6 +94,7 @@ def test_push_week_forwards_to_export_service(monkeypatch):
 
     assert result["status"] == "exported"
     assert calls["export"] == [(10, 2, date(2024, 6, 17), True, None)]
+    """Perform test push week forwards to export service."""
 
 
 def test_push_week_logs_skip_when_exported(monkeypatch):
@@ -89,9 +103,12 @@ def test_push_week_logs_skip_when_exported(monkeypatch):
     class StubExportService:
         def __init__(self, dal, client):
             pass
+            """Initialize this object."""
 
         def export_plan_week(self, **kwargs):
             return {"status": "skipped"}
+            """Perform export plan week."""
+        """Represent StubExportService."""
 
     monkeypatch.setattr(wger_sender, "WgerClient", lambda: SimpleNamespace())
     monkeypatch.setattr(wger_sender, "WgerExportService", StubExportService)
@@ -110,3 +127,4 @@ def test_push_week_logs_skip_when_exported(monkeypatch):
 
     assert result["status"] == "skipped"
     assert any("skipping push" in msg.lower() for _, msg in logs)
+    """Perform test push week logs skip when exported."""

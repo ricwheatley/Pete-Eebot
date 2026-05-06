@@ -25,6 +25,7 @@ class PlanMapper:
         metadata = payload.get("metadata")
         metadata_dict = metadata if isinstance(metadata, dict) else None
         return Plan(start_date=start_date, weeks=weeks, metadata=metadata_dict)
+        """Perform to entity."""
 
     def to_payload(self, plan: Plan) -> Dict[str, Any]:
         weeks_payload: List[Dict[str, Any]] = []
@@ -67,6 +68,7 @@ class PlanMapper:
         if plan.metadata is not None:
             payload["metadata"] = dict(plan.metadata)
         return payload
+        """Perform to payload."""
 
     def _extract_weeks(self, payload: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
         weeks = payload.get("plan_weeks")
@@ -76,6 +78,7 @@ class PlanMapper:
         if isinstance(weeks_alt, list):
             return weeks_alt
         return []
+        """Perform extract weeks."""
 
     def _build_week(self, data: Dict[str, Any]) -> Week:
         week_number = self._to_int(data.get("week_number")) or 0
@@ -90,6 +93,7 @@ class PlanMapper:
                 workouts.append(self._build_workout(item))
 
         return Week(week_number=week_number, start_date=start_date, workouts=workouts)
+        """Perform build week."""
 
     def _build_workout(self, data: Dict[str, Any]) -> Workout:
         workout_id = self._to_int(data.get("id"))
@@ -120,6 +124,7 @@ class PlanMapper:
             exercise=exercise,
             intensity=intensity,
         )
+        """Perform build workout."""
 
     def _build_exercise(self, data: Dict[str, Any]) -> Exercise | None:
         exercise_id = self._to_int(data.get("exercise_id"))
@@ -144,6 +149,7 @@ class PlanMapper:
             weight_target=converters.to_float(data.get("target_weight_kg")),
             muscle_group=data.get("muscle_group"),
         )
+        """Perform build exercise."""
 
     def _to_int(self, value: Any) -> int | None:
         if value is None:
@@ -164,3 +170,4 @@ class PlanMapper:
                 except ValueError:
                     return None
         return None
+        """Perform to int."""
