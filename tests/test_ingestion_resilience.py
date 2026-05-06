@@ -15,9 +15,11 @@ def capture_logs(monkeypatch):
 
     def _fake_log(msg: str, level: str = "INFO") -> None:
         calls.append((msg, level))
+        """Perform fake log."""
 
     monkeypatch.setattr(log_utils, "log_message", _fake_log)
     return calls
+    """Perform capture logs."""
 
 
 def test_apple_parser_handles_partial_rows_without_crashing(capture_logs):
@@ -184,6 +186,7 @@ def test_apple_parser_handles_partial_rows_without_crashing(capture_logs):
     ]
     for fragment in expected_fragments:
         assert fragment in warn_text
+    """Perform test apple parser handles partial rows without crashing."""
 
 
 def test_sync_result_summary_includes_withings_note():
@@ -201,6 +204,7 @@ def test_sync_result_summary_includes_withings_note():
     assert lines[0].startswith("Sync summary:")
     assert "Withings=failed" in lines[0]
     assert lines[1] == "Withings data unavailable today"
+    """Perform test sync result summary includes withings note."""
 
 
 def test_sync_result_summary_handles_multi_day_window():
@@ -216,4 +220,5 @@ def test_sync_result_summary_handles_multi_day_window():
     summary = result.summary_line(days=3)
     lines = summary.splitlines()
     assert lines[-1] == "Withings data unavailable across last 3 days"
+    """Perform test sync result summary handles multi day window."""
 

@@ -24,17 +24,21 @@ class StubDal:
         self._active_raises = active_raises
         self._fallback_raises = fallback_raises
         self.requested_start: Optional[date] = None
+        """Initialize this object."""
 
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         if self._active_raises:
             raise RuntimeError("boom")
         return self._active_plan
+        """Perform get active plan."""
 
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
         self.requested_start = start_date
         if self._fallback_raises:
             raise RuntimeError("boom")
         return self._fallback_plan
+        """Perform find plan by start date."""
+    """Represent StubDal."""
 
 
 def test_returns_context_from_active_plan() -> None:
@@ -45,6 +49,7 @@ def test_returns_context_from_active_plan() -> None:
     context = service.get_plan_context(start + timedelta(days=1))
 
     assert context == PlanContext(plan_id=12, start_date=start)
+    """Perform test returns context from active plan."""
 
 
 def test_falls_back_to_lookup_by_week_start() -> None:
@@ -56,6 +61,7 @@ def test_falls_back_to_lookup_by_week_start() -> None:
 
     assert context == PlanContext(plan_id=33, start_date=week_start)
     assert dal.requested_start == week_start
+    """Perform test falls back to lookup by week start."""
 
 
 def test_returns_none_when_no_plan_available() -> None:
@@ -65,6 +71,7 @@ def test_returns_none_when_no_plan_available() -> None:
     context = service.get_plan_context(date(2024, 8, 5))
 
     assert context is None
+    """Perform test returns none when no plan available."""
 
 
 def test_raises_data_access_error_when_dal_fails() -> None:
@@ -73,3 +80,4 @@ def test_raises_data_access_error_when_dal_fails() -> None:
 
     with pytest.raises(DataAccessError):
         service.get_plan_context(date(2024, 8, 5))
+    """Perform test raises data access error when dal fails."""

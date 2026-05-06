@@ -21,6 +21,7 @@ def test_save_tokens_sets_owner_only_permissions(tmp_path, monkeypatch):
     assert saved_tokens["access_token"] == "abc"
     assert saved_tokens["refresh_token"] == "def"
     assert "expires_at" in saved_tokens
+    """Perform test save tokens sets owner only permissions."""
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file permissions only")
@@ -33,9 +34,12 @@ def test_oauth_helper_sets_owner_only_permissions(tmp_path, monkeypatch):
 
         def raise_for_status(self):
             return None
+            """Perform raise for status."""
 
         def json(self):
             return {"status": 0, "body": {"access_token": "abc", "refresh_token": "def"}}
+            """Perform json."""
+        """Represent DummyResponse."""
 
     monkeypatch.setattr(oauth_helper.requests, "post", lambda *_, **__: DummyResponse())
 
@@ -45,3 +49,4 @@ def test_oauth_helper_sets_owner_only_permissions(tmp_path, monkeypatch):
     assert tokens["refresh_token"] == "def"
     mode = token_path.stat().st_mode & 0o777
     assert mode == 0o600
+    """Perform test oauth helper sets owner only permissions."""

@@ -81,6 +81,7 @@ class WgerPayloadMapper:
             if week.week_number == week_number:
                 return week
         raise WgerMappingError(f"plan does not contain week {week_number}")
+        """Perform find week."""
 
     def _workout_to_payload(self, workout: Workout) -> Dict[str, Any]:
         exercise = workout.exercise
@@ -116,3 +117,4 @@ class WgerPayloadMapper:
                 }
             )
         return payload
+        """Perform workout to payload."""

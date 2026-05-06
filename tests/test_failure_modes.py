@@ -18,13 +18,17 @@ class DummyResponse:
         self.status_code = status_code
         self._payload = payload or {}
         self.headers = headers or {}
+        """Initialize this object."""
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise mocks.requests_mock.HTTPError(response=self)
+        """Perform raise for status."""
 
     def json(self) -> dict:
         return self._payload
+        """Perform json."""
+    """Represent DummyResponse."""
 
 
 def test_withings_client_retries_rate_limits(monkeypatch):
@@ -73,17 +77,20 @@ def test_withings_client_retries_rate_limits(monkeypatch):
         idx = call_count["count"]
         call_count["count"] += 1
         return responses[idx]
+        """Perform fake get."""
 
     sleep_calls: List[float] = []
 
     def fake_sleep(seconds):
         sleep_calls.append(seconds)
+        """Perform fake sleep."""
 
     def fake_post(url, data, timeout):
         return DummyResponse(
             status_code=200,
             payload={"status": 0, "body": {"access_token": "abc", "refresh_token": "def"}},
         )
+        """Perform fake post."""
 
     monkeypatch.setattr("pete_e.infrastructure.withings_client.requests.get", fake_get)
     monkeypatch.setattr("pete_e.infrastructure.withings_client.requests.post", fake_post)
@@ -97,6 +104,7 @@ def test_withings_client_retries_rate_limits(monkeypatch):
     assert call_count["count"] == 3
     assert sleep_calls == [1, 2]
     assert payload["status"] == 0
+    """Perform test withings client retries rate limits."""
 
 
 def test_withings_client_reloads_tokens_when_storage_changes(monkeypatch):
@@ -122,6 +130,7 @@ def test_withings_client_reloads_tokens_when_storage_changes(monkeypatch):
     assert client.refresh_token == "r2"
     assert client._cached_tokens["access_token"] == "second"
     assert token_storage.read_tokens.call_count == 2
+    """Perform test withings client reloads tokens when storage changes."""
 
 
 def test_withings_summary_collects_all_measure_groups_and_derives_water_percent(monkeypatch):
@@ -195,3 +204,4 @@ def test_withings_summary_collects_all_measure_groups_and_derives_water_percent(
     assert summary["water_percent"] == 50.97
     assert summary["measure_type_values"]["227"] == 47.0
     assert len(summary["measure_groups"]) == 2
+    """Perform test withings summary collects all measure groups and derives water percent."""

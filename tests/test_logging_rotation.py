@@ -21,6 +21,7 @@ def temp_logger(tmp_path):
         for handler in list(base_logger.handlers):
             handler.close()
             base_logger.removeHandler(handler)
+    """Perform temp logger."""
 
 
 def test_rotating_handler_defaults(temp_logger):
@@ -31,6 +32,7 @@ def test_rotating_handler_defaults(temp_logger):
     assert handler.maxBytes == logging_setup.DEFAULT_MAX_BYTES
     assert handler.backupCount == logging_setup.DEFAULT_BACKUP_COUNT
     assert handler.baseFilename == str(log_path)
+    """Perform test rotating handler defaults."""
 
 
 def test_rotating_handler_rollover(tmp_path):
@@ -58,3 +60,4 @@ def test_rotating_handler_rollover(tmp_path):
         for handler in list(base_logger.handlers):
             handler.close()
             base_logger.removeHandler(handler)
+    """Perform test rotating handler rollover."""

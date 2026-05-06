@@ -42,6 +42,7 @@ def _make_history(
         })
         current += timedelta(days=1)
     return rows
+    """Perform make history."""
 
 
 def _build_snapshot(
@@ -71,11 +72,13 @@ def _build_snapshot(
         planned_rows=planned_rows,
         actual_rows=actual_rows,
     )
+    """Perform build snapshot."""
 
 
 @pytest.fixture
 def plan_start() -> date:
     return date(2025, 9, 1)
+    """Perform plan start."""
 
 
 def test_low_adherence_reduces_volume(plan_start: date) -> None:
@@ -113,6 +116,7 @@ def test_low_adherence_reduces_volume(plan_start: date) -> None:
     assert decision.should_apply is True
     adherence_metrics = decision.recommendation.metrics.get("adherence")
     assert adherence_metrics and adherence_metrics.get("applied_direction") == "reduce"
+    """Perform test low adherence reduces volume."""
 
 
 def test_high_adherence_increases_volume_when_recovery_good(plan_start: date) -> None:
@@ -150,6 +154,7 @@ def test_high_adherence_increases_volume_when_recovery_good(plan_start: date) ->
     assert decision.should_apply is True
     adherence_metrics = decision.recommendation.metrics.get("adherence")
     assert adherence_metrics and adherence_metrics.get("applied_direction") == "increase"
+    """Perform test high adherence increases volume when recovery good."""
 
 
 def test_high_adherence_blocked_when_recovery_flagged(plan_start: date) -> None:
@@ -191,3 +196,4 @@ def test_high_adherence_blocked_when_recovery_flagged(plan_start: date) -> None:
     adherence_metrics = decision.recommendation.metrics.get("adherence")
     assert adherence_metrics and adherence_metrics.get("gated_by_recovery") is True
     assert adherence_metrics.get("applied_direction") != "increase"
+    """Perform test high adherence blocked when recovery flagged."""

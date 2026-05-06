@@ -23,19 +23,25 @@ class StubPlanRepository(PlanRepository):
             schedule_rules.DEADLIFT_ID: [501, 502],
         }
         self._core = [900, 901]
+        """Initialize this object."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
         return list(self._assistance.get(main_lift_id, []))
+        """Perform get assistance pool for."""
 
     def get_core_pool_ids(self) -> List[int]:
         return list(self._core)
+        """Perform get core pool ids."""
 
     def get_latest_training_maxes(self) -> Dict[str, float]:
         return _training_maxes()
+        """Perform get latest training maxes."""
 
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:  # pragma: no cover - unused for factory tests
         self.saved_plan = plan_dict  # type: ignore[attr-defined]
         return 1
+        """Perform save full plan."""
+    """Represent StubPlanRepository."""
 
 
 def _training_maxes() -> Dict[str, float]:
@@ -45,6 +51,7 @@ def _training_maxes() -> Dict[str, float]:
         "deadlift": 220.0,
         "ohp": 70.0,
     }
+    """Perform training maxes."""
 
 
 def test_plan_factory_computes_expected_targets(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,6 +82,7 @@ def test_plan_factory_computes_expected_targets(monkeypatch: pytest.MonkeyPatch)
         if workout["exercise_id"] in repo._assistance[schedule_rules.SQUAT_ID]
     ]
     assert assistance_ids  # assistance movements should be present
+    """Perform test plan factory computes expected targets."""
 
 
 def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,10 +91,13 @@ def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> Non
     class StubDal(StubPlanRepository):
         def get_latest_training_maxes(self) -> Dict[str, float]:
             return _training_maxes()
+            """Perform get latest training maxes."""
 
         def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
             saved_payload.update(plan_dict)
             return 42
+            """Perform save full plan."""
+        """Represent StubDal."""
 
     service = PlanService(dal=StubDal())
     plan_id = service.create_and_persist_531_block(start_date=date(2024, 1, 1))
@@ -95,3 +106,4 @@ def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> Non
     assert saved_payload["start_date"] == date(2024, 1, 1)
     assert saved_payload["weeks"] == 4
     assert len(saved_payload["plan_weeks"]) == 4
+    """Perform test plan service persists full plan."""

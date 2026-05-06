@@ -39,6 +39,7 @@ class MockableDal(DataAccessLayer):
         metabolic_age_years: Optional[float] = None,
     ) -> None:
         pass
+        """Perform save withings daily."""
 
     def save_withings_measure_groups(
         self,
@@ -47,6 +48,7 @@ class MockableDal(DataAccessLayer):
         measure_groups: List[Dict[str, Any]],
     ) -> None:
         pass
+        """Perform save withings measure groups."""
 
     def save_wger_log(
         self,
@@ -58,6 +60,7 @@ class MockableDal(DataAccessLayer):
         rir: Optional[float],
     ) -> None:
         pass
+        """Perform save wger log."""
 
     def load_lift_log(
         self,
@@ -66,20 +69,24 @@ class MockableDal(DataAccessLayer):
         end_date: Optional[date] = None,
     ) -> Dict[str, Any]:
         return {}
+        """Perform load lift log."""
 
     # ------------------------------------------------------------------
     # Summaries (read-only views)
     # ------------------------------------------------------------------
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         return None
+        """Perform get daily summary."""
 
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         return []
+        """Perform get historical metrics."""
 
     def get_historical_data(
         self, start_date: date, end_date: date
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get historical data."""
 
     def get_recent_running_workouts(
         self,
@@ -88,6 +95,7 @@ class MockableDal(DataAccessLayer):
         end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get recent running workouts."""
 
     def get_recent_strength_workouts(
         self,
@@ -96,9 +104,11 @@ class MockableDal(DataAccessLayer):
         end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get recent strength workouts."""
 
     def get_metrics_overview(self, target_date: date):
         return ["metric_name"], []
+        """Perform get metrics overview."""
 
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         observation_end = week_start - timedelta(days=1)
@@ -144,9 +154,11 @@ class MockableDal(DataAccessLayer):
             "planned_rows": planned_rows,
             "actual_rows": actual_rows,
         }
+        """Perform get data for validation."""
 
     def refresh_daily_summary(self, days: int = 7) -> None:
         pass
+        """Perform refresh daily summary."""
 
     def compute_body_age_for_date(
         self,
@@ -155,6 +167,7 @@ class MockableDal(DataAccessLayer):
         birth_date: date,
     ) -> None:
         pass
+        """Perform compute body age for date."""
 
     def compute_body_age_for_range(
         self,
@@ -164,29 +177,36 @@ class MockableDal(DataAccessLayer):
         birth_date: date,
     ) -> None:
         pass
+        """Perform compute body age for range."""
 
     # ------------------------------------------------------------------
     # Training plans
     # ------------------------------------------------------------------
     def save_training_plan(self, plan: dict, start_date: date) -> int:
         return 0
+        """Perform save training plan."""
 
     def has_any_plan(self) -> bool:
         return False
+        """Perform has any plan."""
 
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         return {}
+        """Perform get plan."""
 
     def find_plan_by_start_date(
         self, start_date: date
     ) -> Optional[Dict[str, Any]]:
         return None
+        """Perform find plan by start date."""
 
     def mark_plan_active(self, plan_id: int) -> None:
         pass
+        """Perform mark plan active."""
 
     def deactivate_active_training_cycles(self) -> None:
         pass
+        """Perform deactivate active training cycles."""
 
     def create_training_cycle(
         self,
@@ -201,9 +221,11 @@ class MockableDal(DataAccessLayer):
             "current_week": current_week,
             "current_block": current_block,
         }
+        """Perform create training cycle."""
 
     def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
         return None
+        """Perform get active training cycle."""
 
     def update_training_cycle_state(
         self,
@@ -213,6 +235,7 @@ class MockableDal(DataAccessLayer):
         current_block: int,
     ) -> Optional[Dict[str, Any]]:
         return None
+        """Perform update training cycle state."""
 
     # ------------------------------------------------------------------
     # Muscle volume comparison
@@ -221,29 +244,36 @@ class MockableDal(DataAccessLayer):
         self, plan_id: int, week_number: int
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get plan muscle volume."""
 
     def get_actual_muscle_volume(
         self, start_date: date, end_date: date
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get actual muscle volume."""
 
     # ------------------------------------------------------------------
     # Active plan and plan weeks
     # ------------------------------------------------------------------
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         return None
+        """Perform get active plan."""
 
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         return []
+        """Perform get plan week."""
 
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
         pass
+        """Perform update workout targets."""
 
     def refresh_plan_view(self) -> None:
         pass
+        """Perform refresh plan view."""
 
     def refresh_actual_view(self) -> None:
         pass
+        """Perform refresh actual view."""
 
     def apply_plan_backoff(
         self,
@@ -253,30 +283,37 @@ class MockableDal(DataAccessLayer):
         rir_increment: int,
     ) -> None:
         pass
+        """Perform apply plan backoff."""
 
     # ------------------------------------------------------------------
     # Wger Catalog Upserts
     # ------------------------------------------------------------------
     def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger categories."""
 
     def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger equipment."""
 
     def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger muscles."""
 
     def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger exercises."""
 
     # ------------------------------------------------------------------
     # Validation logs
     # ------------------------------------------------------------------
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         pass
+        """Perform save validation log."""
 
     def was_week_exported(self, plan_id: int, week_number: int) -> bool:
         return False
+        """Perform was week exported."""
 
     def record_wger_export(
         self,
@@ -287,3 +324,4 @@ class MockableDal(DataAccessLayer):
         routine_id: Optional[int] = None,
     ) -> None:
         pass
+        """Perform record wger export."""

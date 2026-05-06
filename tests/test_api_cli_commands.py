@@ -16,27 +16,38 @@ if "fastapi" not in sys.modules:
             super().__init__(detail)
             self.status_code = status_code
             self.detail = detail
+            """Initialize this object."""
+        """Represent HTTPException."""
 
     class Request:
         def __init__(self, query_params: dict | None = None):
             self.query_params = query_params or {}
+            """Initialize this object."""
+        """Represent Request."""
 
     def _identity(value=None, **kwargs):
         return value
+        """Perform identity."""
 
     class FastAPI:
         def __init__(self, *args, **kwargs):
             pass
+            """Initialize this object."""
 
         def get(self, *args, **kwargs):
             def decorator(func):
                 return func
+                """Perform decorator."""
             return decorator
+            """Perform get."""
 
         def post(self, *args, **kwargs):
             def decorator(func):
                 return func
+                """Perform decorator."""
             return decorator
+            """Perform post."""
+        """Represent FastAPI."""
 
     fastapi_module.FastAPI = FastAPI
     fastapi_module.Query = _identity
@@ -50,6 +61,8 @@ if "fastapi" not in sys.modules:
         def __init__(self, content, media_type=None):
             self.content = content
             self.media_type = media_type
+            """Initialize this object."""
+        """Represent StreamingResponse."""
 
     responses_module.StreamingResponse = StreamingResponse
 
@@ -67,11 +80,13 @@ from pete_e.application.sync import SyncResult
 @pytest.fixture()
 def request_stub() -> api.Request:
     return api.Request({})
+    """Perform request stub."""
 
 
 @pytest.fixture()
 def enable_api_key(monkeypatch):
     monkeypatch.setattr(api.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+    """Perform enable api key."""
 
 
 def test_status_endpoint_returns_checks(enable_api_key, request_stub, monkeypatch):
@@ -84,6 +99,8 @@ def test_status_endpoint_returns_checks(enable_api_key, request_stub, monkeypatc
         def run_checks(self, timeout: float):
             assert timeout == 1.5
             return checks
+            """Perform run checks."""
+        """Represent StatusService."""
 
     monkeypatch.setattr(api, "get_status_service", lambda: _StatusService())
 
@@ -95,6 +112,7 @@ def test_status_endpoint_returns_checks(enable_api_key, request_stub, monkeypatc
         {"name": "Dropbox", "ok": False, "detail": "timeout"},
     ]
     assert "Dropbox" in payload["summary"]
+    """Perform test status endpoint returns checks."""
 
 
 def test_status_endpoint_requires_valid_api_key(request_stub, enable_api_key):
@@ -102,6 +120,7 @@ def test_status_endpoint_requires_valid_api_key(request_stub, enable_api_key):
         api.status(request=request_stub, x_api_key=None)
 
     assert exc.value.status_code == 401
+    """Perform test status endpoint requires valid api key."""
 
 
 def test_sync_endpoint_returns_sync_result(enable_api_key, request_stub, monkeypatch):
@@ -117,6 +136,7 @@ def test_sync_endpoint_returns_sync_result(enable_api_key, request_stub, monkeyp
             label="daily",
             undelivered_alerts=["Alert A"],
         )
+        """Perform fake sync."""
 
     monkeypatch.setattr(api, "run_sync_with_retries", fake_sync)
 
@@ -134,6 +154,7 @@ def test_sync_endpoint_returns_sync_result(enable_api_key, request_stub, monkeyp
     assert payload["source_statuses"]["Withings"] == "ok"
     assert "Alert A" in payload["undelivered_alerts"]
     assert "Sync summary" in payload["summary"]
+    """Perform test sync endpoint returns sync result."""
 
 
 def test_logs_endpoint_returns_tail(enable_api_key, request_stub, tmp_path, monkeypatch):
@@ -146,6 +167,7 @@ def test_logs_endpoint_returns_tail(enable_api_key, request_stub, tmp_path, monk
 
     assert payload["path"].endswith("pete_history.log")
     assert payload["lines"] == ["line3", "line4"]
+    """Perform test logs endpoint returns tail."""
 
 
 def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -153,6 +175,7 @@ def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch)
 
     def _explode(*_args, **_kwargs):
         raise DataAccessError("database offline")
+        """Perform explode."""
 
     monkeypatch.setattr(cli, "run_sync_with_retries", _explode)
 
@@ -160,6 +183,7 @@ def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch)
 
     assert result.exit_code == 4
     assert "Manual sync failed: database offline" in result.stdout
+    """Perform test sync command handles data access error."""
 
 
 def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,6 +192,8 @@ def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) 
     class _ExplodingOrchestrator:
         def generate_and_deploy_next_plan(self, start_date, weeks):  # noqa: ARG002
             raise ValidationError("plan validation failed")
+            """Perform generate and deploy next plan."""
+        """Represent ExplodingOrchestrator."""
 
     monkeypatch.setattr(cli, "_build_orchestrator", lambda: _ExplodingOrchestrator())
 
@@ -175,4 +201,5 @@ def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) 
 
     assert result.exit_code == 2
     assert "Plan deployment failed: plan validation failed" in result.stdout
+    """Perform test plan command handles validation error."""
 

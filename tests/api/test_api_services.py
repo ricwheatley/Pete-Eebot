@@ -16,27 +16,38 @@ if "fastapi" not in sys.modules:
             super().__init__(detail)
             self.status_code = status_code
             self.detail = detail
+            """Initialize this object."""
+        """Represent HTTPException."""
 
     class Request:
         def __init__(self, query_params: dict | None = None):
             self.query_params = query_params or {}
+            """Initialize this object."""
+        """Represent Request."""
 
     def _identity(value=None, **kwargs):
         return value
+        """Perform identity."""
 
     class FastAPI:
         def __init__(self, *args, **kwargs):
             pass
+            """Initialize this object."""
 
         def get(self, *args, **kwargs):
             def decorator(func):
                 return func
+                """Perform decorator."""
             return decorator
+            """Perform get."""
 
         def post(self, *args, **kwargs):
             def decorator(func):
                 return func
+                """Perform decorator."""
             return decorator
+            """Perform post."""
+        """Represent FastAPI."""
 
     fastapi_module.FastAPI = FastAPI
     fastapi_module.Query = _identity
@@ -50,6 +61,8 @@ if "fastapi" not in sys.modules:
         def __init__(self, content, media_type=None):
             self.content = content
             self.media_type = media_type
+            """Initialize this object."""
+        """Represent StreamingResponse."""
 
     responses_module.StreamingResponse = StreamingResponse
 
@@ -63,11 +76,13 @@ from pete_e import api
 @pytest.fixture()
 def request_stub() -> api.Request:
     return api.Request({})
+    """Perform request stub."""
 
 
 @pytest.fixture()
 def enable_api_key(monkeypatch):
     monkeypatch.setattr(api.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+    """Perform enable api key."""
 
 
 def test_metrics_overview_uses_service(monkeypatch, enable_api_key, request_stub):
@@ -81,6 +96,7 @@ def test_metrics_overview_uses_service(monkeypatch, enable_api_key, request_stub
 
     assert response == expected
     service.overview.assert_called_once_with("2024-01-01")
+    """Perform test metrics overview uses service."""
 
 
 def test_coach_state_uses_service(monkeypatch, enable_api_key, request_stub):
@@ -94,6 +110,7 @@ def test_coach_state_uses_service(monkeypatch, enable_api_key, request_stub):
 
     assert response == expected
     service.coach_state.assert_called_once_with("2024-01-08")
+    """Perform test coach state uses service."""
 
 
 def test_recent_workouts_uses_service(monkeypatch, enable_api_key, request_stub):
@@ -112,6 +129,7 @@ def test_recent_workouts_uses_service(monkeypatch, enable_api_key, request_stub)
 
     assert response == expected
     service.recent_workouts.assert_called_once_with(days=7, iso_end_date="2024-01-08")
+    """Perform test recent workouts uses service."""
 
 
 def test_plan_for_day_uses_service(monkeypatch, enable_api_key, request_stub):
@@ -125,6 +143,7 @@ def test_plan_for_day_uses_service(monkeypatch, enable_api_key, request_stub):
 
     assert response == expected
     service.for_day.assert_called_once_with("2024-02-02")
+    """Perform test plan for day uses service."""
 
 
 def test_plan_for_week_uses_service(monkeypatch, enable_api_key, request_stub):
@@ -138,6 +157,7 @@ def test_plan_for_week_uses_service(monkeypatch, enable_api_key, request_stub):
 
     assert response == expected
     service.for_week.assert_called_once_with("2024-02-05")
+    """Perform test plan for week uses service."""
 
 
 def test_status_requires_api_key_configuration(monkeypatch, request_stub):
@@ -147,6 +167,7 @@ def test_status_requires_api_key_configuration(monkeypatch, request_stub):
         api.status(request=request_stub, x_api_key="test-key")
 
     assert exc.value.status_code == 503
+    """Perform test status requires api key configuration."""
 
 
 def test_github_webhook_uses_configured_secret_and_deploy_path(monkeypatch, tmp_path):
@@ -167,12 +188,16 @@ def test_github_webhook_uses_configured_secret_and_deploy_path(monkeypatch, tmp_
 
         async def body(self):
             return body
+            """Perform body."""
+        """Represent WebhookRequest."""
 
     payload = asyncio.run(api.github_webhook(WebhookRequest()))
 
     assert payload["status"] == "Deployment triggered"
     assert popen_calls == [[str(deploy_script)]]
+    """Perform test github webhook uses configured secret and deploy path."""
 
 
 def test_api_module_has_no_psycopg_import():
     assert not hasattr(api, "psycopg"), "psycopg should not be imported directly in the API layer"
+    """Perform test api module has no psycopg import."""

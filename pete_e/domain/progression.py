@@ -32,6 +32,7 @@ def _to_int(value: Any) -> int | None:
             except ValueError:
                 return None
     return None
+    """Perform to int."""
 
 
 @dataclass(frozen=True)

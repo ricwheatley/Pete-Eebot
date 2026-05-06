@@ -24,6 +24,7 @@ class PlanGenerationService:
     ) -> None:
         self._dal_factory = dal_factory or PostgresDal
         self._wger_client_factory = wger_client_factory or WgerClient
+        """Initialize this object."""
 
     def run(self, start_date: dt.date, dry_run: bool = False) -> int:
         """Create a 5/3/1 block starting at ``start_date`` and export week one."""

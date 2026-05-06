@@ -30,6 +30,7 @@ def _build_listener(
         poll_limit=limit,
         poll_timeout=timeout,
     )
+    """Perform build listener."""
 
 
 def telegram(

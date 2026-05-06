@@ -25,6 +25,7 @@ def main() -> None:
 
     start_date = dt.date.fromisoformat(args.start_date)
     PlanGenerationService().run(start_date=start_date, dry_run=args.dry_run)
+    """Perform main."""
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ class CatalogSyncService:
     ) -> None:
         self._dal_factory = dal_factory or PostgresDal
         self._wger_client_factory = wger_client_factory or WgerClient
+        """Initialize this object."""
 
     def run(self) -> None:
         """Execute the full catalog refresh workflow."""

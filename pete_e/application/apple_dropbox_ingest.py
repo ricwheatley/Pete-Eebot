@@ -26,6 +26,7 @@ __all__ = [
 def _resolve_ingestor(container: Container | None = None) -> AppleHealthIngestor:
     resolved_container = container or get_container()
     return resolved_container.resolve(AppleHealthIngestor)  # type: ignore[arg-type]
+    """Perform resolve ingestor."""
 
 
 def run_apple_health_ingest(

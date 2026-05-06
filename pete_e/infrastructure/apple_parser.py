@@ -38,6 +38,7 @@ class DailyMetricPoint:
     metric_name: str
     unit: str
     value: float
+    """Represent DailyMetricPoint."""
 
 @dataclass(frozen=True)
 class DailyHeartRateSummary:
@@ -46,6 +47,7 @@ class DailyHeartRateSummary:
     hr_min: int
     hr_avg: float
     hr_max: int
+    """Represent DailyHeartRateSummary."""
 
 @dataclass(frozen=True)
 class DailySleepSummary:
@@ -60,6 +62,7 @@ class DailySleepSummary:
     deep_hrs: float
     rem_hrs: float
     awake_hrs: float
+    """Represent DailySleepSummary."""
 
 @dataclass(frozen=True)
 class WorkoutHeader:
@@ -76,6 +79,7 @@ class WorkoutHeader:
     elevation_gain_m: Optional[float]
     environment_temp_degc: Optional[float]
     environment_humidity_percent: Optional[float]
+    """Represent WorkoutHeader."""
 
 @dataclass(frozen=True)
 class WorkoutHRPoint:
@@ -84,18 +88,21 @@ class WorkoutHRPoint:
     hr_min: int
     hr_avg: float
     hr_max: int
+    """Represent WorkoutHRPoint."""
 
 @dataclass(frozen=True)
 class WorkoutStepsPoint:
     workout_id: str
     offset_sec: int
     steps: float
+    """Represent WorkoutStepsPoint."""
 
 @dataclass(frozen=True)
 class WorkoutEnergyPoint:
     workout_id: str
     offset_sec: int
     energy_kcal: float
+    """Represent WorkoutEnergyPoint."""
 
 @dataclass(frozen=True)
 class WorkoutHRRecoveryPoint:
@@ -104,6 +111,7 @@ class WorkoutHRRecoveryPoint:
     hr_min: int
     hr_avg: int
     hr_max: int
+    """Represent WorkoutHRRecoveryPoint."""
 
 
 class AppleHealthParser:
@@ -114,10 +122,12 @@ class AppleHealthParser:
         if not value:
             return None
         return datetime.strptime(value, ISO_WITH_TZ)
+        """Perform parse dt."""
 
     @staticmethod
     def _canon_metric_name(name: str) -> str:
         return CANONICAL_METRIC_NAME.get(name, name)
+        """Perform canon metric name."""
 
     @staticmethod
     def _get_numeric_value(data) -> Optional[float]:
@@ -187,6 +197,7 @@ class AppleHealthParser:
             if "ratio" in stripped or "fraction" in stripped:
                 return "ratio"
         return None
+        """Perform extract unit."""
 
     @classmethod
     def _extract_measure(cls, raw) -> Tuple[Optional[float], Optional[str]]:
@@ -195,6 +206,7 @@ class AppleHealthParser:
         unit = cls._extract_unit(raw)
         value = cls._get_numeric_value(raw)
         return value, unit
+        """Perform extract measure."""
 
     @staticmethod
     def _normalise_temperature(value: Optional[float], unit: Optional[str]) -> Optional[float]:
@@ -204,6 +216,7 @@ class AppleHealthParser:
         if unit_norm in {"degf", "fahrenheit", "f"}:
             return (value - 32.0) * (5.0 / 9.0)
         return value
+        """Perform normalise temperature."""
 
     @staticmethod
     def _normalise_humidity(value: Optional[float], unit: Optional[str]) -> Optional[float]:
@@ -217,6 +230,7 @@ class AppleHealthParser:
         elif value <= 1.0:
             value = value * 100.0
         return value
+        """Perform normalise humidity."""
 
     def _extract_workout_environment(self, workout: dict) -> Tuple[Optional[float], Optional[float]]:
         if not isinstance(workout, dict):
@@ -284,6 +298,7 @@ class AppleHealthParser:
             humidity = max(0.0, min(100.0, humidity))
             humidity = round(humidity, 1)
         return temp, humidity
+        """Perform extract workout environment."""
 
     def parse(self, root: dict) -> Dict[str, Iterable]:
         """Parse root HealthAutoExport JSON into typed streams for persistence."""

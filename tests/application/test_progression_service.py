@@ -20,24 +20,31 @@ class StubDal:
         self.updated_targets: List[List[Dict[str, Any]]] = []
         self.refresh_calls: int = 0
         self.loaded_ids: List[List[int]] = []
+        """Implement the `__post_init__` dunder method behavior."""
 
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:  # noqa: ARG002
         return list(self.plan_rows)
+        """Perform get plan week."""
 
     def load_lift_log(self, exercise_ids: List[int]) -> Dict[str, Any]:
         self.loaded_ids.append(list(exercise_ids))
         return self.lift_history
+        """Perform load lift log."""
 
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         if days == 7:
             return self.recent_metrics
         return self.baseline_metrics
+        """Perform get historical metrics."""
 
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
         self.updated_targets.append(updates)
+        """Perform update workout targets."""
 
     def refresh_plan_view(self) -> None:
         self.refresh_calls += 1
+        """Perform refresh plan view."""
+    """Represent StubDal."""
 
 
 def _make_plan_rows() -> List[Dict[str, Any]]:
@@ -54,6 +61,7 @@ def _make_plan_rows() -> List[Dict[str, Any]]:
             "is_cardio": False,
         }
     ]
+    """Perform make plan rows."""
 
 
 def test_calibrate_plan_week_fetches_and_persists(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,6 +98,7 @@ def test_calibrate_plan_week_fetches_and_persists(monkeypatch: pytest.MonkeyPatc
             ],
             persisted=False,
         )
+        """Perform fake calibrate."""
 
     monkeypatch.setattr(
         "pete_e.application.progression_service.calibrate_plan_week",
@@ -107,6 +116,7 @@ def test_calibrate_plan_week_fetches_and_persists(monkeypatch: pytest.MonkeyPatc
     assert dal.updated_targets and dal.updated_targets[0][0]["workout_id"] == 2001
     assert dal.refresh_calls == 1
     assert decision.persisted is True
+    """Perform test calibrate plan week fetches and persists."""
 
 
 def test_calibrate_plan_week_can_skip_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -128,3 +138,4 @@ def test_calibrate_plan_week_can_skip_persistence(monkeypatch: pytest.MonkeyPatc
     assert decision.persisted is False
     assert not dal.updated_targets
     assert dal.refresh_calls == 0
+    """Perform test calibrate plan week can skip persistence."""

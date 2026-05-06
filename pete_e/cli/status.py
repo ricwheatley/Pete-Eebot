@@ -31,6 +31,7 @@ def _format_duration(start: float) -> str:
     if elapsed < 0.001:
         return "<1ms"
     return f"{int(elapsed * 1000)}ms"
+    """Perform format duration."""
 
 
 def _format_exception(exc: Exception) -> str:
@@ -38,6 +39,7 @@ def _format_exception(exc: Exception) -> str:
     if not message:
         message = exc.__class__.__name__
     return message.splitlines()[0]
+    """Perform format exception."""
 
 
 def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
@@ -50,6 +52,7 @@ def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     except Exception as exc:  # pragma: no cover - handled via result
         return CheckResult(name="DB", ok=False, detail=_format_exception(exc))
     return CheckResult(name="DB", ok=True, detail=_format_duration(start))
+    """Perform check database."""
 
 
 def check_dropbox(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
@@ -62,6 +65,7 @@ def check_dropbox(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     if not detail:
         detail = _format_duration(start)
     return CheckResult(name="Dropbox", ok=True, detail=detail)
+    """Perform check dropbox."""
 
 
 def check_withings(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
@@ -74,6 +78,7 @@ def check_withings(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     if not detail:
         detail = _format_duration(start)
     return CheckResult(name="Withings", ok=True, detail=detail)
+    """Perform check withings."""
 
 
 def check_telegram(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
@@ -86,6 +91,7 @@ def check_telegram(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     if not detail:
         detail = _format_duration(start)
     return CheckResult(name="Telegram", ok=True, detail=detail)
+    """Perform check telegram."""
 
 
 def check_wger(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
@@ -98,6 +104,7 @@ def check_wger(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     if not detail:
         detail = _format_duration(start)
     return CheckResult(name="Wger", ok=True, detail=detail)
+    """Perform check wger."""
 
 
 def run_status_checks(
@@ -125,3 +132,4 @@ def render_results(results: Iterable[CheckResult]) -> str:
         status = "OK" if result.ok else "FAIL"
         lines.append(f"{result.name:<8} {status:<4} {result.detail}")
     return "\n".join(lines)
+    """Perform render results."""

@@ -9,6 +9,7 @@ import pytest
 def generate_plan_module():
     module = importlib.import_module("scripts.generate_plan")
     return module
+    """Perform generate plan module."""
 
 
 def test_generate_plan_cli_invokes_service(monkeypatch, generate_plan_module):
@@ -19,3 +20,4 @@ def test_generate_plan_cli_invokes_service(monkeypatch, generate_plan_module):
     generate_plan_module.main()
 
     mock_service.run.assert_called_once_with(start_date=dt.date(2025, 10, 27), dry_run=True)
+    """Perform test generate plan cli invokes service."""

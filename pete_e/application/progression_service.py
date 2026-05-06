@@ -24,6 +24,7 @@ def _extract_exercise_ids(rows: Iterable[Dict[str, Any]]) -> List[int]:
             seen.add(value)
             ids.append(value)
     return ids
+    """Perform extract exercise ids."""
 
 
 class ProgressionService:
@@ -31,6 +32,7 @@ class ProgressionService:
 
     def __init__(self, dal: DataAccessLayer) -> None:
         self._dal = dal
+        """Initialize this object."""
 
     def calibrate_plan_week(
         self,
@@ -87,3 +89,4 @@ class ProgressionService:
         if persisted:
             return replace(decision, persisted=True)
         return decision
+        """Perform calibrate plan week."""

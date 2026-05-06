@@ -81,6 +81,7 @@ def _coerce_date(value: Any) -> date | None:
             except ValueError:
                 return None
     return None
+    """Perform coerce date."""
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -90,6 +91,7 @@ def _coerce_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+    """Perform coerce float."""
 
 
 def _normalise_runs(recent_runs: Iterable[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
@@ -111,6 +113,7 @@ def _normalise_runs(recent_runs: Iterable[Dict[str, Any]] | None) -> List[Dict[s
         )
     normalised.sort(key=lambda item: item["date"])
     return normalised
+    """Perform normalise runs."""
 
 
 def summarise_running_load(
@@ -165,6 +168,7 @@ def _assess_recovery(
         return assess_recovery_and_backoff(rows, action_date)
     except Exception:
         return None
+    """Perform assess recovery."""
 
 
 def _phase_for_load(load: RunningLoadSummary, goal: RunningGoal | None, as_of: date) -> str:
@@ -185,6 +189,7 @@ def _phase_for_load(load: RunningLoadSummary, goal: RunningGoal | None, as_of: d
         if weeks_to_race <= 18:
             return "marathon_specific"
     return "aerobic_build"
+    """Perform phase for load."""
 
 
 def _long_run_start_for_phase(load: RunningLoadSummary, phase: str) -> int:
@@ -196,6 +201,7 @@ def _long_run_start_for_phase(load: RunningLoadSummary, phase: str) -> int:
     if phase == "base":
         return max(7, min(12, round(longest + 1.0)))
     return max(10, min(18, round(longest + 2.0)))
+    """Perform long run start for phase."""
 
 
 def build_running_plan_profile(
@@ -297,6 +303,7 @@ def _run_payload(
         "optional": optional,
         "recovery_focused": recovery_focused,
     }
+    """Perform run payload."""
 
 
 def _progressed_long_run_distance(profile: RunningPlanProfile, week_number: int) -> int:
@@ -306,6 +313,7 @@ def _progressed_long_run_distance(profile: RunningPlanProfile, week_number: int)
     if week_number % 4 == 0:
         return max(start, start + max(0, week_number - 3))
     return start + ((week_number - 1) * profile.long_run_increment_km)
+    """Perform progressed long run distance."""
 
 
 def _daily_load_backoff(load: RunningLoadSummary) -> tuple[str, tuple[str, ...]] | None:
@@ -321,6 +329,7 @@ def _daily_load_backoff(load: RunningLoadSummary) -> tuple[str, tuple[str, ...]]
             ),
         )
     return None
+    """Perform daily load backoff."""
 
 
 def assess_morning_run_adjustment(

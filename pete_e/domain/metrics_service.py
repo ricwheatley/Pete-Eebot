@@ -23,6 +23,7 @@ def _window_values(
         if end is not None and point_date >= end:
             continue
         yield value
+    """Perform window values."""
 
 
 def _average_window(
@@ -35,6 +36,7 @@ def _average_window(
     if not values:
         return None
     return sum(values) / len(values)
+    """Perform average window."""
 
 
 def _extreme_window(
@@ -48,6 +50,7 @@ def _extreme_window(
     if not values:
         return None
     return reducer(values)
+    """Perform extreme window."""
 
 
 def _build_metric_series(
@@ -68,6 +71,7 @@ def _build_metric_series(
         )
         series[row_date] = value
     return series
+    """Perform build metric series."""
 
 
 def _calculate_moving_averages(
@@ -92,6 +96,7 @@ def _calculate_moving_averages(
         "avg_28d": avg_28d,
         "avg_90d": avg_90d,
     }
+    """Perform calculate moving averages."""
 
 
 def _calculate_changes(
@@ -122,6 +127,7 @@ def _calculate_changes(
         "abs_change_7d": abs_change_7d,
         "pct_change_7d": pct_change_7d,
     }
+    """Perform calculate changes."""
 
 
 def _find_historical_extremes(
@@ -150,6 +156,7 @@ def _find_historical_extremes(
         "all_time_high": all_time_high,
         "all_time_low": all_time_low,
     }
+    """Perform find historical extremes."""
 
 
 def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date) -> Dict[str, Optional[float]]:
@@ -177,6 +184,7 @@ def _build_metric_stats(series: Dict[date, Optional[float]], *, reference: date)
     for key, value in list(stats.items()):
         stats[key] = converters.to_float(value)
     return stats
+    """Perform build metric stats."""
 
 
 _METRIC_SPECS: Dict[str, tuple[str, Optional[Callable[[Any], Optional[float]]]]] = {

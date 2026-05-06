@@ -76,8 +76,10 @@ def retry_on_network_error(
                 raise last_exc
 
             raise RuntimeError("retry_on_network_error failed without executing the function.")
+            """Perform wrapper."""
 
         return wrapper  # type: ignore[return-value]
+        """Perform decorator."""
 
     return decorator
 

@@ -28,6 +28,7 @@ def _secret_to_str(value) -> str:
     if callable(getter):
         return getter()
     return "" if value is None else str(value)
+    """Perform secret to str."""
 
 
 def _configured_api_key() -> str:
@@ -35,6 +36,7 @@ def _configured_api_key() -> str:
     if not configured:
         raise HTTPException(status_code=503, detail="PETEEEBOT_API_KEY is not configured")
     return configured
+    """Perform configured api key."""
 
 
 def _configured_webhook_secret() -> bytes:
@@ -42,6 +44,7 @@ def _configured_webhook_secret() -> bytes:
     if not secret:
         raise HTTPException(status_code=503, detail="GITHUB_WEBHOOK_SECRET is not configured")
     return secret.encode("utf-8")
+    """Perform configured webhook secret."""
 
 
 def _configured_deploy_script_path() -> Path:
@@ -52,6 +55,7 @@ def _configured_deploy_script_path() -> Path:
     if not deploy_path.exists():
         raise HTTPException(status_code=500, detail=f"Deploy script not found: {deploy_path}")
     return deploy_path
+    """Perform configured deploy script path."""
 
 
 def get_dal() -> PostgresDal:
@@ -59,6 +63,7 @@ def get_dal() -> PostgresDal:
     if _dal is None:
         _dal = PostgresDal()
     return _dal
+    """Perform get dal."""
 
 
 def get_metrics_service() -> MetricsService:
@@ -66,6 +71,7 @@ def get_metrics_service() -> MetricsService:
     if _metrics_service is None:
         _metrics_service = MetricsService(get_dal())
     return _metrics_service
+    """Perform get metrics service."""
 
 
 def get_plan_service() -> PlanService:
@@ -73,6 +79,7 @@ def get_plan_service() -> PlanService:
     if _plan_service is None:
         _plan_service = PlanService(get_dal())
     return _plan_service
+    """Perform get plan service."""
 
 
 def get_status_service() -> StatusService:
@@ -80,6 +87,7 @@ def get_status_service() -> StatusService:
     if _status_service is None:
         _status_service = StatusService(get_dal())
     return _status_service
+    """Perform get status service."""
 
 # Helper to validate API key from header OR query string
 def validate_api_key(request: Request, x_api_key: str | None) -> None:
@@ -87,17 +95,20 @@ def validate_api_key(request: Request, x_api_key: str | None) -> None:
     key = x_api_key or request.query_params.get("api_key")
     if not key or not hmac.compare_digest(key, configured_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    """Perform validate api key."""
 
 
 # Root endpoint - useful for connector validation
 @app.get("/")
 def root_get():
     return {"status": "ok", "message": "Pete-Eebot API root"}
+    """Perform root get."""
 
 
 @app.post("/")
 def root_post(request: Request):
     return {"status": "ok", "message": "Pete-Eebot API root POST"}
+    """Perform root post."""
 
 
 # Metrics endpoint
@@ -234,8 +245,10 @@ def sse(request: Request, x_api_key: str = Header(None)):
         while True:
             yield f"data: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
             time.sleep(5)
+        """Perform event generator."""
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+    """Perform sse."""
 
 
 # Plan for a single day
@@ -377,6 +390,7 @@ async def run_pete_plan_async(
     validate_api_key(request, x_api_key)
     subprocess.Popen(["pete", "plan", "--weeks", str(weeks), "--start-date", start_date])
     return {"status": "Started", "weeks": weeks, "start_date": start_date}
+    """Perform run pete plan async."""
 
 
 @app.post("/webhook")

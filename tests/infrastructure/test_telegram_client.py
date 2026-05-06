@@ -10,12 +10,16 @@ from pete_e.infrastructure.telegram_client import TelegramClient
 class _DummyResponse:
     def __init__(self, payload: Any | None = None) -> None:
         self._payload = payload or {"ok": True, "result": []}
+        """Initialize this object."""
 
     def raise_for_status(self) -> None:  # pragma: no cover - behaviour verified via absence of exception
         return None
+        """Perform raise for status."""
 
     def json(self) -> Any:
         return self._payload
+        """Perform json."""
+    """Represent DummyResponse."""
 
 
 def test_send_message_posts_expected_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,6 +28,7 @@ def test_send_message_posts_expected_payload(monkeypatch: pytest.MonkeyPatch) ->
     def fake_post(url: str, *, json: dict[str, Any], timeout: int) -> _DummyResponse:
         calls.append({"url": url, "json": json, "timeout": timeout})
         return _DummyResponse()
+        """Perform fake post."""
 
     monkeypatch.setattr("pete_e.infrastructure.telegram_client.requests.post", fake_post)
 
@@ -37,6 +42,7 @@ def test_send_message_posts_expected_payload(monkeypatch: pytest.MonkeyPatch) ->
             "timeout": 10,
         }
     ]
+    """Perform test send message posts expected payload."""
 
 
 def test_get_updates_calls_expected_url_and_params(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -46,6 +52,7 @@ def test_get_updates_calls_expected_url_and_params(monkeypatch: pytest.MonkeyPat
         calls.update({"url": url, "params": params, "timeout": timeout})
         payload = {"ok": True, "result": [{"update_id": 1}]}
         return _DummyResponse(payload)
+        """Perform fake get."""
 
     monkeypatch.setattr("pete_e.infrastructure.telegram_client.requests.get", fake_get)
 
@@ -58,6 +65,7 @@ def test_get_updates_calls_expected_url_and_params(monkeypatch: pytest.MonkeyPat
         "params": {"offset": 7, "limit": 100, "timeout": 10},
         "timeout": 15,
     }
+    """Perform test get updates calls expected url and params."""
 
 
 def test_ping_calls_get_me_and_reports_configured_bot(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,6 +75,7 @@ def test_ping_calls_get_me_and_reports_configured_bot(monkeypatch: pytest.Monkey
         calls.update({"url": url, "timeout": timeout})
         payload = {"ok": True, "result": {"username": "peteeebot"}}
         return _DummyResponse(payload)
+        """Perform fake get."""
 
     monkeypatch.setattr("pete_e.infrastructure.telegram_client.requests.get", fake_get)
 
@@ -78,6 +87,7 @@ def test_ping_calls_get_me_and_reports_configured_bot(monkeypatch: pytest.Monkey
         "url": "https://api.telegram.org/botabc123/getMe",
         "timeout": 2.5,
     }
+    """Perform test ping calls get me and reports configured bot."""
 
 
 def test_ping_requires_chat_id(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,3 +98,4 @@ def test_ping_requires_chat_id(monkeypatch: pytest.MonkeyPatch) -> None:
         client.ping()
 
     assert "chat_id missing" in str(exc.value)
+    """Perform test ping requires chat id."""

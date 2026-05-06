@@ -43,6 +43,7 @@ class Container:
     def __init__(self) -> None:
         self._factories: Dict[ServiceType, Factory] = {}
         self._instances: Dict[ServiceType, Any] = {}
+        """Initialize this object."""
 
     def register(
         self,
@@ -59,6 +60,7 @@ class Container:
             raise ValueError("Either factory or instance must be provided.")
         self._factories[service] = factory
         self._instances.pop(service, None)
+        """Perform register."""
 
     def resolve(self, service: ServiceType) -> Any:
         if service in self._instances:
@@ -68,6 +70,7 @@ class Container:
         except KeyError as exc:
             raise KeyError(f"No provider registered for {service!r}") from exc
         return factory(self)
+        """Perform resolve."""
 
 
 def _register_defaults(container: Container) -> None:
@@ -114,6 +117,7 @@ def _wrap_override(provider: Any) -> Factory:
     if isinstance(provider, type):
         return lambda _c, cls=provider: cls()
     return lambda _c, value=provider: value
+    """Perform wrap override."""
 
 
 def build_container(overrides: Dict[ServiceType, Any] | None = None) -> Container:
