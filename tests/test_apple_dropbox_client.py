@@ -12,6 +12,7 @@ from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 def _make_file(path: str, modified: datetime) -> FileMetadata:
     name = path.split("/")[-1]
     return FileMetadata(name=name, path_display=path, client_modified=modified)
+    """Perform make file."""
 
 
 class FakeDropbox:
@@ -29,6 +30,7 @@ class FakeDropbox:
         self._initial_index = 0
         self._incremental_index = 0
         self._serving_initial = False
+        """Initialize this object."""
 
     def files_list_folder(self, folder_path: str, recursive: bool = False) -> object:
         del folder_path, recursive
@@ -41,6 +43,7 @@ class FakeDropbox:
         if not result.has_more:
             self._serving_initial = False
         return result
+        """Perform files list folder."""
 
     def files_list_folder_continue(self, cursor: str) -> object:
         del cursor
@@ -63,6 +66,8 @@ class FakeDropbox:
         result = self._incremental_results[self._incremental_index]
         self._incremental_index += 1
         return result
+        """Perform files list folder continue."""
+    """Represent FakeDropbox."""
 
 
 def _build_client(fake_dbx: FakeDropbox) -> AppleDropboxClient:
@@ -75,6 +80,7 @@ def _build_client(fake_dbx: FakeDropbox) -> AppleDropboxClient:
     client._folder_cursors = {}
     client._folder_latest_sync = {}
     return client
+    """Perform build client."""
 
 
 def test_find_new_export_files_uses_incremental_listing() -> None:
@@ -115,6 +121,7 @@ def test_find_new_export_files_uses_incremental_listing() -> None:
     assert fake_dbx.continue_calls == 1
     assert client._folder_cursors[folder] == "cursor-incremental"
     assert client._folder_latest_sync[folder] == second_mod
+    """Perform test find new export files uses incremental listing."""
 
 
 def test_find_new_export_files_falls_back_on_cursor_error() -> None:
@@ -146,3 +153,4 @@ def test_find_new_export_files_falls_back_on_cursor_error() -> None:
     assert fake_dbx.list_calls == 1
     assert client._folder_cursors[folder] == "cursor-refreshed"
     assert client._folder_latest_sync[folder] == new_mod
+    """Perform test find new export files falls back on cursor error."""

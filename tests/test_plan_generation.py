@@ -19,25 +19,33 @@ def test_plan_generation_service_holds_lock(monkeypatch) -> None:
                 yield
             finally:
                 calls.append(("lock_exit", None))
+            """Perform hold plan generation lock."""
 
         def close(self) -> None:
             calls.append(("close", None))
+            """Perform close."""
+        """Represent StubDal."""
 
     class StubWgerClient:
         pass
+        """Represent StubWgerClient."""
 
     class StubPlanService:
         def __init__(self, dal):
             assert isinstance(dal, StubDal)
+            """Initialize this object."""
 
         def create_next_plan_for_cycle(self, *, start_date: date) -> int:
             calls.append(("create", start_date))
             return 42
+            """Perform create next plan for cycle."""
+        """Represent StubPlanService."""
 
     class StubExportService:
         def __init__(self, dal, wger_client):
             assert isinstance(dal, StubDal)
             assert isinstance(wger_client, StubWgerClient)
+            """Initialize this object."""
 
         def export_plan_week(
             self,
@@ -52,6 +60,8 @@ def test_plan_generation_service_holds_lock(monkeypatch) -> None:
                 ("export", (plan_id, week_number, start_date, force_overwrite, dry_run))
             )
             return {"status": "exported"}
+            """Perform export plan week."""
+        """Represent StubExportService."""
 
     monkeypatch.setattr("pete_e.application.plan_generation.PlanService", StubPlanService)
     monkeypatch.setattr(
@@ -74,3 +84,4 @@ def test_plan_generation_service_holds_lock(monkeypatch) -> None:
         ("lock_exit", None),
         ("close", None),
     ]
+    """Perform test plan generation service holds lock."""

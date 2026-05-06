@@ -15,13 +15,17 @@ class _FakeResponse:
         self.status_code = status
         self._payload = payload or {}
         self.text = json.dumps(self._payload)
+        """Initialize this object."""
 
     def json(self) -> dict:
         return self._payload
+        """Perform json."""
+    """Represent FakeResponse."""
 
 
 def _response(status: int, payload: dict | None = None) -> _FakeResponse:
     return _FakeResponse(status, payload)
+    """Perform response."""
 
 
 def _configured_client() -> WgerClient:
@@ -32,6 +36,7 @@ def _configured_client() -> WgerClient:
     client.max_retries = 3
     client.backoff_base = 0
     return client
+    """Perform configured client."""
 
 
 def test_wger_client_retry_logic() -> None:
@@ -39,6 +44,7 @@ def test_wger_client_retry_logic() -> None:
     retryable = [408, 429, 500, 502, 503, 504]
     assert all(client._should_retry(code) for code in retryable)  # type: ignore[attr-defined]
     assert client._should_retry(404) is False  # type: ignore[attr-defined]
+    """Perform test wger client retry logic."""
 
 
 def test_wger_client_request_retries_and_succeeds(monkeypatch):
@@ -67,6 +73,7 @@ def test_wger_client_request_retries_and_succeeds(monkeypatch):
         if isinstance(result, Exception):
             raise result
         return result
+        """Perform fake request."""
 
     monkeypatch.setattr(wger_client_module.requests, "request", fake_request, raising=False)
     monkeypatch.setattr("pete_e.infrastructure.decorators.time.sleep", lambda _: None)
@@ -78,6 +85,7 @@ def test_wger_client_request_retries_and_succeeds(monkeypatch):
     # --- Assert ---
     assert result == {"ok": True}
     assert len(attempts) == 3
+    """Perform test wger client request retries and succeeds."""
 
 
 
@@ -93,6 +101,7 @@ def test_wger_client_request_raises_after_non_retryable(monkeypatch):
 
     def fake_request(*args, **kwargs):
         return _response(404, {"detail": "not found"})
+        """Perform fake request."""
 
     monkeypatch.setattr(wger_client_module.requests, "request", fake_request, raising=False)
 
@@ -100,4 +109,5 @@ def test_wger_client_request_raises_after_non_retryable(monkeypatch):
     with pytest.raises(WgerError) as e:
         client._request("GET", "/missing/")
     assert "404" in str(e.value)
+    """Perform test wger client request raises after non retryable."""
 

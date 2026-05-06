@@ -13,9 +13,11 @@ class DummyClient:
         self.max_retries = max_retries
         self.backoff_base = backoff_base
         self._responses = iter(responses)
+        """Initialize this object."""
 
     def _should_retry(self, status: int) -> bool:  # pragma: no cover - supplied via decorator
         return status in (408, 429, 500, 502, 503, 504)
+        """Perform should retry."""
 
     @retry_on_network_error(lambda self, status: self._should_retry(status), exception_types=(WgerError,))
     def run(self) -> object:
@@ -23,16 +25,21 @@ class DummyClient:
         if isinstance(result, Exception):
             raise result
         return result
+        """Perform run."""
+    """Represent DummyClient."""
 
 
 class _FakeResponse:
     def __init__(self, status_code: int, text: str = "error") -> None:
         self.status_code = status_code
         self.text = text
+        """Initialize this object."""
+    """Represent FakeResponse."""
 
 
 def _response_with_status(status: int, text: str = "error") -> _FakeResponse:
     return _FakeResponse(status, text)
+    """Perform response with status."""
 
 
 def test_retry_on_network_error_retries_retryable_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,6 +56,7 @@ def test_retry_on_network_error_retries_retryable_status(monkeypatch: pytest.Mon
 
     assert client.run() == {"ok": True}
     assert sleeps == [0.75, 1.5]
+    """Perform test retry on network error retries retryable status."""
 
 
 def test_retry_on_network_error_stops_on_non_retryable_status(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,6 +67,7 @@ def test_retry_on_network_error_stops_on_non_retryable_status(monkeypatch: pytes
 
     with pytest.raises(WgerError):
         client.run()
+    """Perform test retry on network error stops on non retryable status."""
 
 
 def test_retry_on_network_error_handles_network_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,6 +83,7 @@ def test_retry_on_network_error_handles_network_errors(monkeypatch: pytest.Monke
 
     assert client.run() == {"ok": True}
     assert sleeps == [0.25]
+    """Perform test retry on network error handles network errors."""
 
 
 def test_retry_on_network_error_raises_after_exhausting_retries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,3 +94,4 @@ def test_retry_on_network_error_raises_after_exhausting_retries(monkeypatch: pyt
 
     with pytest.raises(WgerError):
         client.run()
+    """Perform test retry on network error raises after exhausting retries."""

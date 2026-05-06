@@ -41,12 +41,15 @@ class _EnvRefreshTokenBootstrapStorage:
 
     def __init__(self) -> None:
         self._writer = JsonFileTokenStorage(WithingsClient.TOKEN_FILE)
+        """Initialize this object."""
 
     def read_tokens(self) -> None:
         return None
+        """Perform read tokens."""
 
     def save_tokens(self, tokens: dict[str, object]) -> None:
         self._writer.save_tokens(tokens)
+        """Perform save tokens."""
 
 
 def _parse_iso_date(value: str) -> date:
@@ -54,6 +57,7 @@ def _parse_iso_date(value: str) -> date:
         return date.fromisoformat(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(f"Invalid date: {value}. Use YYYY-MM-DD.") from exc
+    """Perform parse iso date."""
 
 
 def _resolve_window(
@@ -77,6 +81,7 @@ def _resolve_window(
     start_dt = datetime.combine(target_day, time.min, tzinfo=timezone.utc)
     end_dt = start_dt + timedelta(days=window_days)
     return start_dt, end_dt
+    """Perform resolve window."""
 
 
 def _fetch_payload(
@@ -108,6 +113,7 @@ def _fetch_payload(
     )
     response.raise_for_status()
     return response.json()
+    """Perform fetch payload."""
 
 
 def _trim_to_latest_group(payload: dict[str, Any]) -> dict[str, Any]:
@@ -131,6 +137,7 @@ def _trim_to_latest_group(payload: dict[str, Any]) -> dict[str, Any]:
     trimmed_body["measuregrps"] = [latest]
     trimmed["body"] = trimmed_body
     return trimmed
+    """Perform trim to latest group."""
 
 
 def _measure_type_counts(payload: dict[str, Any]) -> dict[int, int]:
@@ -156,6 +163,7 @@ def _measure_type_counts(payload: dict[str, Any]) -> dict[int, int]:
             if isinstance(raw_type, int):
                 counts[raw_type] = counts.get(raw_type, 0) + 1
     return counts
+    """Perform measure type counts."""
 
 
 def _measure_type_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -174,6 +182,7 @@ def _measure_type_summary(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "unhandled_measure_types": [str(key) for key in unhandled_types],
     }
+    """Perform measure type summary."""
 
 
 def main() -> int:
@@ -254,6 +263,7 @@ def main() -> int:
 
     print(rendered)
     return 0
+    """Perform main."""
 
 
 if __name__ == "__main__":

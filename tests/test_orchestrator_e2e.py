@@ -15,6 +15,7 @@ def test_dataclasses_capture_expected_fields():
     assert result.calibration.message == "ok"
     assert result.rollover.plan_id == 17
     assert result.rollover_triggered is True
+    """Perform test dataclasses capture expected fields."""
 
 
 def test_close_invokes_dal_close():
@@ -23,6 +24,8 @@ def test_close_invokes_dal_close():
     class Closer:
         def close(self):
             calls.append("closed")
+            """Perform close."""
+        """Represent Closer."""
 
     container = build_stub_container(
         dal=Closer(),
@@ -35,3 +38,4 @@ def test_close_invokes_dal_close():
     orch.close()
 
     assert calls == ["closed"]
+    """Perform test close invokes dal close."""

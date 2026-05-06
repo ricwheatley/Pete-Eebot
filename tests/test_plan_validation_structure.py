@@ -83,6 +83,7 @@ def _make_day(
             )
         )
     return workouts
+    """Perform make day."""
 
 
 def make_valid_plan(start: date) -> Plan:
@@ -112,12 +113,14 @@ def make_valid_plan(start: date) -> Plan:
     balance = ensure_muscle_balance(plan)
     assert balance.balanced, f"Fixture plan must stay balanced: {balance}"
     return plan
+    """Perform make valid plan."""
 
 
 def test_validate_plan_structure_accepts_valid_plan() -> None:
     start = date(2025, 9, 22)
     plan = make_valid_plan(start)
     validate_plan_structure(plan, start)
+    """Perform test validate plan structure accepts valid plan."""
 
 
 def test_validate_plan_structure_rejects_incorrect_week_count() -> None:
@@ -127,6 +130,7 @@ def test_validate_plan_structure_rejects_incorrect_week_count() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "4 weeks" in str(excinfo.value)
+    """Perform test validate plan structure rejects incorrect week count."""
 
 
 def test_validate_plan_structure_rejects_week_number_mismatch() -> None:
@@ -136,6 +140,7 @@ def test_validate_plan_structure_rejects_week_number_mismatch() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "week 2: expected week_number 2" in str(excinfo.value)
+    """Perform test validate plan structure rejects week number mismatch."""
 
 
 def test_validate_plan_structure_requires_seven_day_spacing() -> None:
@@ -145,6 +150,7 @@ def test_validate_plan_structure_requires_seven_day_spacing() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "start_date" in str(excinfo.value)
+    """Perform test validate plan structure requires seven day spacing."""
 
 
 def test_validate_plan_structure_requires_training_day_pattern() -> None:
@@ -156,6 +162,7 @@ def test_validate_plan_structure_requires_training_day_pattern() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "missing training days" in str(excinfo.value)
+    """Perform test validate plan structure requires training day pattern."""
 
 
 def test_validate_plan_structure_flags_muscle_imbalance() -> None:
@@ -170,6 +177,7 @@ def test_validate_plan_structure_flags_muscle_imbalance() -> None:
     with pytest.raises(ValueError) as excinfo:
         validate_plan_structure(plan, start)
     assert "muscle balance" in str(excinfo.value)
+    """Perform test validate plan structure flags muscle imbalance."""
 
 
 def test_validate_plan_structure_flags_missing_weights() -> None:
@@ -215,3 +223,4 @@ def test_validate_plan_structure_flags_missing_weights() -> None:
         validate_plan_structure(plan, start)
 
     assert "missing target weight" in str(excinfo.value)
+    """Perform test validate plan structure flags missing weights."""

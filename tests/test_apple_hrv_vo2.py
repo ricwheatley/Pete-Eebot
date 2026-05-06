@@ -12,12 +12,16 @@ class _DeterministicRandom:
         if not seq:
             raise ValueError("sequence was empty")
         return seq[0]
+        """Perform choice."""
 
     def randint(self, a, b):
         return a
+        """Perform randint."""
 
     def random(self):
         return 0.0
+        """Perform random."""
+    """Represent DeterministicRandom."""
 
 
 @pytest.fixture
@@ -27,11 +31,13 @@ def fixed_random(monkeypatch):
     monkeypatch.setattr(narrative_builder.narrative_utils.random, "random", lambda: 0.99)
     monkeypatch.setattr(narrative_builder.narrative_utils.random, "choice", lambda seq: seq[0])
     return deterministic
+    """Perform fixed random."""
 
 
 @pytest.fixture(autouse=True)
 def stub_phrase_picker(monkeypatch):
     monkeypatch.setattr(narrative_builder, "phrase_for", lambda *_, **__: "Keep rolling!")
+    """Perform stub phrase picker."""
 
 
 def test_apple_parser_maps_hrv_and_vo2_metrics():
@@ -64,6 +70,7 @@ def test_apple_parser_maps_hrv_and_vo2_metrics():
     metric_points = {(p.metric_name, p.unit, round(p.value, 1)) for p in parsed["daily_metric_points"]}
     assert ("hrv_sdnn_ms", "ms", 74.1) in metric_points
     assert ("vo2_max", "ml/kg/min", 51.3) in metric_points
+    """Perform test apple parser maps hrv and vo2 metrics."""
 
 
 def test_daily_summary_appends_hrv_trend_line(monkeypatch, fixed_random):
@@ -81,15 +88,20 @@ def test_daily_summary_appends_hrv_trend_line(monkeypatch, fixed_random):
                     "hrv_sdnn_ms": value,
                 })
             return rows
+            """Perform get historical metrics."""
+        """Represent StubDal."""
 
     class StubOrchestrator:
         def __init__(self):
             self.dal = StubDal()
             self.queries = []
+            """Initialize this object."""
 
         def get_daily_summary(self, target_date=None):
             self.queries.append(target_date)
             return "Base daily summary"
+            """Perform get daily summary."""
+        """Represent StubOrchestrator."""
 
     orch = StubOrchestrator()
 
@@ -100,6 +112,7 @@ def test_daily_summary_appends_hrv_trend_line(monkeypatch, fixed_random):
     assert "↗" in summary
     assert "69" in summary  # rolling average reference
     assert orch.queries == [target]
+    """Perform test daily summary appends hrv trend line."""
 
 
 def test_body_age_uses_direct_vo2_max(monkeypatch):
@@ -113,6 +126,7 @@ def test_body_age_uses_direct_vo2_max(monkeypatch):
 
     assert result["assumptions"]["used_vo2max_direct"] is True
     assert result["subscores"]["crf"] > 0
+    """Perform test body age uses direct vo2 max."""
 
 
 def test_body_age_uses_enriched_withings_body_comp_after_first_full_window():
@@ -135,6 +149,7 @@ def test_body_age_uses_enriched_withings_body_comp_after_first_full_window():
 
     assert result["assumptions"]["used_enriched_body_comp"] is True
     assert result["subscores"]["body_comp"] == 46.0
+    """Perform test body age uses enriched withings body comp after first full window."""
 
 
 def test_body_age_falls_back_before_enriched_withings_window_is_complete():
@@ -157,4 +172,5 @@ def test_body_age_falls_back_before_enriched_withings_window_is_complete():
 
     assert result["assumptions"]["used_enriched_body_comp"] is False
     assert result["subscores"]["body_comp"] == 20.0
+    """Perform test body age falls back before enriched withings window is complete."""
 

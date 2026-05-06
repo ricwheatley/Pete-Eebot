@@ -24,6 +24,7 @@ def test_check_and_rollover_requires_four_weeks_and_sunday():
 
     midweek = fourth_sunday.replace(day=26)  # Friday of week four
     assert service.check_and_rollover(plan, midweek) is False
+    """Perform test check and rollover requires four weeks and sunday."""
 
 
 def test_check_and_rollover_shorter_plans_roll_immediately():
@@ -35,6 +36,7 @@ def test_check_and_rollover_shorter_plans_roll_immediately():
 
     saturday = first_sunday - timedelta(days=1)
     assert service.check_and_rollover(plan, saturday) is False
+    """Perform test check and rollover shorter plans roll immediately."""
 
 
 def test_orchestrator_delegates_rollover_decision():
@@ -69,3 +71,4 @@ def test_orchestrator_delegates_rollover_decision():
         validation_decision=None,
     )
     assert result.rollover_triggered is True
+    """Perform test orchestrator delegates rollover decision."""

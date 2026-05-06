@@ -38,6 +38,7 @@ from pete_e.infrastructure.wger_client import WgerClient
 class WeeklyCalibrationResult:
     message: str
     validation: ValidationDecision | None = None
+    """Represent WeeklyCalibrationResult."""
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class DailyAutomationResult:
     summary_attempted: bool = False
     summary_sent: bool = False
     undelivered_alerts: List[str] = field(default_factory=list)
+    """Represent DailyAutomationResult."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ class CycleRolloverResult:
     created: bool
     exported: bool
     message: str | None = None
+    """Represent CycleRolloverResult."""
 
 
 @dataclass(frozen=True)
@@ -64,12 +67,14 @@ class WeeklyAutomationResult:
     calibration: WeeklyCalibrationResult
     rollover: CycleRolloverResult | None
     rollover_triggered: bool
+    """Represent WeeklyAutomationResult."""
 
 
 def _coerce_metric_value(value: Any) -> Any:
     if isinstance(value, Decimal):
         return float(value)
     return value
+    """Perform coerce metric value."""
 
 
 def _build_metrics_overview_payload(
@@ -87,6 +92,7 @@ def _build_metrics_overview_payload(
         "reference_date": reference_date,
         "metrics": metrics,
     }
+    """Perform build metrics overview payload."""
 
 
 class Orchestrator:
@@ -140,6 +146,7 @@ class Orchestrator:
         if callable(holder):
             return holder()
         return nullcontext()
+        """Perform hold plan generation lock."""
 
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:

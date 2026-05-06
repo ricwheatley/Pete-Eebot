@@ -14,12 +14,14 @@ def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
         {"hr_resting": rhr, "sleep_asleep_minutes": sleep}
         for _ in range(days)
     ]
+    """Perform make metrics."""
 
 
 def make_week(target: float = 100.0, ex_id: int = 1) -> Week:
     exercise = Exercise(id=ex_id, name="Test", weight_target=target)
     workout = Workout(id=1, day_of_week=1, exercise=exercise, is_cardio=False)
     return Week(week_number=1, workouts=[workout])
+    """Perform make week."""
 
 
 def _run_progression(
@@ -36,6 +38,7 @@ def _run_progression(
         recent_metrics=metrics,
         baseline_metrics=baseline,
     )
+    """Perform run progression."""
 
 
 def test_low_rir_good_recovery() -> None:
@@ -60,6 +63,7 @@ def test_low_rir_good_recovery() -> None:
     assert weight == 107.5
     assert any("+7.5%" in n for n in notes)
     assert any("recovery good" in n for n in notes)
+    """Perform test low rir good recovery."""
 
 
 def test_high_rir_good_recovery() -> None:
@@ -83,6 +87,7 @@ def test_high_rir_good_recovery() -> None:
     weight = exercise.weight_target
     assert weight == 95.0
     assert any("-5.0%" in n for n in notes)
+    """Perform test high rir good recovery."""
 
 
 def test_poor_recovery_halves_increment() -> None:
@@ -106,6 +111,7 @@ def test_poor_recovery_halves_increment() -> None:
     weight = exercise.weight_target
     assert weight == 103.75
     assert any("recovery poor" in n for n in notes)
+    """Perform test poor recovery halves increment."""
 
 
 def test_missing_history_keeps_target() -> None:
@@ -132,6 +138,7 @@ def test_missing_history_keeps_target() -> None:
     weight = exercise.weight_target
     assert weight == 50
     assert any("no history" in n for n in notes)
+    """Perform test missing history keeps target."""
 
 
 def test_no_rir_uses_weight_and_recovery() -> None:
@@ -155,3 +162,4 @@ def test_no_rir_uses_weight_and_recovery() -> None:
     weight = exercise.weight_target
     assert weight == 105.0
     assert any("no RIR" in n for n in notes)
+    """Perform test no rir uses weight and recovery."""

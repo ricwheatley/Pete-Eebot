@@ -25,6 +25,7 @@ def _make_update(update_id: int, text: str, chat_id: int = 123456) -> dict:
             "text": text,
         },
     }
+    """Perform make update."""
 
 
 class StubTelegramClient:
@@ -35,6 +36,7 @@ class StubTelegramClient:
         self.get_updates_calls: list[dict[str, int | None]] = []
         self.send_result = True
         self.alert_result = True
+        """Initialize this object."""
 
     def get_updates(self, *, offset=None, limit, timeout):  # type: ignore[override]
         self.get_updates_calls.append({
@@ -43,14 +45,18 @@ class StubTelegramClient:
             "timeout": timeout,
         })
         return list(self.updates)
+        """Perform get updates."""
 
     def send_message(self, message: str) -> bool:
         self.sent_messages.append(message)
         return self.send_result
+        """Perform send message."""
 
     def send_alert(self, message: str) -> bool:
         self.alerts.append(message)
         return self.alert_result
+        """Perform send alert."""
+    """Represent StubTelegramClient."""
 
 
 def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,6 +88,7 @@ def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest
     assert client.sent_messages == ["Daily summary ready"]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 42
+    """Perform test listen once handles summary command."""
 
 
 def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,6 +126,7 @@ def test_listen_once_runs_sync_and_reports_status(tmp_path: Path, monkeypatch: p
     assert "summary_sent: True" in client.sent_messages[0]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 77
+    """Perform test listen once runs sync and reports status."""
 
 
 def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,6 +140,7 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
 
     def fake_generate() -> None:
         orchestration_calls["generate"] += 1
+        """Perform fake generate."""
 
     orch_stub = SimpleNamespace(generate_strength_test_week=fake_generate)
 
@@ -152,6 +161,7 @@ def test_listen_once_triggers_strength_test_week(tmp_path: Path, monkeypatch: py
     assert factory_calls == ["called"]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 99
+    """Perform test listen once triggers strength test week."""
 
 
 def test_listen_once_uses_stored_offset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,3 +182,4 @@ def test_listen_once_uses_stored_offset(tmp_path: Path, monkeypatch: pytest.Monk
     assert client.get_updates_calls == [{"offset": 901, "limit": 4, "timeout": 1}]
     stored = json.loads(offset_file.read_text())
     assert stored["last_update_id"] == 900
+    """Perform test listen once uses stored offset."""

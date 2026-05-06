@@ -62,6 +62,7 @@ class SyncResult:
             lines.append("Alerts pending delivery:")
             lines.extend(f"- {alert}" for alert in self.undelivered_alerts)
         return "\n".join(lines)
+        """Perform summary line."""
 
     def _build_source_notes(self, *, days: int) -> List[str]:
         if not self.source_statuses:
@@ -75,9 +76,11 @@ class SyncResult:
             if template:
                 notes.append(template.format(window=window))
         return notes
+        """Perform build source notes."""
 
     def log_level(self) -> str:
         return "INFO" if self.success else "ERROR"
+        """Perform log level."""
 
 
 class SyncAttemptFailedError(RuntimeError):
@@ -91,6 +94,7 @@ class SyncAttemptFailedError(RuntimeError):
         super().__init__("Sync attempt failed.")
         self.failed_sources = list(failed_sources or [])
         self.source_statuses = dict(source_statuses or {})
+        """Initialize this object."""
 
 
 def _build_orchestrator():
@@ -100,6 +104,7 @@ def _build_orchestrator():
     from pete_e.application.orchestrator import Orchestrator as _Orchestrator
     Orchestrator = _Orchestrator  # type: ignore
     return _Orchestrator()
+    """Perform build orchestrator."""
 
 
 def _build_failure_message(
@@ -153,6 +158,7 @@ def _run_with_retry(
         if success:
             return True
         raise SyncAttemptFailedError(last_failures, last_statuses)
+        """Perform sync once."""
 
     def _before_sleep(retry_state: RetryCallState) -> None:
         wait_time = getattr(retry_state.next_action, "sleep", base_delay)
@@ -171,6 +177,7 @@ def _run_with_retry(
             ),
             "WARN",
         )
+        """Perform before sleep."""
 
     retryer = Retrying(
         stop=stop_after_attempt(max_attempts),
@@ -236,6 +243,7 @@ def _run_with_retry(
             label=summary_label,
             undelivered_alerts=list(last_alerts),
         )
+    """Perform run with retry."""
 
 
 

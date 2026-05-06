@@ -14,10 +14,12 @@ BACKUP_DIR = Path.home() / "crontab_backups"
 def _is_comment_row(row: dict[str, str | None]) -> bool:
     name = (row.get("name") or "").strip()
     return not name or name.startswith("#")
+    """Perform is comment row."""
 
 
 def _is_enabled_row(row: dict[str, str | None]) -> bool:
     return (row.get("enabled") or "").strip().lower() == "true"
+    """Perform is enabled row."""
 
 
 def build_crontab_from_csv():
@@ -49,6 +51,7 @@ def save_crontab_file():
     CRON_TXT.write_text(text, encoding="utf-8")
     print(f"Crontab file written to {CRON_TXT}")
     return CRON_TXT
+    """Perform save crontab file."""
 
 
 def backup_existing_crontab():
@@ -58,6 +61,7 @@ def backup_existing_crontab():
     with backup_file.open("w", encoding="utf-8") as handle:
         subprocess.run(["crontab", "-l"], stdout=handle, stderr=subprocess.DEVNULL, check=False)
     return backup_file
+    """Perform backup existing crontab."""
 
 
 def activate_crontab():
@@ -69,6 +73,7 @@ def activate_crontab():
     subprocess.run(["crontab", str(CRON_TXT)], check=True)
     print("Crontab activated")
     return True
+    """Perform activate crontab."""
 
 
 def print_summary():
@@ -97,6 +102,7 @@ def print_summary():
 
             def _format_row(row):
                 return " | ".join(str(value).ljust(widths[idx]) for idx, value in enumerate(row))
+                """Perform format row."""
 
             print(_format_row(headers))
             print("-+-".join("-" * width for width in widths))
@@ -105,6 +111,7 @@ def print_summary():
         print()
     else:
         print("WARNING: No active jobs defined in CSV.")
+    """Perform print summary."""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         print_summary()
 
     return 0
+    """Perform main."""
 
 
 if __name__ == "__main__":

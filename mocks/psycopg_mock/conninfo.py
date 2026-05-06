@@ -12,6 +12,7 @@ def _quote(value: Any) -> str:
     if needs_quotes:
         return f"'{escaped}'"
     return escaped
+    """Perform quote."""
 
 
 def make_conninfo(*, user: Any, password: Any, host: Any, port: Any, dbname: Any) -> str:

@@ -21,6 +21,7 @@ class _LazyModuleProxy:
     def __init__(self, module_name: str) -> None:
         object.__setattr__(self, "_module_name", module_name)
         object.__setattr__(self, "_module", None)
+        """Initialize this object."""
 
     def _load(self):
         module = object.__getattribute__(self, "_module")
@@ -28,6 +29,7 @@ class _LazyModuleProxy:
             module = importlib.import_module(object.__getattribute__(self, "_module_name"))
             object.__setattr__(self, "_module", module)
         return module
+        """Perform load."""
 
     def __getattribute__(self, item):
         if item in {"_module_name", "_module", "_load", "__dict__", "__class__", "__setattr__", "__getattribute__"}:
@@ -39,12 +41,14 @@ class _LazyModuleProxy:
 
         module = object.__getattribute__(self, "_load")()
         return getattr(module, item)
+        """Implement the `__getattribute__` dunder method behavior."""
 
     def __setattr__(self, key, value):
         if key in {"_module_name", "_module"}:
             object.__setattr__(self, key, value)
         else:
             object.__getattribute__(self, "__dict__")[key] = value
+        """Implement the `__setattr__` dunder method behavior."""
 
 
 messenger = cast(Any, _LazyModuleProxy("pete_e.cli.messenger"))
@@ -53,9 +57,12 @@ messenger = cast(Any, _LazyModuleProxy("pete_e.cli.messenger"))
 class _OrchestratorProtocol(Protocol):
     def run_end_to_end_day(self, *, days: int = 1):
         ...
+        """Perform run end to end day."""
 
     def generate_strength_test_week(self) -> bool:
         ...
+        """Perform generate strength test week."""
+    """Represent OrchestratorProtocol."""
 
 
 class TelegramCommandListener:
@@ -77,11 +84,13 @@ class TelegramCommandListener:
         self._poll_timeout = max(0, int(poll_timeout))
         self._orchestrator: _OrchestratorProtocol | None = None
         self._telegram_client = telegram_client or get_container().resolve(TelegramClient)
+        """Initialize this object."""
 
     @staticmethod
     def _default_offset_path() -> Path:
         history_path = settings.log_path
         return history_path.parent / "telegram_listener_offset.json"
+        """Perform default offset path."""
 
     def _load_offset(self) -> Optional[int]:
         try:
@@ -103,6 +112,7 @@ class TelegramCommandListener:
         if isinstance(value, int):
             return value
         return None
+        """Perform load offset."""
 
     def _persist_offset(self, update_id: int) -> None:
         payload = {"last_update_id": int(update_id)}
@@ -110,12 +120,14 @@ class TelegramCommandListener:
             json.dumps(payload, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        """Perform persist offset."""
 
     def _next_offset(self) -> Optional[int]:
         last = self._load_offset()
         if last is None:
             return None
         return last + 1
+        """Perform next offset."""
 
     def _get_orchestrator(self) -> _OrchestratorProtocol:
         if self._orchestrator is not None:
@@ -127,6 +139,7 @@ class TelegramCommandListener:
 
         self._orchestrator = Orchestrator()
         return self._orchestrator
+        """Perform get orchestrator."""
 
     def _handle_summary(self) -> str:
         build_summary = messenger.__dict__.get("build_daily_summary")
@@ -138,6 +151,7 @@ class TelegramCommandListener:
         if not summary_text:
             return "No summary is available yet."
         return summary_text
+        """Perform handle summary."""
 
     def _handle_sync(self) -> str:
         try:
@@ -159,6 +173,7 @@ class TelegramCommandListener:
             f"summary_sent: {bool(summary_sent)} "
             f"failed_sources: {failure_text}"
         )
+        """Perform handle sync."""
 
     def _handle_lets_begin(self) -> str:
         success = False
@@ -180,6 +195,7 @@ class TelegramCommandListener:
 
         failure_message = "Strength test week scheduling failed; check logs."
         return failure_message
+        """Perform handle lets begin."""
 
     def _extract_command(self, text: str) -> Optional[str]:
         stripped = text.strip()
@@ -188,6 +204,7 @@ class TelegramCommandListener:
         head = stripped.split()[0]
         command = head.split("@", 1)[0]
         return command.lower()
+        """Perform extract command."""
 
     def listen_once(self) -> int:
         """Fetch a batch of updates, handle commands, and persist the offset."""

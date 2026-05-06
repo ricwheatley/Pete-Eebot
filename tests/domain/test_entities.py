@@ -23,6 +23,7 @@ def test_exercise_apply_progression_updates_weight() -> None:
 
     assert exercise.weight_target == 107.5
     assert "+7.5%" in message
+    """Perform test exercise apply progression updates weight."""
 
 
 def test_exercise_apply_progression_handles_missing_history() -> None:
@@ -32,6 +33,7 @@ def test_exercise_apply_progression_handles_missing_history() -> None:
 
     assert exercise.weight_target == 80.0
     assert "no history" in message
+    """Perform test exercise apply progression handles missing history."""
 
 
 def test_week_apply_progression_returns_notes() -> None:
@@ -53,6 +55,7 @@ def test_week_apply_progression_returns_notes() -> None:
 
     assert any("+" in note for note in notes)
     assert workout.exercise.weight_target is not None
+    """Perform test week apply progression returns notes."""
 
 
 def test_plan_muscle_totals_accumulates_sets() -> None:
@@ -72,6 +75,7 @@ def test_plan_muscle_totals_accumulates_sets() -> None:
     assert totals["upper_push"] == 5
     assert totals["lower"] == 3
     assert totals["upper_pull"] == 0
+    """Perform test plan muscle totals accumulates sets."""
 
 
 def test_compute_recovery_flag_detects_poor_recovery() -> None:
@@ -85,3 +89,4 @@ def test_compute_recovery_flag_detects_poor_recovery() -> None:
     ]
 
     assert not compute_recovery_flag(recent, baseline)
+    """Perform test compute recovery flag detects poor recovery."""

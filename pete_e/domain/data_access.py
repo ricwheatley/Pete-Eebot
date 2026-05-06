@@ -34,6 +34,7 @@ class DataAccessLayer(ABC):
         metabolic_age_years: Optional[float] = None,
     ) -> None:
         pass
+        """Perform save withings daily."""
 
     @abstractmethod
     def save_withings_measure_groups(
@@ -49,6 +50,7 @@ class DataAccessLayer(ABC):
     def save_wger_log(self, day: date, exercise_id: int, set_number: int,
                       reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         pass
+        """Perform save wger log."""
 
     @abstractmethod
     def load_lift_log(
@@ -66,14 +68,17 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def get_daily_summary(self, target_date: date) -> Optional[Dict[str, Any]]:
         pass
+        """Perform get daily summary."""
 
     @abstractmethod
     def get_historical_metrics(self, days: int) -> List[Dict[str, Any]]:
         pass
+        """Perform get historical metrics."""
 
     @abstractmethod
     def get_historical_data(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         pass
+        """Perform get historical data."""
 
     def get_recent_running_workouts(
         self,
@@ -82,6 +87,7 @@ class DataAccessLayer(ABC):
         end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get recent running workouts."""
 
     def get_recent_strength_workouts(
         self,
@@ -90,6 +96,7 @@ class DataAccessLayer(ABC):
         end_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         return []
+        """Perform get recent strength workouts."""
 
     @abstractmethod
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
@@ -99,10 +106,12 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def refresh_daily_summary(self, days: int = 7) -> None:
         pass
+        """Perform refresh daily summary."""
 
     @abstractmethod
     def compute_body_age_for_date(self, target_date: date, *, birth_date: date) -> None:
         pass
+        """Perform compute body age for date."""
 
     @abstractmethod
     def compute_body_age_for_range(
@@ -113,6 +122,7 @@ class DataAccessLayer(ABC):
         birth_date: date,
     ) -> None:
         pass
+        """Perform compute body age for range."""
 
     # -------------------------------------------------------------------------
     # Training plans
@@ -125,18 +135,22 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def has_any_plan(self) -> bool:
         pass
+        """Perform has any plan."""
 
     @abstractmethod
     def get_plan(self, plan_id: int) -> Dict[str, Any]:
         pass
+        """Perform get plan."""
 
     @abstractmethod
     def find_plan_by_start_date(self, start_date: date) -> Optional[Dict[str, Any]]:
         pass
+        """Perform find plan by start date."""
 
     @abstractmethod
     def mark_plan_active(self, plan_id: int) -> None:
         pass
+        """Perform mark plan active."""
 
     # -------------------------------------------------------------------------
     # Training cycles
@@ -144,6 +158,7 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def deactivate_active_training_cycles(self) -> None:
         pass
+        """Perform deactivate active training cycles."""
 
     @abstractmethod
     def create_training_cycle(
@@ -154,10 +169,12 @@ class DataAccessLayer(ABC):
         current_block: int,
     ) -> Dict[str, Any]:
         pass
+        """Perform create training cycle."""
 
     @abstractmethod
     def get_active_training_cycle(self) -> Optional[Dict[str, Any]]:
         pass
+        """Perform get active training cycle."""
 
     @abstractmethod
     def update_training_cycle_state(
@@ -168,6 +185,7 @@ class DataAccessLayer(ABC):
         current_block: int,
     ) -> Optional[Dict[str, Any]]:
         pass
+        """Perform update training cycle state."""
 
     # -------------------------------------------------------------------------
     # Muscle volume comparison
@@ -175,10 +193,12 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def get_plan_muscle_volume(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         pass
+        """Perform get plan muscle volume."""
 
     @abstractmethod
     def get_actual_muscle_volume(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         pass
+        """Perform get actual muscle volume."""
 
     # -------------------------------------------------------------------------
     # Active plan and plan weeks
@@ -186,22 +206,27 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def get_active_plan(self) -> Optional[Dict[str, Any]]:
         pass
+        """Perform get active plan."""
 
     @abstractmethod
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         pass
+        """Perform get plan week."""
 
     @abstractmethod
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:
         pass
+        """Perform update workout targets."""
 
     @abstractmethod
     def refresh_plan_view(self) -> None:
         pass
+        """Perform refresh plan view."""
 
     @abstractmethod
     def refresh_actual_view(self) -> None:
         pass
+        """Perform refresh actual view."""
 
     @abstractmethod
     def apply_plan_backoff(
@@ -212,6 +237,7 @@ class DataAccessLayer(ABC):
         rir_increment: int,
     ) -> None:
         pass
+        """Perform apply plan backoff."""
 
     # -------------------------------------------------------------------------
     # Wger Catalog Upserts
@@ -219,18 +245,22 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger categories."""
 
     @abstractmethod
     def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger equipment."""
 
     @abstractmethod
     def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger muscles."""
 
     @abstractmethod
     def upsert_wger_exercises(self, exercises: List[Dict[str, Any]]) -> None:
         pass
+        """Perform upsert wger exercises."""
 
     # -------------------------------------------------------------------------
     # Validation logs
@@ -238,10 +268,12 @@ class DataAccessLayer(ABC):
     @abstractmethod
     def save_validation_log(self, tag: str, adjustments: List[str]) -> None:
         pass
+        """Perform save validation log."""
 
     @abstractmethod
     def was_week_exported(self, plan_id: int, week_number: int) -> bool:
         pass
+        """Perform was week exported."""
 
     @abstractmethod
     def record_wger_export(
@@ -253,4 +285,5 @@ class DataAccessLayer(ABC):
         routine_id: Optional[int] = None,
     ) -> None:
         pass
+        """Perform record wger export."""
 

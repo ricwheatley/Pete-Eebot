@@ -70,6 +70,7 @@ class Settings:
 
         self.DATABASE_URL: Optional[str] = None
         self.build_database_url()
+        """Initialize this object."""
 
     def build_database_url(self) -> "Settings":
         host_override = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
@@ -85,11 +86,13 @@ class Settings:
         else:  # pragma: no cover - fallback for minimal environments
             self.DATABASE_URL = " ".join(f"{k}={v}" for k, v in params.items())
         return self
+        """Perform build database url."""
 
     @property
     def log_path(self) -> Path:  # pragma: no cover - trivial property
         resolved_path, _notice = self._resolve_log_path()
         return resolved_path
+        """Perform log path."""
 
     def consume_log_path_notice(self) -> str | None:
         _resolved_path, notice = self._resolve_log_path()
@@ -99,13 +102,16 @@ class Settings:
             return None
         self._log_path_notice_consumed = True
         return notice
+        """Perform consume log path notice."""
 
     def _resolve_log_path(self) -> tuple[Path, str | None]:
         return Path("logs/test.log"), None
+        """Perform resolve log path."""
 
     @property
     def phrases_path(self) -> Path:
         return Path("pete_e/resources/phrases_tagged.json")
+        """Perform phrases path."""
 
 
 def get_env(
@@ -120,6 +126,7 @@ def get_env(
     if hasattr(config_module.settings, name):
         return getattr(config_module.settings, name)
     return default
+    """Perform get env."""
 
 
 # expose Settings and a default instance

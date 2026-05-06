@@ -29,6 +29,7 @@ def base_settings_data() -> dict:
         "POSTGRES_PORT": 5432,
         "POSTGRES_DB": "postgres-db",
     }
+    """Perform base settings data."""
 
 
 def test_database_url_uses_postgres_host(monkeypatch: pytest.MonkeyPatch, base_settings_data: dict) -> None:
@@ -44,6 +45,7 @@ def test_database_url_uses_postgres_host(monkeypatch: pytest.MonkeyPatch, base_s
     )
 
     assert settings.DATABASE_URL == expected
+    """Perform test database url uses postgres host."""
 
 
 def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settings_data: dict) -> None:
@@ -61,6 +63,7 @@ def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settin
 
     assert settings.DATABASE_URL == expected
     assert settings.WGER_EXPAND_STRETCH_ROUTINES is False
+    """Perform test database url uses override."""
 
 
 def test_log_path_fallback_notice_is_consumed_once(
@@ -80,3 +83,4 @@ def test_log_path_fallback_notice_is_consumed_once(
     assert settings.log_path == fallback_path
     assert settings.consume_log_path_notice() == "fallback notice"
     assert settings.consume_log_path_notice() is None
+    """Perform test log path fallback notice is consumed once."""

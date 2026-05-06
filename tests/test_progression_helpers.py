@@ -13,6 +13,7 @@ def _make_metrics(rhr: float | None, sleep: float | None, count: int):
         {"hr_resting": rhr, "sleep_asleep_minutes": sleep}
         for _ in range(count)
     ]
+    """Perform make metrics."""
 
 
 def test_compute_recovery_flag_defaults_to_true_with_missing_data():
@@ -20,12 +21,14 @@ def test_compute_recovery_flag_defaults_to_true_with_missing_data():
     metrics = _make_metrics(None, 400, 7)
     baseline = _make_metrics(50, 400, settings.BASELINE_DAYS)
     assert _compute_recovery_flag(metrics, baseline) is True
+    """Perform test compute recovery flag defaults to true with missing data."""
 
 
 def test_compute_recovery_flag_detects_poor_recovery():
     metrics = _make_metrics(60, 300, 7)
     baseline = _make_metrics(50, 420, settings.BASELINE_DAYS)
     assert _compute_recovery_flag(metrics, baseline) is False
+    """Perform test compute recovery flag detects poor recovery."""
 
 
 def test_adjust_exercise_with_no_history_returns_message():
@@ -33,6 +36,7 @@ def test_adjust_exercise_with_no_history_returns_message():
     new_weight, message = _adjust_exercise(exercise, [], recovery_good=True)
     assert new_weight is None
     assert "no history" in message
+    """Perform test adjust exercise with no history returns message."""
 
 
 def test_adjust_exercise_increases_weight_when_rir_low():
@@ -46,6 +50,7 @@ def test_adjust_exercise_increases_weight_when_rir_low():
     new_weight, message = _adjust_exercise(exercise, history, recovery_good=True)
     assert new_weight == pytest.approx(100.0 * (1 + settings.PROGRESSION_INCREMENT * 1.5))
     assert "+" in message and "recovery good" in message
+    """Perform test adjust exercise increases weight when rir low."""
 
 
 def test_adjust_exercise_decreases_weight_for_high_rir():
@@ -60,6 +65,7 @@ def test_adjust_exercise_decreases_weight_for_high_rir():
     expected = round(80.0 * (1 - settings.PROGRESSION_DECREMENT), 2)
     assert new_weight == pytest.approx(expected)
     assert "-" in message and "recovery good" in message
+    """Perform test adjust exercise decreases weight for high rir."""
 
 
 def test_adjust_exercise_handles_missing_weight_entries():
@@ -69,3 +75,4 @@ def test_adjust_exercise_handles_missing_weight_entries():
     assert new_weight is None
     assert "no valid weight data" in message
     assert "recovery poor" in message
+    """Perform test adjust exercise handles missing weight entries."""

@@ -200,6 +200,7 @@ class Settings(BaseSettings):
 
         self.__dict__["_resolved_log_path"] = resolved
         return resolved
+        """Perform resolve log path."""
 
     @property
     def phrases_path(self) -> Path:
@@ -226,6 +227,7 @@ def _build_conninfo(params: dict[str, Any]) -> str:
             escaped = text.replace("\\", "\\\\").replace("'", "\\'")
             return f"'{escaped}'"
         return text
+        """Perform quote."""
 
     return " ".join(f"{key}={_quote(value)}" for key, value in params.items())
 
@@ -237,10 +239,12 @@ def _coerce_secret(value: Any) -> Any:
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     return value
+    """Perform coerce secret."""
 
 
 def _to_bool(raw: str) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    """Perform to bool."""
 
 
 def _coerce_type(raw: str, template: Any) -> Any:
@@ -253,6 +257,7 @@ def _coerce_type(raw: str, template: Any) -> Any:
     if isinstance(template, Path):
         return Path(raw)
     return raw
+    """Perform coerce type."""
 
 
 def get_env(

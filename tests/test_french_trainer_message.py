@@ -15,6 +15,7 @@ def deterministic_phrase(monkeypatch):
         "random_phrase",
         lambda kind="motivational", mode="balanced", tags=None: "Garde le cap",
     )
+    """Perform deterministic phrase."""
 
 
 def test_compose_daily_message_includes_highlights_and_context():
@@ -39,8 +40,10 @@ def test_compose_daily_message_includes_highlights_and_context():
     assert "**Steps:**" in message
     assert "Aujourd'hui: Upper Body." in message
     assert message.endswith("Pierre dit: Garde le cap!")
+    """Perform test compose daily message includes highlights and context."""
 
 
 def test_compose_daily_message_handles_missing_metrics():
     message = compose_daily_message({}, {"user_name": "Alex"})
     assert "Pas de donnees" in message
+    """Perform test compose daily message handles missing metrics."""

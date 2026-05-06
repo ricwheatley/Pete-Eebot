@@ -10,12 +10,16 @@ from tests.di_utils import build_stub_container
 class PassiveDal:
     def __init__(self) -> None:
         self._active_plan = {"start_date": date(2024, 1, 1), "weeks": 8}
+        """Initialize this object."""
 
     def get_active_plan(self):
         return self._active_plan
+        """Perform get active plan."""
 
     def close(self) -> None:  # pragma: no cover
         pass
+        """Perform close."""
+    """Represent PassiveDal."""
 
 
 def build_orchestrator():
@@ -28,6 +32,7 @@ def build_orchestrator():
         ),
     )
     return Orchestrator(container=container)
+    """Perform build orchestrator."""
 
 
 def test_run_end_to_end_week_skips_rollover_when_not_due(monkeypatch):
@@ -43,3 +48,4 @@ def test_run_end_to_end_week_skips_rollover_when_not_due(monkeypatch):
 
     assert result.rollover_triggered is False
     assert result.rollover is None
+    """Perform test run end to end week skips rollover when not due."""

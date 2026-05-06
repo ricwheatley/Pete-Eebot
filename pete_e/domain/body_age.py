@@ -32,6 +32,7 @@ MIN_ENRICHED_BODY_COMP_ROWS = 3
 
 def _clamp_score(value: float) -> float:
     return max(0.0, min(100.0, value))
+    """Perform clamp score."""
 
 
 def _score_body_fat_percent(bodyfat: Optional[float]) -> float:
@@ -42,6 +43,7 @@ def _score_body_fat_percent(bodyfat: Optional[float]) -> float:
     if bodyfat >= 30:
         return 0.0
     return _clamp_score((30 - bodyfat) / 15 * 100)
+    """Perform score body fat percent."""
 
 
 def _score_visceral_fat_index(visceral_fat: Optional[float]) -> Optional[float]:
@@ -52,6 +54,7 @@ def _score_visceral_fat_index(visceral_fat: Optional[float]) -> Optional[float]:
     if visceral_fat >= 20:
         return 0.0
     return _clamp_score((20 - visceral_fat) / 15 * 100)
+    """Perform score visceral fat index."""
 
 
 def _score_muscle_percent(muscle_percent: Optional[float]) -> Optional[float]:
@@ -62,6 +65,7 @@ def _score_muscle_percent(muscle_percent: Optional[float]) -> Optional[float]:
     if muscle_percent <= 60:
         return 0.0
     return _clamp_score((muscle_percent - 60) / 15 * 100)
+    """Perform score muscle percent."""
 
 
 def _row_muscle_percent(row: Dict[str, Any]) -> Optional[float]:
@@ -74,6 +78,7 @@ def _row_muscle_percent(row: Dict[str, Any]) -> Optional[float]:
     if muscle_mass is None or weight in (None, 0):
         return None
     return (muscle_mass / weight) * 100
+    """Perform row muscle percent."""
 
 
 def _has_enriched_body_comp(row: Dict[str, Any]) -> bool:
@@ -86,6 +91,7 @@ def _has_enriched_body_comp(row: Dict[str, Any]) -> bool:
             "muscle_mass_kg",
         )
     )
+    """Perform has enriched body comp."""
 
 
 def _calculate_body_comp_score(
@@ -116,6 +122,7 @@ def _calculate_body_comp_score(
         + 0.15 * (muscle_score if muscle_score is not None else bodyfat_score)
     )
     return _clamp_score(score), True
+    """Perform calculate body comp score."""
 
 
 def _extract_body_age_value(row: Dict[str, Any]) -> Optional[float]:
@@ -230,6 +237,7 @@ def calculate_body_age(
                     vals.append(converters.to_float(candidate))
                     break
         return math_utils.average(vals)
+        """Perform avg from."""
 
     weight = avg_from(
         (

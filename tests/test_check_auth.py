@@ -24,6 +24,7 @@ def test_withings_status_ok_when_token_file_present(tmp_path):
     assert status.state == "ok"
     assert "Refresh token stored" in status.message
     assert "2024-05-01 08:30 UTC" in status.message
+    """Perform test withings status ok when token file present."""
 
 
 def test_withings_status_warns_when_only_env_refresh_token(tmp_path):
@@ -33,6 +34,7 @@ def test_withings_status_warns_when_only_env_refresh_token(tmp_path):
 
     assert status.state == "warning"
     assert "refresh-withings" in status.message
+    """Perform test withings status warns when only env refresh token."""
 
 
 def test_withings_status_requires_setup_when_app_config_present(tmp_path):
@@ -48,6 +50,7 @@ def test_withings_status_requires_setup_when_app_config_present(tmp_path):
 
     assert status.state == "action_required"
     assert "withings-auth" in status.message
+    """Perform test withings status requires setup when app config present."""
 
 
 def test_withings_status_flags_missing_app_settings(tmp_path):
@@ -60,6 +63,7 @@ def test_withings_status_flags_missing_app_settings(tmp_path):
     assert status.state == "action_required"
     assert "WITHINGS_CLIENT_SECRET" in status.message
     assert "WITHINGS_REDIRECT_URI" in status.message
+    """Perform test withings status flags missing app settings."""
 
 
 def test_dropbox_status_ok_when_all_present():
@@ -73,6 +77,7 @@ def test_dropbox_status_ok_when_all_present():
 
     assert status.state == "ok"
     assert "App key, secret, and refresh token" in status.message
+    """Perform test dropbox status ok when all present."""
 
 
 def test_dropbox_status_prompts_for_refresh_token_only():
@@ -82,6 +87,7 @@ def test_dropbox_status_prompts_for_refresh_token_only():
 
     assert status.state == "action_required"
     assert "DROPBOX_REFRESH_TOKEN" in status.message
+    """Perform test dropbox status prompts for refresh token only."""
 
 
 def test_dropbox_status_prompts_for_multiple_missing():
@@ -92,6 +98,7 @@ def test_dropbox_status_prompts_for_multiple_missing():
     assert status.state == "action_required"
     assert "DROPBOX_APP_KEY" in status.message
     assert "DROPBOX_APP_SECRET" in status.message
+    """Perform test dropbox status prompts for multiple missing."""
 
 
 def test_env_loader_handles_export_and_quotes(tmp_path):
@@ -113,4 +120,5 @@ def test_env_loader_handles_export_and_quotes(tmp_path):
     assert result["DROPBOX_REFRESH_TOKEN"] == "xyz"
     assert result["WITHINGS_CLIENT_ID"] == "something"
     assert "INVALID_LINE" not in result
+    """Perform test env loader handles export and quotes."""
 

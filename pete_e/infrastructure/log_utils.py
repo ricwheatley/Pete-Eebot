@@ -54,19 +54,24 @@ def log_message(msg: str, level: str = "INFO", tag: str | None = None, **kwargs)
 
 def debug(msg: str, tag: str | None = None, **kwargs):
     log_message(msg, level="DEBUG", tag=tag, **kwargs)
+    """Perform debug."""
 
 
 def info(msg: str, tag: str | None = None, **kwargs):
     log_message(msg, level="INFO", tag=tag, **kwargs)
+    """Perform info."""
 
 
 def warn(msg: str, tag: str | None = None, **kwargs):
     log_message(msg, level="WARNING", tag=tag, **kwargs)
+    """Perform warn."""
 
 
 def error(msg: str, tag: str | None = None, **kwargs):
     log_message(msg, level="ERROR", tag=tag, **kwargs)
+    """Perform error."""
 
 
 def critical(msg: str, tag: str | None = None, **kwargs):
     log_message(msg, level="CRITICAL", tag=tag, **kwargs)
+    """Perform critical."""

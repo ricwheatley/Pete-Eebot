@@ -60,12 +60,15 @@ class TelegramClient:
         self._chat_id_override = _secret_to_str(chat_id) if chat_id is not None else None
         self._http = http_client or requests
         self._request_timeout = request_timeout
+        """Initialize this object."""
 
     def _resolve_token(self) -> str:
         return self._token_override or _secret_to_str(getattr(settings, "TELEGRAM_TOKEN", None))
+        """Perform resolve token."""
 
     def _resolve_chat_id(self) -> str:
         return self._chat_id_override or _secret_to_str(getattr(settings, "TELEGRAM_CHAT_ID", None))
+        """Perform resolve chat id."""
 
     def _scrub(self, text: str) -> str:
         extras = [candidate for candidate in (
@@ -75,6 +78,7 @@ class TelegramClient:
             self._resolve_chat_id(),
         ) if candidate]
         return _scrub_sensitive(text, extras=extras)
+        """Perform scrub."""
 
     def ping(self) -> str:
         """Confirm Telegram bot reachability without sending a message."""

@@ -59,6 +59,7 @@ class PlanFactory:
             ),
             str(workout.get("scheduled_time") or ""),
         )
+        """Perform workout sort key."""
 
     def create_531_block_plan(
         self,

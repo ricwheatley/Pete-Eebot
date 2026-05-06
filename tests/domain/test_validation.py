@@ -20,11 +20,14 @@ if "pete_e.config" not in sys.modules:
 
         def __getattr__(self, name):
             return None
+            """Implement the `__getattr__` dunder method behavior."""
 
         @property
         def log_path(self):
             # will be overridden by fixture to tmp_path
             return Path("logs/test_validation.log")
+            """Perform log path."""
+        """Represent SettingsStub."""
 
     config_stub.settings = _SettingsStub()
     config_stub.get_env = lambda key, default=None: default
@@ -36,6 +39,7 @@ if "pete_e.infrastructure.log_utils" not in sys.modules:
 
     def _noop(msg: str, level: str = "INFO"):
         pass
+        """Perform noop."""
 
     lu.log_message = _noop
     sys.modules["pete_e.infrastructure.log_utils"] = lu
@@ -72,6 +76,7 @@ def patch_log_path(tmp_path, monkeypatch):
         "log_path",
         property(lambda self: tmp_path / "test_validation.log"),
     )
+    """Perform patch log path."""
 
 
 
@@ -82,6 +87,7 @@ def test_baselines_use_recent_medians():
     bl = compute_dynamic_baselines(hist, reference_end_date=today)
     assert bl["hr_resting"].value == pytest.approx(50.0, abs=1e-6)
     assert bl["sleep_total_minutes"].value == pytest.approx(420.0, abs=1e-6)
+    """Perform test baselines use recent medians."""
 
 
 def test_baselines_accept_prefetched_rows():
@@ -92,6 +98,7 @@ def test_baselines_accept_prefetched_rows():
 
     assert bl["hr_resting"].value == pytest.approx(52.0, abs=1e-6)
     assert bl["sleep_total_minutes"].value == pytest.approx(400.0, abs=1e-6)
+    """Perform test baselines accept prefetched rows."""
 
 
 def test_backoff_none_when_within_thresholds():
@@ -102,6 +109,7 @@ def test_backoff_none_when_within_thresholds():
     rec = assess_recovery_and_backoff(rows, week_start_date=today + timedelta(days=1))
     assert rec.needs_backoff is False
     assert rec.severity == "none"
+    """Perform test backoff none when within thresholds."""
 
 
 def test_backoff_triggers_on_rhr_increase():
@@ -115,6 +123,7 @@ def test_backoff_triggers_on_rhr_increase():
     assert rec.severity in {"mild", "moderate", "severe"}
     # Given thresholds (5%), 10% excess -> ratio 2.0 -> moderate or above
     assert rec.metrics["rhr_baseline"] == pytest.approx(50.0, abs=1e-6)
+    """Perform test backoff triggers on rhr increase."""
 
 
 def test_backoff_triggers_on_sleep_drop():
@@ -127,3 +136,4 @@ def test_backoff_triggers_on_sleep_drop():
     assert rec.needs_backoff is True
     assert rec.severity in {"mild", "moderate", "severe"}
     assert rec.metrics["sleep_baseline"] == pytest.approx(420.0, abs=1e-6)
+    """Perform test backoff triggers on sleep drop."""

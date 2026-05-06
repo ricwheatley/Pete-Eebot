@@ -10,6 +10,7 @@ def _get_client(client: TelegramClient | None = None) -> TelegramClient:
     if client is not None:
         return client
     return get_container().resolve(TelegramClient)
+    """Perform get client."""
 
 
 def send_message(message: str, *, client: TelegramClient | None = None) -> bool:

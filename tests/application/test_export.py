@@ -41,6 +41,7 @@ def _make_validation_decision(explanation: str = "Ready") -> ValidationDecision:
         ),
         applied=False,
     )
+    """Perform make validation decision."""
 
 
 def test_export_plan_week_uses_cached_validation() -> None:
@@ -52,19 +53,26 @@ def test_export_plan_week_uses_cached_validation() -> None:
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return []
+            """Perform get plan week rows."""
 
         def record_wger_export(self, *_, **__):
             pass
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             pass
+            """Perform delete all days in routine."""
+        """Represent StubClient."""
 
     service = WgerExportService(
         dal=StubDal(),
@@ -82,6 +90,7 @@ def test_export_plan_week_uses_cached_validation() -> None:
 
     assert result["status"] == "exported"
     validation_service.validate_and_adjust_plan.assert_not_called()
+    """Perform test export plan week uses cached validation."""
 
 
 def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
@@ -93,25 +102,33 @@ def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return []
+            """Perform get plan week rows."""
 
         def record_wger_export(self, plan_id, week_number, payload_json, response=None, routine_id=None):
             recorded.append({"response": response, "routine_id": routine_id})
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         base_url = "https://example.invalid"
 
         def __init__(self) -> None:
             self.routine_names: list[str] = []
+            """Initialize this object."""
 
         def find_or_create_routine(self, **kwargs):
             self.routine_names.append(kwargs["name"])
             return {"id": 1000 + len(self.routine_names)}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             raise RuntimeError("DELETE /day/333279/ failed with 500")
+            """Perform delete all days in routine."""
+        """Represent StubClient."""
 
     monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
     monkeypatch.setattr(
@@ -142,6 +159,7 @@ def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
     ]
     assert recorded and recorded[0]["routine_id"] == 1002
     assert any("Creating fallback routine" in warning for warning in warnings)
+    """Perform test export plan week uses fallback routine when cleanup fails."""
 
 
 def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
@@ -150,6 +168,7 @@ def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return [
@@ -167,16 +186,22 @@ def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
                     "is_cardio": False,
                 }
             ]
+            """Perform get plan week rows."""
 
         def record_wger_export(self, plan_id, week_number, payload_json, response=None, routine_id=None):
             captured_payloads.append(payload_json)
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             pass
+            """Perform delete all days in routine."""
+        """Represent StubClient."""
 
     service = WgerExportService(
         dal=StubDal(),
@@ -197,12 +222,14 @@ def test_export_plan_week_labels_test_week_main_lifts_as_amrap() -> None:
     assert captured_payloads
     entry = captured_payloads[0]["days"][0]["exercises"][0]
     assert entry["comment"] == "AMRAP Test @ 85.0% TM | 92.5 kg | Rest 2m 30s"
+    """Perform test export plan week labels test week main lifts as amrap."""
 
 
 def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return [
@@ -235,26 +262,34 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
                     "is_cardio": False,
                 },
             ]
+            """Perform get plan week rows."""
 
         def record_wger_export(self, *_, **__):
             pass
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         def __init__(self) -> None:
             self.set_config_calls: list[tuple[str, int, int, object]] = []
             self.slot_entry_kwargs: list[dict[str, object]] = []
+            """Initialize this object."""
 
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             pass
+            """Perform delete all days in routine."""
 
         def create_day(self, routine_id: int, order: int, name: str):
             return {"id": 100 + order, "name": name}
+            """Perform create day."""
 
         def create_slot(self, day_id: int, order: int, comment=None):
             return {"id": day_id * 10 + order}
+            """Perform create slot."""
 
         def create_slot_entry(
             self,
@@ -265,9 +300,12 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
         ):
             self.slot_entry_kwargs.append(kwargs)
             return {"id": slot_id * 10 + order}
+            """Perform create slot entry."""
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
             self.set_config_calls.append((config_type, slot_entry_id, iteration, value))
+            """Perform set config."""
+        """Represent StubClient."""
 
     client = StubClient()
     service = WgerExportService(
@@ -297,6 +335,7 @@ def test_export_plan_week_posts_weight_config_for_target_loads() -> None:
         ("rest", 10211, 1, 165),
     ]
     assert client.slot_entry_kwargs[0]["comment"].startswith("Set 1 @ 90% TM")
+    """Perform test export plan week posts weight config for target loads."""
 
 
 def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -306,6 +345,7 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return [
@@ -358,9 +398,12 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
                     "details": schedule_rules.build_stretch_routine_details("limber_11"),
                 },
             ]
+            """Perform get plan week rows."""
 
         def record_wger_export(self, *_, **__):
             pass
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         base_url = "https://example.invalid"
@@ -372,19 +415,24 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
             self.entry_types: list[str | None] = []
             self.custom_exercises: list[tuple[str, str]] = []
             self.set_config_calls: list[tuple[str, int, int, object]] = []
+            """Initialize this object."""
 
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             pass
+            """Perform delete all days in routine."""
 
         def create_day(self, routine_id: int, order: int, name: str):
             return {"id": 100 + order, "name": name}
+            """Perform create day."""
 
         def create_slot(self, day_id: int, order: int, comment=None):
             self.slot_comments.append(comment)
             return {"id": day_id * 10 + order}
+            """Perform create slot."""
 
         def create_slot_entry(
             self,
@@ -397,13 +445,17 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
             self.entry_comments.append(kwargs.get("comment"))
             self.entry_types.append(kwargs.get("entry_type"))
             return {"id": slot_id * 10 + order}
+            """Perform create slot entry."""
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
             self.set_config_calls.append((config_type, slot_entry_id, iteration, value))
+            """Perform set config."""
 
         def ensure_custom_exercise(self, *, name: str, description: str, **kwargs):
             self.custom_exercises.append((name, description))
             return 1900
+            """Perform ensure custom exercise."""
+        """Represent StubClient."""
 
     monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
     monkeypatch.setattr("pete_e.application.services.log_utils.info", infos.append)
@@ -449,6 +501,7 @@ def test_export_plan_week_orders_sessions_and_creates_visible_limber_11(monkeypa
         "routine 42 on https://example.invalid (days=1, slots=4, slot_entries=4)" in message
         for message in infos
     )
+    """Perform test export plan week orders sessions and creates visible limber 11."""
 
 
 def test_build_payload_expands_stretch_routines_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -489,6 +542,7 @@ def test_build_payload_expands_stretch_routines_when_enabled(monkeypatch: pytest
     assert len(exercises) == 11
     assert exercises[0]["comment"].startswith("Limber 11 1/11: Foam Roll IT Band")
     assert exercises[0]["entry_comment"] == "10-15 passes"
+    """Perform test build payload expands stretch routines when enabled."""
 
 
 def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -497,6 +551,7 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
     class StubDal:
         def was_week_exported(self, plan_id: int, week_number: int) -> bool:
             return False
+            """Perform was week exported."""
 
         def get_plan_week_rows(self, plan_id: int, week_number: int):
             return [
@@ -513,22 +568,29 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
                     "is_cardio": False,
                 }
             ]
+            """Perform get plan week rows."""
 
         def record_wger_export(self, *_, **__):
             pass
+            """Perform record wger export."""
+        """Represent StubDal."""
 
     class StubClient:
         def find_or_create_routine(self, **kwargs):
             return {"id": 42}
+            """Perform find or create routine."""
 
         def delete_all_days_in_routine(self, routine_id: int) -> None:
             pass
+            """Perform delete all days in routine."""
 
         def create_day(self, routine_id: int, order: int, name: str):
             return {"id": 100 + order, "name": name}
+            """Perform create day."""
 
         def create_slot(self, day_id: int, order: int, comment=None):
             return {"id": day_id * 10 + order}
+            """Perform create slot."""
 
         def create_slot_entry(
             self,
@@ -538,9 +600,12 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
             **kwargs,
         ):
             return {"id": slot_id * 10 + order}
+            """Perform create slot entry."""
 
         def set_config(self, config_type: str, slot_entry_id: int, iteration: int, value):
             return None
+            """Perform set config."""
+        """Represent StubClient."""
 
     monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
 
@@ -561,6 +626,7 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
 
     assert result["status"] == "exported"
     assert any("Skipping weight config for main lift due to missing target weight" in message for message in warnings)
+    """Perform test export plan week warns when main lift has no target weight."""
 
 
 def test_run_end_to_end_week_passes_cached_validation() -> None:
@@ -570,22 +636,29 @@ def test_run_end_to_end_week_passes_cached_validation() -> None:
         def __init__(self, decision: ValidationDecision):
             self.decision = decision
             self.calls: list[date] = []
+            """Initialize this object."""
 
         def validate_and_adjust_plan(self, week_start: date) -> ValidationDecision:
             self.calls.append(week_start)
             return self.decision
+            """Perform validate and adjust plan."""
+        """Represent RecordingValidationService."""
 
     class StubPlanService:
         def __init__(self) -> None:
             self.created: list[date] = []
+            """Initialize this object."""
 
         def create_next_plan_for_cycle(self, *, start_date: date) -> int:
             self.created.append(start_date)
             return 99
+            """Perform create next plan for cycle."""
+        """Represent StubPlanService."""
 
     class RecordingExportService:
         def __init__(self) -> None:
             self.calls: list[tuple[int, int, date, ValidationDecision | None]] = []
+            """Initialize this object."""
 
         def export_plan_week(
             self,
@@ -598,13 +671,18 @@ def test_run_end_to_end_week_passes_cached_validation() -> None:
         ):
             self.calls.append((plan_id, week_number, start_date, validation_decision))
             return {"status": "exported"}
+            """Perform export plan week."""
+        """Represent RecordingExportService."""
 
     class StubDal:
         def get_active_plan(self):
             return {"start_date": date(2024, 5, 6), "weeks": 4}
+            """Perform get active plan."""
 
         def close(self) -> None:  # pragma: no cover - unused
             pass
+            """Perform close."""
+        """Represent StubDal."""
 
     validation_service = RecordingValidationService(decision)
     plan_service = StubPlanService()
@@ -632,3 +710,4 @@ def test_run_end_to_end_week_passes_cached_validation() -> None:
     assert result.rollover_triggered is True
     assert validation_service.calls == [date(2024, 5, 27)]
     assert export_service.calls == [(99, 1, date(2024, 5, 27), decision)]
+    """Perform test run end to end week passes cached validation."""

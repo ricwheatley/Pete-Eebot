@@ -16,22 +16,29 @@ from tests.di_utils import build_stub_container
 class StubDal:
     def __init__(self, active_plan: dict | None = None):
         self._active_plan = active_plan or {"start_date": date(2024, 1, 1), "weeks": 4}
+        """Initialize this object."""
 
     def get_active_plan(self):
         return self._active_plan
+        """Perform get active plan."""
 
     def close(self) -> None:  # pragma: no cover - unused
         pass
+        """Perform close."""
+    """Represent StubDal."""
 
 
 class StubValidationService:
     def __init__(self, decision):
         self.decision = decision
         self.calls: list[date] = []
+        """Initialize this object."""
 
     def validate_and_adjust_plan(self, week_start: date):
         self.calls.append(week_start)
         return self.decision
+        """Perform validate and adjust plan."""
+    """Represent StubValidationService."""
 
 
 def _make_orchestrator(
@@ -48,6 +55,7 @@ def _make_orchestrator(
         ),
     )
     return Orchestrator(container=container, validation_service=validation_service)
+    """Perform make orchestrator."""
 
 
 def test_run_weekly_calibration_reports_message():
@@ -60,6 +68,7 @@ def test_run_weekly_calibration_reports_message():
     assert result.message == "All clear"
     assert result.validation is result_obj
     assert validation_service.calls == [date(2024, 5, 6)]
+    """Perform test run weekly calibration reports message."""
 
 
 def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
@@ -95,6 +104,7 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
     assert result.rollover_triggered is True
     assert plan_service_calls == [date(2024, 4, 29)]
     assert export_calls == [(11, 1, date(2024, 4, 29), None)]
+    """Perform test run end to end week triggers rollover."""
 
 
 def test_run_end_to_end_week_exports_when_rollover_skipped(monkeypatch: pytest.MonkeyPatch):
@@ -124,6 +134,7 @@ def test_run_end_to_end_week_exports_when_rollover_skipped(monkeypatch: pytest.M
 
     assert result.rollover_triggered is False
     assert export_calls == [(13, 2, date(2024, 4, 29), None)]
+    """Perform test run end to end week exports when rollover skipped."""
 
 
 def test_run_end_to_end_week_repeats_prior_week_when_adherence_is_low(monkeypatch: pytest.MonkeyPatch):
@@ -163,6 +174,7 @@ def test_run_end_to_end_week_repeats_prior_week_when_adherence_is_low(monkeypatc
 
     assert result.rollover_triggered is False
     assert export_calls == [(13, 1, date(2024, 4, 29), low_adherence_validation)]
+    """Perform test run end to end week repeats prior week when adherence is low."""
 
 
 def test_run_end_to_end_day_sends_summary(monkeypatch: pytest.MonkeyPatch):
@@ -177,6 +189,8 @@ def test_run_end_to_end_day_sends_summary(monkeypatch: pytest.MonkeyPatch):
                 statuses={"Withings": "ok"},
                 alerts=("Alert A",),
             )
+            """Perform run full."""
+        """Represent StubDailySyncService."""
 
     container = build_stub_container(
         dal=StubDal(),
@@ -206,6 +220,7 @@ def test_run_end_to_end_day_sends_summary(monkeypatch: pytest.MonkeyPatch):
     assert result.source_statuses == {"Withings": "ok"}
     assert result.undelivered_alerts == ["Alert A"]
     assert sent_messages == ["Daily summary ready"]
+    """Perform test run end to end day sends summary."""
 
 
 def test_generate_strength_test_week_creates_and_exports():
@@ -234,6 +249,7 @@ def test_generate_strength_test_week_creates_and_exports():
         ("create", date(2024, 5, 6)),
         ("export", (77, 1, date(2024, 5, 6))),
     ]
+    """Perform test generate strength test week creates and exports."""
 
 
 def test_generate_and_deploy_next_plan_uses_cycle_creation():
@@ -263,6 +279,7 @@ def test_generate_and_deploy_next_plan_uses_cycle_creation():
         ("cycle", date(2024, 5, 6)),
         ("export", (88, 1, date(2024, 5, 6))),
     ]
+    """Perform test generate and deploy next plan uses cycle creation."""
 
 
 def test_generate_strength_test_week_serializes_plan_generation():
@@ -276,6 +293,8 @@ def test_generate_strength_test_week_serializes_plan_generation():
                 yield
             finally:
                 calls.append(("lock_exit", None))
+            """Perform hold plan generation lock."""
+        """Represent LockingDal."""
 
     plan_service = SimpleNamespace(
         create_and_persist_strength_test_week=lambda start_date: calls.append(("create", start_date)) or 77
@@ -302,3 +321,4 @@ def test_generate_strength_test_week_serializes_plan_generation():
         ("export", (77, 1, date(2024, 5, 6))),
         ("lock_exit", None),
     ]
+    """Perform test generate strength test week serializes plan generation."""
