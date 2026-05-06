@@ -1991,51 +1991,113 @@
   - `test_save_tokens_sets_owner_only_permissions` (function, line 12): No docstring; inferred from name/signature.
   - `test_oauth_helper_sets_owner_only_permissions` (function, line 27): No docstring; inferred from name/signature.
 
-## Pass 2: How modules work together
+## Pass 2: How modules work together (process-first mapping)
 
-- **Entry points:** `pete_e/api.py`, scripts under `scripts/`, and CLI modules under `pete_e/cli/` initiate workflows.
-- **Application layer (`pete_e/application`)** orchestrates use-cases: plan generation, sync jobs, telegram interactions, validation, and progression services.
-- **Domain layer (`pete_e/domain`)** contains core business logic and entities: planning rules, cycles, metrics, body age, narratives, schedule rules, and data contracts.
-- **Infrastructure layer (`pete_e/infrastructure`)** adapts external systems: Postgres DAL, Withings/WGER/Telegram/Dropbox clients, parsing, token storage, and DI wiring.
-- **Utilities/config/logging** provide cross-cutting concerns used by all layers.
-- **Migrations + schema** define data persistence contracts consumed by infrastructure/data-access code.
-- **Tests** map closely to layers and end-to-end behavior, providing regression coverage for orchestration and integrations.
+### Process A — Generate a weekly training plan (operator/coach flow)
+1. **Trigger surfaces**
+   - CLI/scripts (`scripts/generate_plan.py`) or API deploy/sync endpoints call application services.
+   - API webhook path can also trigger plan generation/deploy orchestration (`github_webhook`, `run_pete_plan_async`).
+2. **Application orchestration**
+   - `pete_e/application/orchestrator.py::Orchestrator.generate_and_deploy_next_plan` acquires a plan lock, computes timing, and coordinates downstream services.
+   - `PlanGenerationService.run` and/or `PlanService.create_next_plan_for_cycle` perform deterministic generation based on cycle context and settings.
+3. **Domain decisioning**
+   - `domain/plan_factory.py`, `domain/progression.py`, `domain/running_planner.py`, and related rule modules compute session structure/targets.
+4. **Persistence + export**
+   - `infrastructure/postgres_dal.py::PostgresDal.create_block_and_plan/save_full_plan/...` persists plans and derived workouts.
+   - `application/services.py::WgerExportService.export_plan_week` transforms and exports routines to WGER.
+5. **Notification feedback**
+   - `domain/narrative_builder.py` + Telegram clients format/surface messages to user channels.
 
-## Pass 3: Potential issues from rapid/vibe-coded evolution
+### Process B — Daily health/activity sync (automated background flow)
+1. **Trigger surfaces**
+   - CLI sync command, API `/sync`, or cron-managed scripts invoke daily sync workflow.
+2. **Application orchestration**
+   - `Orchestrator.run_daily_sync` / `run_withings_only_sync` delegates to domain `DailySyncService`.
+3. **Source integrations**
+   - Withings via `infrastructure/withings_client.py` + OAuth/token storage.
+   - Apple imports via Dropbox + Apple parser/ingestor modules.
+4. **Persistence + derived views**
+   - `PostgresDal.save_withings_daily`, `save_withings_measure_groups`, and refresh functions update reporting surfaces.
+5. **Downstream consumers**
+   - Metrics, body-age, validation, and messaging modules consume synchronized data for coaching context.
 
-- `pete_e/api.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/catalog_sync.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/orchestrator.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/progression_service.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/services.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/sync.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/telegram_listener.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/validation_service.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/application/wger_sender.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/cli/messenger.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/cli/messenger.py` uses `print(...)`; consider structured logging consistency.
-- `pete_e/cli/status.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/body_age.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/daily_sync.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/french_trainer.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/metrics_service.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/narrative_builder.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/running_planner.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/domain/validation.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/apple_health_ingestor.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/cron_manager.py` uses `print(...)`; consider structured logging consistency.
-- `pete_e/infrastructure/git_utils.py` uses `print(...)`; consider structured logging consistency.
-- `pete_e/infrastructure/postgres_dal.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/telegram_client.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/token_storage.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/withings_client.py` catches broad `Exception`; error handling may hide root causes.
-- `pete_e/infrastructure/withings_oauth_helper.py` uses `print(...)`; consider structured logging consistency.
-- `pete_e/logging_setup.py` uses `print(...)`; consider structured logging consistency.
-- `scripts/check_auth.py` uses `print(...)`; consider structured logging consistency.
-- `scripts/heartbeat_check.py` catches broad `Exception`; error handling may hide root causes.
-- `scripts/inspect_withings_response.py` uses `print(...)`; consider structured logging consistency.
-- `scripts/run_sunday_review.py` catches broad `Exception`; error handling may hide root causes.
-- `scripts/send_telegram_message.py` catches broad `Exception`; error handling may hide root causes.
-- `scripts/send_telegram_message.py` uses `print(...)`; consider structured logging consistency.
-- `tests/conftest.py` catches broad `Exception`; error handling may hide root causes.
-- `tests/test_dropbox.py` catches broad `Exception`; error handling may hide root causes.
+### Process C — Daily coaching/advice generation (end-user conversational flow)
+1. **Trigger surfaces**
+   - API endpoints (`daily_summary`, `coach_state`, `plan_context`) or Telegram automation.
+2. **Service aggregation**
+   - Application services fetch consolidated view models from DAL + domain services.
+3. **Domain narrative composition**
+   - `domain/narrative_builder.py`, `domain/phrase_picker.py`, `domain/french_trainer.py`, `domain/body_age.py` shape advice and tone.
+4. **Delivery**
+   - API JSON payloads and Telegram sender/listener modules deliver final user-facing output.
+
+### Process D — Weekly calibration/rollover (governance flow)
+1. `Orchestrator.run_weekly_calibration` computes compliance/performance deltas and suggested adjustments.
+2. `Orchestrator.run_cycle_rollover` determines phase transitions and seeds the next block.
+3. Validation logs and plan export state are persisted for traceability.
+
+### Process-module coupling map (where calls concentrate)
+- **`api.py`**: request validation, auth checks, endpoint assembly, and currently some operational orchestration.
+- **`application/orchestrator.py`**: highest-level use-case coordinator across sync, plan generation, export, and messaging.
+- **`application/services.py`**: plan creation and WGER export composition logic.
+- **`domain/*`**: planning rules, progression logic, schedule constraints, narrative/business semantics.
+- **`infrastructure/postgres_dal.py`**: dominant persistence facade spanning plan, metrics, exports, and validation data access.
+
+## Pass 3: Risk and quality review (competition mindset)
+
+### A. Review findings you raised (validated and expanded)
+1. **`PostgresDal` is a high-risk god object**
+   - It combines connection/pooling, transactional lifecycle, plan persistence, health metrics persistence, export audit tracking, validation retrieval, and reporting helper queries.
+   - Risk: high blast radius, hard-to-isolate tests, accidental coupling through a single dependency.
+2. **Overlapping module responsibilities**
+   - Planning and orchestration logic is split across `application/services.py`, `application/orchestrator.py`, `application/plan_generation.py`, plus multiple domain modules.
+   - Risk: duplicated orchestration branches and divergence bugs.
+3. **Business thresholds embedded in code**
+   - Several domain/application methods encode thresholds and tuning constants directly in Python.
+   - Risk: low auditability, difficult A/B tuning, brittle behavior during requirement changes.
+4. **API auth accepts query-string API keys**
+   - `validate_api_key` currently allows header or query-string auth.
+   - Risk: key leakage in logs, proxies, browser history, and monitoring systems.
+5. **Subprocess orchestration inside API handlers**
+   - Deployment/script execution pathways are surfaced from API module handlers.
+   - Risk: blocking/runtime instability, security exposure, and noisy operational failure modes.
+6. **Layer boundary erosion**
+   - Some application and domain modules increasingly mix infra concerns.
+   - Risk: loss of replaceability and weakened conceptual architecture.
+7. **Good functional test coverage but weak governance checks**
+   - Many behavior tests exist, but fewer guardrails enforce architecture boundaries and ownership constraints.
+
+### B. Competition scoring view (if this app were judged)
+- **Would it place well today?**
+  - **Strengths:** real-world scope, meaningful automation, strong integration breadth, non-trivial test coverage.
+  - **Weaknesses:** architectural clarity debt, consolidation hotspots, and policy/security gaps reduce judged quality.
+  - **Likely outcome:** solid finalist in a “ship value quickly” category, but unlikely winner in “engineering excellence” without refactors.
+
+### C. What to change so it wins
+1. **Split `PostgresDal` by bounded context (highest ROI)**
+   - Create repositories: `PlanRepository`, `MetricsRepository`, `ExportRepository`, `ValidationRepository`, `AuthRepository`.
+   - Keep shared pool/transaction utility separate (`DbSession`/`UnitOfWork`).
+2. **Move orchestration out of API handlers**
+   - Replace direct subprocess triggers with queued jobs or internal application commands.
+   - API should enqueue/trigger and return job IDs, not execute long-running OS operations inline.
+3. **Harden auth model**
+   - Remove query-string API key support; require header-only tokens.
+   - Add key rotation hooks + explicit audit logging + deny-by-default endpoint policy.
+4. **Externalize thresholds and tuning constants**
+   - Introduce typed config schema or DB-backed policy tables for coaching/planning thresholds.
+   - Version these policies so behavior changes are reviewable and reversible.
+5. **Add architecture governance tests**
+   - Enforce import boundaries (domain cannot import infrastructure).
+   - Add coupling budgets / module size thresholds / duplicate logic checks in CI.
+6. **Consolidate overlapping planning paths**
+   - Define one canonical plan-generation flow and deprecate aliases.
+   - Publish a flow contract document + ADRs for major use-case boundaries.
+7. **Operational maturity upgrades**
+   - Standardize structured logging, correlation IDs, and error taxonomy.
+   - Replace broad `except Exception` with typed exception handling and explicit fallback policies.
+
+### D. Suggested 30/60/90 roadmap
+- **30 days:** remove query-string auth, introduce architecture tests, start DAL split scaffolding.
+- **60 days:** complete DAL decomposition + orchestration decoupling from API subprocess calls.
+- **90 days:** full policy externalization, canonical plan pipeline consolidation, observability hardening.
+
