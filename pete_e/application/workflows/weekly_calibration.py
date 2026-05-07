@@ -21,6 +21,17 @@ class WeeklyCalibrationWorkflow:
 
     def run(self, reference_date: date) -> WeeklyCalibrationResult:
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
+        correlation = {
+            "workflow": "weekly_calibration",
+            "reference_date": reference_date.isoformat(),
+            "week_start": next_monday.isoformat(),
+        }
+        log_utils.log_checkpoint(
+            checkpoint="weekly_calibration",
+            outcome="started",
+            correlation=correlation,
+            summary={},
+        )
         log_utils.info(
             f"Running weekly calibration for week starting {next_monday.isoformat()} "
             f"(review anchor {reference_date.isoformat()})"
@@ -33,7 +44,21 @@ class WeeklyCalibrationWorkflow:
         except Exception as exc:  # pragma: no cover
             message = f"Weekly calibration failed for week starting {next_monday.isoformat()}: {exc}"
             log_utils.error(message)
+            log_utils.log_checkpoint(
+                checkpoint="weekly_calibration",
+                outcome="failed",
+                correlation=correlation,
+                summary={"error": str(exc)},
+                level="ERROR",
+            )
             raise ValidationError(message) from exc
+
+        log_utils.log_checkpoint(
+            checkpoint="weekly_calibration",
+            outcome="completed",
+            correlation=correlation,
+            summary={"needs_backoff": getattr(validation_decision, "needs_backoff", None)},
+        )
 
         return WeeklyCalibrationResult(
             message=validation_decision.explanation,
