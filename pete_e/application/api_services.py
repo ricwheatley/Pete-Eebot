@@ -9,6 +9,7 @@ from typing import Any, Dict
 from pete_e.config import settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
+from pete_e.application.exceptions import BadRequestError, DataAccessError
 from pete_e.utils import converters
 from pete_e.utils.coercion import coerce_numeric
 
@@ -169,7 +170,7 @@ class _DateParserMixin:
         try:
             return date.fromisoformat(value)
         except ValueError as exc:  # pragma: no cover - defensive re-raise
-            raise ValueError(f"Invalid date value for '{field}': {value}") from exc
+            raise BadRequestError(f"Invalid date value for '{field}': {value}", code="invalid_date") from exc
         """Perform parse iso date."""
 
 
@@ -182,13 +183,19 @@ class MetricsService(_DateParserMixin):
 
     def overview(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        columns, rows = self._dal.get_metrics_overview(target_date)
+        try:
+            columns, rows = self._dal.get_metrics_overview(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load metrics overview.") from exc
         return {"columns": columns, "rows": rows}
         """Perform overview."""
 
     def daily_summary(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        row = self._dal.get_daily_summary(target_date)
+        try:
+            row = self._dal.get_daily_summary(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load daily summary.") from exc
         if not row:
             return {
                 "date": target_date.isoformat(),
@@ -243,7 +250,10 @@ class MetricsService(_DateParserMixin):
     def coach_state(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
         history_start = target_date - timedelta(days=34)
-        rows = list(self._dal.get_historical_data(history_start, target_date) or [])
+        try:
+            rows = list(self._dal.get_historical_data(history_start, target_date) or [])
+        except Exception as exc:
+            raise DataAccessError("Failed to load coaching history.") from exc
         last_7 = _window_rows(rows, target_date - timedelta(days=6), target_date)
         prev_7 = _window_rows(rows, target_date - timedelta(days=13), target_date - timedelta(days=7))
         last_28 = _window_rows(rows, target_date - timedelta(days=27), target_date)
@@ -523,12 +533,18 @@ class PlanService(_DateParserMixin):
 
     def for_day(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        return self._read_model.plan_for_day(target_date)
+        try:
+            return self._read_model.plan_for_day(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load plan for requested day.") from exc
         """Perform for day."""
 
     def for_week(self, iso_start_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_start_date, "start_date")
-        return self._read_model.plan_for_week(target_date)
+        try:
+            return self._read_model.plan_for_week(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load plan for requested week.") from exc
         """Perform for week."""
 
 

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
+
 import time
 import datetime
 import hmac
@@ -14,8 +15,11 @@ from pete_e.cli.status import (
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.application.exceptions import ApplicationError
 
 app = FastAPI(title="Pete-Eebot API")
+
+
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
@@ -127,12 +131,10 @@ def metrics_overview(
     try:
         service = get_metrics_service()
         return service.overview(date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/daily_summary")
@@ -147,10 +149,10 @@ def daily_summary(
 
     try:
         return get_metrics_service().daily_summary(date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ApplicationError:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/recent_workouts")
@@ -166,10 +168,10 @@ def recent_workouts(
 
     try:
         return get_metrics_service().recent_workouts(days=days, iso_end_date=end_date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ApplicationError:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/coach_state")
@@ -184,10 +186,10 @@ def coach_state(
 
     try:
         return get_metrics_service().coach_state(date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ApplicationError:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/goal_state")
@@ -230,10 +232,10 @@ def plan_context(
 
     try:
         return get_metrics_service().plan_context(date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except ApplicationError:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 # SSE endpoint for streaming (demo)
@@ -266,12 +268,10 @@ def plan_for_day(
     try:
         service = get_plan_service()
         return service.for_day(date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 # Plan for a whole week
@@ -289,12 +289,10 @@ def plan_for_week(
     try:
         service = get_plan_service()
         return service.for_week(start_date)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @app.get("/status")
