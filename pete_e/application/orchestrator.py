@@ -17,6 +17,15 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.collaborator_contracts import (
+    CycleContract,
+    DataAccessContract,
+    ExportContract,
+    MessagingContract,
+    PlanGenerationContract,
+    SyncContract,
+    ValidationContract,
+)
 from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
@@ -102,20 +111,24 @@ class Orchestrator:
         self,
         *,
         container: Container | None = None,
-        validation_service: ValidationService | None = None,
-        cycle_service: CycleService | None = None,
-        telegram_client: TelegramClient | None = None,
+        validation_service: ValidationContract | None = None,
+        cycle_service: CycleContract | None = None,
+        telegram_client: MessagingContract | None = None,
         narrative_builder: NarrativeBuilder | None = None,
+        dal: DataAccessContract | None = None,
+        plan_service: PlanGenerationContract | None = None,
+        export_service: ExportContract | None = None,
+        daily_sync_service: SyncContract | None = None,
     ):
         """Initialize orchestrator dependencies."""
         container = container or get_container()
 
         # Resolve shared dependencies
-        self.dal = container.resolve(PostgresDal)
+        self.dal = dal or container.resolve(PostgresDal)
         self.wger_client = container.resolve(WgerClient)
-        self.plan_service = container.resolve(PlanService)
-        self.export_service = container.resolve(WgerExportService)
-        self.daily_sync_service = container.resolve(DailySyncService)
+        self.plan_service = plan_service or container.resolve(PlanService)
+        self.export_service = export_service or container.resolve(WgerExportService)
+        self.daily_sync_service = daily_sync_service or container.resolve(DailySyncService)
         self.validation_service = validation_service or ValidationService(self.dal)
         self.cycle_service = cycle_service or CycleService()
 
