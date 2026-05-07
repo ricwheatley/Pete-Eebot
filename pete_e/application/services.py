@@ -158,6 +158,18 @@ class WgerExportService:
         (Logic migrated from wger_sender.py and wger_exporter.py)
         """
         log_utils.info(f"Starting export for plan {plan_id}, week {week_number}...")
+        correlation = {
+            "workflow": "wger_export",
+            "plan_id": plan_id,
+            "week_number": week_number,
+            "start_date": start_date.isoformat(),
+        }
+        log_utils.log_checkpoint(
+            checkpoint="export",
+            outcome="started",
+            correlation=correlation,
+            summary={"force_overwrite": force_overwrite, "dry_run": dry_run},
+        )
 
         # 1. Perform readiness validation and apply adjustments if needed
         if validation_decision is None:
@@ -169,6 +181,12 @@ class WgerExportService:
         # 2. Check if this week was already exported
         if not force_overwrite and self.dal.was_week_exported(plan_id, week_number):
             log_utils.warn(f"Skipping export: plan {plan_id}, week {week_number} already exported.")
+            log_utils.log_checkpoint(
+                checkpoint="export",
+                outcome="skipped",
+                correlation=correlation,
+                summary={"reason": "already-exported"},
+            )
             return {"status": "skipped", "reason": "already-exported"}
         
         # 3. Build the payload from the (potentially adjusted) plan in the DB
@@ -189,6 +207,12 @@ class WgerExportService:
 
         if dry_run:
             log_utils.info(f"[DRY RUN] Would export payload: {json.dumps(payload, indent=2)}")
+            log_utils.log_checkpoint(
+                checkpoint="export",
+                outcome="dry_run",
+                correlation=correlation,
+                summary={"payload_days": len(payload.get("days", []))},
+            )
             return {"status": "dry-run", "payload": payload}
 
         # 4. Resolve export IDs and submit payload via staged API pipeline
@@ -221,6 +245,12 @@ class WgerExportService:
             f"{plan_id}, week {week_number} to wger routine {routine_id} "
             f"on {getattr(self.client, 'base_url', 'unknown-host')} "
             f"(days={created_days}, slots={created_slots}, slot_entries={created_entries})."
+        )
+        log_utils.log_checkpoint(
+            checkpoint="export",
+            outcome="completed",
+            correlation={**correlation, "routine_id": routine_id},
+            summary={"days": created_days, "slots": created_slots, "slot_entries": created_entries},
         )
         return {"status": "exported", "routine_id": routine_id}
 
