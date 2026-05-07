@@ -38,6 +38,17 @@ class CycleRolloverWorkflow:
         validation_decision: ValidationDecision | None = None,
     ) -> CycleRolloverResult:
         next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
+        correlation = {
+            "workflow": "cycle_rollover",
+            "reference_date": reference_date.isoformat(),
+            "new_cycle_start": next_monday.isoformat(),
+        }
+        log_utils.log_checkpoint(
+            checkpoint="rollover",
+            outcome="started",
+            correlation=correlation,
+            summary={},
+        )
         log_utils.info(f"Cycle rollover triggered for block starting {next_monday.isoformat()}")
 
         with self.hold_plan_generation_lock():
@@ -48,6 +59,13 @@ class CycleRolloverWorkflow:
             except Exception as exc:  # pragma: no cover
                 message = f"Plan creation failed for cycle starting {next_monday.isoformat()}: {exc}"
                 log_utils.error(message, "ERROR")
+                log_utils.log_checkpoint(
+                    checkpoint="rollover",
+                    outcome="failed",
+                    correlation=correlation,
+                    summary={"stage": "plan_creation", "error": str(exc)},
+                    level="ERROR",
+                )
                 raise PlanRolloverError(message) from exc
 
             if not plan_id:
@@ -68,7 +86,21 @@ class CycleRolloverWorkflow:
             except Exception as exc:  # pragma: no cover
                 message = f"Export failed for plan {plan_id} week 1 starting {next_monday.isoformat()}: {exc}"
                 log_utils.error(message, "ERROR")
+                log_utils.log_checkpoint(
+                    checkpoint="rollover",
+                    outcome="failed",
+                    correlation={**correlation, "plan_id": plan_id},
+                    summary={"stage": "export_week_1", "error": str(exc)},
+                    level="ERROR",
+                )
                 raise PlanRolloverError(message) from exc
+
+        log_utils.log_checkpoint(
+            checkpoint="rollover",
+            outcome="completed",
+            correlation={**correlation, "plan_id": plan_id},
+            summary={"exported_week": 1},
+        )
 
         return CycleRolloverResult(
             plan_id=plan_id,
