@@ -7,17 +7,6 @@ from typing import Dict, List, Optional
 import psycopg
 from psycopg import sql
 
-from pete_e.config.config import settings
-from pete_e.infrastructure.apple_parser import (
-    DailyHeartRateSummary,
-    DailyMetricPoint,
-    DailySleepSummary,
-    WorkoutEnergyPoint,
-    WorkoutHeader,
-    WorkoutHRPoint,
-    WorkoutHRRecoveryPoint,
-    WorkoutStepsPoint,
-)
 
 from pete_e.infrastructure import log_utils
 

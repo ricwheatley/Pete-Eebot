@@ -1,6 +1,5 @@
 ﻿from datetime import date, datetime, timedelta
 
-import pytest
 
 from pete_e.domain import narrative_builder
 from pete_e.cli import messenger

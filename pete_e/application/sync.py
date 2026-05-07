@@ -22,7 +22,7 @@ from tenacity import (
 from pete_e.infrastructure import log_utils
 
 if TYPE_CHECKING:
-    from pete_e.application.orchestrator import Orchestrator as OrchestratorType
+    pass
 else:
     Orchestrator = None  # type: ignore
 
@@ -144,7 +144,7 @@ def _run_with_retry(
     last_alerts: List[str] = []
 
     def _sync_once() -> bool:
-        nonlocal attempts, last_failures, last_statuses
+        nonlocal attempts, last_failures, last_statuses, last_alerts
         attempts += 1
         result = execute()
         if len(result) == 4:

@@ -67,7 +67,6 @@ class ValidationService:
     ) -> Optional[Dict[str, object]]:
         if not plan_context:
             return None
-        plan_id = plan_context.plan_id
         plan_start = plan_context.start_date
 
         days_since_start = (week_start - plan_start).days
