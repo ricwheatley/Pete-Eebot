@@ -2,7 +2,6 @@
 
 import random
 from dataclasses import dataclass, field
-from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -1104,7 +1103,8 @@ def _build_daily_narrative_from_metrics(metrics: Mapping[str, Any]) -> str:
     if not isinstance(metrics_map, Mapping) or not metrics_map:
         return "Morning Ric ☀️\n\nNo fresh metrics yet. Give the sync a moment."
 
-    get_metric = lambda key: metrics_map.get(key)
+    def get_metric(key: str) -> Any:
+        return metrics_map.get(key)
 
     sentences: List[str] = []
     for formatter, key in (

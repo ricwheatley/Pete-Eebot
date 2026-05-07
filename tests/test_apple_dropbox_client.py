@@ -61,7 +61,7 @@ class FakeDropbox:
             raise self._incremental_exception
 
         if self._incremental_index >= len(self._incremental_results):
-            return SimpleNamespace(entries=[], cursor=cursor, has_more=False)
+            return SimpleNamespace(entries=[], cursor="", has_more=False)
 
         result = self._incremental_results[self._incremental_index]
         self._incremental_index += 1

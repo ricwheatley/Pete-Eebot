@@ -22,7 +22,7 @@ from tenacity import (
 from pete_e.infrastructure import log_utils
 
 if TYPE_CHECKING:
-    from pete_e.application.orchestrator import Orchestrator as OrchestratorType
+    pass
 else:
     Orchestrator = None  # type: ignore
 
@@ -144,7 +144,7 @@ def _run_with_retry(
     last_alerts: List[str] = []
 
     def _sync_once() -> bool:
-        nonlocal attempts, last_failures, last_statuses
+        nonlocal attempts, last_failures, last_statuses, last_alerts
         attempts += 1
         result = execute()
         if len(result) == 4:
@@ -260,12 +260,25 @@ def run_sync_with_retries(
     base_delay = max(1, delay)
 
     try:
+        log_utils.log_checkpoint(
+            checkpoint="daily_sync",
+            outcome="started",
+            correlation={"workflow": "daily_sync", "days": days},
+            summary={"retries": max_attempts, "base_delay_seconds": base_delay},
+        )
         result = _run_with_retry(
             execute=lambda: orchestrator.run_daily_sync(days=days),
             max_attempts=max_attempts,
             base_delay=base_delay,
             label="Sync",
             summary_name="daily",
+        )
+        log_utils.log_checkpoint(
+            checkpoint="daily_sync",
+            outcome="completed" if result.success else "failed",
+            correlation={"workflow": "daily_sync", "days": days},
+            summary={"attempts": result.attempts, "failed_sources": result.failed_sources},
+            level=result.log_level(),
         )
         log_utils.log_message(result.summary_line(days=days), result.log_level())
         return result

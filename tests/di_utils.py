@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Type
 
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.collaborator_contracts import CycleContract, ValidationContract
 from pete_e.domain.daily_sync import DailySyncResult, DailySyncService
+from pete_e.domain.cycle_service import CycleService
+from pete_e.application.validation_service import ValidationService
 from pete_e.infrastructure.di_container import build_container
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
@@ -57,4 +60,23 @@ class _NoopDailySyncService:
     """Represent NoopDailySyncService."""
 
 
-__all__ = ["build_stub_container"]
+__all__ = ["build_stub_container", "build_contract_container"]
+
+
+def build_contract_container(
+    *,
+    dal: Any | None = None,
+    validation_service: ValidationContract | None = None,
+    cycle_service: CycleContract | None = None,
+    extra_overrides: Mapping[ServiceType, Any] | None = None,
+):
+    """Build a test container with contract-level overrides for fast unit tests."""
+    overrides: Dict[ServiceType, Any] = {
+        ValidationService: validation_service or ValidationService(dal or object()),
+        CycleService: cycle_service or CycleService(),
+    }
+    if dal is not None:
+        overrides[PostgresDal] = dal
+    if extra_overrides:
+        overrides.update(extra_overrides)
+    return build_container(overrides=overrides)
