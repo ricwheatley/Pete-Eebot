@@ -16,6 +16,11 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.composition import (
+    provide_cycle_service,
+    provide_narrative_builder,
+    provide_validation_service,
+)
 from pete_e.application.collaborator_contracts import (
     CycleContract,
     DataAccessContract,
@@ -103,8 +108,8 @@ class Orchestrator:
         self.plan_service = plan_service or container.resolve(PlanService)
         self.export_service = export_service or container.resolve(WgerExportService)
         self.daily_sync_service = daily_sync_service or container.resolve(DailySyncService)
-        self.validation_service = validation_service or ValidationService(self.dal)
-        self.cycle_service = cycle_service or CycleService()
+        self.validation_service = validation_service or self._resolve_validation_service(container)
+        self.cycle_service = cycle_service or self._resolve_cycle_service(container)
 
         try:
             self.telegram_client = telegram_client or container.resolve(TelegramClient)
@@ -115,7 +120,7 @@ class Orchestrator:
                     "TelegramClient dependency is unavailable; Telegram sends will be disabled."
                 )
 
-        self.narrative_builder = narrative_builder or NarrativeBuilder()
+        self.narrative_builder = narrative_builder or provide_narrative_builder()
 
         self.weekly_calibration_workflow = WeeklyCalibrationWorkflow(self.validation_service)
         self.cycle_rollover_workflow = CycleRolloverWorkflow(
@@ -142,6 +147,19 @@ class Orchestrator:
         except Exception as exc:  # defensive guard
             self.plan_generation_service = None
             log_utils.error(f"Failed to initialize PlanGenerationService: {exc}")
+
+
+    def _resolve_validation_service(self, container: Container) -> ValidationContract:
+        try:
+            return container.resolve(ValidationService)
+        except KeyError:
+            return provide_validation_service(dal=self.dal)
+
+    def _resolve_cycle_service(self, container: Container) -> CycleContract:
+        try:
+            return container.resolve(CycleService)
+        except KeyError:
+            return provide_cycle_service()
 
     def _hold_plan_generation_lock(self):
         holder = getattr(self.dal, "hold_plan_generation_lock", None)
