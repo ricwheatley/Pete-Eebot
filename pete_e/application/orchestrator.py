@@ -7,7 +7,6 @@ from __future__ import annotations
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Sequence
 
 # --- NEW Clean Imports ---
@@ -50,6 +49,7 @@ from pete_e.infrastructure.di_container import Container, get_container
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.utils.coercion import coerce_decimal_to_float
 
 
 @dataclass(frozen=True)
@@ -60,19 +60,12 @@ class WeeklyAutomationResult:
     """Represent WeeklyAutomationResult."""
 
 
-def _coerce_metric_value(value: Any) -> Any:
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
-    """Perform coerce metric value."""
-
-
 def _build_metrics_overview_payload(
     *, columns: Sequence[str], rows: Iterable[Sequence[Any]], reference_date: date
 ) -> Dict[str, Any]:
     metrics: Dict[str, Dict[str, Any]] = {}
     for raw_row in rows or []:
-        entry = {str(column): _coerce_metric_value(raw_row[idx]) for idx, column in enumerate(columns)}
+        entry = {str(column): coerce_decimal_to_float(raw_row[idx]) for idx, column in enumerate(columns)}
         metric_name = entry.get("metric_name")
         if not metric_name:
             continue

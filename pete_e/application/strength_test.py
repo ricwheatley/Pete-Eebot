@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 from pete_e.domain import schedule_rules
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.utils.coercion import coerce_date, coerce_float, coerce_int
 
 AMRAP_EPLEY_SOURCE = "AMRAP_EPLEY"
 MAX_REASONABLE_AMRAP_REPS = 20
@@ -66,9 +67,9 @@ class StrengthTestService:
             log_utils.info("No strength test week found; leaving training maxes unchanged.")
             return None
 
-        plan_id = self._coerce_int(latest_test_week.get("plan_id"))
-        week_number = self._coerce_int(latest_test_week.get("week_number")) or 1
-        plan_start = self._coerce_date(latest_test_week.get("start_date"))
+        plan_id = coerce_int(latest_test_week.get("plan_id"))
+        week_number = coerce_int(latest_test_week.get("week_number")) or 1
+        plan_start = coerce_date(latest_test_week.get("start_date"))
         if plan_id is None or plan_start is None:
             raise ValueError("Latest strength test week is missing plan metadata.")
 
@@ -135,8 +136,8 @@ class StrengthTestService:
     ) -> dict[int, date]:
         planned: dict[int, date] = {}
         for row in rows:
-            exercise_id = self._coerce_int(row.get("exercise_id"))
-            day_of_week = self._coerce_int(row.get("day_of_week"))
+            exercise_id = coerce_int(row.get("exercise_id"))
+            day_of_week = coerce_int(row.get("day_of_week"))
             if exercise_id not in schedule_rules.TEST_WEEK_LIFT_ORDER or day_of_week is None:
                 continue
             planned[exercise_id] = week_start + timedelta(days=day_of_week - 1)
@@ -169,9 +170,9 @@ class StrengthTestService:
         """Perform best logged set."""
 
     def _row_to_logged_set(self, row: Mapping[str, Any]) -> _LoggedSet | None:
-        test_date = self._coerce_date(row.get("date"))
-        reps = self._coerce_int(row.get("reps"))
-        weight_kg = self._coerce_float(row.get("weight_kg"))
+        test_date = coerce_date(row.get("date"))
+        reps = coerce_int(row.get("reps"))
+        weight_kg = coerce_float(row.get("weight_kg"))
         if test_date is None or reps is None or weight_kg is None:
             return None
         if reps < 1 or reps > MAX_REASONABLE_AMRAP_REPS or weight_kg <= 0:
@@ -194,42 +195,3 @@ class StrengthTestService:
         return weight_kg * (1.0 + reps / 30.0)
         """Perform e1rm epley."""
 
-    @staticmethod
-    def _coerce_date(value: Any) -> date | None:
-        if value is None:
-            return None
-        if isinstance(value, datetime):
-            return value.date()
-        if isinstance(value, date):
-            return value
-        if isinstance(value, str):
-            try:
-                return date.fromisoformat(value)
-            except ValueError:
-                return None
-        return None
-        """Perform coerce date."""
-
-    @staticmethod
-    def _coerce_int(value: Any) -> int | None:
-        if value is None:
-            return None
-        if isinstance(value, bool):
-            return int(value)
-        if isinstance(value, int):
-            return value
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-        """Perform coerce int."""
-
-    @staticmethod
-    def _coerce_float(value: Any) -> float | None:
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-        """Perform coerce float."""
