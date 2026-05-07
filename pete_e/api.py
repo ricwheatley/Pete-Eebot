@@ -7,6 +7,7 @@ from pete_e.api_routes import (
     root_router,
     status_sync_router,
 )
+from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.api_routes.dependencies import get_status_service, validate_api_key
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.config import settings as _settings
@@ -16,11 +17,12 @@ settings = _settings  # Backward-compatible module export for tests/consumers.
 
 app = FastAPI(title="Pete-Eebot API")
 
-app.include_router(root_router)
-app.include_router(metrics_router)
-app.include_router(plan_router)
-app.include_router(status_sync_router)
-app.include_router(logs_webhooks_router)
+if hasattr(app, "include_router"):
+    app.include_router(root_router)
+    app.include_router(metrics_router)
+    app.include_router(plan_router)
+    app.include_router(status_sync_router)
+    app.include_router(logs_webhooks_router)
 
 
 def status(
