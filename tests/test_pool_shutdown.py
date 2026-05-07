@@ -1,10 +1,8 @@
-import pytest
 from unittest.mock import MagicMock
 
 # Import the modules we need to test and mock
-from pete_e.application import orchestrator as orchestrator_module
 from pete_e.application.orchestrator import Orchestrator
-from pete_e.application.sync import run_sync_with_retries, SyncResult
+from pete_e.application.sync import run_sync_with_retries
 from tests.di_utils import build_stub_container
 
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from pete_e.infrastructure import log_utils
 

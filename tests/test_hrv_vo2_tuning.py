@@ -9,7 +9,6 @@ from pete_e.domain.repositories import PlanRepository
 import tests.config_stub  # noqa: F401
 
 from pete_e.domain.validation import assess_recovery_and_backoff
-from pete_e.config import settings
 
 
 class PlanBuilderStubRepo(PlanRepository):
