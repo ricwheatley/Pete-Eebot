@@ -173,129 +173,31 @@ class WgerExportService:
         
         # 3. Build the payload from the (potentially adjusted) plan in the DB
         week_rows = self.dal.get_plan_week_rows(plan_id, week_number)
-        payload = self._build_payload_from_rows(
-            plan_id,
-            week_number,
-            week_rows,
+        normalized_rows = self._normalize_week_rows(week_rows, week_number=week_number)
+        payload = self._assemble_payload(
+            plan_id=plan_id,
+            week_number=week_number,
+            rows=normalized_rows,
             plan_start_date=start_date,
         )
-        self._apply_running_backoff_to_payload(payload, decision)
+        self._annotate_and_enrich_payload(
+            payload=payload,
+            week_number=week_number,
+            rows=normalized_rows,
+            decision=decision,
+        )
 
         if dry_run:
             log_utils.info(f"[DRY RUN] Would export payload: {json.dumps(payload, indent=2)}")
             return {"status": "dry-run", "payload": payload}
 
-        # 4. Use the WgerClient to perform the export
-        routine_name = f"Pete-E Week {start_date.strftime('%Y-%m-%d')}"
-        routine = self.client.find_or_create_routine(
-            name=routine_name,
-            description=f"Automated plan for week starting {start_date.isoformat()}",
-            start=start_date,
-            end=start_date + timedelta(days=6)
+        # 4. Resolve export IDs and submit payload via staged API pipeline
+        self._resolve_export_ids(payload)
+        routine_id, api_trace = self._submit_payload_to_api(
+            payload=payload,
+            start_date=start_date,
+            force_overwrite=force_overwrite,
         )
-        routine_id = routine['id']
-
-        if force_overwrite:
-            try:
-                self.client.delete_all_days_in_routine(routine_id)
-            except Exception as exc:
-                fallback_name = self._fallback_routine_name(routine_name)
-                log_utils.warn(
-                    "Failed to clean existing wger routine "
-                    f"{routine_id} for {start_date.isoformat()}: {exc}. "
-                    f"Creating fallback routine {fallback_name!r}."
-                )
-                routine = self.client.find_or_create_routine(
-                    name=fallback_name,
-                    description=(
-                        "Automated plan for week starting "
-                        f"{start_date.isoformat()} after cleanup fallback"
-                    ),
-                    start=start_date,
-                    end=start_date + timedelta(days=6),
-                )
-                routine_id = routine["id"]
-
-        api_trace: list[dict[str, Any]] = []
-        supports_full_export = all(
-            hasattr(self.client, attr)
-            for attr in ("create_day", "create_slot", "create_slot_entry", "set_config")
-        )
-
-        if not supports_full_export:
-            log_utils.warn(
-                "Wger client stub missing export endpoints; skipping API push but recording payload."
-            )
-        else:
-            for order, day_payload in enumerate(payload.get("days", []), start=1):
-                day_number_raw = day_payload.get("day_of_week")
-                day_of_week = int(day_number_raw) if day_number_raw is not None else order
-                day_date = start_date + timedelta(days=(day_of_week - start_date.isoweekday()) % 7)
-                day_name = day_date.strftime("%A %d %b")
-                day_response = self.client.create_day(
-                    routine_id,
-                    order=order,
-                    name=day_name,
-                )
-
-                slot_summaries: list[dict[str, Any]] = []
-                for slot_order, exercise_payload in enumerate(day_payload.get("exercises", []), start=1):
-                    comment = exercise_payload.get("comment")
-                    slot_response = self.client.create_slot(
-                        day_response["id"],
-                        order=slot_order,
-                        comment=comment,
-                    )
-
-                    exercise_id = exercise_payload.get("exercise")
-                    if exercise_id is None:
-                        exercise_id = self._resolve_export_exercise_id(exercise_payload)
-                    entry_response: Dict[str, Any] | None = None
-                    configs_sent: list[dict[str, Any]] = []
-                    if exercise_id:
-                        entry_response = self.client.create_slot_entry(
-                            slot_response["id"],
-                            exercise_id=exercise_id,
-                            order=1,
-                            entry_type=exercise_payload.get("entry_type"),
-                            comment=self._entry_comment_for_api(exercise_payload),
-                        )
-                        slot_entry_id = entry_response["id"]
-                        configs_sent = self._apply_slot_entry_configs(
-                            exercise_payload=exercise_payload,
-                            exercise_id=exercise_id,
-                            slot_entry_id=slot_entry_id,
-                        )
-                    else:
-                        details = exercise_payload.get("details")
-                        session_type = None
-                        if isinstance(details, dict):
-                            session_type = details.get("session_type")
-                        log_utils.warn(
-                            "Skipping slot entry creation due to missing exercise ID in payload. "
-                            f"comment={comment!r}, session_type={session_type!r}"
-                        )
-
-                    slot_summaries.append(
-                        {
-                            "slot_id": slot_response.get("id"),
-                            "exercise_id": exercise_id,
-                            "entry_id": None if entry_response is None else entry_response.get("id"),
-                            "comment": comment,
-                            "entry_comment": self._entry_comment_for_api(exercise_payload),
-                            "entry_type": exercise_payload.get("entry_type"),
-                            "configs": configs_sent,
-                        }
-                    )
-
-                api_trace.append(
-                    {
-                        "day_id": day_response.get("id"),
-                        "day_of_week": day_of_week,
-                        "name": day_response.get("name"),
-                        "slots": slot_summaries,
-                    }
-                )
 
         created_days = len(api_trace)
         created_slots = sum(len(day.get("slots", [])) for day in api_trace)
@@ -392,6 +294,153 @@ class WgerExportService:
                     entry["entry_comment"] = entry["comment"]
                     entry["recovery_focused"] = True
 
+    def _normalize_week_rows(
+        self,
+        rows: List[Dict[str, Any]],
+        *,
+        week_number: int,
+    ) -> List[Dict[str, Any]]:
+        return [{**row, "week_number": row.get("week_number", week_number)} for row in rows]
+
+    def _assemble_payload(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        rows: List[Dict[str, Any]],
+        plan_start_date: date | None = None,
+    ) -> Dict[str, Any]:
+        return self._build_payload_from_rows(
+            plan_id=plan_id,
+            week_number=week_number,
+            rows=rows,
+            plan_start_date=plan_start_date,
+        )
+
+    def _annotate_and_enrich_payload(
+        self,
+        *,
+        payload: Dict[str, Any],
+        week_number: int,
+        rows: List[Dict[str, Any]],
+        decision: ValidationDecision | None,
+    ) -> None:
+        is_test_week = any(bool(row.get("is_test")) for row in rows)
+        self._annotate_week_payload(payload, week_number, is_test=is_test_week)
+        if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
+            self._expand_stretch_routines_for_export(payload)
+        self._apply_running_backoff_to_payload(payload, decision)
+
+    def _resolve_export_ids(self, payload: Dict[str, Any]) -> None:
+        for day in payload.get("days", []):
+            for exercise_payload in day.get("exercises", []):
+                if exercise_payload.get("exercise") is None:
+                    exercise_payload["exercise"] = self._resolve_export_exercise_id(exercise_payload)
+
+    def _submit_payload_to_api(
+        self,
+        *,
+        payload: Dict[str, Any],
+        start_date: date,
+        force_overwrite: bool,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        routine_name = f"Pete-E Week {start_date.strftime('%Y-%m-%d')}"
+        routine = self.client.find_or_create_routine(
+            name=routine_name,
+            description=f"Automated plan for week starting {start_date.isoformat()}",
+            start=start_date,
+            end=start_date + timedelta(days=6),
+        )
+        routine_id = routine["id"]
+
+        if force_overwrite:
+            try:
+                self.client.delete_all_days_in_routine(routine_id)
+            except Exception as exc:
+                fallback_name = self._fallback_routine_name(routine_name)
+                log_utils.warn(
+                    "Failed to clean existing wger routine "
+                    f"{routine_id} for {start_date.isoformat()}: {exc}. "
+                    f"Creating fallback routine {fallback_name!r}."
+                )
+                routine = self.client.find_or_create_routine(
+                    name=fallback_name,
+                    description=(
+                        "Automated plan for week starting "
+                        f"{start_date.isoformat()} after cleanup fallback"
+                    ),
+                    start=start_date,
+                    end=start_date + timedelta(days=6),
+                )
+                routine_id = routine["id"]
+
+        api_trace: list[dict[str, Any]] = []
+        supports_full_export = all(
+            hasattr(self.client, attr)
+            for attr in ("create_day", "create_slot", "create_slot_entry", "set_config")
+        )
+        if not supports_full_export:
+            log_utils.warn(
+                "Wger client stub missing export endpoints; skipping API push but recording payload."
+            )
+            return routine_id, api_trace
+
+        for order, day_payload in enumerate(payload.get("days", []), start=1):
+            day_number_raw = day_payload.get("day_of_week")
+            day_of_week = int(day_number_raw) if day_number_raw is not None else order
+            day_date = start_date + timedelta(days=(day_of_week - start_date.isoweekday()) % 7)
+            day_name = day_date.strftime("%A %d %b")
+            day_response = self.client.create_day(routine_id, order=order, name=day_name)
+
+            slot_summaries: list[dict[str, Any]] = []
+            for slot_order, exercise_payload in enumerate(day_payload.get("exercises", []), start=1):
+                comment = exercise_payload.get("comment")
+                slot_response = self.client.create_slot(day_response["id"], order=slot_order, comment=comment)
+
+                exercise_id = exercise_payload.get("exercise")
+                entry_response: Dict[str, Any] | None = None
+                configs_sent: list[dict[str, Any]] = []
+                if exercise_id:
+                    entry_response = self.client.create_slot_entry(
+                        slot_response["id"],
+                        exercise_id=exercise_id,
+                        order=1,
+                        entry_type=exercise_payload.get("entry_type"),
+                        comment=self._entry_comment_for_api(exercise_payload),
+                    )
+                    slot_entry_id = entry_response["id"]
+                    configs_sent = self._apply_slot_entry_configs(
+                        exercise_payload=exercise_payload,
+                        exercise_id=exercise_id,
+                        slot_entry_id=slot_entry_id,
+                    )
+                else:
+                    details = exercise_payload.get("details")
+                    session_type = details.get("session_type") if isinstance(details, dict) else None
+                    log_utils.warn(
+                        "Skipping slot entry creation due to missing exercise ID in payload. "
+                        f"comment={comment!r}, session_type={session_type!r}"
+                    )
+
+                slot_summaries.append({
+                    "slot_id": slot_response.get("id"),
+                    "exercise_id": exercise_id,
+                    "entry_id": None if entry_response is None else entry_response.get("id"),
+                    "comment": comment,
+                    "entry_comment": self._entry_comment_for_api(exercise_payload),
+                    "entry_type": exercise_payload.get("entry_type"),
+                    "configs": configs_sent,
+                })
+
+            api_trace.append({
+                "day_id": day_response.get("id"),
+                "day_of_week": day_of_week,
+                "name": day_response.get("name"),
+                "slots": slot_summaries,
+            })
+
+        return routine_id, api_trace
+
     def _build_payload_from_rows(
         self,
         plan_id: int,
@@ -408,20 +457,12 @@ class WgerExportService:
                 weeks=[Week(week_number=week_number, workouts=[])],
             )
         else:
-            enriched_rows = [
-                {**row, "week_number": row.get("week_number", week_number)}
-                for row in rows
-            ]
-            plan = self.plan_mapper.from_rows({"start_date": plan_start_date}, enriched_rows)
+            plan = self.plan_mapper.from_rows({"start_date": plan_start_date}, rows)
         payload = self.payload_mapper.build_week_payload(
             plan,
             week_number,
             plan_id=plan_id,
         )
-        is_test_week = any(bool(row.get("is_test")) for row in rows)
-        self._annotate_week_payload(payload, week_number, is_test=is_test_week)
-        if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
-            self._expand_stretch_routines_for_export(payload)
         return payload
 
     def _annotate_week_payload(
