@@ -27,6 +27,7 @@ from pete_e.application.collaborator_contracts import (
     ValidationContract,
 )
 from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
+from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
 from pete_e.application.workflows import (
@@ -453,39 +454,17 @@ class Orchestrator:
         return context
 
     def _load_plan_for_day(self, target: date) -> Iterable[Dict[str, Any]]:
-        """Fetch the active plan rows for the given day, normalising shape."""
+        """Fetch normalized plan context rows for the given day."""
 
         dal = getattr(self, "dal", None)
         if dal is None or not hasattr(dal, "get_plan_for_day"):
             return []
 
         try:
-            columns, rows = dal.get_plan_for_day(target)
+            return PlanReadModel(dal).load_day_context(target)
         except Exception as exc:  # pragma: no cover - defensive guard
             log_utils.warn(f"Failed to load plan for {target.isoformat()}: {exc}")
             return []
-
-        if not rows:
-            return []
-
-        column_index = {name: idx for idx, name in enumerate(columns or [])}
-        normalised: List[Dict[str, Any]] = []
-        for row in rows:
-            if isinstance(row, dict):
-                normalised.append(dict(row))
-                continue
-            if not isinstance(row, Sequence) or isinstance(row, (str, bytes)):
-                continue
-            record: Dict[str, Any] = {}
-            for name, idx in column_index.items():
-                try:
-                    value = row[idx]
-                except (IndexError, TypeError):
-                    continue
-                record[name] = value
-            if record:
-                normalised.append(record)
-        return normalised
 
     def _summarise_session(self, plan_rows: Iterable[Dict[str, Any]]) -> str | None:
         """Generate a short descriptor for the day's planned training."""

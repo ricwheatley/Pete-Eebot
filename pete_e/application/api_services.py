@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from pete_e.config import settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.utils import converters
 
 
@@ -527,19 +528,17 @@ class PlanService(_DateParserMixin):
     """Service for read-only access to stored plan snapshots."""
 
     def __init__(self, dal: PostgresDal):
-        self._dal = dal
+        self._read_model = PlanReadModel(dal)
         """Initialize this object."""
 
     def for_day(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        columns, rows = self._dal.get_plan_for_day(target_date)
-        return {"columns": columns, "rows": rows}
+        return self._read_model.plan_for_day(target_date)
         """Perform for day."""
 
     def for_week(self, iso_start_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_start_date, "start_date")
-        columns, rows = self._dal.get_plan_for_week(target_date)
-        return {"columns": columns, "rows": rows}
+        return self._read_model.plan_for_week(target_date)
         """Perform for week."""
 
 
