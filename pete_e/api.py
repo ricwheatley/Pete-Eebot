@@ -7,7 +7,6 @@ from pete_e.api_routes import (
     root_router,
     status_sync_router,
 )
-from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.api_routes.dependencies import get_status_service, validate_api_key
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.config import settings as _settings
