@@ -9,8 +9,10 @@ from pete_e.api_routes import (
 )
 from pete_e.api_routes.dependencies import get_status_service, validate_api_key
 from pete_e.application.sync import run_sync_with_retries
-from pete_e.config import settings
+from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
+
+settings = _settings  # Backward-compatible module export for tests/consumers.
 
 app = FastAPI(title="Pete-Eebot API")
 
