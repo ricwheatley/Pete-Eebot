@@ -14,6 +14,7 @@ from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 
 settings = _settings  # Backward-compatible module export for tests/consumers.
+__all__ = ["app", "status", "sync", "settings", "logs", "github_webhook"]
 
 app = FastAPI(title="Pete-Eebot API")
 
