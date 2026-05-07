@@ -20,6 +20,9 @@ if "fastapi" not in sys.modules:
         return value
 
     class APIRouter:
+        def __init__(self, *args, **kwargs):
+            pass
+
         def get(self, *args, **kwargs):
             def decorator(func):
                 return func
@@ -31,6 +34,9 @@ if "fastapi" not in sys.modules:
                 return func
 
             return decorator
+
+        def include_router(self, *args, **kwargs):
+            return None
 
     fastapi_module.APIRouter = APIRouter
     fastapi_module.FastAPI = APIRouter

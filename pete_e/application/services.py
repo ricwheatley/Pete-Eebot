@@ -493,6 +493,8 @@ class WgerExportService:
             week_number,
             plan_id=plan_id,
         )
+        if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
+            self._expand_stretch_routines_for_export(payload)
         return payload
 
     def _annotate_week_payload(
