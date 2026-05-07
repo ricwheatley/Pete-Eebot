@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Set
+from typing import Any, Dict, List, Mapping, Sequence, Set
 
 from pete_e.domain import phrase_picker
 from pete_e.domain import logging as domain_logging

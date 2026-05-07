@@ -4,7 +4,7 @@ from __future__ import annotations
 import copy
 
 from dataclasses import dataclass, replace
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from statistics import median, mean
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 

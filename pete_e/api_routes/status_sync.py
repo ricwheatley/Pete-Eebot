@@ -1,31 +1,14 @@
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+import fastapi
+from fastapi import Header, HTTPException, Query, Request
 
-from pete_e.api_routes import (
-    logs_webhooks_router,
-    metrics_router,
-    plan_router,
-    root_router,
-    status_sync_router,
-)
 from pete_e.api_routes.dependencies import get_status_service, validate_api_key
-from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.application.sync import run_sync_with_retries
-from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 
-settings = _settings  # Backward-compatible module export for tests/consumers.
-__all__ = ["app", "status", "sync", "settings", "logs", "github_webhook"]
-
-app = FastAPI(title="Pete-Eebot API")
-
-if hasattr(app, "include_router"):
-    app.include_router(root_router)
-    app.include_router(metrics_router)
-    app.include_router(plan_router)
-    app.include_router(status_sync_router)
-    app.include_router(logs_webhooks_router)
+router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
 
 
+@router.get("/status")
 def status(
     request: Request,
     x_api_key: str = Header(None),
@@ -41,6 +24,7 @@ def status(
     return {"ok": all(result["ok"] for result in checks), "checks": checks, "summary": render_results(results)}
 
 
+@router.post("/sync")
 def sync(
     request: Request,
     x_api_key: str = Header(None),

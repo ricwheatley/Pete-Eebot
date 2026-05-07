@@ -8,7 +8,10 @@ from typing import Any, Dict
 
 from pete_e.config import settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.application.plan_read_model import PlanReadModel
+from pete_e.application.exceptions import BadRequestError, DataAccessError
 from pete_e.utils import converters
+from pete_e.utils.coercion import coerce_numeric
 
 
 _METRIC_UNITS = {
@@ -71,6 +74,49 @@ _LOW_TRUST_FIELDS = {
     "vo2_max",
 }
 
+_MODERATE_TRUST_FIELDS = {"steps", "stand_minutes", "flights_climbed", "time_in_daylight"}
+
+
+def _metric_trust_level(metric_key: str) -> str:
+    if metric_key in _LOW_TRUST_FIELDS:
+        return "low"
+    if metric_key in _MODERATE_TRUST_FIELDS:
+        return "moderate"
+    return "high"
+    """Perform metric trust level."""
+
+
+def _metric_source(metric_key: str) -> str:
+    if metric_key in {"weight_kg", "body_fat_pct", "muscle_pct", "water_pct", "body_age_years"}:
+        return "withings_or_body_age"
+    if metric_key == "strength_volume_kg":
+        return "wger_logs"
+    return "apple_health"
+    """Perform metric source."""
+
+
+def _window_payload(*, end_date: date, days: int) -> dict[str, Any]:
+    return {
+        "start_date": (end_date - timedelta(days=days - 1)).isoformat(),
+        "end_date": end_date.isoformat(),
+        "days": days,
+    }
+    """Perform window payload."""
+
+
+def _shape_metric_entry(metric_key: str, raw_value: Any) -> dict[str, Any]:
+    value = _json_safe(coerce_numeric(raw_value))
+    return {
+        "value": value,
+        "unit": _METRIC_UNITS.get(metric_key),
+        "source": _metric_source(metric_key),
+        "trust_level": _metric_trust_level(metric_key),
+        "is_imputed": False,
+        "data_quality": "missing" if value is None else "observed",
+    }
+    """Perform shape metric entry."""
+
+
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -124,7 +170,7 @@ class _DateParserMixin:
         try:
             return date.fromisoformat(value)
         except ValueError as exc:  # pragma: no cover - defensive re-raise
-            raise ValueError(f"Invalid date value for '{field}': {value}") from exc
+            raise BadRequestError(f"Invalid date value for '{field}': {value}", code="invalid_date") from exc
         """Perform parse iso date."""
 
 
@@ -137,13 +183,19 @@ class MetricsService(_DateParserMixin):
 
     def overview(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        columns, rows = self._dal.get_metrics_overview(target_date)
+        try:
+            columns, rows = self._dal.get_metrics_overview(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load metrics overview.") from exc
         return {"columns": columns, "rows": rows}
         """Perform overview."""
 
     def daily_summary(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        row = self._dal.get_daily_summary(target_date)
+        try:
+            row = self._dal.get_daily_summary(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load daily summary.") from exc
         if not row:
             return {
                 "date": target_date.isoformat(),
@@ -160,20 +212,10 @@ class MetricsService(_DateParserMixin):
         for key, raw_value in row.items():
             if key == "date":
                 continue
-            value = _json_safe(raw_value)
-            if key in _PRIMARY_FIELDS and value is None:
+            metric_entry = _shape_metric_entry(key, raw_value)
+            if key in _PRIMARY_FIELDS and metric_entry["value"] is None:
                 missing.append(key)
-            trust_level = "low" if key in _LOW_TRUST_FIELDS else "high"
-            if key in {"steps", "stand_minutes", "flights_climbed", "time_in_daylight"}:
-                trust_level = "moderate"
-            metrics[key] = {
-                "value": value,
-                "unit": _METRIC_UNITS.get(key),
-                "source": self._source_for_metric(key),
-                "trust_level": trust_level,
-                "is_imputed": False,
-                "data_quality": "missing" if value is None else "observed",
-            }
+            metrics[key] = metric_entry
 
         completeness = self._completeness_pct([row], _PRIMARY_FIELDS)
         return {
@@ -195,11 +237,7 @@ class MetricsService(_DateParserMixin):
         running = running_fn(days=resolved_days, end_date=end_date) if callable(running_fn) else []
         strength = strength_fn(days=resolved_days, end_date=end_date) if callable(strength_fn) else []
         return {
-            "window": {
-                "start_date": (end_date - timedelta(days=resolved_days - 1)).isoformat(),
-                "end_date": end_date.isoformat(),
-                "days": resolved_days,
-            },
+            "window": _window_payload(end_date=end_date, days=resolved_days),
             "running": _json_safe(running),
             "strength": _json_safe(strength),
             "data_quality": {
@@ -212,7 +250,10 @@ class MetricsService(_DateParserMixin):
     def coach_state(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
         history_start = target_date - timedelta(days=34)
-        rows = list(self._dal.get_historical_data(history_start, target_date) or [])
+        try:
+            rows = list(self._dal.get_historical_data(history_start, target_date) or [])
+        except Exception as exc:
+            raise DataAccessError("Failed to load coaching history.") from exc
         last_7 = _window_rows(rows, target_date - timedelta(days=6), target_date)
         prev_7 = _window_rows(rows, target_date - timedelta(days=13), target_date - timedelta(days=7))
         last_28 = _window_rows(rows, target_date - timedelta(days=27), target_date)
@@ -364,11 +405,7 @@ class MetricsService(_DateParserMixin):
 
     @staticmethod
     def _source_for_metric(key: str) -> str:
-        if key in {"weight_kg", "body_fat_pct", "muscle_pct", "water_pct", "body_age_years"}:
-            return "withings_or_body_age"
-        if key == "strength_volume_kg":
-            return "wger_logs"
-        return "apple_health"
+        return _metric_source(key)
         """Perform source for metric."""
 
     @staticmethod
@@ -491,19 +528,23 @@ class PlanService(_DateParserMixin):
     """Service for read-only access to stored plan snapshots."""
 
     def __init__(self, dal: PostgresDal):
-        self._dal = dal
+        self._read_model = PlanReadModel(dal)
         """Initialize this object."""
 
     def for_day(self, iso_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        columns, rows = self._dal.get_plan_for_day(target_date)
-        return {"columns": columns, "rows": rows}
+        try:
+            return self._read_model.plan_for_day(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load plan for requested day.") from exc
         """Perform for day."""
 
     def for_week(self, iso_start_date: str) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_start_date, "start_date")
-        columns, rows = self._dal.get_plan_for_week(target_date)
-        return {"columns": columns, "rows": rows}
+        try:
+            return self._read_model.plan_for_week(target_date)
+        except Exception as exc:
+            raise DataAccessError("Failed to load plan for requested week.") from exc
         """Perform for week."""
 
 
