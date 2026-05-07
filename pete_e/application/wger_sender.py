@@ -1,6 +1,6 @@
 """Send validated training plans to the Wger API."""
 
-from datetime import date, timedelta
+from datetime import date
 import hashlib
 import json
 from typing import Any, Dict, List, Optional

@@ -65,13 +65,11 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for minimal environme
             return "".join(self._parts)
             """Implement the `__str__` dunder method behavior."""
         """Represent Text."""
-from pathlib import Path
 
 from typing_extensions import Annotated
 
 import typer
 import re
-import pathlib
 import psycopg
 import csv
 import json as jsonlib
@@ -88,9 +86,7 @@ from pete_e.application.exceptions import (
     ValidationError,
 )
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
-from pete_e.application.plan_generation import PlanGenerationService
 from pete_e.domain import body_age, narrative_builder
-from pete_e.application.wger_sender import push_week
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure import withings_oauth_helper

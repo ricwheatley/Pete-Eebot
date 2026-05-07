@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from types import SimpleNamespace
 
 from pete_e.application.orchestrator import CycleRolloverResult, WeeklyAutomationResult, WeeklyCalibrationResult, Orchestrator

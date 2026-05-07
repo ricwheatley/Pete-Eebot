@@ -4,7 +4,6 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
-import pytest
 
 from pete_e.application.services import WgerExportService
 

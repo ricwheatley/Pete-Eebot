@@ -1,7 +1,6 @@
 import sys
 import os
 import types
-from datetime import datetime, timezone
 from pathlib import Path
 
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
@@ -445,107 +444,6 @@ if "typer" not in sys.modules:
 
     sys.modules["typer"] = typer_module
     sys.modules["typer.testing"] = testing_module
-
-    def option(*args, **kwargs):  # pragma: no cover - metadata only
-        return {"args": args, "kwargs": kwargs}
-        """Perform option."""
-
-    def argument(*args, **kwargs):  # pragma: no cover - metadata only
-        return {"args": args, "kwargs": kwargs}
-        """Perform argument."""
-
-    _echo_messages: list[str] = []
-
-    def echo(message: object) -> None:
-        _echo_messages.append(str(message))
-        """Perform echo."""
-
-    typer_module.Exit = Exit
-    typer_module.Typer = TyperApp
-    typer_module.Option = option
-    typer_module.Argument = argument
-    typer_module.echo = echo
-    typer_module._echo_messages = _echo_messages
-
-    class CliResult:
-        def __init__(self, exit_code: int, stdout: str, exception: Exception | None = None):
-            self.exit_code = exit_code
-            self.stdout = stdout
-            self.exception = exception
-            """Initialize this object."""
-        """Represent CliResult."""
-
-    class CliRunner:
-        def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
-            """
-            Minimal stub of Click's CliRunner.invoke.
-
-            Accepts extra kwargs (e.g. catch_exceptions) for compatibility,
-            but ignores them since our TyperApp stub doesn’t use them.
-            """
-            args = list(args or [])
-            if not args:
-                raise ValueError("A command name is required")
-
-            command_name = args[0]
-            func = app._commands.get(command_name)
-            if func is None:
-                raise ValueError(f"Unknown command: {command_name}")
-
-            kwargs_dict: dict[str, object] = {}
-            idx = 1
-            while idx < len(args):
-                token = args[idx]
-                if token.startswith("--"):
-                    key = token.lstrip("-").replace("-", "_")
-                    idx += 1
-                    if idx >= len(args):
-                        raise ValueError(f"Missing value for option {token}")
-                    value_token = args[idx]
-                    if value_token.lower() in {"true", "false"}:
-                        value: object = value_token.lower() == "true"
-                    else:
-                        try:
-                            value = int(value_token)
-                        except ValueError:
-                            try:
-                                value = float(value_token)
-                            except ValueError:
-                                value = value_token
-                    kwargs_dict[key] = value
-                else:
-                    # Positional argument - store as-is using incremental key
-                    kwargs_dict.setdefault("_args", []).append(token)
-                idx += 1
-
-            typer_module._echo_messages.clear()
-            try:
-                if "_args" in kwargs_dict:
-                    positional = kwargs_dict.pop("_args")
-                    result = func(*positional, **kwargs_dict)
-                else:
-                    result = func(**kwargs_dict)
-            except Exit as exc:
-                stdout = "\n".join(typer_module._echo_messages)
-                if stdout:
-                    stdout += "\n"
-                return CliResult(exc.exit_code, stdout)
-            except Exception as exc:  # pragma: no cover - diagnostic path
-                stdout = "\n".join(typer_module._echo_messages)
-                if stdout:
-                    stdout += "\n"
-                return CliResult(1, stdout, exception=exc)
-
-            stdout = "\n".join(typer_module._echo_messages)
-            if stdout:
-                stdout += "\n"
-            return CliResult(0, stdout, exception=None if result is None else result)
-        """Represent CliRunner."""
-
-
-    testing_module = types.ModuleType("typer.testing")
-    testing_module.CliRunner = CliRunner
-    typer_module.testing = testing_module
 
     models_module = types.ModuleType("typer.models")
     models_module.Option = option

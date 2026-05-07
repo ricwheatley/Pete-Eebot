@@ -11,7 +11,7 @@ expected. The helper therefore accepts either structure.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from pete_e.utils import converters, math as math_utils
@@ -239,12 +239,6 @@ def calculate_body_age(
         return math_utils.average(vals)
         """Perform avg from."""
 
-    weight = avg_from(
-        (
-            lambda r: r.get("weight"),
-            lambda r: r.get("weight_kg"),
-        )
-    )
     bodyfat = avg_from(
         (
             lambda r: r.get("fat_percent"),
@@ -263,31 +257,6 @@ def calculate_body_age(
     steps = avg_from((lambda r: r.get("steps"),))
     exmin = avg_from((lambda r: r.get("exercise_minutes"),))
 
-    c_act = avg_from(
-        (
-            lambda r: r.get("calories", {}).get("active")
-            if isinstance(r.get("calories"), dict)
-            else None,
-            lambda r: r.get("calories_active"),
-        )
-    )
-    c_rest = avg_from(
-        (
-            lambda r: r.get("calories", {}).get("resting")
-            if isinstance(r.get("calories"), dict)
-            else None,
-            lambda r: r.get("calories_resting"),
-        )
-    )
-    c_total = avg_from(
-        (
-            lambda r: r.get("calories", {}).get("total")
-            if isinstance(r.get("calories"), dict)
-            else None,
-            lambda r: r.get("calories_total"),
-        )
-    )
-
     rhr = avg_from(
         (
             lambda r: r.get("heart_rate", {}).get("resting")
@@ -304,15 +273,6 @@ def calculate_body_age(
             lambda r: r.get("hrv_sdnn_ms"),
         )
     )
-    hravg = avg_from(
-        (
-            lambda r: r.get("heart_rate", {}).get("avg")
-            if isinstance(r.get("heart_rate"), dict)
-            else None,
-            lambda r: r.get("hr_avg"),
-        )
-    )
-
     sleepm = avg_from(
         (
             lambda r: r.get("sleep", {}).get("asleep")
