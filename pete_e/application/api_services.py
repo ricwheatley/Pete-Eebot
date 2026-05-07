@@ -10,6 +10,7 @@ from pete_e.config import settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.utils import converters
+from pete_e.utils.coercion import coerce_numeric
 
 
 _METRIC_UNITS = {
@@ -75,17 +76,6 @@ _LOW_TRUST_FIELDS = {
 _MODERATE_TRUST_FIELDS = {"steps", "stand_minutes", "flights_climbed", "time_in_daylight"}
 
 
-def _coerce_numeric(value: Any) -> float | int | None:
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (int, float)):
-        return value
-    return converters.to_float(value)
-    """Perform coerce numeric."""
-
-
 def _metric_trust_level(metric_key: str) -> str:
     if metric_key in _LOW_TRUST_FIELDS:
         return "low"
@@ -114,7 +104,7 @@ def _window_payload(*, end_date: date, days: int) -> dict[str, Any]:
 
 
 def _shape_metric_entry(metric_key: str, raw_value: Any) -> dict[str, Any]:
-    value = _json_safe(_coerce_numeric(raw_value))
+    value = _json_safe(coerce_numeric(raw_value))
     return {
         "value": value,
         "unit": _METRIC_UNITS.get(metric_key),
