@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import inspect
-from typing import Dict
+from typing import Any, Dict, Mapping
 from pete_e.logging_setup import get_logger, get_tag_for_module
 
 _LEVEL_MAP: Dict[str, int] = {
@@ -16,6 +16,45 @@ _LEVEL_MAP: Dict[str, int] = {
     "CRITICAL": logging.CRITICAL,
     "PLAN": logging.INFO,
 }
+
+_SENSITIVE_KEYS = {
+    "password", "secret", "token", "api_key", "authorization", "auth", "cookie", "session",
+}
+
+
+def _safe_value(key: str, value: Any) -> Any:
+    lowered = key.lower()
+    if lowered in _SENSITIVE_KEYS or any(marker in lowered for marker in _SENSITIVE_KEYS):
+        return "[REDACTED]"
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (list, tuple, set)):
+        return f"<{type(value).__name__} size={len(value)}>"
+    if isinstance(value, dict):
+        return f"<dict keys={len(value)}>"
+    return repr(value)
+
+
+def log_checkpoint(
+    *,
+    checkpoint: str,
+    outcome: str,
+    correlation: Mapping[str, Any] | None = None,
+    summary: Mapping[str, Any] | None = None,
+    level: str = "INFO",
+    tag: str | None = None,
+) -> None:
+    """Emit a structured checkpoint line with correlation context and a safe outcome summary."""
+
+    corr = {k: _safe_value(k, v) for k, v in (correlation or {}).items()}
+    summ = {k: _safe_value(k, v) for k, v in (summary or {}).items()}
+    payload = {
+        "checkpoint": checkpoint,
+        "outcome": outcome,
+        "correlation": corr,
+        "summary": summ,
+    }
+    log_message(f"CHECKPOINT {payload}", level=level, tag=tag)
 
 
 def log_message(msg: str, level: str = "INFO", tag: str | None = None, **kwargs) -> None:
