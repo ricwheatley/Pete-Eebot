@@ -6,16 +6,29 @@ from functools import lru_cache
 import inspect
 from typing import Any, Callable, Dict, Type
 
+from pete_e.application.composition import (
+    provide_apple_dropbox_client,
+    provide_apple_health_ingestor,
+    provide_cycle_service,
+    provide_daily_sync_service,
+    provide_plan_service,
+    provide_postgres_dal,
+    provide_telegram_client,
+    provide_validation_service,
+    provide_wger_client,
+    provide_wger_export_service,
+    provide_withings_client,
+)
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.validation_service import ValidationService
 from pete_e.config import settings as app_settings
 from pete_e.domain.configuration import DomainSettings, configure as configure_domain
+from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
-from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 from pete_e.infrastructure.withings_client import WithingsClient
 
 configure_domain(
@@ -75,37 +88,36 @@ class Container:
 
 def _register_defaults(container: Container) -> None:
     """Register the production service graph with the container."""
-    container.register(PostgresDal, factory=lambda _c: PostgresDal())
-    container.register(WgerClient, factory=lambda _c: WgerClient())
-    container.register(AppleDropboxClient, factory=lambda _c: AppleDropboxClient())
-    container.register(
-        WithingsClient,
-        factory=lambda _c: WithingsClient(token_storage=JsonFileTokenStorage(WithingsClient.TOKEN_FILE)),
-    )
-    container.register(TelegramClient, factory=lambda _c: TelegramClient())
+    container.register(PostgresDal, factory=lambda _c: provide_postgres_dal())
+    container.register(WgerClient, factory=lambda _c: provide_wger_client())
+    container.register(AppleDropboxClient, factory=lambda _c: provide_apple_dropbox_client())
+    container.register(WithingsClient, factory=lambda _c: provide_withings_client())
+    container.register(TelegramClient, factory=lambda _c: provide_telegram_client())
     container.register(
         AppleHealthIngestor,
-        factory=lambda c: AppleHealthDropboxIngestor(
+        factory=lambda c: provide_apple_health_ingestor(
             dal=c.resolve(PostgresDal),
             client=c.resolve(AppleDropboxClient),
         ),
     )
-    container.register(PlanService, factory=lambda c: PlanService(c.resolve(PostgresDal)))
+    container.register(PlanService, factory=lambda c: provide_plan_service(dal=c.resolve(PostgresDal)))
     container.register(
         WgerExportService,
-        factory=lambda c: WgerExportService(
+        factory=lambda c: provide_wger_export_service(
             dal=c.resolve(PostgresDal),
             wger_client=c.resolve(WgerClient),
         ),
     )
     container.register(
         DailySyncService,
-        factory=lambda c: DailySyncService(
+        factory=lambda c: provide_daily_sync_service(
             repository=c.resolve(PostgresDal),
             withings_source=c.resolve(WithingsClient),
             apple_ingestor=c.resolve(AppleHealthIngestor),
         ),
     )
+    container.register(ValidationService, factory=lambda c: provide_validation_service(dal=c.resolve(PostgresDal)))
+    container.register(CycleService, factory=lambda _c: provide_cycle_service())
 
 
 def _wrap_override(provider: Any) -> Factory:
