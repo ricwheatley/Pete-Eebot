@@ -6,7 +6,7 @@ Delegates tasks to specialized services for clarity and maintainability.
 from __future__ import annotations
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Sequence
 
@@ -29,6 +29,15 @@ from pete_e.application.collaborator_contracts import (
 from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
+from pete_e.application.workflows import (
+    CycleRolloverWorkflow,
+    DailySyncWorkflow,
+    TrainerMessageWorkflow,
+    WeeklyCalibrationWorkflow,
+)
+from pete_e.application.workflows.cycle_rollover import CycleRolloverResult
+from pete_e.application.workflows.daily_sync import DailyAutomationResult
+from pete_e.application.workflows.weekly_calibration import WeeklyCalibrationResult
 from pete_e.domain import french_trainer, metrics_service
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
@@ -40,35 +49,6 @@ from pete_e.infrastructure.di_container import Container, get_container
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.wger_client import WgerClient
-
-
-# --- Result dataclasses (unchanged) ---
-@dataclass(frozen=True)
-class WeeklyCalibrationResult:
-    message: str
-    validation: ValidationDecision | None = None
-    """Represent WeeklyCalibrationResult."""
-
-
-@dataclass(frozen=True)
-class DailyAutomationResult:
-    ingest_success: bool
-    failed_sources: List[str] = field(default_factory=list)
-    source_statuses: Dict[str, str] = field(default_factory=dict)
-    summary_target: date | None = None
-    summary_attempted: bool = False
-    summary_sent: bool = False
-    undelivered_alerts: List[str] = field(default_factory=list)
-    """Represent DailyAutomationResult."""
-
-
-@dataclass(frozen=True)
-class CycleRolloverResult:
-    plan_id: int | None
-    created: bool
-    exported: bool
-    message: str | None = None
-    """Represent CycleRolloverResult."""
 
 
 @dataclass(frozen=True)
@@ -143,6 +123,21 @@ class Orchestrator:
 
         self.narrative_builder = narrative_builder or NarrativeBuilder()
 
+        self.weekly_calibration_workflow = WeeklyCalibrationWorkflow(self.validation_service)
+        self.cycle_rollover_workflow = CycleRolloverWorkflow(
+            plan_service=self.plan_service,
+            export_service=self.export_service,
+            hold_plan_generation_lock=self._hold_plan_generation_lock,
+        )
+        self.daily_sync_workflow = DailySyncWorkflow(
+            daily_sync_service=self.daily_sync_service,
+            send_message=self.send_telegram_message,
+        )
+        self.trainer_message_workflow = TrainerMessageWorkflow(
+            dal=self.dal,
+            build_context=self._build_trainer_context,
+        )
+
         # 🧩 NEW – integrated PlanGenerationService following same DI style
         try:
             self.plan_generation_service = PlanGenerationService(
@@ -163,33 +158,8 @@ class Orchestrator:
 
 
     def run_weekly_calibration(self, reference_date: date) -> WeeklyCalibrationResult:
-        """
-        Runs validation and progression on the upcoming week.
-        This method is now much simpler.
-        """
-        # The core validation logic remains, but it's now the main focus of this method.
-        # The complex plan-finding logic will be handled by the services it calls.
-        next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
-        log_utils.info(
-            f"Running weekly calibration for week starting {next_monday.isoformat()} "
-            f"(review anchor {reference_date.isoformat()})"
-        )
-
-        try:
-            validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = (
-                f"Weekly calibration failed for week starting {next_monday.isoformat()}: {exc}"
-            )
-            log_utils.error(message)
-            raise ValidationError(message) from exc
-
-        return WeeklyCalibrationResult(
-            message=validation_decision.explanation,
-            validation=validation_decision
-        )
+        """Runs validation and progression on the upcoming week."""
+        return self.weekly_calibration_workflow.run(reference_date)
 
     def run_cycle_rollover(
         self,
@@ -197,50 +167,10 @@ class Orchestrator:
         *,
         validation_decision: ValidationDecision | None = None,
     ) -> CycleRolloverResult:
-        """
-        Handles the end-of-cycle logic: creating the next block and exporting week 1.
-        This is now a clean, high-level workflow.
-        """
-        next_monday = reference_date + timedelta(days=(7 - reference_date.weekday()))
-        log_utils.info(f"Cycle rollover triggered for block starting {next_monday.isoformat()}")
-
-        with self._hold_plan_generation_lock():
-            try:
-                plan_id = self.plan_service.create_next_plan_for_cycle(start_date=next_monday)
-            except ApplicationError:
-                raise
-            except Exception as exc:  # pragma: no cover - defensive guard
-                message = f"Plan creation failed for cycle starting {next_monday.isoformat()}: {exc}"
-                log_utils.error(message, "ERROR")
-                raise PlanRolloverError(message) from exc
-
-            if not plan_id:
-                message = (
-                    f"Plan creation returned an invalid ID for cycle starting {next_monday.isoformat()}"
-                )
-                log_utils.error(message, "ERROR")
-                raise PlanRolloverError(message)
-
-            try:
-                self.export_service.export_plan_week(
-                    plan_id=plan_id,
-                    week_number=1,
-                    start_date=next_monday,
-                    force_overwrite=True,
-                    validation_decision=validation_decision,
-                )
-            except ApplicationError:
-                raise
-            except Exception as exc:  # pragma: no cover - defensive guard
-                message = f"Export failed for plan {plan_id} week 1 starting {next_monday.isoformat()}: {exc}"
-                log_utils.error(message, "ERROR")
-                raise PlanRolloverError(message) from exc
-
-        return CycleRolloverResult(
-            plan_id=plan_id,
-            created=True,
-            exported=True,
-            message=f"New cycle started with plan {plan_id} and week 1 exported."
+        """Handles end-of-cycle logic by delegating to the workflow module."""
+        return self.cycle_rollover_workflow.run(
+            reference_date,
+            validation_decision=validation_decision,
         )
 
     def run_end_to_end_week(self, reference_date: date | None = None) -> WeeklyAutomationResult:
@@ -308,10 +238,7 @@ class Orchestrator:
         
     def run_daily_sync(self, days: int):
         """Orchestrates the daily sync of all data sources."""
-        log_utils.info("Orchestrator running daily sync...")
-
-        result = self.daily_sync_service.run_full(days=days)
-        return result.as_tuple()
+        return self.daily_sync_workflow.run_daily_sync(days)
 
     def run_withings_only_sync(self, days: int):
         """Runs only the Withings portion of the sync and refreshes views."""
@@ -325,41 +252,10 @@ class Orchestrator:
         summary_date: date | None = None,
     ) -> DailyAutomationResult:
         """Run the daily sync and, when appropriate, send the daily summary."""
-
-        success, failures, statuses, alerts = self.run_daily_sync(days=days)
-        summary_target = summary_date or (date.today() - timedelta(days=1))
-        summary_attempted = bool(success and (summary_date is not None or days == 1))
-        summary_sent = False
-
-        if summary_attempted:
-            try:
-                from pete_e.cli.messenger import build_daily_summary
-
-                summary_text = build_daily_summary(
-                    orchestrator=self,
-                    target_date=summary_target,
-                )
-                if summary_text.strip():
-                    summary_sent = self.send_telegram_message(summary_text)
-                else:
-                    log_utils.warn(
-                        f"Skipping Telegram summary for {summary_target.isoformat()} because it was empty."
-                    )
-            except ApplicationError:
-                raise
-            except Exception as exc:  # pragma: no cover - defensive guard
-                log_utils.error(
-                    f"Failed to send daily summary for {summary_target.isoformat()}: {exc}"
-                )
-
-        return DailyAutomationResult(
-            ingest_success=bool(success),
-            failed_sources=list(failures or []),
-            source_statuses=dict(statuses or {}),
-            summary_target=summary_target,
-            summary_attempted=summary_attempted,
-            summary_sent=summary_sent,
-            undelivered_alerts=list(alerts or []),
+        return self.daily_sync_workflow.run(
+            days=days,
+            summary_date=summary_date,
+            orchestrator=self,
         )
 
     def generate_and_deploy_next_plan(self, start_date: date, weeks: int = 4) -> int:
@@ -472,26 +368,7 @@ class Orchestrator:
 
     def build_trainer_message(self, message_date: date | None = None) -> str:
         """Compose Pierre's trainer check-in for the supplied date."""
-
-        target = message_date or date.today()
-        try:
-            metrics = metrics_service.get_metrics_overview(
-                self.dal, reference_date=target
-            )
-        except ApplicationError:
-            raise
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to load metrics for trainer message on {target.isoformat()}: {exc}"
-            log_utils.error(message)
-            raise DataAccessError(message) from exc
-
-        context = self._build_trainer_context(target)
-        try:
-            return french_trainer.compose_daily_message(metrics, context)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            message = f"Failed to compose trainer message for {target.isoformat()}: {exc}"
-            log_utils.error(message)
-            raise ApplicationError(message) from exc
+        return self.trainer_message_workflow.run(message_date)
 
     def send_telegram_message(self, message: str) -> bool:
         """Proxy to the Telegram client while providing defensive logging."""
