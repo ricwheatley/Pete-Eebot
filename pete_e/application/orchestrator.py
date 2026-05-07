@@ -43,7 +43,6 @@ from pete_e.application.workflows import (
 from pete_e.application.workflows.cycle_rollover import CycleRolloverResult
 from pete_e.application.workflows.daily_sync import DailyAutomationResult
 from pete_e.application.workflows.weekly_calibration import WeeklyCalibrationResult
-from pete_e.domain import french_trainer, metrics_service
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.narrative_builder import NarrativeBuilder, build_daily_narrative
