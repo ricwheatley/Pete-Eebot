@@ -1359,36 +1359,29 @@ def build_weekly_plan_summary(
     if not plan_week_data:
         return _no_plan_message(week_number)
 
-    bullets, rest_days = _format_weekly_workouts(plan_week_data)
-    rest_line = _format_rest_line(rest_days)
-    if rest_line:
-        bullets.append(rest_line)
+    workouts_by_day: Dict[int, List[str]] = {day: [] for day in range(1, 8)}
+    day_lines, _ = _format_weekly_workouts(plan_week_data)
+    for line in day_lines:
+        if not line.startswith("- ") or ": " not in line:
+            continue
+        day_label, entries_text = line[2:].split(": ", 1)
+        day_number = next((num for num, label in _DAY_NAMES.items() if label == day_label), None)
+        if day_number is None:
+            continue
+        workouts_by_day[day_number] = [chunk.strip() for chunk in entries_text.split("|") if chunk.strip()]
 
-    if not bullets:
-        bullets = ["- No scheduled sessions landed – let's map some training blocks."]
+    lines: List[str] = [f"Cycle week: {week_number}"]
+    for day_number in range(1, 8):
+        sessions = workouts_by_day.get(day_number, [])
+        if not sessions:
+            continue
+        lines.append(f"{_DAY_NAMES[day_number]}:")
+        lines.extend(session for session in sessions)
+        lines.append("")
 
-    closers = [f"Coach's call: Week {week_number} is all about momentum - lock it in."]
-    closers.extend(
-        _closing_phrases(
-            ["#Motivation"],
-            "Remember: consistency beats intensity every time.",
-            secondary_tags=["#Humour"],
-            secondary_fallback="Keep the banter high and the stress low.",
-        )
-    )
-
-    message = CoachMessage(
-        greeting=helpers.choose_from(
-            _COACH_WEEKLY_GREETINGS,
-            "Coach Pete here",
-            rand=random,
-        ),
-        heading=_format_weekly_heading(week_number, week_start),
-        bullets=bullets,
-        narrative=[],
-        closers=closers,
-    )
-    return message.render()
+    if lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
 
 
 # -------------------------------------------------------------------------
