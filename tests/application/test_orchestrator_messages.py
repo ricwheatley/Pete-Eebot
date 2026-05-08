@@ -168,6 +168,16 @@ def test_get_daily_summary_uses_builder():
     """Perform test get daily summary uses builder."""
 
 
+class _StrengthOnlyRunGuidanceDal(_RunGuidanceDal):
+    def get_plan_for_day(self, target_date: date):
+        return ["workout_date", "exercise_name"], [
+            (target_date, "TRX Rows"),
+            (target_date, "Deadlifts"),
+        ]
+        """Perform get plan for day."""
+    """Represent StrengthOnlyRunGuidanceDal."""
+
+
 def test_get_daily_summary_appends_running_backoff_guidance():
     action_date = date(2024, 6, 10)
     overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
@@ -182,6 +192,22 @@ def test_get_daily_summary_appends_running_backoff_guidance():
     assert "Run adjustment for Quality run" in result
     assert "swap today's run" in result
     """Perform test get daily summary appends running backoff guidance."""
+
+
+def test_get_daily_summary_does_not_label_strength_plan_as_run_adjustment():
+    action_date = date(2024, 6, 10)
+    overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
+    dal = _StrengthOnlyRunGuidanceDal(overview_rows, action_date=action_date)
+    builder = _NarrativeBuilder()
+
+    orch = _orchestrator_for(dal, narrative_builder=builder)
+
+    result = orch.get_daily_summary(target_date=action_date)
+
+    assert result.startswith("rendered-narrative")
+    assert "Run adjustment for" not in result
+    assert "Run adjustment:" in result
+    """Perform test get daily summary does not label strength plan as run adjustment."""
 
 
 @pytest.mark.parametrize(
