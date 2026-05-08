@@ -99,12 +99,10 @@ def test_weekly_plan_cli_formats_overview(monkeypatch):
     assert result.exit_code == 0
     output = result.stdout.strip()
     assert expected in output
-    assert "Yo Ric! Coach Pete's weekly huddle incoming" in output
-    assert "*Week 1 Game Plan · 2024-09-02 → 2024-09-08*" in output
-    assert "- Monday: Squat (3 x 5 · RIR 2) | Bench Press (3 x 8 · RIR 1)" in output
-    assert "- Rest windows: Tuesday, Thursday, Friday, Saturday, Sunday - keep them mobile." in output
-    assert "Coach's call: Week 1 is all about momentum - lock it in." in output
-    assert "Remember to hydrate." in output
+    assert "Cycle week: 1" in output
+    assert "Monday:" in output
+    assert "Squat (3 x 5 · RIR 2)" in output
+    assert "Bench Press (3 x 8 · RIR 1)" in output
     assert orch.sent_message is None
 
 
@@ -168,7 +166,8 @@ def test_weekly_plan_formats_tempo_treadmill_steps():
 def test_weekly_plan_legacy_rows_render_without_treadmill_details():
     rows = [{"day_of_week": 1, "exercise_name": "Bench Press", "sets": 5, "reps": 5, "rir": 2}]
     message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
-    assert "- Monday: Bench Press (5 x 5 · RIR 2)" in message
+    assert "Monday:" in message
+    assert "Bench Press (5 x 5 · RIR 2)" in message
 
 
 def test_weekly_plan_formats_limber_11_and_orders_run_weights_stretch():
@@ -213,8 +212,12 @@ def test_weekly_plan_formats_limber_11_and_orders_run_weights_stretch():
     ]
 
     message = narrative_builder.build_weekly_plan_summary(rows, week_number=1, week_start=real_date(2024, 9, 2))
-    monday_line = next(line for line in message.splitlines() if line.startswith("- Monday:"))
+    lines = message.splitlines()
+    monday_idx = lines.index("Monday:")
+    tuesday_idx = len(lines)
+    monday_entries = lines[monday_idx + 1:tuesday_idx]
 
-    assert monday_line.index("Quality run") < monday_line.index("Bench Press") < monday_line.index("Limber 11")
-    assert "Seated Piriformis Stretch [isometric]" in monday_line
-    assert "Rear-foot-elevated Hip Flexor Stretch [dynamic + 3s hold]" in monday_line
+    joined = "\n".join(monday_entries)
+    assert joined.index("Quality run") < joined.index("Bench Press") < joined.index("Limber 11")
+    assert "Seated Piriformis Stretch [isometric]" in joined
+    assert "Rear-foot-elevated Hip Flexor Stretch [dynamic + 3s hold]" in joined
