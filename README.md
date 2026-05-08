@@ -1,255 +1,218 @@
-# Pete Eebot 
+# Pete-Eebot
 
-Pete-Eebot is a personal health and fitness orchestrator. The application ingests data from connected services, persists it in Postgres, analyses daily readiness, and prepares weekly training plans and summaries that can be reviewed or pushed to Telegram, or through Chat GPT with Pierre.
+> A production-minded personal fitness coach that turns health data into actionable training plans, daily readiness insights, and Telegram updates.
 
---- 
-
-## Key Features
-
-* **Unified data sync:** A single CLI command keeps Withings, Apple Health, and wger data aligned in the database.
-* **Dropbox-based Apple ingest:** Health Auto Export shortcuts drop JSON/ZIP files into Dropbox; the ingest job downloads and loads only the new files each run.
-* **Body age insights:** Daily body age scores highlight long-term trends across movement, recovery, and composition data.
-* **Training plan automation:** Plan blocks are generated directly from the data warehouse and can be shared via the messenger commands.
+Pete-Eebot is a Python application that syncs Apple Health exports (via Dropbox), Withings measurements, and wger workouts into Postgres, then generates coaching outputs (summaries, nudges, and plan messages) through a CLI-first workflow.
 
 ---
 
-## Data Sources and Integrations
+## Why Pete-Eebot
 
-* **Withings:** OAuth credentials are stored locally. The sync pipeline refreshes tokens as needed and pulls weight and body composition summaries for the requested backfill window.
-* **Apple Health:** An iOS Shortcut exports Health Auto Export files to Dropbox. The Dropbox client collects any new metric or workout files, parses them, and writes them into the analytics schema.
-* **wger:** Strength training logs are fetched through the wger API and blended with health metrics for the weekly plan narrative.
+Most fitness tooling answers *"what happened?"* Pete-Eebot focuses on *"what should I do next?"*
+
+- **Unifies fragmented data** from Withings, Apple Health, and wger.
+- **Automates daily + weekly coaching routines** for consistency.
+- **Stays operations-friendly** for Raspberry Pi and other low-resource hosts.
+- **Ships with extensive tests** across domain logic, application workflows, and integrations.
 
 ---
 
-## Repository Layout
+## Core Capabilities
 
-```
+- **End-to-end daily sync** with source-level status tracking.
+- **Dropbox incremental ingestion** for Apple Health Auto Export files.
+- **Withings OAuth token lifecycle** (initial auth, refresh, secure persistence).
+- **Weekly plan generation** with progression and validation workflows.
+- **Telegram delivery** for summaries, plan messages, and proactive nudges.
+- **Operational safety rails** like stale-data alerts and auth recovery signals.
+
+---
+
+## Architecture at a Glance
+
+Pete-Eebot uses a layered design:
+
+- `pete_e/domain`: business rules, entities, progression, validation, narrative logic.
+- `pete_e/application`: orchestrators and use-case services.
+- `pete_e/infrastructure`: clients (Dropbox/Withings/wger/Telegram), DAL, adapters.
+- `pete_e/cli`: Typer command entrypoints.
+- `migrations` + `init-db`: schema and migration SQL.
+- `tests`: broad unit/integration/application coverage.
+
+This separation keeps policy in the domain layer while isolating external dependencies in infrastructure.
+
+---
+
+## Repository Map
+
+```text
 .
-├── pete_e/                 # Python package containing the active application code
-│   ├── application/        # Orchestration flows (sync, Dropbox ingest, plan generation)
-│   ├── cli/                # Typer-powered command line interface
-│   ├── config/             # Environment-driven settings
-│   ├── domain/             # Business rules (progression, plans, narratives, analytics)
-│   ├── infrastructure/     # DAL, API clients, and integrations
-│   ├── resources/          # Static assets used by the application
-│   └── utils/              # Globally reusable converters, formatters, and helpers
-├── scripts/                # One-off helpers for maintenance and reviews
-├── tests/                  # Pytest suite for ingestion, orchestration, and validation logic
-├── docs/                   # Design notes and analytical documentation
-├── deprecated/             # Legacy FastAPI/Tailscale implementation retained for reference
-├── docker-compose.yml      # Local Postgres bootstrap for development
-└── init-db/                # SQL migrations used by the active schema
+├── pete_e/                  # Main package (domain, application, infra, CLI)
+├── migrations/              # SQL migrations for evolving schema
+├── init-db/                 # Base schema bootstrap
+├── scripts/                 # Operational and maintenance helpers
+├── tests/                   # Test suite (unit + integration + application)
+├── docs/                    # API docs, setup notes, deep dives
+├── requirements.txt         # Runtime dependency pins
+├── pyproject.toml           # Project metadata / packaging
+├── docker-compose.yml       # Local Postgres development service
+└── README.md
 ```
 
 ---
 
-## Deployment Paths
+## Quickstart (Recommended: Python venv)
 
-Two lightweight options are available for running Pete Eebot:
+### 1) Prerequisites
 
-1. **Python virtual environment (recommended).** Follows the Raspberry Pi-friendly guide in [`docs/venv_setup.md`](docs/venv_setup.md) using the pinned [`requirements.txt`](requirements.txt). This keeps memory usage low and avoids cross-architecture Docker images.
-2. **Existing Docker tooling.** The legacy `Dockerfile` targets x86_64 hosts and pairs with `docker-compose.yml` for Postgres only. Use this path when you already operate containerised workloads on a non-ARM server.
+- Python 3.11+
+- Postgres 14+
+- Dropbox app credentials (for Apple exports)
+- Withings API app credentials
+- Telegram bot token + chat ID (optional, for messaging)
+- wger API key (optional, recommended for richer plan context)
 
-The remainder of this README assumes you chose the virtual environment path.
+### 2) Install
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
+```
+
+### 3) Configure environment
+
+Create `.env` in repo root and populate required values:
+
+- Postgres (`POSTGRES_*` or equivalent values used by config)
+- Dropbox (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, export directories)
+- Withings (`WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, callback/redirect values)
+- Telegram (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`) if messaging is enabled
+- wger (`WGER_API_KEY`) if workout import is enabled
+
+### 4) Bootstrap database
+
+Use your preferred SQL workflow against `init-db/schema.sql`, then apply files in `migrations/`.
+
+### 5) Verify setup
+
+```bash
+python -m scripts.check_auth
+pete status
+```
 
 ---
 
-## Configuration
+## First-Time OAuth Setup
 
-1. Copy `.env.sample` to `.env` and populate the secrets.
-2. Provide Dropbox credentials (`DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`) and the folder paths produced by Health Auto Export (`DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`).
-3. Fill in the remaining Withings, Telegram, wger, and Postgres values. The configuration module will construct `DATABASE_URL` automatically on load.
-4. Optional reliability tuning: set `APPLE_MAX_STALE_DAYS` (default `3`) to adjust the Dropbox stagnation alert window, and toggle `WITHINGS_ALERT_REAUTH` (default `true`) if you want to silence token re-authorisation nudges.
-5. Install the pinned dependencies with `python -m pip install -r requirements.txt`, then register the CLI with `python -m pip install --no-deps -e .`. Both commands should run inside your activated virtual environment.
+### Withings
 
-### First-time OAuth setup
+```bash
+pete withings-auth
+# open URL, approve app, capture `code` from redirect
+pete withings-code <code>
+pete refresh-withings
+```
 
-Run these steps once when you provision a new deployment or rotate credentials:
+Tokens are stored in the user config directory and tightened to owner-only permissions.
 
-**Withings**
+### Dropbox
 
-1. Generate an authorisation URL with `pete withings-auth`.
-2. Open the printed link in a browser, approve the `Pete Eebot` app, and copy the `code=...` value from the redirect URL.
-3. Exchange the code for tokens: `pete withings-code <code>`.
-4. Confirm persistence by running `pete refresh-withings`, which refreshes the access token and saves the results to `~/.config/pete_eebot/.withings_tokens.json`.
-   The helper locks the file down to owner-only permissions (`chmod 600`) so the stored tokens stay private.
-
-**Dropbox**
-
-1. Visit the [Dropbox App Console](https://www.dropbox.com/developers/apps) and create a **Scoped App** with at least `files.metadata.read` and `files.content.read` permissions.
-2. Generate the app key and secret, then use the "Generate" button in the console to obtain a long-lived refresh token for the same app.
-3. Add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, and `DROPBOX_REFRESH_TOKEN` to your `.env` file alongside the export directory paths.
-
-**Sanity check**
-
-`python -m scripts.check_auth` prints a short summary showing whether Withings and Dropbox tokens are in place or highlights the next steps to finish setup. The script works offline, so you can run it before enabling network access on a new host.
-
-The settings layer exposes derived paths such as `logs/pete_history.log`. When running locally the log directory is created automatically.
+1. Create a Scoped App in Dropbox App Console.
+2. Grant read scopes needed for metrics/workout exports.
+3. Generate refresh token.
+4. Add key/secret/refresh token to `.env`.
 
 ---
 
-## CLI Usage
+## Daily and Weekly Operations
 
-The project ships a Typer application under the `pete` entry point. Common commands:
+### Common CLI commands
 
-* `pete refresh-withings` â€“ force-refreshes the Withings OAuth tokens and prints the truncated values.
-* `pete ingest-apple` â€“ downloads new Health Auto Export files from Dropbox and persists the parsed metrics.
-* `pete sync --days 7` â€“ runs the multi-source sync (Dropbox, Withings, wger) with retry handling.
-* `pete withings-sync` â€“ executes the Withings-only branch of the pipeline.
-* `pete status` - prints a five-service health check for Postgres, Dropbox, Withings, Telegram, and wger, exiting non-zero if any dependency fails (use `--timeout` to adjust the per-dependency timeout).
-* `pete plan --weeks 4` â€“ generates and deploys the next training plan block (only 4-week plans are supported).
-* `pete message --summary` / `--plan` â€“ renders summaries and optionally pushes them to Telegram with `--send`.
-
-### Telegram bot commands
-
-The short-lived listener exposed via `pete telegram --listen-once` polls for bot commands and responds using the same narratives as the CLI. The offset file is persisted next to the application logs so repeated invocations pick up where the last poll ended (the cron examples below reuse this helper).
-
-Supported commands:
-
-* `/summary` – builds the latest daily summary and replies in chat if content is available.
-* `/sync` – runs a one-day end-to-end sync (Dropbox, Withings, wger) and replies with ingest and messaging outcomes.
-
-### Nudges (proactive reminders)
-
-When the daily sync succeeds for a single-day window the orchestrator calls `dispatch_nudges`, which evaluates recent metrics and sends short Telegram reminders. Current heuristics cover stale Withings weigh-ins, multi-day high strain streaks that warrant recovery, and personal-best strength sessions worth celebrating. Each nudge draws from the phrase library (for example the `#WithingsCheck` tag) so the reminders stay varied. Toggle environment overrides such as `WITHINGS_ALERT_REAUTH` or optional `NUDGE_*` settings when you want to quiet specific alerts.
-
-### Scheduled Messaging
-
-Add the proactive messages to cron (or your scheduler of choice) so the summaries arrive without manual intervention:
-
-```
-5 7 * * * pete sync --days 1 && pete message --summary --send
-0 8 * * 1 pete message --plan --send
+```bash
+pete sync --days 1                 # full multi-source sync
+pete ingest-apple                  # Dropbox Apple export ingest only
+pete withings-sync                 # Withings branch only
+pete message --summary --send      # deliver daily summary
+pete message --plan --send         # deliver weekly plan narrative
+pete telegram --listen-once        # poll bot commands one time
 ```
 
-The daily path chains a sync before messaging and respects the dispatch ledger, so repeated runs in the same morning will no-op instead of double-sending. If the orchestrator automations are also sending summaries, keep just one of them active to avoid dupe suppression. The weekly plan command now renders the upcoming week header, the key workouts per day, and a closing tip before handing it to Telegram.
+### Example cron jobs
 
+```cron
+5 7 * * *  cd /home/pi/Pete-Eebot && pete sync --days 1 --retries 3 && pete message --summary --send >> logs/cron.log 2>&1
+0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
+* * * * *  cd /home/pi/Pete-Eebot && pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
+```
 
-
-### Cron on Raspberry Pi
-
-When you deploy on a Raspberry Pi the cron schedule should be installed from the repository manifest, not maintained by hand. The source of truth lives in [`pete_e/resources/pete_crontab.csv`](pete_e/resources/pete_crontab.csv), and [`scripts/install_cron_examples.sh`](scripts/install_cron_examples.sh) installs the generated schedule into the current user's crontab. Cron executes according to the Pi's system timezone – double-check `timedatectl` if you need to adjust the scheduled hours.
-
-Install or refresh the schedule with:
+For managed cron installation from repository templates, use:
 
 ```bash
 ./scripts/install_cron_examples.sh --activate --summary
 ```
 
-To inspect the generated crontab before activation:
-
-```bash
-./scripts/install_cron_examples.sh --print
-```
-
-The example below shows the rendered user crontab. It assumes the project lives at `/home/pi/Pete-Eebot`, the CLI binary is available at `/home/pi/.local/bin/pete`, and `python3` resolves to the interpreter you used during setup.
-
-```
-SHELL=/bin/bash
-PATH=/home/pi/.local/bin:/usr/local/bin:/usr/bin:/bin
-MAILTO=""
-
-@reboot   sleep 120 && cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 3 --retries 3 >> logs/cron.log 2>&1
-5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 1 --retries 3 && /home/pi/.local/bin/pete message --summary --send >> logs/cron.log 2>&1
-0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
-5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
-* * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
-```
-
-The `@reboot` entry performs a small catch-up sync after power cycles, the daily job runs the full ingest-plus-summary flow, Monday's calibration slot triggers `python3 -m scripts.run_sunday_review` before sharing the refreshed weekly plan, and the minute listener keeps Telegram commands responsive without running a long-lived daemon. Feel free to tweak the hours/minutes once you confirm the Pi timezone is aligned with your expectation.
-
-The installer backs up the existing user crontab before activation. It auto-detects `./venv/bin/python3` and `./.venv/bin/python3`; override `PYTHON_BIN` when your interpreter lives somewhere else. Ensure the repo contains a writable `logs/` directory so the cron jobs can append to `logs/cron.log`.
-
-
-Example:
-
-```
-$ pete status
-DB       OK   9ms
-Dropbox  OK   demo@account
-Withings OK   scale reachable
-Telegram OK   @peteeebot chat configured
-Wger     OK   wger.de (api-key)
-```
-
-Logs for each command are appended to `logs/pete_history.log` (or `/var/log/pete_eebot/pete_history.log` when available). The file rotates automatically once it reaches roughly 5 MB, retaining seven backups so long-lived sync services do not accumulate unbounded logs. Each sync command writes a single summary line with per-source statuses, making `tail -n 5 logs/pete_history.log` a quick health check after a run.
-
-### Operations posture
-
-Pete Eebot is maintained on a resource-constrained Raspberry Pi, so the default stance is to keep operations boring and observable:
-
-* **Favour short-lived CLI invocations.** Cron should call a single `pete ...` command (or a focused helper in `python -m scripts.<name>`) that exits once the task is complete. Avoid background daemons or bespoke schedulers unless the CLI lacks the feature entirely.
-* **Keep scripts experimental until proven.** Anything exploratory, data inspection-heavy, or destined for occasional manual runs belongs under `scripts/`. These helpers should have a narrow scope, document their inputs, and tolerate partial configuration so they are safe to run on the Pi.
-* **Promote only hardened flows into `pete_e/`.** When a script graduates into routine automation it should be ported into the typed application package with tests and CLI wiring. This keeps production surfaces discoverable while letting experiments evolve quickly.
-
-Contributors adding operational helpers should default to a cron-able command that fails fast and logs clearly. If the need extends beyond a few weeks of trial runs, raise a discussion before moving the logic into the production package so the maintenance burden stays manageable.
-
 ---
 
-## Backups
+## Reliability and Recovery
 
-SD cards fail without warning, so keep the database and credentials replicated to sturdier storage (USB SSD, NAS share, or another host). The repository includes `scripts/backup_db.sh` to automate a weekly rotation that remains silent during successful runs and writes a timestamped record to `logs/backup_db.log`.
-
-### Configuration
-
-* Choose a destination owned by the service account (for example, mount an external disk at `/mnt/pete-eebot-backups`) and export it as `BACKUP_ROOT`. The script defaults to `<project>/backups` when the variable is omitted.
-* Optional knobs:
-  * `RETENTION_WEEKS` (default `8`) controls how many weeks of dumps and secret copies are retained.
-  * `LOG_FILE`, `DB_BACKUP_DIR`, and `SECRETS_BACKUP_DIR` override the derived locations when you want the log on the SD card but the artifacts on external storage.
-* The helper reads `.env` for the Postgres connection values and copies both `.env` and `~/.config/pete_eebot/.withings_tokens.json` into the secrets directory. Missing files are skipped with a warning so the backup continues.
-
-The script enforces `umask 077` and normalises directory permissions to `700`, with individual dump and secret copies restricted to `600`. Any existing `latest.dump` or `.env.latest` symlink is updated after each run for quick restores.
-
-### Scheduling
-
-Add the job to cron once the destination is available:
-
-```
-0 2 * * 0 BACKUP_ROOT=/mnt/pete-eebot-backups /home/pi/Pete-Eebot/scripts/backup_db.sh >> /home/pi/Pete-Eebot/logs/cron.log 2>&1
-```
-
-By default the routine writes its own audit trail to `logs/backup_db.log`. When cron redirects stdout/stderr (as shown above) you also get a one-line summary in the shared `cron.log` file.
-
-### Restoring
-
-1. Pick a dump from the backup location (for example, `postgres/pete_eebot_20240107T020000Z.dump`) and restore it with `pg_restore --clean --if-exists --dbname pete_eebot postgres/pete_eebot_20240107T020000Z.dump`.
-2. Copy the desired `.env.TIMESTAMP` and `~/.config/pete_eebot/.withings_tokens.json.TIMESTAMP` back into the project root and drop the `.TIMESTAMP` suffix once you verify the contents.
-3. Restart any long-running jobs or services so they pick up the refreshed credentials.
-
-All restore commands should be executed on a trusted machine because the artifacts contain live secrets.
-
----
-
-## End-to-End Automation Flows
-
-* `run_end_to_end_day(days=1, summary_date=None)` - executes the multi-source daily ingest via the orchestrator and ensures the previous day's Telegram summary is dispatched exactly once. The helper returns a `DailyAutomationResult` with per-source statuses and whether a summary was attempted, making it safe for cron jobs and CLI wrappers to inspect outcomes without reimplementing business logic.
-* `run_end_to_end_week(reference_date=None, force_rollover=False, rollover_weeks=4)` - recalibrates the upcoming training week and, when the cadence predicate passes (default: every 4th Sunday), triggers the cycle rollover/export pipeline. The behaviour can be tuned with `AUTO_CYCLE_ROLLOVER_ENABLED` and `CYCLE_ROLLOVER_INTERVAL_WEEKS`, and `force_rollover` provides an explicit override for maintenance scripts. The returned `WeeklyAutomationResult` includes both the calibration summary and any rollover attempt.
-
-These entry points allow CLI commands, Airflow jobs, or simple cron tasks to call a single orchestrator method instead of chaining bespoke scripts.
-
----
-
-## Reliability Checks & Recovery
-
-- **Apple Dropbox stagnation:** The orchestrator logs and sends a Telegram alert when no new Apple Health exports have been processed for the configured `APPLE_MAX_STALE_DAYS` window (default three days). Increase the value if weekend gaps are expected.
-- **Withings token recovery:** If the Withings refresh token is rejected, the sync flags the source as failed and emits an alert (unless `WITHINGS_ALERT_REAUTH` is `false`). Re-authorise by running `pete withings-auth`, approving the app in the browser, then calling `pete withings-code <code>` followed by `pete refresh-withings` to confirm the new tokens are persisted.
+- **Apple sync stagnation detection** alerts when no fresh Apple exports are processed for the configured stale window.
+- **Withings reauth guidance** surfaces token refresh failures and points to reauthorization flow.
+- **Structured log rotation** prevents unbounded local log growth.
+- **Backup helper** (`scripts/backup_db.sh`) supports weekly dumps and secret copy rotation.
 
 ---
 
 ## Testing
 
-Run the automated test suite with:
+Run all tests:
 
-```
+```bash
 pytest
 ```
 
-The tests provide in-memory doubles for the DAL and Dropbox client, ensuring the new module structure and ingestion format remain stable.
+Run targeted suites when iterating:
+
+```bash
+pytest tests/domain -q
+pytest tests/application -q
+pytest tests/integration -q
+```
 
 ---
 
-## Legacy Code
+## API and Developer Docs
 
-The `deprecated/` directory contains the retired FastAPI webhook and the original Tailscale-based Apple ingestion flow. It is kept for historical reference only; new development should rely on the active package in `pete_e/`.
+- OpenAPI: `docs/pete_coach_openapi.yaml`
+- wger API spec copy: `docs/wger_openapi.yaml`
+- Operator guide: `docs/operator_guide.md`
+- Body age notes: `docs/body_age.md`
+- Contributor guide: `CONTRIBUTING.md`
 
+---
 
+## Design Principles
+
+Pete-Eebot intentionally optimizes for:
+
+1. **Deterministic, scriptable operations** over opaque background processes.
+2. **Small-host reliability** (especially Raspberry Pi deployments).
+3. **Separation of policy and IO** through layered architecture.
+4. **Test-backed iteration** so coaching logic can evolve safely.
+
+---
+
+## Contributing
+
+1. Create a feature branch.
+2. Add/update tests with behavior changes.
+3. Run `pytest` and relevant targeted checks.
+4. Open a PR with operational impact notes (env vars, migrations, scheduling changes).
+
+---
+
+## Disclaimer
+
+Pete-Eebot provides informational coaching assistance and automation. It is **not** a medical device and should not replace qualified medical advice.
