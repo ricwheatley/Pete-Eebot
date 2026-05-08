@@ -433,11 +433,7 @@ class Orchestrator:
             recent_runs = []
 
         plan_rows = list(self._load_plan_for_day(action_date))
-        planned_names = [
-            str(row.get("exercise_name"))
-            for row in plan_rows
-            if row.get("exercise_name")
-        ]
+        planned_names = self._extract_running_plan_names(plan_rows)
 
         adjustment = assess_morning_run_adjustment(
             health_metrics=historical_rows,
@@ -475,6 +471,39 @@ class Orchestrator:
         except Exception as exc:  # pragma: no cover - defensive guard
             log_utils.warn(f"Failed to load plan for {target.isoformat()}: {exc}")
             return []
+
+    @staticmethod
+    def _extract_running_plan_names(plan_rows: Iterable[Dict[str, Any]]) -> List[str]:
+        """Return unique plan exercise names that look like running sessions."""
+
+        run_tokens = (
+            "run",
+            "jog",
+            "interval",
+            "tempo",
+            "fartlek",
+            "sprint",
+            "hill",
+            "track",
+            "5k",
+            "10k",
+            "marathon",
+        )
+        names: List[str] = []
+        for row in plan_rows:
+            raw_name = row.get("exercise_name")
+            if not raw_name:
+                continue
+            label = str(raw_name).strip()
+            if not label:
+                continue
+            lowered = label.lower()
+            if not any(token in lowered for token in run_tokens):
+                continue
+            if label in names:
+                continue
+            names.append(label)
+        return names
 
     def _summarise_session(self, plan_rows: Iterable[Dict[str, Any]]) -> str | None:
         """Generate a short descriptor for the day's planned training."""
