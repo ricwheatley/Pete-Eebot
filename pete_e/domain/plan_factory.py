@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.running_planner import RunningGoal, RunningPlanner
+from pete_e.domain.unified_load_coordinator import GlobalTrainingContext, SessionConstraintSet, UnifiedLoadCoordinator, WeeklyStressBudget
 
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
@@ -23,6 +24,7 @@ class PlanFactory:
         """
         self.plan_repository = plan_repository
         self.running_planner = RunningPlanner()
+        self.unified_load_coordinator = UnifiedLoadCoordinator()
 
     def _pick_random(self, items: List[Any], k: int) -> List[Any]:
         """Safely picks k random items from a list."""
@@ -147,16 +149,28 @@ class PlanFactory:
                         "scheduled_time": slot_str,
                     })
 
-            # 5. Layer running sessions around the fixed lifting split.
-            week_workouts.extend(
-                self.running_planner.build_week_sessions(
-                    week_number=week_num,
-                    goal=running_goal,
-                    health_metrics=health_metrics,
-                    recent_runs=recent_runs,
-                    plan_start_date=start_date,
-                )
+            run_workouts = self.running_planner.build_week_sessions(
+                week_number=week_num,
+                goal=running_goal,
+                health_metrics=health_metrics,
+                recent_runs=recent_runs,
+                plan_start_date=start_date,
             )
+            strength_candidates = [self._strength_candidate_from_workout(item) for item in week_workouts if not item.get("is_cardio")]
+            run_candidates = [self._run_candidate_from_workout(item) for item in run_workouts]
+            context = GlobalTrainingContext(
+                plan_start_date=start_date,
+                week_number=week_num,
+                readiness_score=0.5,
+                historical_weekly_load=80.0,
+                constraints=SessionConstraintSet(max_sessions=64, min_recovery_days=1),
+            )
+            budget = WeeklyStressBudget(target=80.0, minimum=65.0, maximum=100.0, run_target=42.0, strength_target=38.0, confidence=0.7)
+            candidates = self.unified_load_coordinator.generate_candidates(context, budget, strength_candidates=strength_candidates, run_candidates=run_candidates)
+            feasible = self.unified_load_coordinator.apply_constraints(context, candidates)
+            finalized = self.unified_load_coordinator.finalize_week(context, feasible, budget)
+            week_workouts = [w for w in week_workouts if not self._is_strength_workout_filtered(w, finalized)]
+            week_workouts.extend(self._workout_from_candidate(candidate) for candidate in finalized if candidate.get("source") == "run")
 
             for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):
                 stretch_details = schedule_rules.stretch_routine_for_day(dow)
@@ -182,6 +196,44 @@ class PlanFactory:
             plan_weeks.append({"week_number": week_num, "workouts": week_workouts})
 
         return {"start_date": start_date, "weeks": weeks_in_plan, "plan_weeks": plan_weeks}
+
+    def _strength_candidate_from_workout(self, workout: Dict[str, Any]) -> Dict[str, Any]:
+        lift = schedule_rules.LIFT_CODE_BY_ID.get(workout.get("exercise_id"), "")
+        return {
+            "source": "strength",
+            "workout": workout,
+            "session_type": "strength",
+            "day_of_week": workout.get("day_of_week"),
+            "lower_body": lift in {"squat", "deadlift"},
+            "lift": lift,
+            "intensity_tag": "heavy_top_set" if workout.get("percent_1rm", 0) >= 85 else "moderate",
+            "volume_sets": int(workout.get("sets") or 1),
+            "stress": float(workout.get("sets") or 1) * (1.8 if lift in {"squat", "deadlift"} else 1.2),
+        }
+
+    def _run_candidate_from_workout(self, workout: Dict[str, Any]) -> Dict[str, Any]:
+        comment = str(workout.get("comment") or "").lower()
+        session_type = "long_run" if "long run" in comment else "run"
+        quality = "high" if "quality" in comment else ("moderate" if "aerobic" in comment else "easy")
+        stress = 7.0 if session_type == "long_run" else (6.0 if quality == "high" else 4.0)
+        return {
+            "source": "run",
+            "workout": workout,
+            "session_type": session_type,
+            "day_of_week": workout.get("day_of_week"),
+            "quality": quality,
+            "stress": stress,
+            "optional": bool(workout.get("optional")),
+        }
+
+    def _is_strength_workout_filtered(self, workout: Dict[str, Any], finalized: List[Dict[str, Any]]) -> bool:
+        if workout.get("is_cardio"):
+            return False
+        included = {id(item.get("workout")) for item in finalized if item.get("source") == "strength"}
+        return id(workout) not in included
+
+    def _workout_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        return dict(candidate.get("workout") or {})
 
     def create_strength_test_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:
         """Builds a 1-week AMRAP strength test plan. Returns a structured dictionary."""
