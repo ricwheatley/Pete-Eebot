@@ -229,17 +229,26 @@ class UnifiedLoadCoordinator:
         self,
         context: GlobalTrainingContext,
         budget: WeeklyStressBudget,
+        *,
+        strength_candidates: Sequence[Dict[str, Any]] | None = None,
+        run_candidates: Sequence[Dict[str, Any]] | None = None,
     ) -> List[Dict[str, Any]]:
-        """Generate candidate sessions prior to constraint filtering."""
+        """Generate integrated modality candidates prior to constraint filtering."""
 
-        candidates: List[Dict[str, Any]] = []
+        candidates: List[Dict[str, Any]] = [dict(item) for item in (strength_candidates or [])]
+        candidates.extend(dict(item) for item in (run_candidates or []))
         self._emit_trace(
             PlanDecisionTrace(
                 week_number=context.week_number,
                 stage="generate_candidates",
                 reason_code=PlanDecisionReasonCode.CANDIDATE_GENERATED,
-                detail="Generated placeholder candidate set.",
-                payload={"candidate_count": len(candidates), "budget_target": budget.target},
+                detail="Generated integrated run + strength candidate set.",
+                payload={
+                    "candidate_count": len(candidates),
+                    "strength_count": len(strength_candidates or ()),
+                    "run_count": len(run_candidates or ()),
+                    "budget_target": budget.target,
+                },
             )
         )
         return candidates
@@ -368,17 +377,31 @@ class UnifiedLoadCoordinator:
         self,
         context: GlobalTrainingContext,
         feasible_sessions: Sequence[Dict[str, Any]],
+        budget: WeeklyStressBudget,
     ) -> List[Dict[str, Any]]:
-        """Finalize week output and emit closing decision trace."""
+        """Finalize integrated week output with session count + stress cap trimming."""
 
-        finalized = list(feasible_sessions)
+        max_sessions = max(1, int(context.constraints.max_sessions))
+        prioritized = sorted(
+            (dict(item) for item in feasible_sessions),
+            key=lambda s: (bool(s.get("optional")), -float(s.get("stress", 0.0))),
+        )
+        trimmed = prioritized[:max_sessions]
+        running_total = 0.0
+        finalized: List[Dict[str, Any]] = []
+        for session in sorted(trimmed, key=lambda s: (int(s.get("day_of_week", 0)), str(s.get("session_type", "")))):
+            stress = float(session.get("stress", 0.0))
+            if running_total + stress > budget.maximum and session.get("optional"):
+                continue
+            running_total += stress
+            finalized.append(session)
         self._emit_trace(
             PlanDecisionTrace(
                 week_number=context.week_number,
                 stage="finalize_week",
                 reason_code=PlanDecisionReasonCode.WEEK_FINALIZED,
-                detail="Finalized placeholder week output.",
-                payload={"session_count": len(finalized)},
+                detail="Finalized integrated week output.",
+                payload={"session_count": len(finalized), "stress_total": round(running_total, 2), "stress_cap": budget.maximum},
             )
         )
         return finalized
