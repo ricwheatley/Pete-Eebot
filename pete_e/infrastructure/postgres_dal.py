@@ -380,10 +380,6 @@ class PostgresDal(PlanRepository):
         return [item for item in traces if isinstance(item, dict)]
         """Perform get plan decision trace."""
 
-    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
-        """Compatibility wrapper for callers expecting the legacy DAL name."""
-        return self.get_plan_week_rows(plan_id, week_number)
-
     def get_plan_for_day(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_plan_for_day", target_date)
         """Perform get plan for day."""
