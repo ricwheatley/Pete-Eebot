@@ -96,6 +96,17 @@ def test_constraint_long_run_reduces_lower_body_volume() -> None:
     assert lower["volume_sets"] == 4
     assert any(t.stage == "constraint_long_run_lower_strength" for t in coordinator.decision_trace)
 
+def test_constraint_long_run_infers_lower_body_from_lift_name() -> None:
+    coordinator, context = _context(0.8)
+    candidates = [
+        {"session_type": "long_run", "day_of_week": 6, "stress": 9.0},
+        {"session_type": "strength", "lift": "squat", "volume_sets": 6, "stress": 8.0},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    lower = next(s for s in feasible if s["session_type"] == "strength")
+    assert lower["volume_sets"] == 4
+    assert any(t.stage == "constraint_long_run_lower_strength" for t in coordinator.decision_trace)
+
 
 def test_constraint_heavy_strength_week_downgrades_run_quality() -> None:
     coordinator, context = _context(0.8)
