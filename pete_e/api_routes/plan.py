@@ -31,6 +31,22 @@ def plan_for_week(request: Request, start_date: str = Query(...), x_api_key: str
         raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
+@router.get("/plan_decision_trace")
+def plan_decision_trace(
+    request: Request,
+    plan_id: int = Query(..., ge=1),
+    week_number: int = Query(..., ge=1),
+    x_api_key: str = Header(None),
+):
+    validate_api_key(request, x_api_key)
+    try:
+        return get_plan_service().decision_trace(plan_id=plan_id, week_number=week_number)
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
 @router.post("/run_pete_plan_async")
 async def run_pete_plan_async(
     request: Request,

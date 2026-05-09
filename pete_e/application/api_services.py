@@ -547,6 +547,12 @@ class PlanService(_DateParserMixin):
             raise DataAccessError("Failed to load plan for requested week.") from exc
         """Perform for week."""
 
+    def decision_trace(self, *, plan_id: int, week_number: int) -> Dict[str, Any]:
+        try:
+            return self._read_model.decision_trace_for_week(plan_id=plan_id, week_number=week_number)
+        except Exception as exc:
+            raise DataAccessError("Failed to load decision trace for requested week.") from exc
+
 
 class StatusService:
     """Service wrapper for status checks to align with API layers."""
