@@ -22,7 +22,7 @@ class StubDal:
         self.loaded_ids: List[List[int]] = []
         """Implement the `__post_init__` dunder method behavior."""
 
-    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:  # noqa: ARG002
+    def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:  # noqa: ARG002
         return list(self.plan_rows)
         """Perform get plan week."""
 

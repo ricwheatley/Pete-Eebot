@@ -711,3 +711,41 @@ def test_run_end_to_end_week_passes_cached_validation() -> None:
     assert validation_service.calls == [date(2024, 5, 27)]
     assert export_service.calls == [(99, 1, date(2024, 5, 27), decision)]
     """Perform test run end to end week passes cached validation."""
+
+
+def test_export_payload_includes_adjustment_annotations_from_decision_trace() -> None:
+    captured_payloads: list[dict] = []
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return []
+
+        def get_plan_decision_trace(self, plan_id: int, week_number: int):
+            return [
+                {"stage": "constraint_heavy_strength_run_quality", "detail": "Downgraded quality run to easy due to heavy lower day adjacency."},
+                {"stage": "constraint_bilateral_recovery_backoff", "detail": "Reduced lower-body accessory sets to preserve bilateral recovery."},
+            ]
+
+        def record_wger_export(self, plan_id, week_number, payload_json, response=None, routine_id=None):
+            captured_payloads.append(payload_json)
+
+    class StubClient:
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=StubClient(),
+        validation_service=SimpleNamespace(validate_and_adjust_plan=lambda _: _make_validation_decision()),
+    )
+    result = service.export_plan_week(plan_id=123, week_number=1, start_date=date(2026, 4, 20))
+    assert result["status"] == "exported"
+    comments = captured_payloads[0].get("comments") or []
+    assert any("Adjusted run quality:" in comment for comment in comments)
+    assert any("Reduced accessory volume:" in comment for comment in comments)
