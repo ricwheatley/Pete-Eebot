@@ -282,7 +282,16 @@ class UnifiedLoadCoordinator:
 
     def _apply_long_run_vs_lower_strength_volume(self, context: GlobalTrainingContext, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         long_run = next((s for s in sessions if s.get("session_type") == "long_run"), None)
-        lower_strength = [s for s in sessions if s.get("session_type") == "strength" and s.get("lower_body") is True]
+        lower_body_lifts = {"squat", "deadlift", "front_squat", "romanian_deadlift", "rdl", "lunge", "split_squat", "leg_press"}
+        lower_strength = [
+            s
+            for s in sessions
+            if s.get("session_type") == "strength"
+            and (
+                s.get("lower_body") is True
+                or str(s.get("lift", "")).strip().lower() in lower_body_lifts
+            )
+        ]
         if not long_run or not lower_strength:
             return sessions
         if float(long_run.get("stress", 0.0)) < 8.0:
