@@ -79,6 +79,7 @@ class PlanFactory:
         """
         weeks_in_plan = 4
         plan_weeks: List[Dict[str, Any]] = []
+        trace_by_week: Dict[str, List[Dict[str, Any]]] = {}
 
         # Fetch assistance/core pools once
         core_ids = self.plan_repository.get_core_pool_ids() or schedule_rules.DEFAULT_CORE_POOL_IDS
@@ -169,6 +170,7 @@ class PlanFactory:
             candidates = self.unified_load_coordinator.generate_candidates(context, budget, strength_candidates=strength_candidates, run_candidates=run_candidates)
             feasible = self.unified_load_coordinator.apply_constraints(context, candidates)
             finalized = self.unified_load_coordinator.finalize_week(context, feasible, budget)
+            trace_by_week[str(week_num)] = [item.to_dict() for item in self.unified_load_coordinator.decision_trace if item.week_number == week_num]
             week_workouts = [w for w in week_workouts if not self._is_strength_workout_filtered(w, finalized)]
             week_workouts.extend(self._workout_from_candidate(candidate) for candidate in finalized if candidate.get("source") == "run")
 
@@ -195,7 +197,15 @@ class PlanFactory:
 
             plan_weeks.append({"week_number": week_num, "workouts": week_workouts})
 
-        return {"start_date": start_date, "weeks": weeks_in_plan, "plan_weeks": plan_weeks}
+        return {
+            "start_date": start_date,
+            "weeks": weeks_in_plan,
+            "plan_weeks": plan_weeks,
+            "metadata": {
+                "planner_version": "unified_load_coordinator_v1",
+                "plan_decision_trace": trace_by_week,
+            },
+        }
 
     def _strength_candidate_from_workout(self, workout: Dict[str, Any]) -> Dict[str, Any]:
         lift = schedule_rules.LIFT_CODE_BY_ID.get(workout.get("exercise_id"), "")

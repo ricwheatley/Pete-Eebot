@@ -25,6 +25,15 @@ class PlanReadModel:
         snapshot = self.plan_for_day(target_date)
         return list(snapshot.get("rows") or [])
 
+    def decision_trace_for_week(self, *, plan_id: int, week_number: int) -> Dict[str, Any]:
+        loader = getattr(self.dal, "get_plan_decision_trace", None)
+        trace = loader(plan_id, week_number) if callable(loader) else []
+        return {
+            "plan_id": plan_id,
+            "week_number": week_number,
+            "trace": list(trace or []),
+        }
+
     @staticmethod
     def _normalise_rows(
         columns: Sequence[str] | None,
