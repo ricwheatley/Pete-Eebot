@@ -98,6 +98,33 @@ class DataAccessLayer(ABC):
         return []
         """Perform get recent strength workouts."""
 
+    def get_recent_strength_workload(
+        self,
+        *,
+        days: int = 14,
+        end_date: Optional[date] = None,
+    ) -> float:
+        workouts = self.get_recent_strength_workouts(days=days, end_date=end_date)
+        total = 0.0
+        for workout in workouts:
+            if isinstance(workout, dict):
+                total += float(workout.get("volume_kg", 0.0) or 0.0)
+        return total
+        """Perform get recent strength workload."""
+
+    def get_latest_training_maxes(self) -> Dict[str, Optional[float]]:
+        return {}
+        """Perform get latest training maxes."""
+
+    def get_recent_adherence_signal(
+        self,
+        *,
+        days: int = 21,
+        end_date: Optional[date] = None,
+    ) -> Optional[float]:
+        return None
+        """Perform get recent adherence signal."""
+
     @abstractmethod
     def get_data_for_validation(self, week_start: date) -> Dict[str, Any]:
         """Return all data required for validation for the supplied week."""
@@ -286,4 +313,3 @@ class DataAccessLayer(ABC):
     ) -> None:
         pass
         """Perform record wger export."""
-
