@@ -240,8 +240,8 @@ class PostgresDal(PlanRepository):
                     self._ensure_single_active_plan_invariant(cur)
                     cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
                     cur.execute(
-                        "INSERT INTO training_plans (start_date, weeks, is_active) VALUES (%s, %s, true) RETURNING id;",
-                        (start_date, total_weeks),
+                        "INSERT INTO training_plans (start_date, weeks, is_active, metadata) VALUES (%s, %s, true, %s) RETURNING id;",
+                        (start_date, total_weeks, Json(plan_dict.get("metadata")) if plan_dict.get("metadata") is not None else None),
                     )
                     plan_id = cur.fetchone()[0]
 
@@ -363,6 +363,22 @@ class PostgresDal(PlanRepository):
             cur.execute(sql, (plan_id, week_number))
             return cur.fetchall()
         """Perform get plan week rows."""
+
+    def get_plan_decision_trace(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+        with self._get_cursor(use_dict_row=True) as cur:
+            cur.execute("SELECT metadata FROM training_plans WHERE id = %s;", (plan_id,))
+            row = cur.fetchone() or {}
+        metadata = row.get("metadata") if isinstance(row, dict) else None
+        if not isinstance(metadata, dict):
+            return []
+        trace_by_week = metadata.get("plan_decision_trace")
+        if not isinstance(trace_by_week, dict):
+            return []
+        traces = trace_by_week.get(str(week_number)) or trace_by_week.get(week_number)
+        if not isinstance(traces, list):
+            return []
+        return [item for item in traces if isinstance(item, dict)]
+        """Perform get plan decision trace."""
 
     def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         """Compatibility wrapper for callers expecting the legacy DAL name."""

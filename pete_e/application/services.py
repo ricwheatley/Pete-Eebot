@@ -200,6 +200,7 @@ class WgerExportService:
         )
         self._annotate_and_enrich_payload(
             payload=payload,
+            plan_id=plan_id,
             week_number=week_number,
             rows=normalized_rows,
             decision=decision,
@@ -351,6 +352,7 @@ class WgerExportService:
         self,
         *,
         payload: Dict[str, Any],
+        plan_id: int,
         week_number: int,
         rows: List[Dict[str, Any]],
         decision: ValidationDecision | None,
@@ -360,6 +362,26 @@ class WgerExportService:
         if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
             self._expand_stretch_routines_for_export(payload)
         self._apply_running_backoff_to_payload(payload, decision)
+        self._annotate_adjustments_from_trace(payload=payload, plan_id=plan_id, week_number=week_number)
+
+    def _annotate_adjustments_from_trace(self, *, payload: Dict[str, Any], plan_id: int, week_number: int) -> None:
+        loader = getattr(self.dal, "get_plan_decision_trace", None)
+        trace = loader(plan_id, week_number) if callable(loader) else []
+        if not isinstance(trace, list):
+            return
+        notes: list[str] = []
+        for item in trace:
+            if not isinstance(item, dict):
+                continue
+            stage = str(item.get("stage") or "")
+            detail = str(item.get("detail") or "").strip()
+            if stage == "constraint_heavy_strength_run_quality":
+                notes.append(f"Adjusted run quality: {detail}")
+            elif stage in {"constraint_bilateral_recovery_backoff", "constraint_long_run_lower_strength"}:
+                notes.append(f"Reduced accessory volume: {detail}")
+        if notes:
+            payload.setdefault("comments", [])
+            payload["comments"].extend(notes)
 
     def _resolve_export_ids(self, payload: Dict[str, Any]) -> None:
         for day in payload.get("days", []):
