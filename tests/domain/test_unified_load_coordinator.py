@@ -3,65 +3,76 @@ from __future__ import annotations
 from datetime import date
 
 from pete_e.domain.unified_load_coordinator import (
-    GlobalTrainingContext,
-    PlanDecisionReasonCode,
-    PlanDecisionTrace,
-    SessionConstraintSet,
+    ContextAssembler,
+    StressBudgetEngine,
     UnifiedLoadCoordinator,
-    WeeklyStressBudget,
 )
 
 
-def test_domain_models_store_expected_values() -> None:
-    constraints = SessionConstraintSet(max_sessions=4, min_recovery_days=2, disallowed_days=(0,))
-    context = GlobalTrainingContext(
-        plan_start_date=date(2026, 5, 4),
-        week_number=2,
-        readiness_score=0.7,
-        historical_weekly_load=92.5,
-        constraints=constraints,
-    )
-    budget = WeeklyStressBudget(target=110.0, minimum=90.0, maximum=130.0)
+class StubDal:
+    def __init__(self, readiness: float, sparse: bool = False) -> None:
+        self._readiness = readiness
+        self._sparse = sparse
 
-    assert context.constraints.max_sessions == 4
-    assert context.readiness_score == 0.7
-    assert budget.maximum == 130.0
+    def get_latest_training_maxes(self):
+        return {} if self._sparse else {"squat": 140.0, "bench": 100.0}
+
+    def get_recent_running_workouts(self, *, days: int, end_date: date):
+        if self._sparse:
+            return []
+        return [
+            {"duration_sec": 2400, "total_distance_km": 5.0},
+            {"duration_sec": 3600, "total_distance_km": 8.0},
+        ]
+
+    def get_historical_metrics(self, days: int):
+        if self._sparse:
+            return []
+        score = self._readiness * 100.0
+        return [{"hrv_recovery_score": score, "body_battery": score} for _ in range(14)]
+
+    def get_recent_strength_workouts(self, *, days: int, end_date: date):
+        if self._sparse:
+            return []
+        return [
+            {"volume_kg": 5000.0},
+            {"volume_kg": 4500.0},
+        ]
+
+    def get_recent_adherence_signal(self, *, days: int, end_date: date):
+        return 0.9
 
 
-def test_plan_decision_trace_serialization_contract() -> None:
-    trace = PlanDecisionTrace(
-        week_number=1,
-        stage="compute_budget",
-        reason_code=PlanDecisionReasonCode.BUDGET_COMPUTED,
-        detail="Budget generated.",
-        payload={"target": 100.0},
-    )
-
-    assert trace.to_dict() == {
-        "week_number": 1,
-        "stage": "compute_budget",
-        "reason_code": "budget_computed",
-        "detail": "Budget generated.",
-        "payload": {"target": 100.0},
-    }
-
-
-def test_coordinator_emits_trace_across_phase0_pipeline(caplog) -> None:
-    caplog.set_level("INFO", logger="pete_e.domain")
-    coordinator = UnifiedLoadCoordinator()
-
-    context = coordinator.assemble_context(plan_start_date=date(2026, 5, 4), week_number=1)
+def _compute_budget(readiness: float, sparse: bool = False):
+    assembler = ContextAssembler(StubDal(readiness=readiness, sparse=sparse))
+    coordinator = UnifiedLoadCoordinator(context_assembler=assembler, stress_budget_engine=StressBudgetEngine())
+    context = coordinator.assemble_context(plan_start_date=date(2026, 5, 4), week_number=1, goal_phase="build")
     budget = coordinator.compute_budget(context)
-    candidates = coordinator.generate_candidates(context, budget)
-    feasible = coordinator.apply_constraints(context, candidates)
-    finalized = coordinator.finalize_week(context, feasible)
+    return context, budget
 
-    assert finalized == []
-    assert [trace.reason_code for trace in coordinator.decision_trace] == [
-        PlanDecisionReasonCode.CONTEXT_ASSEMBLED,
-        PlanDecisionReasonCode.BUDGET_COMPUTED,
-        PlanDecisionReasonCode.CANDIDATE_GENERATED,
-        PlanDecisionReasonCode.CONSTRAINT_APPLIED,
-        PlanDecisionReasonCode.WEEK_FINALIZED,
-    ]
-    assert "plan_decision_trace=" in caplog.text
+
+def test_green_readiness_budget() -> None:
+    _, budget = _compute_budget(0.8)
+    assert budget.target > 70
+    assert budget.run_target > budget.strength_target
+    assert budget.confidence >= 0.8
+
+
+def test_amber_readiness_budget() -> None:
+    _, budget = _compute_budget(0.55)
+    assert budget.target > 60
+    assert budget.minimum < budget.target < budget.maximum
+
+
+def test_red_readiness_budget() -> None:
+    _, budget = _compute_budget(0.25)
+    assert budget.target < 80
+    assert budget.run_target <= budget.target * 0.51
+
+
+def test_sparse_data_mode_sets_flags_and_lower_confidence() -> None:
+    context, budget = _compute_budget(0.5, sparse=True)
+    assert context.insufficient_data_flags
+    assert "missing_training_maxes" in context.insufficient_data_flags
+    assert budget.insufficient_data_flags == context.insufficient_data_flags
+    assert budget.confidence < 0.8
