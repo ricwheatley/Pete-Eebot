@@ -236,9 +236,9 @@ class DataAccessLayer(ABC):
         """Perform get active plan."""
 
     @abstractmethod
-    def get_plan_week(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
+    def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         pass
-        """Perform get plan week."""
+        """Perform get plan week rows."""
 
     @abstractmethod
     def update_workout_targets(self, updates: List[Dict[str, Any]]) -> None:

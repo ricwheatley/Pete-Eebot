@@ -45,7 +45,7 @@ class PlanService:
         running_goal = self._running_goal_from_settings()
         
         # 2. Use PlanFactory to build the plan dictionary
-        plan_dict = self.factory.create_531_block_plan(
+        plan_dict = self.factory.create_unified_531_block_plan(
             start_date,
             tms,
             running_goal=running_goal,
