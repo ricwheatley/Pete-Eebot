@@ -6,7 +6,7 @@ This guide is for the person running Pete Eebot as an operator, not just as a de
 - routine daily and weekly operations
 - the command surfaces you will actually use
 - how the training plan engine is wired
-- how to change weekly workout parameters, including Blaze, runs, assistance work, core work, and main lifts
+- how to change weekly workout parameters under the unified globally aware planner, including Blaze, runs, assistance work, core work, and main lifts
 - when to make a database change vs a code change
 
 Pete Eebot is a Python application with Postgres as its source of truth. The practical control surfaces are:
@@ -37,6 +37,8 @@ Current plan generation behaviour:
 - Weight targets are calculated from the latest `training_max` rows. If a lift has no TM, the plan still generates but target kg values can be blank.
 
 Weekly automation behaviour:
+
+For unified planner internals (context assembly, stress budget, constraint catalog, and decision trace semantics), see `docs/unified_global_planner.md`.
 
 - the Sunday review path validates the upcoming week
 - if the active plan is at its rollover point, Pete creates the next plan block
@@ -322,7 +324,7 @@ Use a database edit when:
 Use a code edit when:
 
 - you want every newly generated plan to change
-- you want to change the weekly split
+- you want to change unified run-strength constraints, stress budgeting, or cross-modality scheduling rules
 - you want to change Blaze defaults
 - you want to change the 5/3/1 percentages, rest timing, or accessory schemes
 - you want to replace the core main lifts system-wide
