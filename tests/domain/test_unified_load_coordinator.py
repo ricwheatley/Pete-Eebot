@@ -76,3 +76,76 @@ def test_sparse_data_mode_sets_flags_and_lower_confidence() -> None:
     assert "missing_training_maxes" in context.insufficient_data_flags
     assert budget.insufficient_data_flags == context.insufficient_data_flags
     assert budget.confidence < 0.8
+
+
+def _context(readiness: float = 0.8):
+    assembler = ContextAssembler(StubDal(readiness=readiness, sparse=False))
+    coordinator = UnifiedLoadCoordinator(context_assembler=assembler, stress_budget_engine=StressBudgetEngine())
+    context = coordinator.assemble_context(plan_start_date=date(2026, 5, 4), week_number=2, goal_phase="build")
+    return coordinator, context
+
+
+def test_constraint_long_run_reduces_lower_body_volume() -> None:
+    coordinator, context = _context(0.8)
+    candidates = [
+        {"session_type": "long_run", "day_of_week": 6, "stress": 9.0},
+        {"session_type": "strength", "lower_body": True, "volume_sets": 6, "stress": 8.0},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    lower = next(s for s in feasible if s["session_type"] == "strength")
+    assert lower["volume_sets"] == 4
+    assert any(t.stage == "constraint_long_run_lower_strength" for t in coordinator.decision_trace)
+
+
+def test_constraint_heavy_strength_week_downgrades_run_quality() -> None:
+    coordinator, context = _context(0.8)
+    candidates = [
+        {"session_type": "strength", "day_of_week": 2, "intensity_tag": "heavy_top_set", "lift": "bench", "stress": 7.0},
+        {"session_type": "run", "day_of_week": 4, "quality": "high", "stress": 7.0},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    run = next(s for s in feasible if s["session_type"] == "run")
+    assert run["quality"] == "moderate"
+    assert run["stress"] == 5.0
+    assert any(t.stage == "constraint_heavy_strength_run_quality" for t in coordinator.decision_trace)
+
+
+def test_constraint_bilateral_backoff_reduces_both_modalities() -> None:
+    coordinator, context = _context(0.5)
+    candidates = [
+        {"session_type": "strength", "day_of_week": 2, "stress": 10.0},
+        {"session_type": "run", "day_of_week": 4, "quality": "easy", "stress": 8.0},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    assert next(s for s in feasible if s["session_type"] == "strength")["stress"] == 8.5
+    assert next(s for s in feasible if s["session_type"] == "run")["stress"] == 6.8
+    assert any(t.stage == "constraint_bilateral_recovery_backoff" for t in coordinator.decision_trace)
+
+
+def test_constraint_hard_session_spacing_removes_conflict_without_override() -> None:
+    coordinator, context = _context(0.8)
+    candidates = [
+        {"session_type": "strength", "day_of_week": 3, "lift": "squat", "intensity_tag": "heavy_top_set", "stress": 8.0},
+        {"session_type": "run", "day_of_week": 4, "quality": "high", "stress": 7.0},
+        {"session_type": "run", "day_of_week": 2, "quality": "high", "stress": 7.0, "override_spacing": True},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    assert len([s for s in feasible if s["session_type"] == "run"]) == 1
+    assert feasible[-1].get("override_spacing") is True
+    assert any(t.stage == "constraint_hard_session_spacing" for t in coordinator.decision_trace)
+
+
+def test_combined_constraints_apply_in_deterministic_order() -> None:
+    coordinator, context = _context(0.45)
+    candidates = [
+        {"session_type": "long_run", "day_of_week": 6, "stress": 10.0},
+        {"session_type": "strength", "day_of_week": 5, "lower_body": True, "volume_sets": 7, "intensity_tag": "heavy_top_set", "lift": "deadlift", "stress": 10.0},
+        {"session_type": "run", "day_of_week": 6, "quality": "high", "stress": 8.0},
+    ]
+    feasible = coordinator.apply_constraints(context, candidates)
+    strength = next(s for s in feasible if s["session_type"] == "strength")
+    assert strength["volume_sets"] == 4
+    assert strength["stress"] == 8.5
+    assert len([s for s in feasible if s["session_type"] == "run"]) == 0
+    stages = [t.stage for t in coordinator.decision_trace if t.reason_code.value == "constraint_applied"]
+    assert stages.index("constraint_long_run_lower_strength") < stages.index("constraint_heavy_strength_run_quality") < stages.index("constraint_bilateral_recovery_backoff") < stages.index("constraint_hard_session_spacing")

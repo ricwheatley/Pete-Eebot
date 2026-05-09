@@ -170,7 +170,7 @@ class PlanDecisionTrace:
 
 
 class UnifiedLoadCoordinator:
-    """Phase 0 skeleton for the unified planner load coordinator."""
+    """Unified planner load coordinator with deterministic constraint execution."""
 
     def __init__(self, *, context_assembler: Optional[ContextAssembler] = None, stress_budget_engine: Optional[StressBudgetEngine] = None) -> None:
         self._decision_trace: List[PlanDecisionTrace] = []
@@ -251,17 +251,118 @@ class UnifiedLoadCoordinator:
     ) -> List[Dict[str, Any]]:
         """Apply constraints to candidate sessions and return feasible sessions."""
 
-        feasible = list(candidates)
+        feasible = [dict(candidate) for candidate in candidates]
+        ordered_constraints = (
+            self._apply_long_run_vs_lower_strength_volume,
+            self._apply_heavy_strength_vs_run_quality,
+            self._apply_bilateral_recovery_backoff,
+            self._apply_hard_session_spacing,
+        )
+        for fn in ordered_constraints:
+            feasible = fn(context, feasible)
         self._emit_trace(
             PlanDecisionTrace(
                 week_number=context.week_number,
                 stage="apply_constraints",
                 reason_code=PlanDecisionReasonCode.CONSTRAINT_APPLIED,
-                detail="Applied placeholder constraint pass-through.",
+                detail="Applied unified weekly constraints in deterministic order.",
                 payload={"input_count": len(candidates), "feasible_count": len(feasible)},
             )
         )
         return feasible
+
+    def _apply_long_run_vs_lower_strength_volume(self, context: GlobalTrainingContext, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        long_run = next((s for s in sessions if s.get("session_type") == "long_run"), None)
+        lower_strength = [s for s in sessions if s.get("session_type") == "strength" and s.get("lower_body") is True]
+        if not long_run or not lower_strength:
+            return sessions
+        if float(long_run.get("stress", 0.0)) < 8.0:
+            return sessions
+        adjusted = 0
+        for session in lower_strength:
+            volume = int(session.get("volume_sets", 0))
+            if volume > 4:
+                session["volume_sets"] = 4
+                adjusted += 1
+        if adjusted:
+            self._emit_trace(PlanDecisionTrace(
+                week_number=context.week_number,
+                stage="constraint_long_run_lower_strength",
+                reason_code=PlanDecisionReasonCode.CONSTRAINT_APPLIED,
+                detail="Long run load reduced lower-body strength volume.",
+                payload={"adjusted_sessions": adjusted},
+            ))
+        return sessions
+
+    def _apply_heavy_strength_vs_run_quality(self, context: GlobalTrainingContext, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        heavy_week = any(s.get("session_type") == "strength" and s.get("intensity_tag") == "heavy_top_set" for s in sessions)
+        if not heavy_week:
+            return sessions
+        adjusted = 0
+        for session in sessions:
+            if session.get("session_type") == "run" and session.get("quality") == "high":
+                session["quality"] = "moderate"
+                session["stress"] = max(0.0, float(session.get("stress", 0.0)) - 2.0)
+                adjusted += 1
+        if adjusted:
+            self._emit_trace(PlanDecisionTrace(
+                week_number=context.week_number,
+                stage="constraint_heavy_strength_run_quality",
+                reason_code=PlanDecisionReasonCode.CONSTRAINT_APPLIED,
+                detail="Heavy strength week reduced high-quality run intensity.",
+                payload={"adjusted_sessions": adjusted},
+            ))
+        return sessions
+
+    def _apply_bilateral_recovery_backoff(self, context: GlobalTrainingContext, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if context.readiness_score >= 0.7:
+            return sessions
+        state = "amber" if context.readiness_score >= 0.4 else "red"
+        strength_adj = 0
+        run_adj = 0
+        for session in sessions:
+            if session.get("session_type") == "strength":
+                session["stress"] = round(float(session.get("stress", 0.0)) * 0.85, 2)
+                strength_adj += 1
+            if session.get("session_type") in {"run", "long_run"}:
+                session["stress"] = round(float(session.get("stress", 0.0)) * 0.85, 2)
+                run_adj += 1
+        if strength_adj or run_adj:
+            self._emit_trace(PlanDecisionTrace(
+                week_number=context.week_number,
+                stage="constraint_bilateral_recovery_backoff",
+                reason_code=PlanDecisionReasonCode.CONSTRAINT_APPLIED,
+                detail="Readiness backoff lowered both strength and run stress.",
+                payload={"readiness_state": state, "strength_adjusted": strength_adj, "run_adjusted": run_adj},
+            ))
+        return sessions
+
+    def _apply_hard_session_spacing(self, context: GlobalTrainingContext, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        heavy_days = {
+            int(s.get("day_of_week"))
+            for s in sessions
+            if s.get("session_type") == "strength" and s.get("lift") in {"squat", "deadlift"} and s.get("intensity_tag") == "heavy_top_set"
+        }
+        if not heavy_days:
+            return sessions
+        dropped = 0
+        kept: List[Dict[str, Any]] = []
+        for session in sessions:
+            if session.get("session_type") == "run" and session.get("quality") in {"high", "moderate"} and float(session.get("stress", 0.0)) >= 5.0 and not session.get("override_spacing"):
+                run_day = int(session.get("day_of_week"))
+                if any(abs(run_day - heavy_day) <= 1 for heavy_day in heavy_days):
+                    dropped += 1
+                    continue
+            kept.append(session)
+        if dropped:
+            self._emit_trace(PlanDecisionTrace(
+                week_number=context.week_number,
+                stage="constraint_hard_session_spacing",
+                reason_code=PlanDecisionReasonCode.CONSTRAINT_APPLIED,
+                detail="Removed high-intensity run within 24h of heavy squat/deadlift.",
+                payload={"removed_sessions": dropped},
+            ))
+        return kept
 
     def finalize_week(
         self,
