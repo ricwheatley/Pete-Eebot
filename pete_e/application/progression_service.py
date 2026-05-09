@@ -41,7 +41,7 @@ class ProgressionService:
         *,
         persist: bool = True,
     ) -> PlanProgressionDecision:
-        rows = self._dal.get_plan_week(plan_id, week_number)
+        rows = self._dal.get_plan_week_rows(plan_id, week_number)
         if not rows:
             return PlanProgressionDecision(notes=[], updates=[], persisted=False)
 

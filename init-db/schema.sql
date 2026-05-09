@@ -330,6 +330,7 @@ CREATE TABLE training_plans (
     start_date DATE NOT NULL,
     weeks INT NOT NULL,
     is_active BOOLEAN DEFAULT true,
+    metadata JSONB,
     created_at TIMESTAMP DEFAULT now()
 );
 CREATE UNIQUE INDEX ux_training_plans_single_active
