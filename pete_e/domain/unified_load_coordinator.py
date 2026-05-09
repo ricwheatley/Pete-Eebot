@@ -1,11 +1,11 @@
-"""Phase 0 unified planner domain primitives and coordinator skeleton."""
+"""Unified planner domain primitives + Phase 1 context/budget engines."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from enum import Enum
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from pete_e.domain import logging as log_utils
 
@@ -28,6 +28,10 @@ class WeeklyStressBudget:
     target: float
     minimum: float
     maximum: float
+    run_target: float = 0.0
+    strength_target: float = 0.0
+    confidence: float = 0.0
+    insufficient_data_flags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,105 @@ class GlobalTrainingContext:
     readiness_score: float
     historical_weekly_load: float
     constraints: SessionConstraintSet
+    goal_phase: str = "build"
+    training_maxes: Dict[str, Optional[float]] = field(default_factory=dict)
+    recent_running_workouts: tuple[Dict[str, Any], ...] = ()
+    historical_health_metrics: tuple[Dict[str, Any], ...] = ()
+    recent_strength_workload: float = 0.0
+    adherence_ratio: Optional[float] = None
+    insufficient_data_flags: tuple[str, ...] = ()
+
+
+class ContextAssembler:
+    """Collect all planning inputs from DAL-like collaborators."""
+
+    def __init__(self, dal: Any) -> None:
+        self._dal = dal
+
+    def assemble(self, *, plan_start_date: date, week_number: int, goal_phase: str = "build") -> GlobalTrainingContext:
+        flags: list[str] = []
+        training_maxes = self._safe_call("get_latest_training_maxes", default={})
+        running = self._safe_call("get_recent_running_workouts", default=[], kwargs={"days": 14, "end_date": plan_start_date})
+        health = self._safe_call("get_historical_metrics", default=[], args=(21,))
+        strength = self._safe_call("get_recent_strength_workouts", default=[], kwargs={"days": 14, "end_date": plan_start_date})
+        adherence = self._safe_call("get_recent_adherence_signal", default=None, kwargs={"days": 21, "end_date": plan_start_date})
+        readiness_score = self._derive_readiness_score(health)
+        historical_weekly_load = self._estimate_historical_weekly_load(running, strength)
+        strength_workload = self._estimate_strength_workload(strength)
+        if not training_maxes:
+            flags.append("missing_training_maxes")
+        if len(running) < 2:
+            flags.append("limited_running_history")
+        if len(health) < 7:
+            flags.append("limited_health_history")
+        if len(strength) < 2:
+            flags.append("limited_strength_history")
+        return GlobalTrainingContext(
+            plan_start_date=plan_start_date,
+            week_number=week_number,
+            readiness_score=readiness_score,
+            historical_weekly_load=historical_weekly_load,
+            constraints=SessionConstraintSet(max_sessions=5, min_recovery_days=1),
+            goal_phase=goal_phase,
+            training_maxes=training_maxes,
+            recent_running_workouts=tuple(running),
+            historical_health_metrics=tuple(health),
+            recent_strength_workload=strength_workload,
+            adherence_ratio=adherence,
+            insufficient_data_flags=tuple(flags),
+        )
+
+    def _safe_call(self, fn_name: str, *, default: Any, args: tuple[Any, ...] = (), kwargs: Optional[dict[str, Any]] = None) -> Any:
+        fn = getattr(self._dal, fn_name, None)
+        if not callable(fn):
+            return default
+        return fn(*args, **(kwargs or {}))
+
+    def _derive_readiness_score(self, history: List[Dict[str, Any]]) -> float:
+        if not history:
+            return 0.5
+        latest = history[-1] if isinstance(history[-1], dict) else {}
+        hrv = float(latest.get("hrv_recovery_score") or latest.get("hrv_score") or 50.0)
+        body = float(latest.get("body_battery") or latest.get("recovery_score") or 50.0)
+        return max(0.0, min(1.0, ((hrv + body) / 2.0) / 100.0))
+
+    def _estimate_historical_weekly_load(self, running: List[Dict[str, Any]], strength: List[Dict[str, Any]]) -> float:
+        run_points = sum(float(w.get("duration_sec", 0.0)) / 60.0 for w in running)
+        strength_points = sum(float(w.get("volume_kg", 0.0)) / 100.0 for w in strength)
+        return round((run_points + strength_points) / 2.0, 1)
+
+    def _estimate_strength_workload(self, strength: List[Dict[str, Any]]) -> float:
+        return round(sum(float(w.get("volume_kg", 0.0)) for w in strength), 1)
+
+
+class StressBudgetEngine:
+    """Allocate weekly stress budget by readiness and phase."""
+
+    def compute(self, context: GlobalTrainingContext) -> WeeklyStressBudget:
+        readiness = context.readiness_score
+        base = max(40.0, context.historical_weekly_load or 80.0)
+        if readiness >= 0.7:
+            total = base * 1.1
+        elif readiness >= 0.4:
+            total = base * 0.95
+        else:
+            total = base * 0.75
+        phase_split = {"build": 0.55, "peak": 0.65, "deload": 0.45}.get(context.goal_phase, 0.55)
+        if readiness < 0.4:
+            phase_split = min(phase_split, 0.50)
+        run_target = total * phase_split
+        strength_target = total - run_target
+        flag_count = len(context.insufficient_data_flags)
+        confidence = max(0.2, min(1.0, 0.95 - (0.15 * flag_count)))
+        return WeeklyStressBudget(
+            target=round(total, 1),
+            minimum=round(total * 0.85, 1),
+            maximum=round(total * 1.15, 1),
+            run_target=round(run_target, 1),
+            strength_target=round(strength_target, 1),
+            confidence=round(confidence, 2),
+            insufficient_data_flags=context.insufficient_data_flags,
+        )
 
 
 @dataclass(frozen=True)
@@ -69,22 +172,32 @@ class PlanDecisionTrace:
 class UnifiedLoadCoordinator:
     """Phase 0 skeleton for the unified planner load coordinator."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, context_assembler: Optional[ContextAssembler] = None, stress_budget_engine: Optional[StressBudgetEngine] = None) -> None:
         self._decision_trace: List[PlanDecisionTrace] = []
+        self._context_assembler = context_assembler
+        self._stress_budget_engine = stress_budget_engine or StressBudgetEngine()
 
     @property
     def decision_trace(self) -> Sequence[PlanDecisionTrace]:
         return tuple(self._decision_trace)
 
-    def assemble_context(self, *, plan_start_date: date, week_number: int) -> GlobalTrainingContext:
+    def assemble_context(self, *, plan_start_date: date, week_number: int, goal_phase: str = "build") -> GlobalTrainingContext:
         """Build minimal global context for a planning week."""
 
-        context = GlobalTrainingContext(
-            plan_start_date=plan_start_date,
-            week_number=week_number,
-            readiness_score=0.5,
-            historical_weekly_load=0.0,
-            constraints=SessionConstraintSet(max_sessions=5, min_recovery_days=1),
+        context = (
+            self._context_assembler.assemble(
+                plan_start_date=plan_start_date,
+                week_number=week_number,
+                goal_phase=goal_phase,
+            )
+            if self._context_assembler
+            else GlobalTrainingContext(
+                plan_start_date=plan_start_date,
+                week_number=week_number,
+                readiness_score=0.5,
+                historical_weekly_load=80.0,
+                constraints=SessionConstraintSet(max_sessions=5, min_recovery_days=1),
+            )
         )
         self._emit_trace(
             PlanDecisionTrace(
@@ -92,7 +205,7 @@ class UnifiedLoadCoordinator:
                 stage="assemble_context",
                 reason_code=PlanDecisionReasonCode.CONTEXT_ASSEMBLED,
                 detail="Created baseline planning context.",
-                payload={"readiness_score": context.readiness_score},
+                payload={"readiness_score": context.readiness_score, "insufficient_data_flags": list(context.insufficient_data_flags)},
             )
         )
         return context
@@ -100,7 +213,7 @@ class UnifiedLoadCoordinator:
     def compute_budget(self, context: GlobalTrainingContext) -> WeeklyStressBudget:
         """Compute initial stress budget from the global context."""
 
-        budget = WeeklyStressBudget(target=100.0, minimum=75.0, maximum=125.0)
+        budget = self._stress_budget_engine.compute(context)
         self._emit_trace(
             PlanDecisionTrace(
                 week_number=context.week_number,
