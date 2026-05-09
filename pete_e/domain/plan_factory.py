@@ -63,7 +63,7 @@ class PlanFactory:
         )
         """Perform workout sort key."""
 
-    def create_531_block_plan(
+    def create_unified_531_block_plan(
         self,
         start_date: date,
         training_maxes: Dict[str, float],
@@ -72,11 +72,7 @@ class PlanFactory:
         health_metrics: List[Dict[str, Any]] | None = None,
         recent_runs: List[Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
-        """
-        Builds a 4-week, 5/3/1 training block. Returns a structured dictionary
-        representing the full plan, ready for persistence.
-        (Logic migrated from plan_builder.py and orchestrator.py)
-        """
+        """Build a 4-week 5/3/1 block via the unified coordinator."""
         weeks_in_plan = 4
         plan_weeks: List[Dict[str, Any]] = []
         trace_by_week: Dict[str, List[Dict[str, Any]]] = {}
@@ -159,14 +155,15 @@ class PlanFactory:
             )
             strength_candidates = [self._strength_candidate_from_workout(item) for item in week_workouts if not item.get("is_cardio")]
             run_candidates = [self._run_candidate_from_workout(item) for item in run_workouts]
-            context = GlobalTrainingContext(
+            context = self.unified_load_coordinator.assemble_context(
                 plan_start_date=start_date,
                 week_number=week_num,
-                readiness_score=0.5,
-                historical_weekly_load=80.0,
-                constraints=SessionConstraintSet(max_sessions=64, min_recovery_days=1),
+                goal_phase="deload" if is_deload_week else "build",
             )
-            budget = WeeklyStressBudget(target=80.0, minimum=65.0, maximum=100.0, run_target=42.0, strength_target=38.0, confidence=0.7)
+            context = GlobalTrainingContext(
+                **{**context.__dict__, "constraints": SessionConstraintSet(max_sessions=64, min_recovery_days=1)}
+            )
+            budget = self.unified_load_coordinator.compute_budget(context)
             candidates = self.unified_load_coordinator.generate_candidates(context, budget, strength_candidates=strength_candidates, run_candidates=run_candidates)
             feasible = self.unified_load_coordinator.apply_constraints(context, candidates)
             finalized = self.unified_load_coordinator.finalize_week(context, feasible, budget)
@@ -206,6 +203,24 @@ class PlanFactory:
                 "plan_decision_trace": trace_by_week,
             },
         }
+
+    def create_531_block_plan(
+        self,
+        start_date: date,
+        training_maxes: Dict[str, float],
+        *,
+        running_goal: RunningGoal | None = None,
+        health_metrics: List[Dict[str, Any]] | None = None,
+        recent_runs: List[Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
+        """Backward-compatible alias for unified 5/3/1 block planning."""
+        return self.create_unified_531_block_plan(
+            start_date,
+            training_maxes,
+            running_goal=running_goal,
+            health_metrics=health_metrics,
+            recent_runs=recent_runs,
+        )
 
     def _strength_candidate_from_workout(self, workout: Dict[str, Any]) -> Dict[str, Any]:
         lift = schedule_rules.LIFT_CODE_BY_ID.get(workout.get("exercise_id"), "")
