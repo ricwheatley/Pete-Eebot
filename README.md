@@ -144,7 +144,8 @@ pete telegram --listen-once        # poll bot commands one time
 
 ```cron
 5 7 * * *  cd /home/pi/Pete-Eebot && pete sync --days 1 --retries 3 && pete message --summary --send >> logs/cron.log 2>&1
-0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
+25 16 * * 0  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
+30 20 * * 0  cd /home/pi/Pete-Eebot && pete message --plan --send >> logs/cron.log 2>&1
 * * * * *  cd /home/pi/Pete-Eebot && pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
 ```
 

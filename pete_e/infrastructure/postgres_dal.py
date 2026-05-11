@@ -341,9 +341,10 @@ class PostgresDal(PlanRepository):
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         main_lift_ids = ", ".join(str(exercise_id) for exercise_id in schedule_rules.MAIN_LIFT_IDS)
         sql = f"""
-            SELECT tpw.*, tw.week_number, tw.is_test
+            SELECT tpw.*, tw.week_number, tw.is_test, ex.name AS exercise_name
             FROM training_plan_workouts tpw
             JOIN training_plan_weeks tw ON tw.id = tpw.week_id
+            LEFT JOIN wger_exercise ex ON ex.id = tpw.exercise_id
             WHERE tw.plan_id = %s
               AND tw.week_number = %s
             ORDER BY

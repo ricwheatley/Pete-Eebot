@@ -433,7 +433,8 @@ def build_weekly_plan_overview(
 ) -> str:
     """Build a weekly plan overview with key workouts and a motivational tip."""
     orch = orchestrator or _build_orchestrator()
-    target = target_date or date.today()
+    today = date.today()
+    target = target_date or (today + timedelta(days=1) if today.isoweekday() == 7 else today)
 
     dal = getattr(orch, "dal", None)
     get_active_plan = getattr(dal, "get_active_plan", None) if dal is not None else None

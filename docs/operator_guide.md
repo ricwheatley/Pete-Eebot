@@ -281,8 +281,8 @@ A practical cron layout is:
 ```cron
 5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 1 --retries 3 >> logs/cron.log 2>&1
 10 7 * * * cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete morning-report --send >> logs/cron.log 2>&1
-0 8 * * 1  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
-5 8 * * 1  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
+25 16 * * 0  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
+30 20 * * 0  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
 * * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
 ```
 

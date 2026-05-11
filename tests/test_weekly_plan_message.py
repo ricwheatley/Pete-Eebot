@@ -10,12 +10,13 @@ from pete_e.domain import narrative_builder
 
 
 class StubDal:
-    def __init__(self, start_date: real_date, weeks: int = 4) -> None:
+    def __init__(self, start_date: real_date, weeks: int = 4, expected_week_number: int = 1) -> None:
         self._plan = {
             "id": 42,
             "start_date": start_date,
             "weeks": weeks,
         }
+        self.expected_week_number = expected_week_number
         self._week_rows = [
             {
                 "day_of_week": 1,
@@ -42,7 +43,7 @@ class StubDal:
 
     def get_plan_week_rows(self, plan_id: int, week_number: int):
         assert plan_id == self._plan["id"]
-        assert week_number == 1
+        assert week_number == self.expected_week_number
         return list(self._week_rows)
 
 
@@ -114,6 +115,25 @@ def test_weekly_plan_cli_send_uses_formatted_overview(monkeypatch):
 
     assert result.exit_code == 0
     assert orch.sent_message == expected
+
+
+def test_weekly_plan_overview_targets_next_week_when_run_on_sunday(monkeypatch):
+    class SundayDate(real_date):
+        @classmethod
+        def today(cls) -> "SundayDate":
+            return cls(2024, 9, 8)
+
+    plan_start = SundayDate(2024, 9, 2)
+    dal = StubDal(plan_start, expected_week_number=2)
+    orch = StubOrchestrator(dal)
+    deterministic = _DeterministicRandom()
+    monkeypatch.setattr(narrative_builder, "random", deterministic)
+    monkeypatch.setattr(narrative_builder, "phrase_for", lambda **_: "Remember to hydrate.")
+    monkeypatch.setattr(messenger, "date", SundayDate)
+
+    message = messenger.build_weekly_plan_overview(orchestrator=orch)
+
+    assert "Cycle week: 2" in message
 
 
 def test_weekly_plan_formats_interval_treadmill_steps():

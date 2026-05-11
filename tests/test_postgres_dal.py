@@ -178,6 +178,25 @@ class TestPostgresDal(unittest.TestCase):
         second_cur.execute.assert_called_once()
         self.assertIn("FROM wger_exercise ex", second_cur.execute.call_args.args[0])
         """Perform test get core pool ids falls back to categories without core pool."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_plan_week_rows_includes_catalogue_exercise_name(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = []
+
+        dal = PostgresDal()
+        dal.get_plan_week_rows(plan_id=42, week_number=1)
+
+        executed_sql = mock_cur.execute.call_args.args[0]
+        self.assertIn("ex.name AS exercise_name", executed_sql)
+        self.assertIn("LEFT JOIN wger_exercise ex ON ex.id = tpw.exercise_id", executed_sql)
+        """Perform test get plan week rows includes catalogue exercise name."""
     """Represent TestPostgresDal."""
 
 
