@@ -23,6 +23,35 @@ def test_build_nutrition_log_record_defaults_and_calories():
     assert record.confidence == "medium"
     assert record.local_date.isoformat() == "2026-05-05"
     assert record.calories_est == Decimal("582.00")
+    assert record.alcohol_g is None
+    assert record.fiber_g is None
+    assert record.estimated_total_calories is None
+
+
+def test_build_nutrition_log_record_supports_alcohol_fiber_and_calorie_override():
+    record = build_nutrition_log_record(
+        {
+            "protein_g": 40,
+            "carbs_g": 65,
+            "fat_g": 18,
+            "alcohol_g": 10.5,
+            "fiber_g": 8,
+            "estimated_total_calories": 750,
+        },
+        timezone_name="Europe/London",
+    )
+    assert record.alcohol_g == Decimal("10.50")
+    assert record.fiber_g == Decimal("8.00")
+    assert record.estimated_total_calories == Decimal("750.00")
+    assert record.calories_est == Decimal("750.00")
+
+
+def test_build_nutrition_log_record_derives_calories_with_alcohol_when_no_override():
+    record = build_nutrition_log_record(
+        {"protein_g": 10, "carbs_g": 10, "fat_g": 10, "alcohol_g": 10},
+        timezone_name="Europe/London",
+    )
+    assert record.calories_est == Decimal("240.00")
 
 
 def test_build_nutrition_log_record_uses_now_when_timestamp_missing():
@@ -56,4 +85,3 @@ def test_build_nutrition_log_record_warns_for_large_single_entry():
 
     assert "high_protein_single_entry" in record.warnings
     assert "high_carbs_single_entry" in record.warnings
-
