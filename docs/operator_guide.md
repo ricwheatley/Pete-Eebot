@@ -27,6 +27,7 @@ The important operating concepts are:
 - `assistance_pool`: the pool used to randomly choose assistance exercises for each main lift
 - `wger_exercise`: the local exercise catalogue used for IDs, names, categories, and export
 - `wger_export_log`: record of what was exported to wger
+- `nutrition_log`: immutable approximate macro events supplied by the GPT layer; Postgres is the source of truth
 
 Current plan generation behaviour:
 
@@ -57,6 +58,7 @@ Copy `.env.sample` to `.env` and fill in:
 - wger: `WGER_API_KEY`
 - Postgres: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`
 - API/Webhook if you use them: `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`
+- Nutrition logging: `USER_TIMEZONE` controls local-date assignment when GPT macro logs omit a timestamp
 
 Notes:
 

@@ -112,6 +112,7 @@ MANIFEST
 
 .env
 .withings_tokens.json
+docs/postman/out/
 
 
 

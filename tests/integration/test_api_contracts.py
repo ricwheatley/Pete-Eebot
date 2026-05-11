@@ -51,7 +51,7 @@ if "fastapi" not in sys.modules:
     sys.modules["fastapi"] = fastapi_module
     sys.modules["fastapi.responses"] = responses_module
 
-from pete_e.api_routes import dependencies, metrics, plan
+from pete_e.api_routes import dependencies, metrics, nutrition, plan
 
 
 class _StubMetricsService:
@@ -62,6 +62,29 @@ class _StubMetricsService:
 class _StubPlanService:
     def for_day(self, date: str):
         return {"columns": ["date", "session"], "rows": [[date, "A"]]}
+
+
+class _StubNutritionService:
+    def log_macros(self, payload):
+        return {
+            "id": 1,
+            "protein_g": payload["protein_g"],
+            "carbs_g": payload["carbs_g"],
+            "fat_g": payload["fat_g"],
+            "calories_est": 582,
+            "duplicate": False,
+            "warnings": [],
+        }
+
+    def daily_summary(self, date: str):
+        return {
+            "date": date,
+            "protein_g": 145,
+            "carbs_g": 210,
+            "fat_g": 65,
+            "calories_est": 2005,
+            "meals_logged": 4,
+        }
 
 
 def test_metrics_overview_contract_shape(monkeypatch):
@@ -90,3 +113,32 @@ def test_plan_for_day_contract_and_auth(monkeypatch):
 
     assert set(with_auth.keys()) == {"columns", "rows"}
     assert with_auth["rows"] == [["2024-02-02", "A"]]
+
+
+def test_nutrition_log_macros_contract(monkeypatch):
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+
+    payload = nutrition.log_macros(
+        request=nutrition.Request({}),
+        payload={"protein_g": 40, "carbs_g": 65, "fat_g": 18},
+        x_api_key="test-key",
+    )
+
+    assert payload["id"] == 1
+    assert payload["calories_est"] == 582
+    assert payload["duplicate"] is False
+
+
+def test_nutrition_daily_summary_contract(monkeypatch):
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+
+    payload = nutrition.nutrition_daily_summary(
+        request=nutrition.Request({}),
+        date="2026-05-05",
+        x_api_key="test-key",
+    )
+
+    assert payload["date"] == "2026-05-05"
+    assert payload["meals_logged"] == 4

@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     USER_DATE_OF_BIRTH: date
     USER_HEIGHT_CM: int
     USER_GOAL_WEIGHT_KG: float
+    USER_TIMEZONE: str = "Europe/London"
 
     # --- API CREDENTIALS (from environment) ---
     TELEGRAM_TOKEN: SecretStr

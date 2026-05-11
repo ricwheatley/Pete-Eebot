@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Dict
 
 from pete_e.config import settings
+from pete_e.application.nutrition_service import build_nutrition_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.exceptions import BadRequestError, DataAccessError
@@ -279,6 +280,7 @@ class MetricsService(_DateParserMixin):
         strength_load_7d = _sum_field(last_7, "strength_volume_kg")
 
         plan_context = self.plan_context(target_date.isoformat())
+        nutrition_context = build_nutrition_context(self._dal, target_date=target_date)
         deload_due = bool(plan_context.get("deload_due"))
         data_quality = self._coach_data_quality(rows=rows, last_7=last_7, target_date=target_date)
         possible_underfueling = self._possible_underfueling(
@@ -322,6 +324,7 @@ class MetricsService(_DateParserMixin):
             },
             "recent_workouts": workouts,
             "plan_context": plan_context,
+            "nutrition": nutrition_context,
             "goal_state": self.goal_state(),
             "data_quality": data_quality,
             "missing_subjective_inputs": [

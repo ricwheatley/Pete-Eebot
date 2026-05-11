@@ -703,6 +703,153 @@ class PostgresDal(PlanRepository):
             cur.executemany(sql_text, values)
         """Perform save withings measure groups."""
 
+    def insert_nutrition_log(self, record: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+        """Insert an immutable nutrition event, returning an existing row on duplicate."""
+
+        sql_text = """
+            WITH inserted AS (
+                INSERT INTO nutrition_log (
+                    client_event_id,
+                    dedupe_fingerprint,
+                    eaten_at,
+                    local_date,
+                    protein_g,
+                    carbs_g,
+                    fat_g,
+                    calories_est,
+                    source,
+                    context,
+                    confidence,
+                    meal_label,
+                    notes,
+                    raw_payload_json
+                ) VALUES (
+                    %(client_event_id)s,
+                    %(dedupe_fingerprint)s,
+                    %(eaten_at)s,
+                    %(local_date)s,
+                    %(protein_g)s,
+                    %(carbs_g)s,
+                    %(fat_g)s,
+                    %(calories_est)s,
+                    %(source)s,
+                    %(context)s,
+                    %(confidence)s,
+                    %(meal_label)s,
+                    %(notes)s,
+                    %(raw_payload_json)s
+                )
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            )
+            SELECT inserted.*, false AS duplicate
+            FROM inserted
+            UNION ALL
+            SELECT nl.*, true AS duplicate
+            FROM nutrition_log nl
+            WHERE NOT EXISTS (SELECT 1 FROM inserted)
+              AND (
+                  nl.dedupe_fingerprint = %(dedupe_fingerprint)s
+                  OR (
+                      %(client_event_id)s IS NOT NULL
+                      AND nl.client_event_id = %(client_event_id)s
+                  )
+              )
+            ORDER BY duplicate ASC
+            LIMIT 1;
+        """
+        params = dict(record)
+        params["raw_payload_json"] = Json(record.get("raw_payload_json") or {})
+        with self._get_cursor() as cur:
+            cur.execute(sql_text, params)
+            row = cur.fetchone()
+
+        if not row:
+            raise RuntimeError("Nutrition log insert did not return a row.")
+        payload = dict(row)
+        duplicate = bool(payload.pop("duplicate", False))
+        return payload, duplicate
+
+    def get_nutrition_daily_summary(self, target_date: date) -> Dict[str, Any]:
+        """Return aggregate nutrition totals for one local date."""
+
+        sql_text = """
+            WITH entries AS (
+                SELECT *
+                FROM nutrition_log
+                WHERE local_date = %s
+            )
+            SELECT
+                %s::date AS local_date,
+                COALESCE(SUM(protein_g), 0)::numeric AS protein_g,
+                COALESCE(SUM(carbs_g), 0)::numeric AS carbs_g,
+                COALESCE(SUM(fat_g), 0)::numeric AS fat_g,
+                COALESCE(SUM(calories_est), 0)::numeric AS calories_est,
+                COUNT(*)::int AS meals_logged,
+                COALESCE(
+                    (
+                        SELECT jsonb_object_agg(source, entry_count)
+                        FROM (
+                            SELECT source, COUNT(*)::int AS entry_count
+                            FROM entries
+                            GROUP BY source
+                        ) source_counts
+                    ),
+                    '{}'::jsonb
+                ) AS source_breakdown,
+                COALESCE(
+                    (
+                        SELECT jsonb_object_agg(confidence, entry_count)
+                        FROM (
+                            SELECT confidence, COUNT(*)::int AS entry_count
+                            FROM entries
+                            GROUP BY confidence
+                        ) confidence_counts
+                    ),
+                    '{}'::jsonb
+                ) AS confidence_breakdown,
+                MAX(created_at) AS last_logged_at
+            FROM entries;
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql_text, (target_date, target_date))
+            row = cur.fetchone() or {}
+        return dict(row)
+
+    def get_nutrition_daily_summaries(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+        """Return one nutrition aggregate row per local date in the requested range."""
+
+        sql_text = """
+            WITH days AS (
+                SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS local_date
+            ),
+            aggregates AS (
+                SELECT
+                    local_date,
+                    SUM(protein_g)::numeric AS protein_g,
+                    SUM(carbs_g)::numeric AS carbs_g,
+                    SUM(fat_g)::numeric AS fat_g,
+                    SUM(calories_est)::numeric AS calories_est,
+                    COUNT(*)::int AS meals_logged
+                FROM nutrition_log
+                WHERE local_date BETWEEN %s AND %s
+                GROUP BY local_date
+            )
+            SELECT
+                days.local_date AS date,
+                COALESCE(aggregates.protein_g, 0)::numeric AS protein_g,
+                COALESCE(aggregates.carbs_g, 0)::numeric AS carbs_g,
+                COALESCE(aggregates.fat_g, 0)::numeric AS fat_g,
+                COALESCE(aggregates.calories_est, 0)::numeric AS calories_est,
+                COALESCE(aggregates.meals_logged, 0)::int AS meals_logged
+            FROM days
+            LEFT JOIN aggregates ON aggregates.local_date = days.local_date
+            ORDER BY days.local_date ASC;
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql_text, (start_date, end_date, start_date, end_date))
+            return cur.fetchall()
+
     def save_wger_log(self, day: date, exercise_id: int, set_number: int, reps: int, weight_kg: Optional[float], rir: Optional[float]) -> None:
         sql = "INSERT INTO wger_logs (date, exercise_id, set_number, reps, weight_kg, rir) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (date, exercise_id, set_number) DO UPDATE SET reps = EXCLUDED.reps, weight_kg = EXCLUDED.weight_kg, rir = EXCLUDED.rir;"
         with self._get_cursor() as cur:

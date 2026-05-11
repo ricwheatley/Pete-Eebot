@@ -36,6 +36,7 @@ DROP TABLE IF EXISTS training_max CASCADE;
 DROP TABLE IF EXISTS training_cycle CASCADE;
 DROP TABLE IF EXISTS training_blocks CASCADE;
 DROP TABLE IF EXISTS wger_export_log CASCADE;
+DROP TABLE IF EXISTS nutrition_log CASCADE;
 DROP TABLE IF EXISTS withings_measure_groups CASCADE;
 DROP TABLE IF EXISTS training_plan_workouts CASCADE;
 DROP TABLE IF EXISTS training_plan_weeks CASCADE;
@@ -174,6 +175,33 @@ CREATE TABLE withings_measure_groups (
 );
 COMMENT ON TABLE withings_measure_groups IS 'Stores every raw Withings measure group returned by getmeas so newly exposed scale metrics are retained without schema changes.';
 CREATE INDEX idx_withings_measure_groups_day ON withings_measure_groups(day);
+
+CREATE TABLE nutrition_log (
+    id BIGSERIAL PRIMARY KEY,
+    client_event_id TEXT NULL,
+    dedupe_fingerprint TEXT NOT NULL,
+    eaten_at TIMESTAMPTZ NOT NULL,
+    local_date DATE NOT NULL,
+    protein_g NUMERIC(7,2) NOT NULL,
+    carbs_g NUMERIC(7,2) NOT NULL,
+    fat_g NUMERIC(7,2) NOT NULL,
+    calories_est NUMERIC(8,2) NOT NULL,
+    source TEXT NOT NULL,
+    context TEXT NULL,
+    confidence TEXT NOT NULL,
+    meal_label TEXT NULL,
+    notes TEXT NULL,
+    raw_payload_json JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ux_nutrition_log_dedupe_fingerprint UNIQUE (dedupe_fingerprint)
+);
+COMMENT ON TABLE nutrition_log IS 'Immutable approximate nutrition events supplied by the GPT layer. Postgres is the source of truth.';
+CREATE UNIQUE INDEX ux_nutrition_log_client_event_id
+    ON nutrition_log(client_event_id)
+    WHERE client_event_id IS NOT NULL;
+CREATE INDEX idx_nutrition_log_local_date ON nutrition_log(local_date);
+CREATE INDEX idx_nutrition_log_eaten_at ON nutrition_log(eaten_at);
+CREATE INDEX idx_nutrition_log_source_local_date ON nutrition_log(source, local_date);
 
 -- NEW Apple Health Daily Metrics Tables (Normalized)
 CREATE TABLE "DailyMetric" (

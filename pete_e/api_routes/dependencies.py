@@ -4,11 +4,13 @@ import hmac
 from fastapi import Header, HTTPException, Request
 
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
+from pete_e.application.nutrition_service import NutritionService
 from pete_e.config import settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
+_nutrition_service: NutritionService | None = None
 _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
 
@@ -56,6 +58,13 @@ def get_metrics_service() -> MetricsService:
     if _metrics_service is None:
         _metrics_service = MetricsService(get_dal())
     return _metrics_service
+
+
+def get_nutrition_service() -> NutritionService:
+    global _nutrition_service
+    if _nutrition_service is None:
+        _nutrition_service = NutritionService(get_dal())
+    return _nutrition_service
 
 
 def get_plan_service() -> PlanService:

@@ -1,0 +1,345 @@
+{
+  "info": {
+    "_postman_id": "62ef49ec-99e6-42a5-9b95-cd2f84459314",
+    "name": "Pete-E wger IngredientInfo",
+    "description": "Requests for authenticating to wger and inspecting /api/v2/ingredientinfo/ rows for a selected language. The IngredientInfo folder is designed to be run in the Postman Collection Runner or Newman so the test script can follow pagination.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Get JWT Token (Optional)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json();",
+                  "",
+                  "pm.test('wger returned an access token', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  pm.expect(data).to.have.property('access');",
+                  "});",
+                  "",
+                  "if (data.access) {",
+                  "  pm.environment.set('wger_access_token', data.access);",
+                  "  pm.environment.set('wger_auth_header', `Bearer ${data.access}`);",
+                  "}",
+                  "",
+                  "if (data.refresh) {",
+                  "  pm.environment.set('wger_refresh_token', data.refresh);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{wger_username}}\",\n  \"password\": \"{{wger_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{wger_base_url}}/token",
+              "host": [
+                "{{wger_base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Optional JWT login flow. If you use an API key instead, skip this and set wger_auth_header to Token <your-api-key> in the environment."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reference",
+      "item": [
+        {
+          "name": "List Languages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('wger returned languages', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "  const data = pm.response.json();",
+                  "  pm.expect(data).to.have.property('results');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{wger_auth_header}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{wger_base_url}}/language/?limit=100",
+              "host": [
+                "{{wger_base_url}}"
+              ],
+              "path": [
+                "language",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Use this to confirm the numeric language id. This collection defaults to language=2."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "IngredientInfo",
+      "item": [
+        {
+          "name": "Reset IngredientInfo Pagination",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('wger ingredientinfo reset probe succeeded', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "let data = {};",
+                  "try {",
+                  "  data = pm.response.json();",
+                  "} catch (error) {",
+                  "  data = {};",
+                  "}",
+                  "",
+                  "pm.environment.set('wger_offset', '0');",
+                  "pm.environment.set('wger_page_count', '0');",
+                  "pm.environment.set('wger_ingredient_count_seen', '0');",
+                  "pm.environment.unset('wger_next_url');",
+                  "const shouldAccumulate = ['1', 'true', 'yes'].includes(String(pm.environment.get('wger_accumulate_results') || '').toLowerCase());",
+                  "if (shouldAccumulate) {",
+                  "  pm.environment.set('wger_ingredients_json', '[]');",
+                  "} else {",
+                  "  pm.environment.unset('wger_ingredients_json');",
+                  "}",
+                  "",
+                  "if (typeof data.count === 'number') {",
+                  "  pm.environment.set('wger_expected_total', String(data.count));",
+                  "} else {",
+                  "  pm.environment.unset('wger_expected_total');",
+                  "}",
+                  "",
+                  "postman.setNextRequest('Fetch IngredientInfo Page');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{wger_auth_header}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{wger_base_url}}/ingredientinfo/?language={{wger_language_id}}&limit=1&offset=0&ordering=id",
+              "host": [
+                "{{wger_base_url}}"
+              ],
+              "path": [
+                "ingredientinfo",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "language",
+                  "value": "{{wger_language_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "1"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "ordering",
+                  "value": "id"
+                }
+              ]
+            },
+            "description": "Run this first in the Collection Runner or Newman. It clears the accumulator and then sends the runner to Fetch IngredientInfo Page."
+          },
+          "response": []
+        },
+        {
+          "name": "Fetch IngredientInfo Page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('wger ingredientinfo page succeeded', function () {",
+                  "  pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "",
+                  "const data = pm.response.json();",
+                  "",
+                  "pm.test('ingredientinfo response is paginated', function () {",
+                  "  pm.expect(data).to.have.property('results');",
+                  "  pm.expect(data.results).to.be.an('array');",
+                  "});",
+                  "",
+                  "const results = Array.isArray(data.results) ? data.results : [];",
+                  "const shouldAccumulate = ['1', 'true', 'yes'].includes(String(pm.environment.get('wger_accumulate_results') || '').toLowerCase());",
+                  "let seenCount = Number.parseInt(pm.environment.get('wger_ingredient_count_seen') || '0', 10) + results.length;",
+                  "",
+                  "if (shouldAccumulate) {",
+                  "  let existing = [];",
+                  "  const existingRaw = pm.environment.get('wger_ingredients_json') || '[]';",
+                  "  try {",
+                  "    existing = JSON.parse(existingRaw);",
+                  "    if (!Array.isArray(existing)) {",
+                  "      existing = [];",
+                  "    }",
+                  "  } catch (error) {",
+                  "    existing = [];",
+                  "  }",
+                  "  const combined = existing.concat(results);",
+                  "  seenCount = combined.length;",
+                  "  pm.environment.set('wger_ingredients_json', JSON.stringify(combined, null, 2));",
+                  "} else {",
+                  "  pm.environment.unset('wger_ingredients_json');",
+                  "}",
+                  "",
+                  "const pageCount = Number.parseInt(pm.environment.get('wger_page_count') || '0', 10) + 1;",
+                  "const expectedTotal = typeof data.count === 'number' ? data.count : seenCount;",
+                  "const maxPagesRaw = pm.environment.get('wger_max_pages');",
+                  "const maxPages = Number.parseInt(maxPagesRaw || '', 10);",
+                  "const hasPageLimit = Number.isFinite(maxPages) && maxPages > 0;",
+                  "const reachedPageLimit = hasPageLimit && pageCount >= maxPages;",
+                  "",
+                  "pm.environment.set('wger_ingredient_count_seen', String(seenCount));",
+                  "pm.environment.set('wger_expected_total', String(expectedTotal));",
+                  "pm.environment.set('wger_page_count', String(pageCount));",
+                  "",
+                  "if (data.next && !reachedPageLimit) {",
+                  "  const baseUrl = pm.environment.get('wger_base_url') || 'https://wger.de/api/v2';",
+                  "  const next = new URL(data.next, baseUrl);",
+                  "  const nextOffset = next.searchParams.get('offset');",
+                  "",
+                  "  if (nextOffset) {",
+                  "    pm.environment.set('wger_offset', nextOffset);",
+                  "  } else {",
+                  "    const currentOffset = Number.parseInt(pm.environment.get('wger_offset') || '0', 10);",
+                  "    pm.environment.set('wger_offset', String(currentOffset + results.length));",
+                  "  }",
+                  "",
+                  "  pm.environment.set('wger_next_url', data.next);",
+                  "  console.log(`Fetched ${seenCount}/${expectedTotal} ingredients across ${pageCount} page(s).`);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.environment.set('wger_offset', '0');",
+                  "  pm.environment.unset('wger_next_url');",
+                  "  if (reachedPageLimit && data.next) {",
+                  "    console.log(`Stopped at wger_max_pages=${maxPages}: fetched ${seenCount}/${expectedTotal} ingredients across ${pageCount} page(s).`);",
+                  "  } else {",
+                  "    console.log(`Finished: fetched ${seenCount}/${expectedTotal} ingredients across ${pageCount} page(s).`);",
+                  "  }",
+                  "  postman.setNextRequest(null);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "{{wger_auth_header}}"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{wger_base_url}}/ingredientinfo/?language={{wger_language_id}}&limit={{wger_page_limit}}&offset={{wger_offset}}&ordering=id",
+              "host": [
+                "{{wger_base_url}}"
+              ],
+              "path": [
+                "ingredientinfo",
+                ""
+              ],
+              "query": [
+                {
+                  "key": "language",
+                  "value": "{{wger_language_id}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "{{wger_page_limit}}"
+                },
+                {
+                  "key": "offset",
+                  "value": "{{wger_offset}}"
+                },
+                {
+                  "key": "ordering",
+                  "value": "id"
+                }
+              ]
+            },
+            "description": "Run through the Collection Runner or Newman. The Tests script follows next/offset pagination and tracks counts. Set wger_accumulate_results=true only for small test runs; the full language=2 ingredient set is too large for Postman environment storage."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

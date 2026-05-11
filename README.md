@@ -246,6 +246,7 @@ pytest tests/integration -q
 
 - OpenAPI: `docs/pete_coach_openapi.yaml`
 - wger API spec copy: `docs/wger_openapi.yaml`
+- wger IngredientInfo Postman export: `docs/postman/wger_ingredientinfo_setup.md`
 - Operator guide: `docs/operator_guide.md`
 - Body age notes: `docs/body_age.md`
 - Contributor guide: `CONTRIBUTING.md`
