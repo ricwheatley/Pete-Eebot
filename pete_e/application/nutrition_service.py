@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Mapping
 
-from pete_e.application.exceptions import BadRequestError, DataAccessError
+from pete_e.application.exceptions import BadRequestError, DataAccessError, NotFoundError
 from pete_e.config import settings
 from pete_e.domain.nutrition import NutritionValidationError, build_nutrition_log_record
 from pete_e.utils import converters
@@ -54,6 +54,30 @@ class NutritionService:
             raise DataAccessError("Failed to persist nutrition log.") from exc
 
         return self._shape_log_row(row, duplicate=duplicate, warnings=record.warnings)
+
+
+    def update_log(self, log_id: int, payload: Mapping[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
+        if not isinstance(log_id, int) or log_id <= 0:
+            raise BadRequestError("Invalid nutrition log id.", code="invalid_nutrition_log_id")
+        try:
+            patch = _validate_update_payload(payload, timezone_name=self._timezone_name, now=now)
+        except NutritionValidationError as exc:
+            raise BadRequestError(str(exc), code="invalid_nutrition_payload") from exc
+        try:
+            row = self._dal.update_nutrition_log(log_id, patch)
+        except KeyError as exc:
+            raise NotFoundError("Nutrition log not found.", code="nutrition_log_not_found") from exc
+        except Exception as exc:
+            raise DataAccessError("Failed to update nutrition log.") from exc
+
+        refresher = getattr(self._dal, "refresh_daily_summary_range", None)
+        if callable(refresher):
+            try:
+                refresher(row.get("local_date"), row.get("previous_local_date"))
+            except Exception:
+                pass
+
+        return self._shape_log_row(row, duplicate=False, warnings=())
 
     def daily_summary(self, iso_date: str) -> dict[str, Any]:
         target_date = _parse_iso_date(iso_date)
@@ -232,3 +256,54 @@ def _avg(rows: list[Mapping[str, Any]], field: str) -> float | None:
         if value is not None:
             values.append(value)
     return (sum(values) / len(values)) if values else None
+
+
+def _validate_update_payload(payload: Mapping[str, Any], *, timezone_name: str, now: datetime | None) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise BadRequestError("Nutrition payload must be a JSON object.", code="invalid_nutrition_payload")
+
+    editable = {
+        "protein_g", "carbs_g", "fat_g", "alcohol_g", "fiber_g",
+        "estimated_total_calories", "source", "context", "confidence",
+        "meal_label", "notes", "timestamp", "eaten_at"
+    }
+    patch: dict[str, Any] = {}
+    unknown = set(payload.keys()) - editable
+    if unknown:
+        raise BadRequestError(f"Unsupported fields for nutrition update: {', '.join(sorted(unknown))}", code="invalid_nutrition_payload")
+
+    from pete_e.domain import nutrition as n
+    for field in ("protein_g", "carbs_g", "fat_g", "alcohol_g", "fiber_g"):
+        if field in payload:
+            value = payload[field]
+            patch[field] = None if value is None else n._macro_decimal(value, field)
+
+    if "estimated_total_calories" in payload:
+        value = payload["estimated_total_calories"]
+        patch["estimated_total_calories"] = None if value is None else n._optional_calorie_decimal(value, "estimated_total_calories")
+
+    if "confidence" in payload:
+        value = n._clean_token(payload.get("confidence"), n.DEFAULT_CONFIDENCE, "confidence").lower()
+        if value not in n.ALLOWED_CONFIDENCE:
+            raise BadRequestError("confidence must be one of: low, medium, high.", code="invalid_nutrition_payload")
+        patch["confidence"] = value
+
+    text_map = {"source": ("source", 80), "context": ("context", 80), "meal_label": ("meal_label", 80), "notes": ("notes", 500)}
+    for field, (name, max_len) in text_map.items():
+        if field in payload:
+            val = payload[field]
+            if val is None:
+                patch[field] = None
+            elif field == "source":
+                patch[field] = n._clean_token(val, n.DEFAULT_SOURCE, name)
+            else:
+                patch[field] = n._optional_text(val, name, max_length=max_len)
+
+    ts = payload.get("timestamp") if "timestamp" in payload else payload.get("eaten_at") if "eaten_at" in payload else ...
+    if ts is not ...:
+        tz = n._resolve_timezone(timezone_name)
+        eaten_at = n._parse_timestamp(ts, tz=tz, now=now)
+        patch["eaten_at"] = eaten_at
+        patch["local_date"] = eaten_at.astimezone(tz).date()
+
+    return patch
