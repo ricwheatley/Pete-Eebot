@@ -152,8 +152,23 @@ pete telegram --listen-once        # poll bot commands one time
 For managed cron installation from repository templates, use:
 
 ```bash
-./scripts/install_cron_examples.sh --activate --summary
+./scripts/install_cron_examples.sh --write --activate --summary
 ```
+
+---
+
+## Raspberry Pi Deployment Layout
+
+The production Pi keeps mutable runtime files outside the Git checkout:
+
+```text
+/home/ricwheatley/pete-eebot/.env       # local secrets, not managed by Git
+/home/ricwheatley/pete-eebot/venv       # Python virtual environment
+/home/ricwheatley/pete-eebot/deploy.sh  # stable webhook entrypoint
+/home/ricwheatley/pete-eebot/app        # Git checkout updated from origin/main
+```
+
+The root `deploy.sh` should stay small and stable: it pulls `/app` from GitHub, then hands off to the tracked deployment script in `app/pete_e/resources/deploy.sh`. That keeps `.env` and the virtual environment outside the update boundary while still allowing cron updates, package installation, service restart, and Telegram deploy confirmation to come from versioned code.
 
 ---
 
