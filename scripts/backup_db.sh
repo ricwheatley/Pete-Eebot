@@ -15,6 +15,49 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
     fi
 fi
 
+ENV_FILE="${ENV_FILE:-${PROJECT_ROOT}/.env}"
+
+if [[ ! -f "${ENV_FILE}" ]]; then
+    printf 'ERROR: Environment file not found at %s.\n' "${ENV_FILE}" >&2
+    exit 1
+fi
+
+# Preserve explicit command-line environment overrides when loading .env.
+declare -A ENV_OVERRIDES=()
+ENV_OVERRIDE_NAMES=(
+    VENV_ROOT
+    PYTHON_BIN
+    BACKUP_ROOT
+    DB_BACKUP_DIR
+    SECRETS_BACKUP_DIR
+    CLOUD_STAGING_DIR
+    LOG_DIR
+    LOG_FILE
+    RETENTION_WEEKS
+    TOKENS_FILE
+    BACKUP_CLOUD_UPLOAD
+    DROPBOX_BACKUP_DIR
+    DROPBOX_BACKUP_TIMEOUT
+    BACKUP_ENCRYPTION_KEY_FILE
+    BACKUP_ENCRYPTION_PASSPHRASE
+)
+
+for name in "${ENV_OVERRIDE_NAMES[@]}"; do
+    if [[ -v "${name}" ]]; then
+        ENV_OVERRIDES["${name}"]="${!name}"
+    fi
+done
+
+set -a
+# shellcheck disable=SC1090
+source "${ENV_FILE}"
+set +a
+
+for name in "${!ENV_OVERRIDES[@]}"; do
+    printf -v "${name}" '%s' "${ENV_OVERRIDES[${name}]}"
+    export "${name}"
+done
+
 VENV_ROOT="${VENV_ROOT:-${PROJECT_ROOT}/venv}"
 PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
 
@@ -26,7 +69,6 @@ LOG_DIR="${LOG_DIR:-${PROJECT_ROOT}/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/backup_db.log}"
 RETENTION_WEEKS="${RETENTION_WEEKS:-8}"
 
-ENV_FILE="${ENV_FILE:-${PROJECT_ROOT}/.env}"
 TOKENS_FILE="${TOKENS_FILE:-${HOME}/.config/pete_eebot/.withings_tokens.json}"
 
 BACKUP_CLOUD_UPLOAD="${BACKUP_CLOUD_UPLOAD:-0}"
@@ -54,20 +96,10 @@ trap 'on_error $? $LINENO' ERR
 
 log "Starting backup routine using BACKUP_ROOT=${BACKUP_ROOT}."
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-    log "ERROR: Environment file not found at ${ENV_FILE}."
-    exit 1
-fi
-
 if ! command -v pg_dump >/dev/null 2>&1; then
     log "ERROR: pg_dump is not available on PATH."
     exit 1
 fi
-
-set -a
-# shellcheck disable=SC1090
-source "${ENV_FILE}"
-set +a
 
 DATABASE_URL="${DATABASE_URL:-}"
 POSTGRES_USER="${POSTGRES_USER:-}"
