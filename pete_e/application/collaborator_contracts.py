@@ -41,6 +41,7 @@ class ExportContract(Protocol):
         start_date: date,
         force_overwrite: bool,
         validation_decision: Any | None = None,
+        daily_adjustment: Any | None = None,
     ) -> None: ...
 
 

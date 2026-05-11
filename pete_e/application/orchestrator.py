@@ -45,8 +45,8 @@ from pete_e.application.workflows.daily_sync import DailyAutomationResult
 from pete_e.application.workflows.weekly_calibration import WeeklyCalibrationResult
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
+from pete_e.domain.morning_coach import build_morning_training_adjustment
 from pete_e.domain.narrative_builder import NarrativeBuilder, build_daily_narrative
-from pete_e.domain.running_planner import assess_morning_run_adjustment
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import Container, get_container
@@ -369,7 +369,7 @@ class Orchestrator:
             raise ApplicationError(message) from exc
 
         action_date = date.today() if target_date is None else target
-        guidance = self._build_morning_run_guidance(
+        guidance = self._build_morning_training_guidance(
             report_date=target,
             action_date=action_date,
         )
@@ -398,13 +398,13 @@ class Orchestrator:
             log_utils.error(f"Telegram send failed: {exc}")
             return False
 
-    def _build_morning_run_guidance(
+    def _build_morning_training_guidance(
         self,
         *,
         report_date: date,
         action_date: date,
     ) -> str | None:
-        """Return run-specific back-off advice for the morning report."""
+        """Return session-specific coaching advice for the morning report."""
 
         dal = getattr(self, "dal", None)
         if dal is None:
@@ -432,18 +432,131 @@ class Orchestrator:
             log_utils.warn(f"Failed to load recent running workouts: {exc}")
             recent_runs = []
 
-        plan_rows = list(self._load_plan_for_day(action_date))
-        planned_names = self._extract_running_plan_names(plan_rows)
+        export_context = self._resolve_daily_export_context(action_date)
+        plan_rows = self._load_daily_plan_rows(action_date, export_context=export_context)
 
-        adjustment = assess_morning_run_adjustment(
+        adjustment = build_morning_training_adjustment(
             health_metrics=historical_rows,
             recent_runs=recent_runs,
             action_date=action_date,
-            planned_session_names=planned_names,
+            plan_rows=plan_rows,
         )
-        if adjustment is None or not adjustment.should_backoff:
+        if adjustment is None or not adjustment.message:
             return None
-        return adjustment.message
+
+        message = adjustment.message
+        if adjustment.should_adjust and adjustment.wger_adjustment is not None:
+            status = self._export_daily_wger_adjustment(
+                export_context=export_context,
+                adjustment=adjustment,
+            )
+            if status == "updated":
+                message = f"{message} Wger has been updated for today's session."
+            elif status == "unavailable":
+                message = f"{message} Wger update unavailable; apply this manually today."
+            else:
+                message = f"{message} Wger update failed; apply this manually today."
+        return message
+
+    def _load_daily_plan_rows(
+        self,
+        action_date: date,
+        *,
+        export_context: Dict[str, Any] | None,
+    ) -> List[Dict[str, Any]]:
+        """Load rich plan rows for today, falling back to the lightweight day view."""
+
+        if export_context is not None:
+            loader = getattr(self.dal, "get_plan_week_rows", None)
+            if callable(loader):
+                try:
+                    rows = list(
+                        loader(
+                            export_context["plan_id"],
+                            export_context["week_number"],
+                        )
+                        or []
+                    )
+                except Exception as exc:  # pragma: no cover - defensive guard
+                    log_utils.warn(f"Failed to load rich plan rows for morning coaching: {exc}")
+                else:
+                    day_number = action_date.isoweekday()
+                    day_rows = [
+                        row
+                        for row in rows
+                        if self._coerce_positive_int(row.get("day_of_week")) == day_number
+                    ]
+                    if day_rows:
+                        return day_rows
+
+        return list(self._load_plan_for_day(action_date))
+
+    def _resolve_daily_export_context(self, action_date: date) -> Dict[str, Any] | None:
+        """Resolve active plan details needed to refresh the current wger week."""
+
+        loader = getattr(self.dal, "get_active_plan", None)
+        if not callable(loader):
+            return None
+        try:
+            active_plan = loader()
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.warn(f"Failed to resolve active plan for morning coaching: {exc}")
+            return None
+        if not active_plan:
+            return None
+
+        plan_id = active_plan.get("id") or active_plan.get("plan_id")
+        plan_start = self._coerce_date(active_plan.get("start_date"))
+        if not plan_id or plan_start is None:
+            return None
+
+        week_number = self._plan_week_index(plan_start, action_date)
+        if week_number is None:
+            return None
+        plan_weeks = self._coerce_positive_int(active_plan.get("weeks"))
+        if plan_weeks is not None and week_number > plan_weeks:
+            return None
+
+        return {
+            "plan_id": int(plan_id),
+            "week_number": week_number,
+            "week_start": plan_start + timedelta(days=(week_number - 1) * 7),
+        }
+
+    def _export_daily_wger_adjustment(
+        self,
+        *,
+        export_context: Dict[str, Any] | None,
+        adjustment: Any,
+    ) -> str:
+        """Push today's scoped readiness adjustment into the current wger week."""
+
+        if export_context is None:
+            return "unavailable"
+        wger_adjustment = getattr(adjustment, "wger_adjustment", None)
+        validation_decision = getattr(adjustment, "validation_decision", None)
+        if wger_adjustment is None or validation_decision is None:
+            return "unavailable"
+
+        try:
+            self.export_service.export_plan_week(
+                plan_id=export_context["plan_id"],
+                week_number=export_context["week_number"],
+                start_date=export_context["week_start"],
+                force_overwrite=True,
+                validation_decision=validation_decision,
+                daily_adjustment=wger_adjustment,
+            )
+        except TypeError as exc:
+            log_utils.warn(
+                "Morning Wger update could not be applied because the export service "
+                f"does not support daily adjustments: {exc}"
+            )
+            return "unavailable"
+        except Exception as exc:  # pragma: no cover - external API guard
+            log_utils.warn(f"Morning Wger update failed: {exc}")
+            return "failed"
+        return "updated"
 
     # ------------------------------------------------------------------
     # Internal helpers
