@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Pete-Eebot deployment script.
+#
+# Expected production layout:
+#   /home/ricwheatley/pete-eebot
+#     .env
+#     deploy.log
+#     venv/
+#     app/        # git checkout for this repository
+
+PROJECT_ROOT="${PROJECT_ROOT:-/home/ricwheatley/pete-eebot}"
+APP_ROOT="${APP_ROOT:-${PROJECT_ROOT}/app}"
+VENV_ROOT="${VENV_ROOT:-${PROJECT_ROOT}/venv}"
+PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
+SERVICE_NAME="${SERVICE_NAME:-peteeebot.service}"
+LOGFILE="${LOGFILE:-${PROJECT_ROOT}/deploy.log}"
+SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-0}"
+
+mkdir -p "$(dirname "${LOGFILE}")"
+exec > >(tee -a "${LOGFILE}") 2>&1
+
+log() {
+    printf '%s\n' "$*"
+}
+
+fail() {
+    log "ERROR: $*"
+    exit 1
+}
+
+notify_telegram() {
+    local message="$1"
+    local sender="${APP_ROOT}/scripts/send_telegram_message.py"
+
+    if [[ -x "${PYTHON_BIN}" && -f "${sender}" ]]; then
+        "${PYTHON_BIN}" "${sender}" "${message}" || log "WARNING: Telegram notification failed."
+    else
+        log "WARNING: Telegram notification skipped; sender or Python venv is unavailable."
+    fi
+}
+
+on_error() {
+    local exit_code=$?
+    local line_no=${BASH_LINENO[0]:-unknown}
+
+    log "ERROR: Deploy failed at line ${line_no} with exit code ${exit_code}."
+    notify_telegram "Deploy failed on $(hostname): line ${line_no}, exit ${exit_code}."
+    exit "${exit_code}"
+}
+
+trap on_error ERR
+
+log "---- Deploy run at $(date -Is) ----"
+
+[[ -d "${APP_ROOT}/.git" ]] || fail "Git repository not found at ${APP_ROOT}"
+[[ -x "${PYTHON_BIN}" ]] || fail "Python venv not found at ${PYTHON_BIN}"
+[[ -f "${VENV_ROOT}/bin/activate" ]] || fail "Virtual environment activation script not found at ${VENV_ROOT}/bin/activate"
+[[ -f "${PROJECT_ROOT}/.env" ]] || fail ".env not found at ${PROJECT_ROOT}/.env"
+
+cd "${APP_ROOT}"
+if [[ "${SKIP_GIT_UPDATE}" == "1" ]]; then
+    log "Skipping git update because SKIP_GIT_UPDATE=1."
+else
+    log "Pulling latest code from ${APP_ROOT}..."
+    git fetch --all --prune
+    git reset --hard origin/main
+    git clean -fdx
+fi
+
+COMMIT_INFO="$(git log -1 --pretty=format:'%s (%an)')"
+
+log "Activating virtual environment..."
+# shellcheck source=/dev/null
+source "${VENV_ROOT}/bin/activate"
+
+log "Installing application from ${APP_ROOT}..."
+"${PYTHON_BIN}" -m pip install -e "${APP_ROOT}"
+
+log "Restarting ${SERVICE_NAME}..."
+sudo /bin/systemctl restart "${SERVICE_NAME}"
+
+log "Writing and activating cron jobs..."
+"${PYTHON_BIN}" -m pete_e.infrastructure.cron_manager --write --activate --summary
+
+log "Sending Telegram notification..."
+notify_telegram "Deploy successful: ${COMMIT_INFO} is now live."
+
+log "Deploy completed successfully at $(date -Is)"
