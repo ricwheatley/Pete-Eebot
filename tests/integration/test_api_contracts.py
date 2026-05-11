@@ -35,6 +35,12 @@ if "fastapi" not in sys.modules:
 
             return decorator
 
+        def patch(self, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
         def include_router(self, *args, **kwargs):
             return None
 
@@ -75,6 +81,9 @@ class _StubNutritionService:
             "duplicate": False,
             "warnings": [],
         }
+
+    def update_log(self, log_id: int, payload):
+        return {"id": log_id, "protein_g": 10, "carbs_g": 20, "fat_g": 5, "alcohol_g": payload.get("alcohol_g", 0), "estimated_total_calories": payload.get("estimated_total_calories"), "calories_est": payload.get("estimated_total_calories", 165), "duplicate": False, "warnings": []}
 
     def daily_summary(self, date: str):
         return {
@@ -144,3 +153,18 @@ def test_nutrition_daily_summary_contract(monkeypatch):
 
     assert payload["date"] == "2026-05-05"
     assert payload["meals_logged"] == 4
+
+
+def test_nutrition_patch_contract(monkeypatch):
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+
+    payload = nutrition.update_nutrition_log(
+        log_id=6,
+        request=nutrition.Request({}),
+        payload={"alcohol_g": 18, "estimated_total_calories": 150},
+        x_api_key="test-key",
+    )
+
+    assert payload["id"] == 6
+    assert payload["calories_est"] == 150
