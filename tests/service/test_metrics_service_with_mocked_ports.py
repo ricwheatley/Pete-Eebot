@@ -75,6 +75,8 @@ class CoachDal:
                 "protein_g": 120,
                 "carbs_g": 180,
                 "fat_g": 70,
+                "alcohol_g": 15,
+                "fiber_g": 20,
                 "calories_est": 1830,
                 "meals_logged": 3,
             }
@@ -113,5 +115,7 @@ def test_coach_state_exposes_derived_flags_and_context():
     assert payload["summary"]["readiness_state"] in {"green", "amber", "red"}
     assert payload["plan_context"]["current_week_number"] == 2
     assert payload["nutrition"]["data_quality"]["nutrition_data_quality"] == "partial"
+    assert payload["nutrition"]["last_7d"]["avg_alcohol_g"] == 15.0
+    assert payload["nutrition"]["last_7d"]["avg_fiber_g"] == 20.0
     assert payload["goal_state"]["strength"]["training_maxes_kg"] == {"squat": 120}
     """Perform test coach state exposes derived flags and context."""

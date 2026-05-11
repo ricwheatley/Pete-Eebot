@@ -26,6 +26,8 @@ class NutritionDal:
             "protein_g": 100,
             "carbs_g": 150,
             "fat_g": 60,
+            "alcohol_g": 20,
+            "fiber_g": 25,
             "calories_est": 1540,
             "meals_logged": 3,
             "source_breakdown": {"photo_estimate": 3},
@@ -40,6 +42,8 @@ class NutritionDal:
                 "protein_g": 80,
                 "carbs_g": 120,
                 "fat_g": 50,
+                "alcohol_g": None,
+                "fiber_g": None,
                 "calories_est": 1250,
                 "meals_logged": 2,
             },
@@ -48,6 +52,8 @@ class NutritionDal:
                 "protein_g": 100,
                 "carbs_g": 150,
                 "fat_g": 60,
+                "alcohol_g": 20,
+                "fiber_g": 25,
                 "calories_est": 1540,
                 "meals_logged": 3,
             },
@@ -84,8 +90,10 @@ def test_daily_summary_shapes_aggregate_payload():
     payload = NutritionService(NutritionDal(), timezone_name="Europe/London").daily_summary("2026-05-05")
 
     assert payload["date"] == "2026-05-05"
-    assert payload["protein_g"] == 100
+    assert payload["total_protein_g"] == 100
     assert payload["meals_logged"] == 3
+    assert payload["total_alcohol_g"] == 20
+    assert payload["total_fiber_g"] == 25
     assert payload["data_quality"]["nutrition_data_quality"] == "partial"
 
 
@@ -94,5 +102,6 @@ def test_build_nutrition_context_returns_trend_metadata():
 
     assert payload["data_quality"]["nutrition_data_quality"] == "partial"
     assert payload["last_7d"]["logging_days"] == 1
-    assert payload["last_7d"]["calories_est_avg"] == 1540.0
-
+    assert payload["last_7d"]["avg_alcohol_g"] == 20.0
+    assert payload["last_7d"]["avg_fiber_g"] == 25.0
+    assert payload["last_7d"]["avg_estimated_calories"] == 1540.0

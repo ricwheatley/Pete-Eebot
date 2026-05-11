@@ -37,6 +37,9 @@ class NutritionLogRecord:
     protein_g: Decimal
     carbs_g: Decimal
     fat_g: Decimal
+    alcohol_g: Decimal | None
+    fiber_g: Decimal | None
+    estimated_total_calories: Decimal | None
     calories_est: Decimal
     source: str
     context: str | None
@@ -55,6 +58,9 @@ class NutritionLogRecord:
             "protein_g": self.protein_g,
             "carbs_g": self.carbs_g,
             "fat_g": self.fat_g,
+            "alcohol_g": self.alcohol_g,
+            "fiber_g": self.fiber_g,
+            "estimated_total_calories": self.estimated_total_calories,
             "calories_est": self.calories_est,
             "source": self.source,
             "context": self.context,
@@ -80,10 +86,17 @@ def build_nutrition_log_record(
     protein = _macro_decimal(payload.get("protein_g"), "protein_g")
     carbs = _macro_decimal(payload.get("carbs_g"), "carbs_g")
     fat = _macro_decimal(payload.get("fat_g"), "fat_g")
+    alcohol = _optional_macro_decimal(payload.get("alcohol_g"), "alcohol_g")
+    fiber = _optional_macro_decimal(payload.get("fiber_g"), "fiber_g")
+    estimated_total_calories = _optional_calorie_decimal(
+        payload.get("estimated_total_calories"), "estimated_total_calories"
+    )
     if protein == 0 and carbs == 0 and fat == 0:
         raise NutritionValidationError("At least one macro value must be greater than zero.")
 
-    calories = _estimate_calories(protein_g=protein, carbs_g=carbs, fat_g=fat)
+    calories = estimated_total_calories or _estimate_calories(
+        protein_g=protein, carbs_g=carbs, fat_g=fat, alcohol_g=alcohol
+    )
     if calories > _MAX_CALORIES:
         raise NutritionValidationError("Estimated calories exceed the per-entry safety limit.")
 
@@ -116,6 +129,9 @@ def build_nutrition_log_record(
         protein_g=protein,
         carbs_g=carbs,
         fat_g=fat,
+        alcohol_g=alcohol,
+        fiber_g=fiber,
+        estimated_total_calories=estimated_total_calories,
         calories_est=calories,
         source=source,
         context=context,
@@ -150,9 +166,33 @@ def _macro_decimal(value: Any, field: str) -> Decimal:
     return decimal.quantize(_GRAM_QUANT, rounding=ROUND_HALF_UP)
 
 
-def _estimate_calories(*, protein_g: Decimal, carbs_g: Decimal, fat_g: Decimal) -> Decimal:
+def _estimate_calories(*, protein_g: Decimal, carbs_g: Decimal, fat_g: Decimal, alcohol_g: Decimal | None) -> Decimal:
     calories = protein_g * Decimal("4") + carbs_g * Decimal("4") + fat_g * Decimal("9")
+    if alcohol_g is not None:
+        calories += alcohol_g * Decimal("7")
     return calories.quantize(_CALORIE_QUANT, rounding=ROUND_HALF_UP)
+
+
+def _optional_macro_decimal(value: Any, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    return _macro_decimal(value, field)
+
+
+def _optional_calorie_decimal(value: Any, field: str) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        decimal = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise NutritionValidationError(f"{field} must be a number.") from exc
+    if not decimal.is_finite():
+        raise NutritionValidationError(f"{field} must be a finite number.")
+    if decimal < 0:
+        raise NutritionValidationError(f"{field} cannot be negative.")
+    if decimal > _MAX_CALORIES:
+        raise NutritionValidationError(f"{field} exceeds the per-entry safety limit.")
+    return decimal.quantize(_CALORIE_QUANT, rounding=ROUND_HALF_UP)
 
 
 def _parse_timestamp(value: Any, *, tz: ZoneInfo, now: datetime | None) -> datetime:

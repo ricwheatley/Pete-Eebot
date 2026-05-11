@@ -79,10 +79,12 @@ class _StubNutritionService:
     def daily_summary(self, date: str):
         return {
             "date": date,
-            "protein_g": 145,
-            "carbs_g": 210,
-            "fat_g": 65,
-            "calories_est": 2005,
+            "total_protein_g": 145,
+            "total_carbs_g": 210,
+            "total_fat_g": 65,
+            "total_alcohol_g": 12,
+            "total_fiber_g": 18,
+            "total_estimated_calories": 2005,
             "meals_logged": 4,
         }
 
