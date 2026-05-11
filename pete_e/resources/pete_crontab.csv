@@ -14,8 +14,7 @@ check disk space,*/15 * * * *,df -h >> /var/log/pete_eebot/disk_usage.log 2>&1,t
 check memory usage,*/15 * * * *,free -h >> /var/log/pete_eebot/memory_usage.log 2>&1,true
 check cpu load,*/15 * * * *,"top -b -n1 | head -n 10 >> /var/log/pete_eebot/cpu_load.log 2>&1",true
 clear temp files,0 1 * * *,rm -rf /tmp/* >> /var/log/pete_eebot/clear_temp.log 2>&1,true
-heartbeat check,*/10 * * * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.heartbeat_check >> /var/log/pete_eebot/pete_history.log 2>&1",true
-monitor services,*/5 * * * *,"/bin/systemctl is-active --quiet peteeebot.service || (sudo /bin/systemctl restart peteeebot.service && echo ""$(date): peteeebot.service was down and has been restarted"" >> /var/log/pete_eebot/service_monitor.log)",true
+heartbeat check,*/5 * * * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.heartbeat_check >> /var/log/pete_eebot/pete_history.log 2>&1",true
 cleanup old logs,30 2 1 * *,find /var/log/pete_eebot/ -type f -name "*.log" -mtime +30 -exec rm {} \; >> /var/log/pete_eebot/log_cleanup.log 2>&1,true
 sync at startup,@reboot,"sleep 300 && cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1",true
 # End of file

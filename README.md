@@ -172,12 +172,55 @@ The root `deploy.sh` should stay small and stable: it pulls `/app` from GitHub, 
 
 ---
 
+## Backup and Restore
+
+The weekly backup job writes local artifacts outside the Git checkout:
+
+```text
+/home/ricwheatley/pete-eebot/backups/postgres/latest.dump
+/home/ricwheatley/pete-eebot/backups/secrets/.env.latest
+/home/ricwheatley/pete-eebot/backups/secrets/.withings_tokens.json.latest
+```
+
+That keeps backups away from `git clean -fdx` during deploys. Optional Dropbox upload can be enabled with:
+
+```bash
+BACKUP_CLOUD_UPLOAD=1
+DROPBOX_BACKUP_DIR=/Pete-Eebot Backups
+BACKUP_ENCRYPTION_KEY_FILE=/home/ricwheatley/pete-eebot/.backup_key
+```
+
+The Dropbox app must have write permission for backup upload. Cloud artifacts are encrypted with OpenSSL before upload; keep the key file or passphrase in a password manager because it is required for restore.
+
+Decrypt a cloud backup before restore with the same key file:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 \
+  -in postgres_latest.enc \
+  -out latest.dump \
+  -pass file:/path/to/backup-key
+```
+
+To restore onto a fresh Pi, clone the repo back into `/home/ricwheatley/pete-eebot/app`, restore `.env` and the Withings token file from backup, then restore Postgres:
+
+```bash
+cd /home/ricwheatley/pete-eebot/app
+set -a; . /home/ricwheatley/pete-eebot/.env; set +a
+export PGPASSWORD="$POSTGRES_PASSWORD"
+pg_restore -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
+  -d "$POSTGRES_DB" --clean --if-exists --no-owner \
+  /home/ricwheatley/pete-eebot/backups/postgres/latest.dump
+```
+
+---
+
 ## Reliability and Recovery
 
 - **Apple sync stagnation detection** alerts when no fresh Apple exports are processed for the configured stale window.
 - **Withings reauth guidance** surfaces token refresh failures and points to reauthorization flow.
 - **Structured log rotation** prevents unbounded local log growth.
-- **Backup helper** (`scripts/backup_db.sh`) supports weekly dumps and secret copy rotation.
+- **Backup helper** (`scripts/backup_db.sh`) supports weekly local dumps, secret copy rotation, and encrypted Dropbox upload.
+- **Heartbeat recovery** checks the systemd service every five minutes, restarts it when needed, logs the event, and sends Telegram alerts.
 
 ---
 

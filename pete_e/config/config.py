@@ -91,6 +91,29 @@ class Settings(BaseSettings):
     DROPBOX_APP_KEY: str
     DROPBOX_APP_SECRET: str
     DROPBOX_REFRESH_TOKEN: str
+    DROPBOX_BACKUP_DIR: str = "/Pete-Eebot Backups"
+    DROPBOX_BACKUP_TIMEOUT: float = 60.0
+
+    # --- DUCKDNS ---
+    DUCKDNS_DOMAIN: str | None = None
+    DUCKDNS_TOKEN: SecretStr | None = None
+
+    # --- BACKUPS ---
+    BACKUP_ROOT: Path | None = None
+    DB_BACKUP_DIR: Path | None = None
+    SECRETS_BACKUP_DIR: Path | None = None
+    CLOUD_STAGING_DIR: Path | None = None
+    BACKUP_CLOUD_UPLOAD: bool = False
+    BACKUP_ENCRYPTION_KEY_FILE: Path | None = None
+    BACKUP_ENCRYPTION_PASSPHRASE: SecretStr | None = None
+    RETENTION_WEEKS: int = 8
+
+    # --- SERVICE WATCHDOG ---
+    PETEEEBOT_SERVICE_NAME: str = "peteeebot.service"
+    PETEEEBOT_RESTART_TIMEOUT_SECONDS: float = 60.0
+    PETEEEBOT_SERVICE_MONITOR_LOG: Path = Path("/var/log/pete_eebot/service_monitor.log")
+    SYSTEMCTL_BIN: str = "/bin/systemctl"
+    SUDO_BIN: str = "sudo"
 
     # --- API KEYS (from environment) ---
     PETEEEBOT_API_KEY: str | None = None

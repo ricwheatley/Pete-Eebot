@@ -84,3 +84,27 @@ def test_log_path_fallback_notice_is_consumed_once(
     assert settings.consume_log_path_notice() == "fallback notice"
     assert settings.consume_log_path_notice() is None
     """Perform test log path fallback notice is consumed once."""
+
+
+def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: dict) -> None:
+    settings = Settings(
+        **base_settings_data,
+        DUCKDNS_DOMAIN="example-domain",
+        DUCKDNS_TOKEN="duckdns-token",
+        BACKUP_CLOUD_UPLOAD=True,
+        DROPBOX_BACKUP_DIR="/Pete-Eebot Backups",
+        BACKUP_ENCRYPTION_KEY_FILE="/home/pi/.backup_key",
+        PETEEEBOT_RESTART_TIMEOUT_SECONDS=30,
+    )
+
+    assert settings.DUCKDNS_DOMAIN == "example-domain"
+    assert settings.DUCKDNS_TOKEN is not None
+    secret_getter = getattr(settings.DUCKDNS_TOKEN, "get_secret_value", None)
+    secret_value = secret_getter() if callable(secret_getter) else settings.DUCKDNS_TOKEN
+    assert secret_value == "duckdns-token"
+    assert settings.BACKUP_CLOUD_UPLOAD is True
+    assert settings.DROPBOX_BACKUP_DIR == "/Pete-Eebot Backups"
+    assert settings.BACKUP_ENCRYPTION_KEY_FILE is not None
+    assert str(settings.BACKUP_ENCRYPTION_KEY_FILE) == "/home/pi/.backup_key"
+    assert settings.PETEEEBOT_RESTART_TIMEOUT_SECONDS == 30
+    """Perform test operational cron and backup settings are accepted."""
