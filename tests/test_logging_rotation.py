@@ -1,4 +1,5 @@
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 
 import pytest
@@ -61,3 +62,41 @@ def test_rotating_handler_rollover(tmp_path):
             handler.close()
             base_logger.removeHandler(handler)
     """Perform test rotating handler rollover."""
+
+
+def test_console_handler_is_skipped_for_non_interactive_default(tmp_path, monkeypatch):
+    log_path = tmp_path / "pete_history.log"
+    monkeypatch.delenv("PETE_LOG_TO_CONSOLE", raising=False)
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: False)
+
+    base_logger = logging_setup.configure_logging(log_path=log_path, force=True)
+    try:
+        stream_handlers = [
+            handler
+            for handler in base_logger.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, RotatingFileHandler)
+        ]
+        assert stream_handlers == []
+    finally:
+        logging_setup.reset_logging()
+    """Perform test console handler is skipped for non interactive default."""
+
+
+def test_console_handler_can_be_enabled_explicitly(tmp_path, monkeypatch):
+    log_path = tmp_path / "pete_history.log"
+    monkeypatch.setenv("PETE_LOG_TO_CONSOLE", "true")
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: False)
+
+    base_logger = logging_setup.configure_logging(log_path=log_path, force=True)
+    try:
+        stream_handlers = [
+            handler
+            for handler in base_logger.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, RotatingFileHandler)
+        ]
+        assert len(stream_handlers) == 1
+    finally:
+        logging_setup.reset_logging()
+    """Perform test console handler can be enabled explicitly."""

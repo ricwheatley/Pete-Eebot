@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 import inspect
@@ -56,6 +57,19 @@ def _build_formatter() -> logging.Formatter:
     formatter.converter = time.gmtime
     return formatter
     """Perform build formatter."""
+
+
+def _setting_was_provided(name: str) -> bool:
+    fields_set = getattr(settings, "model_fields_set", set())
+    return name in os.environ or name in fields_set
+
+
+def _should_log_to_console() -> bool:
+    if not _setting_was_provided("PETE_LOG_TO_CONSOLE"):
+        return sys.stderr.isatty()
+
+    log_to_console = get_env("PETE_LOG_TO_CONSOLE", default="false")
+    return str(log_to_console).lower() in ("true", "1", "yes", "on")
 
 
 def configure_logging(
@@ -113,9 +127,10 @@ def configure_logging(
             file=sys.stderr,
         )
 
-    # Only add a stream handler if not explicitly disabled.
-    log_to_console = get_env("PETE_LOG_TO_CONSOLE", default="true")
-    if str(log_to_console).lower() in ("true", "1", "yes", "on"):
+    # Mirror to console by default only for interactive terminals. Cron jobs
+    # already append stdout/stderr to the same history log, so console mirroring
+    # there creates duplicate log lines.
+    if _should_log_to_console():
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
