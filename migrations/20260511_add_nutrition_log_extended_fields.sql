@@ -1,0 +1,4 @@
+ALTER TABLE nutrition_log
+    ADD COLUMN IF NOT EXISTS alcohol_g NUMERIC(7,2) NULL,
+    ADD COLUMN IF NOT EXISTS fiber_g NUMERIC(7,2) NULL,
+    ADD COLUMN IF NOT EXISTS estimated_total_calories NUMERIC(8,2) NULL;

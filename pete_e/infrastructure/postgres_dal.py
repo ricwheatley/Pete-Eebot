@@ -716,6 +716,9 @@ class PostgresDal(PlanRepository):
                     protein_g,
                     carbs_g,
                     fat_g,
+                    alcohol_g,
+                    fiber_g,
+                    estimated_total_calories,
                     calories_est,
                     source,
                     context,
@@ -731,6 +734,9 @@ class PostgresDal(PlanRepository):
                     %(protein_g)s,
                     %(carbs_g)s,
                     %(fat_g)s,
+                    %(alcohol_g)s,
+                    %(fiber_g)s,
+                    %(estimated_total_calories)s,
                     %(calories_est)s,
                     %(source)s,
                     %(context)s,
@@ -784,6 +790,8 @@ class PostgresDal(PlanRepository):
                 COALESCE(SUM(protein_g), 0)::numeric AS protein_g,
                 COALESCE(SUM(carbs_g), 0)::numeric AS carbs_g,
                 COALESCE(SUM(fat_g), 0)::numeric AS fat_g,
+                COALESCE(SUM(alcohol_g), 0)::numeric AS alcohol_g,
+                COALESCE(SUM(fiber_g), 0)::numeric AS fiber_g,
                 COALESCE(SUM(calories_est), 0)::numeric AS calories_est,
                 COUNT(*)::int AS meals_logged,
                 COALESCE(
@@ -829,6 +837,8 @@ class PostgresDal(PlanRepository):
                     SUM(protein_g)::numeric AS protein_g,
                     SUM(carbs_g)::numeric AS carbs_g,
                     SUM(fat_g)::numeric AS fat_g,
+                    SUM(alcohol_g)::numeric AS alcohol_g,
+                    SUM(fiber_g)::numeric AS fiber_g,
                     SUM(calories_est)::numeric AS calories_est,
                     COUNT(*)::int AS meals_logged
                 FROM nutrition_log
@@ -840,6 +850,8 @@ class PostgresDal(PlanRepository):
                 COALESCE(aggregates.protein_g, 0)::numeric AS protein_g,
                 COALESCE(aggregates.carbs_g, 0)::numeric AS carbs_g,
                 COALESCE(aggregates.fat_g, 0)::numeric AS fat_g,
+                COALESCE(aggregates.alcohol_g, 0)::numeric AS alcohol_g,
+                COALESCE(aggregates.fiber_g, 0)::numeric AS fiber_g,
                 COALESCE(aggregates.calories_est, 0)::numeric AS calories_est,
                 COALESCE(aggregates.meals_logged, 0)::int AS meals_logged
             FROM days

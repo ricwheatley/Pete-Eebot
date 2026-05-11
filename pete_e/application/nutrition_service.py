@@ -77,6 +77,9 @@ class NutritionService:
             "protein_g": _json_safe(row.get("protein_g")),
             "carbs_g": _json_safe(row.get("carbs_g")),
             "fat_g": _json_safe(row.get("fat_g")),
+            "alcohol_g": _json_safe(row.get("alcohol_g")),
+            "fiber_g": _json_safe(row.get("fiber_g")),
+            "estimated_total_calories": _json_safe(row.get("estimated_total_calories")),
             "calories_est": _json_safe(row.get("calories_est")),
             "source": row.get("source"),
             "context": row.get("context"),
@@ -98,10 +101,12 @@ def _shape_daily_summary(summary: Mapping[str, Any] | None, *, target_date: date
 
     return {
         "date": target_date.isoformat(),
-        "protein_g": _json_safe(row.get("protein_g") or 0),
-        "carbs_g": _json_safe(row.get("carbs_g") or 0),
-        "fat_g": _json_safe(row.get("fat_g") or 0),
-        "calories_est": _json_safe(row.get("calories_est") or 0),
+        "total_protein_g": _json_safe(row.get("protein_g") or 0),
+        "total_carbs_g": _json_safe(row.get("carbs_g") or 0),
+        "total_fat_g": _json_safe(row.get("fat_g") or 0),
+        "total_alcohol_g": _json_safe(row.get("alcohol_g") or 0),
+        "total_fiber_g": _json_safe(row.get("fiber_g") or 0),
+        "total_estimated_calories": _json_safe(row.get("calories_est") or 0),
         "meals_logged": meals_logged,
         "source_breakdown": _json_safe(source_breakdown),
         "confidence_breakdown": _json_safe(confidence_breakdown),
@@ -198,7 +203,9 @@ def _empty_window_summary() -> dict[str, Any]:
         "protein_g_avg": None,
         "carbs_g_avg": None,
         "fat_g_avg": None,
-        "calories_est_avg": None,
+        "avg_alcohol_g": None,
+        "avg_fiber_g": None,
+        "avg_estimated_calories": None,
     }
 
 
@@ -212,7 +219,9 @@ def _window_summary(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
         "protein_g_avg": _avg(logged_rows, "protein_g"),
         "carbs_g_avg": _avg(logged_rows, "carbs_g"),
         "fat_g_avg": _avg(logged_rows, "fat_g"),
-        "calories_est_avg": _avg(logged_rows, "calories_est"),
+        "avg_alcohol_g": _avg(logged_rows, "alcohol_g"),
+        "avg_fiber_g": _avg(logged_rows, "fiber_g"),
+        "avg_estimated_calories": _avg(logged_rows, "calories_est"),
     }
 
 
@@ -223,4 +232,3 @@ def _avg(rows: list[Mapping[str, Any]], field: str) -> float | None:
         if value is not None:
             values.append(value)
     return (sum(values) / len(values)) if values else None
-
