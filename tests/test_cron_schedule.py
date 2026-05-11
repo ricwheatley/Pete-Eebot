@@ -30,6 +30,9 @@ def test_core_automation_jobs_are_present_and_enabled() -> None:
     assert jobs["weekly plan message"]["enabled"].lower() == "true"
     assert jobs["weekly plan message"]["schedule"] == "30 20 * * 0"
     assert jobs["telegram listener"]["enabled"].lower() == "true"
+    assert jobs["heartbeat check"]["enabled"].lower() == "true"
+    assert jobs["heartbeat check"]["schedule"] == "*/5 * * * *"
+    assert "monitor services" not in jobs
     """Perform test core automation jobs are present and enabled."""
 
 
