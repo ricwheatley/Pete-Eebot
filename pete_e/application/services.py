@@ -13,6 +13,7 @@ from pete_e.application.validation_service import ValidationService
 from pete_e.application.strength_test import StrengthTestService
 from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.entities import Plan, Week
+from pete_e.domain.morning_coach import DailyWgerAdjustment
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.running_planner import RunningGoal
 from pete_e.domain import schedule_rules
@@ -152,6 +153,7 @@ class WgerExportService:
         force_overwrite: bool = False,
         dry_run: bool = False,
         validation_decision: ValidationDecision | None = None,
+        daily_adjustment: DailyWgerAdjustment | None = None,
     ) -> Dict[str, Any]:
         """
         Validates, prepares, and pushes a single training week to wger.
@@ -204,6 +206,7 @@ class WgerExportService:
             week_number=week_number,
             rows=normalized_rows,
             decision=decision,
+            daily_adjustment=daily_adjustment,
         )
 
         if dry_run:
@@ -265,6 +268,8 @@ class WgerExportService:
         self,
         payload: Dict[str, Any],
         decision: ValidationDecision | None,
+        *,
+        only_day_of_week: int | None = None,
     ) -> None:
         """Downgrade run intensity in the exported week when readiness is poor."""
 
@@ -277,6 +282,14 @@ class WgerExportService:
             severity = "mild"
 
         for day in payload.get("days", []):
+            if only_day_of_week is not None:
+                try:
+                    day_of_week = int(day.get("day_of_week"))
+                except (TypeError, ValueError):
+                    day_of_week = None
+                if day_of_week != only_day_of_week:
+                    continue
+
             for entry in day.get("exercises", []):
                 details = entry.get("details")
                 if not isinstance(details, dict):
@@ -297,6 +310,23 @@ class WgerExportService:
                     entry["details"] = replacement
                     entry["comment"] = (
                         f"{original_comment} - backed off for recovery: "
+                        f"{duration} min easy only."
+                    )
+                    entry["entry_comment"] = entry["comment"]
+                    entry["recovery_focused"] = True
+                    continue
+
+                if session_type in {"easy", "recovery"} and severity in {"moderate", "severe"}:
+                    duration = 20 if severity == "severe" else 25
+                    replacement = schedule_rules.easy_run_details(
+                        duration_minutes=duration,
+                        speed_kph=7.8,
+                        min_speed_kph=7.5,
+                        max_speed_kph=8.0,
+                    )
+                    entry["details"] = replacement
+                    entry["comment"] = (
+                        f"{original_comment} - capped for recovery: "
                         f"{duration} min easy only."
                     )
                     entry["entry_comment"] = entry["comment"]
@@ -356,13 +386,122 @@ class WgerExportService:
         week_number: int,
         rows: List[Dict[str, Any]],
         decision: ValidationDecision | None,
+        daily_adjustment: DailyWgerAdjustment | None = None,
     ) -> None:
         is_test_week = any(bool(row.get("is_test")) for row in rows)
         self._annotate_week_payload(payload, week_number, is_test=is_test_week)
         if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
             self._expand_stretch_routines_for_export(payload)
-        self._apply_running_backoff_to_payload(payload, decision)
+        if daily_adjustment is None or daily_adjustment.adjust_runs:
+            self._apply_running_backoff_to_payload(
+                payload,
+                decision,
+                only_day_of_week=daily_adjustment.day_of_week if daily_adjustment else None,
+            )
+        self._apply_daily_strength_adjustment_to_payload(payload, daily_adjustment)
         self._annotate_adjustments_from_trace(payload=payload, plan_id=plan_id, week_number=week_number)
+
+    def _apply_daily_strength_adjustment_to_payload(
+        self,
+        payload: Dict[str, Any],
+        adjustment: DailyWgerAdjustment | None,
+    ) -> None:
+        """Apply today's readiness reduction to strength entries before wger export."""
+
+        if adjustment is None or not adjustment.adjust_strength:
+            return
+
+        for day in payload.get("days", []):
+            try:
+                day_of_week = int(day.get("day_of_week"))
+            except (TypeError, ValueError):
+                continue
+            if day_of_week != adjustment.day_of_week:
+                continue
+
+            for entry in day.get("exercises", []):
+                if self._is_non_strength_payload_entry(entry):
+                    continue
+
+                notes: list[str] = []
+                target_weight = self._to_float(entry.get("target_weight_kg"))
+                if target_weight is not None and adjustment.weight_multiplier < 0.999:
+                    adjusted_weight = self._round_weight(target_weight * adjustment.weight_multiplier)
+                    if abs(adjusted_weight - target_weight) >= 0.01:
+                        entry["target_weight_kg"] = adjusted_weight
+                        notes.append(
+                            f"{self._format_weight(target_weight)} -> {self._format_weight(adjusted_weight)}"
+                        )
+
+                sets = self._to_int(entry.get("sets"))
+                if sets is not None and adjustment.set_multiplier < 0.999:
+                    adjusted_sets = max(1, int(round(sets * adjustment.set_multiplier)))
+                    if adjusted_sets < sets:
+                        entry["sets"] = adjusted_sets
+                        notes.append(f"sets {sets} -> {adjusted_sets}")
+
+                if adjustment.rir_increment:
+                    current_rir = self._to_float(entry.get("rir")) or 0.0
+                    entry["rir"] = round(current_rir + adjustment.rir_increment, 1)
+                    notes.append(f"RIR +{adjustment.rir_increment}")
+
+                if not notes:
+                    notes.append("keep submaximal")
+
+                entry["recovery_focused"] = True
+                note = f"Today readiness back-off: {', '.join(notes[:3])}"
+                entry["comment"] = self._append_comment(entry.get("comment"), note)
+                entry["entry_comment"] = entry["comment"]
+
+    @staticmethod
+    def _is_non_strength_payload_entry(entry: Dict[str, Any]) -> bool:
+        if bool(entry.get("is_cardio")):
+            return True
+        details = entry.get("details")
+        details_map = details if isinstance(details, dict) else {}
+        session_type = str(details_map.get("session_type") or "").strip().lower()
+        return session_type in schedule_rules.RUN_SESSION_TYPES or session_type == schedule_rules.STRETCH_SESSION_TYPE
+
+    @staticmethod
+    def _append_comment(existing: Any, addition: str) -> str:
+        base = str(existing or "").strip()
+        if not base:
+            return addition
+        if addition in base:
+            return base
+        return f"{base} | {addition}"
+
+    @staticmethod
+    def _to_float(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _to_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return None
+
+    @staticmethod
+    def _round_weight(weight_kg: float) -> float:
+        return round(round(float(weight_kg) * 2) / 2, 2)
+
+    @staticmethod
+    def _format_weight(weight_kg: float) -> str:
+        rounded = round(float(weight_kg), 2)
+        if rounded.is_integer():
+            return f"{int(rounded)}kg"
+        return f"{rounded:.2f}".rstrip("0").rstrip(".") + "kg"
 
     def _annotate_adjustments_from_trace(self, *, payload: Dict[str, Any], plan_id: int, week_number: int) -> None:
         loader = getattr(self.dal, "get_plan_decision_trace", None)

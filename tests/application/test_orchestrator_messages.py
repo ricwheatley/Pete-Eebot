@@ -97,6 +97,30 @@ class _RunGuidanceDal(_SummaryDal):
         ]
         """Perform get recent running workouts."""
 
+    def get_active_plan(self):
+        return {
+            "id": 7,
+            "start_date": self.action_date,
+            "weeks": 4,
+            "is_active": True,
+        }
+        """Perform get active plan."""
+
+    def get_plan_week_rows(self, plan_id: int, week_number: int):
+        return [
+            {
+                "id": 21,
+                "day_of_week": self.action_date.isoweekday(),
+                "exercise_id": 530,
+                "exercise_name": "Quality run",
+                "sets": 1,
+                "reps": 1,
+                "is_cardio": True,
+                "details": {"session_type": "tempo", "display_name": "Quality run"},
+            }
+        ]
+        """Perform get plan week rows."""
+
     def get_plan_for_day(self, target_date: date):
         return ["workout_date", "exercise_name"], [(target_date, "Quality run")]
         """Perform get plan for day."""
@@ -132,12 +156,13 @@ def _orchestrator_for(
     *,
     narrative_builder: _NarrativeBuilder | None = None,
     telegram_client: TelegramClient | None = None,
+    export_service=None,
 ):
     container = build_stub_container(
         dal=dal,
         wger_client=SimpleNamespace(),
         plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 1),
-        export_service=SimpleNamespace(export_plan_week=lambda **_: {}),
+        export_service=export_service or SimpleNamespace(export_plan_week=lambda **_: {}),
         extra_overrides={TelegramClient: lambda _c: telegram_client or _StubTelegram()},
     )
     return Orchestrator(
@@ -169,6 +194,35 @@ def test_get_daily_summary_uses_builder():
 
 
 class _StrengthOnlyRunGuidanceDal(_RunGuidanceDal):
+    def get_plan_week_rows(self, plan_id: int, week_number: int):
+        return [
+            {
+                "id": 11,
+                "day_of_week": self.action_date.isoweekday(),
+                "exercise_id": 184,
+                "exercise_name": "Deadlifts",
+                "sets": 1,
+                "reps": 5,
+                "rir": 1.0,
+                "target_weight_kg": 120.0,
+                "is_cardio": False,
+                "details": {},
+            },
+            {
+                "id": 12,
+                "day_of_week": self.action_date.isoweekday(),
+                "exercise_id": 507,
+                "exercise_name": "Romanian Deadlift",
+                "sets": 3,
+                "reps": 10,
+                "rir": 2.0,
+                "target_weight_kg": 70.0,
+                "is_cardio": False,
+                "details": {},
+            },
+        ]
+        """Perform get plan week rows."""
+
     def get_plan_for_day(self, target_date: date):
         return ["workout_date", "exercise_name"], [
             (target_date, "TRX Rows"),
@@ -178,19 +232,35 @@ class _StrengthOnlyRunGuidanceDal(_RunGuidanceDal):
     """Represent StrengthOnlyRunGuidanceDal."""
 
 
+class _RecordingExportService:
+    def __init__(self):
+        self.calls: list[dict[str, object]] = []
+        """Initialize this object."""
+
+    def export_plan_week(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"status": "exported"}
+        """Perform export plan week."""
+    """Represent RecordingExportService."""
+
+
 def test_get_daily_summary_appends_running_backoff_guidance():
     action_date = date(2024, 6, 10)
     overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
     dal = _RunGuidanceDal(overview_rows, action_date=action_date)
     builder = _NarrativeBuilder()
+    export_service = _RecordingExportService()
 
-    orch = _orchestrator_for(dal, narrative_builder=builder)
+    orch = _orchestrator_for(dal, narrative_builder=builder, export_service=export_service)
 
     result = orch.get_daily_summary(target_date=action_date)
 
     assert result.startswith("rendered-narrative")
-    assert "Run adjustment for Quality run" in result
-    assert "swap today's run" in result
+    assert "Today's run adjustment for Quality run" in result
+    assert "Wger has been updated for today's session" in result
+    assert export_service.calls
+    assert export_service.calls[0]["force_overwrite"] is True
+    assert export_service.calls[0]["daily_adjustment"].adjust_runs is True
     """Perform test get daily summary appends running backoff guidance."""
 
 
@@ -199,14 +269,18 @@ def test_get_daily_summary_does_not_label_strength_plan_as_run_adjustment():
     overview_rows = [{"metric_name": "weight", "yesterday_value": 82.0}]
     dal = _StrengthOnlyRunGuidanceDal(overview_rows, action_date=action_date)
     builder = _NarrativeBuilder()
+    export_service = _RecordingExportService()
 
-    orch = _orchestrator_for(dal, narrative_builder=builder)
+    orch = _orchestrator_for(dal, narrative_builder=builder, export_service=export_service)
 
     result = orch.get_daily_summary(target_date=action_date)
 
     assert result.startswith("rendered-narrative")
-    assert "Run adjustment for" not in result
-    assert "Run adjustment:" in result
+    assert "Run adjustment" not in result
+    assert "Today's gym adjustment for Deadlifts" in result
+    assert "Deadlifts 120 kg -> 114 kg" in result
+    assert "Wger has been updated for today's session" in result
+    assert export_service.calls[0]["daily_adjustment"].adjust_strength is True
     """Perform test get daily summary does not label strength plan as run adjustment."""
 
 

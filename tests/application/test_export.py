@@ -9,6 +9,7 @@ import pytest
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.services import WgerExportService
 from pete_e.domain import schedule_rules
+from pete_e.domain.morning_coach import DailyWgerAdjustment
 from pete_e.domain.validation import (
     BackoffRecommendation,
     ReadinessSummary,
@@ -42,6 +43,33 @@ def _make_validation_decision(explanation: str = "Ready") -> ValidationDecision:
         applied=False,
     )
     """Perform make validation decision."""
+
+
+def _make_backoff_decision() -> ValidationDecision:
+    return ValidationDecision(
+        needs_backoff=True,
+        should_apply=False,
+        explanation="Daily backoff",
+        log_entries=[],
+        readiness=ReadinessSummary(
+            state="backoff",
+            headline="Back off",
+            tip=None,
+            severity="mild",
+            breach_ratio=1.0,
+            reasons=["Sleep below baseline"],
+        ),
+        recommendation=BackoffRecommendation(
+            needs_backoff=True,
+            severity="mild",
+            reasons=["Sleep below baseline"],
+            set_multiplier=0.9,
+            rir_increment=1,
+            metrics={},
+        ),
+        applied=False,
+    )
+    """Perform make backoff decision."""
 
 
 def test_export_plan_week_uses_cached_validation() -> None:
@@ -91,6 +119,141 @@ def test_export_plan_week_uses_cached_validation() -> None:
     assert result["status"] == "exported"
     validation_service.validate_and_adjust_plan.assert_not_called()
     """Perform test export plan week uses cached validation."""
+
+
+def test_export_plan_week_applies_daily_strength_adjustment_only_to_scoped_day() -> None:
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "exercise_name": "Bench Press",
+                    "sets": 5,
+                    "reps": 5,
+                    "rir": 1.0,
+                    "target_weight_kg": 100.0,
+                    "is_cardio": False,
+                    "details": {},
+                },
+                {
+                    "id": 2,
+                    "day_of_week": 2,
+                    "exercise_id": schedule_rules.SQUAT_ID,
+                    "exercise_name": "Squat",
+                    "sets": 5,
+                    "reps": 5,
+                    "rir": 1.0,
+                    "target_weight_kg": 120.0,
+                    "is_cardio": False,
+                    "details": {},
+                },
+            ]
+
+        def get_plan_decision_trace(self, plan_id: int, week_number: int):
+            return []
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        validation_service=SimpleNamespace(validate_and_adjust_plan=lambda _: _make_validation_decision()),
+    )
+
+    result = service.export_plan_week(
+        plan_id=7,
+        week_number=1,
+        start_date=date(2024, 6, 10),
+        dry_run=True,
+        validation_decision=_make_backoff_decision(),
+        daily_adjustment=DailyWgerAdjustment(
+            day_of_week=1,
+            severity="mild",
+            weight_multiplier=0.95,
+            set_multiplier=0.9,
+            rir_increment=1,
+            reasons=("Sleep below baseline",),
+            adjust_strength=True,
+        ),
+    )
+
+    day_one = result["payload"]["days"][0]["exercises"][0]
+    day_two = result["payload"]["days"][1]["exercises"][0]
+    assert day_one["target_weight_kg"] == pytest.approx(95.0)
+    assert day_one["sets"] == 4
+    assert day_one["rir"] == pytest.approx(2.0)
+    assert "Today readiness back-off" in day_one["comment"]
+    assert day_two["target_weight_kg"] == pytest.approx(120.0)
+    assert day_two["sets"] == 5
+    assert day_two["rir"] == pytest.approx(1.0)
+    """Perform test export plan week applies daily strength adjustment only to scoped day."""
+
+
+def test_export_plan_week_scopes_daily_run_backoff_to_today() -> None:
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "exercise_name": "Tempo run",
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "details": {"session_type": "tempo"},
+                },
+                {
+                    "id": 2,
+                    "day_of_week": 2,
+                    "exercise_id": schedule_rules.RUN_CARDIO_EXERCISE_ID,
+                    "exercise_name": "Tempo run",
+                    "sets": 1,
+                    "reps": 1,
+                    "is_cardio": True,
+                    "details": {"session_type": "tempo"},
+                },
+            ]
+
+        def get_plan_decision_trace(self, plan_id: int, week_number: int):
+            return []
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        validation_service=SimpleNamespace(validate_and_adjust_plan=lambda _: _make_validation_decision()),
+    )
+
+    result = service.export_plan_week(
+        plan_id=7,
+        week_number=1,
+        start_date=date(2024, 6, 10),
+        dry_run=True,
+        validation_decision=_make_backoff_decision(),
+        daily_adjustment=DailyWgerAdjustment(
+            day_of_week=1,
+            severity="mild",
+            weight_multiplier=1.0,
+            set_multiplier=1.0,
+            rir_increment=0,
+            reasons=("Sleep below baseline",),
+            adjust_runs=True,
+        ),
+    )
+
+    day_one = result["payload"]["days"][0]["exercises"][0]
+    day_two = result["payload"]["days"][1]["exercises"][0]
+    assert day_one["details"]["session_type"] == "easy"
+    assert day_one["recovery_focused"] is True
+    assert day_two["details"]["session_type"] == "tempo"
+    assert not day_two["recovery_focused"]
+    """Perform test export plan week scopes daily run backoff to today."""
 
 
 def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
