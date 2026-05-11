@@ -25,7 +25,7 @@ done
 cd "${PROJECT_ROOT}"
 
 if [[ $# -eq 0 ]]; then
-    set -- --activate --summary
+    set -- --write --activate --summary
 fi
 
 exec "${PYTHON_BIN}" -m pete_e.infrastructure.cron_manager "$@"
