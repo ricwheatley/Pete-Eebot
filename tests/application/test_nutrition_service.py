@@ -4,13 +4,14 @@ from datetime import date, datetime
 
 import pytest
 
-from pete_e.application.exceptions import BadRequestError
+from pete_e.application.exceptions import BadRequestError, NotFoundError
 from pete_e.application.nutrition_service import NutritionService, build_nutrition_context
 
 
 class NutritionDal:
     def __init__(self):
         self.inserted = []
+        self.refresh_calls = []
 
     def insert_nutrition_log(self, record):
         self.inserted.append(record)
@@ -19,6 +20,39 @@ class NutritionDal:
             **record,
         }
         return row, False
+
+
+    def update_nutrition_log(self, log_id, patch):
+        if log_id == 404:
+            raise KeyError(log_id)
+        row = {
+            "id": log_id,
+            "eaten_at": datetime(2026,5,5,12,30),
+            "local_date": date(2026,5,5),
+            "protein_g": 10,
+            "carbs_g": 20,
+            "fat_g": 5,
+            "alcohol_g": 0,
+            "fiber_g": 1,
+            "estimated_total_calories": None,
+            "calories_est": 165,
+            "source": "photo_estimate",
+            "context": None,
+            "confidence": "medium",
+            "meal_label": None,
+            "notes": None,
+            "client_event_id": None,
+            "previous_local_date": date(2026,5,5),
+        }
+        row.update(patch)
+        if row.get("estimated_total_calories") is not None:
+            row["calories_est"] = row["estimated_total_calories"]
+        elif any(k in patch for k in ("protein_g","carbs_g","fat_g","alcohol_g")):
+            row["calories_est"] = (row["protein_g"]*4)+(row["carbs_g"]*4)+(row["fat_g"]*9)+(row["alcohol_g"]*7)
+        return row
+
+    def refresh_daily_summary_range(self, *dates):
+        self.refresh_calls.append(dates)
 
     def get_nutrition_daily_summary(self, target_date):
         return {
@@ -105,3 +139,32 @@ def test_build_nutrition_context_returns_trend_metadata():
     assert payload["last_7d"]["avg_alcohol_g"] == 20.0
     assert payload["last_7d"]["avg_fiber_g"] == 25.0
     assert payload["last_7d"]["avg_estimated_calories"] == 1540.0
+
+
+def test_update_log_partial_preserves_untouched_and_refreshes_aggregates():
+    dal = NutritionDal()
+    payload = NutritionService(dal, timezone_name="Europe/London").update_log(6, {"alcohol_g": 18, "estimated_total_calories": 150})
+    assert payload["alcohol_g"] == 18
+    assert payload["estimated_total_calories"] == 150
+    assert payload["protein_g"] == 10
+    assert payload["calories_est"] == 150
+    assert dal.refresh_calls
+
+
+def test_update_log_recomputes_calories_when_estimate_missing():
+    payload = NutritionService(NutritionDal(), timezone_name="Europe/London").update_log(6, {"alcohol_g": 10})
+    assert payload["calories_est"] == 235
+
+
+def test_update_log_rejects_invalid_numeric_values():
+    service = NutritionService(NutritionDal(), timezone_name="Europe/London")
+    with pytest.raises(BadRequestError):
+        service.update_log(6, {"alcohol_g": -1})
+
+
+def test_update_log_invalid_id_and_not_found():
+    service = NutritionService(NutritionDal(), timezone_name="Europe/London")
+    with pytest.raises(BadRequestError):
+        service.update_log(0, {"alcohol_g": 1})
+    with pytest.raises(NotFoundError):
+        service.update_log(404, {"alcohol_g": 1})

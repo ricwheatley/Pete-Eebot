@@ -1,0 +1,2 @@
+ALTER TABLE nutrition_log
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NULL;

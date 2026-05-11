@@ -30,6 +30,22 @@ def log_macros(
         raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
+@router.patch("/nutrition/log-macros/{log_id}")
+def update_nutrition_log(
+    log_id: int,
+    request: Request,
+    payload: dict[str, Any] | None = None,
+    x_api_key: str = Header(None),
+):
+    validate_api_key(request, x_api_key)
+    try:
+        return get_nutrition_service().update_log(log_id, payload or {})
+    except ApplicationError as exc:
+        _raise_http(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
 @router.get("/nutrition/daily-summary")
 def nutrition_daily_summary(
     request: Request,

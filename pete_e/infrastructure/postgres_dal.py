@@ -776,6 +776,59 @@ class PostgresDal(PlanRepository):
         duplicate = bool(payload.pop("duplicate", False))
         return payload, duplicate
 
+
+
+    def update_nutrition_log(self, log_id: int, patch: Dict[str, Any]) -> Dict[str, Any]:
+        if not patch:
+            with self._get_cursor() as cur:
+                cur.execute("SELECT * FROM nutrition_log WHERE id = %s", (log_id,))
+                row = cur.fetchone()
+            if not row:
+                raise KeyError(log_id)
+            payload = dict(row)
+            payload["previous_local_date"] = payload.get("local_date")
+            return payload
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute("SELECT * FROM nutrition_log WHERE id = %s FOR UPDATE", (log_id,))
+                existing = cur.fetchone()
+                if not existing:
+                    raise KeyError(log_id)
+                existing = dict(existing)
+
+                values = dict(existing)
+                values.update(patch)
+                calories = values.get("estimated_total_calories")
+                if calories is None:
+                    calories = (values["protein_g"] * 4) + (values["carbs_g"] * 4) + (values["fat_g"] * 9)
+                    if values.get("alcohol_g") is not None:
+                        calories += values["alcohol_g"] * 7
+                values["calories_est"] = calories
+
+                set_fields = [
+                    "protein_g","carbs_g","fat_g","alcohol_g","fiber_g","estimated_total_calories",
+                    "calories_est","source","context","confidence","meal_label","notes","eaten_at","local_date"
+                ]
+                set_sql = ", ".join(f"{field} = %({field})s" for field in set_fields)
+                values["id"] = log_id
+                cur.execute(
+                    f"UPDATE nutrition_log SET {set_sql}, updated_at = now() WHERE id = %(id)s RETURNING *",
+                    values,
+                )
+                updated = dict(cur.fetchone())
+                updated["previous_local_date"] = existing.get("local_date")
+                return updated
+
+    def refresh_daily_summary_range(self, *dates: date | None) -> None:
+        valid_dates = sorted({d for d in dates if d is not None})
+        if not valid_dates:
+            return
+        start_date = valid_dates[0]
+        end_date = valid_dates[-1]
+        with self._get_cursor() as cur:
+            cur.execute("SELECT sp_refresh_daily_summary(%s, %s);", (start_date, end_date))
+
     def get_nutrition_daily_summary(self, target_date: date) -> Dict[str, Any]:
         """Return aggregate nutrition totals for one local date."""
 
