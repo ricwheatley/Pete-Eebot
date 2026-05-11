@@ -78,6 +78,66 @@ class TestPostgresDal(unittest.TestCase):
         self.assertEqual(values[0][0], 7614618991)
         """Perform test save withings measure groups."""
 
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_insert_nutrition_log_returns_inserted_row(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchone.return_value = {
+            "id": 1,
+            "protein_g": 40,
+            "duplicate": False,
+        }
+
+        dal = PostgresDal()
+        row, duplicate = dal.insert_nutrition_log(
+            {
+                "client_event_id": "evt-1",
+                "dedupe_fingerprint": "abc",
+                "eaten_at": "2026-05-05T12:30:00Z",
+                "local_date": date(2026, 5, 5),
+                "protein_g": 40,
+                "carbs_g": 65,
+                "fat_g": 18,
+                "calories_est": 582,
+                "source": "photo_estimate",
+                "context": "post_run",
+                "confidence": "medium",
+                "meal_label": None,
+                "notes": None,
+                "raw_payload_json": {"protein_g": 40},
+            }
+        )
+
+        self.assertFalse(duplicate)
+        self.assertEqual(row["id"], 1)
+        sql_text = mock_cur.execute.call_args.args[0]
+        self.assertIn("INSERT INTO nutrition_log", sql_text)
+        self.assertIn("ON CONFLICT DO NOTHING", sql_text)
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_nutrition_daily_summary_queries_log_table(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchone.return_value = {"meals_logged": 0}
+
+        dal = PostgresDal()
+        result = dal.get_nutrition_daily_summary(date(2026, 5, 5))
+
+        self.assertEqual(result["meals_logged"], 0)
+        sql_text = mock_cur.execute.call_args.args[0]
+        self.assertIn("FROM nutrition_log", sql_text)
+        self.assertEqual(mock_cur.execute.call_args.args[1], (date(2026, 5, 5), date(2026, 5, 5)))
+
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_historical_data(self, mock_get_pool):

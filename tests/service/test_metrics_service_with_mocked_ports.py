@@ -68,6 +68,19 @@ class CoachDal:
         ]
         """Perform get recent strength workouts."""
 
+    def get_nutrition_daily_summaries(self, start_date, end_date):
+        return [
+            {
+                "date": end_date,
+                "protein_g": 120,
+                "carbs_g": 180,
+                "fat_g": 70,
+                "calories_est": 1830,
+                "meals_logged": 3,
+            }
+        ]
+        """Perform get nutrition daily summaries."""
+
     def get_active_plan(self):
         return {"id": 10, "start_date": date(2024, 1, 1), "weeks": 4, "is_active": True}
         """Perform get active plan."""
@@ -99,5 +112,6 @@ def test_coach_state_exposes_derived_flags_and_context():
     assert payload["derived"]["strength_load_7d_kg"] == 7000.0
     assert payload["summary"]["readiness_state"] in {"green", "amber", "red"}
     assert payload["plan_context"]["current_week_number"] == 2
+    assert payload["nutrition"]["data_quality"]["nutrition_data_quality"] == "partial"
     assert payload["goal_state"]["strength"]["training_maxes_kg"] == {"squat": 120}
     """Perform test coach state exposes derived flags and context."""
