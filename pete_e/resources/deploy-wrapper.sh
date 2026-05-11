@@ -36,5 +36,6 @@ exec env \
     APP_ROOT="${APP_ROOT}" \
     VENV_ROOT="${VENV_ROOT}" \
     LOGFILE="${LOGFILE}" \
+    DEPLOY_LOG_ATTACHED=1 \
     SKIP_GIT_UPDATE=1 \
     bash "${TRACKED_DEPLOY}"

@@ -19,7 +19,9 @@ LOGFILE="${LOGFILE:-${PROJECT_ROOT}/deploy.log}"
 SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-0}"
 
 mkdir -p "$(dirname "${LOGFILE}")"
-exec > >(tee -a "${LOGFILE}") 2>&1
+if [[ "${DEPLOY_LOG_ATTACHED:-0}" != "1" ]]; then
+    exec > >(tee -a "${LOGFILE}") 2>&1
+fi
 
 log() {
     printf '%s\n' "$*"
@@ -38,6 +40,16 @@ notify_telegram() {
         "${PYTHON_BIN}" "${sender}" "${message}" || log "WARNING: Telegram notification failed."
     else
         log "WARNING: Telegram notification skipped; sender or Python venv is unavailable."
+    fi
+}
+
+restart_service() {
+    local timeout_seconds="${SYSTEMCTL_RESTART_TIMEOUT_SECONDS:-60}"
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${timeout_seconds}s" sudo -n /bin/systemctl restart "${SERVICE_NAME}"
+    else
+        sudo -n /bin/systemctl restart "${SERVICE_NAME}"
     fi
 }
 
@@ -78,13 +90,13 @@ source "${VENV_ROOT}/bin/activate"
 log "Installing application from ${APP_ROOT}..."
 "${PYTHON_BIN}" -m pip install -e "${APP_ROOT}"
 
-log "Restarting ${SERVICE_NAME}..."
-sudo /bin/systemctl restart "${SERVICE_NAME}"
-
 log "Writing and activating cron jobs..."
 "${PYTHON_BIN}" -m pete_e.infrastructure.cron_manager --write --activate --summary
 
-log "Sending Telegram notification..."
-notify_telegram "Deploy successful: ${COMMIT_INFO} is now live."
+log "Sending Telegram notification before service restart..."
+notify_telegram "Deploy installed on $(hostname): ${COMMIT_INFO}. Restarting ${SERVICE_NAME} now."
+
+log "Restarting ${SERVICE_NAME}..."
+restart_service
 
 log "Deploy completed successfully at $(date -Is)"
