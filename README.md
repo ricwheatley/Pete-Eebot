@@ -8,7 +8,7 @@ Pete-Eebot is a Python application that syncs Apple Health exports (via Dropbox)
 
 ## Why Pete-Eebot
 
-Most fitness tooling answers *"what happened?"* Pete-Eebot focuses on *"what should I do next?"*
+Most fitness tooling answers *"what happened?"* Pete-Eebot focuses on *"what should I do next?"* 
 
 - **Unifies fragmented data** from Withings, Apple Health, and wger.
 - **Automates daily + weekly coaching routines** for consistency.
