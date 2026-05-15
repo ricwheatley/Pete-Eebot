@@ -1,9 +1,11 @@
 """Domain configuration registry decoupled from infrastructure settings."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional
+
+from pete_e.domain.planner_flags import PlannerFeatureFlags
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,7 @@ class DomainSettings:
     baseline_days: int = 28
     cycle_days: int = 28
     phrases_path: Optional[Path] = None
+    planner_feature_flags: PlannerFeatureFlags = field(default_factory=PlannerFeatureFlags)
 
 
 _SETTINGS = DomainSettings()

@@ -32,6 +32,9 @@ class Settings:
             "USER_DATE_OF_BIRTH": date(1990, 1, 1),
             "USER_HEIGHT_CM": 175,
             "USER_GOAL_WEIGHT_KG": 75.0,
+            "USER_TIMEZONE": "Europe/London",
+            "PETEEEBOT_DEFAULT_PROFILE_SLUG": "default",
+            "PETEEEBOT_DEFAULT_PROFILE_NAME": None,
             "TELEGRAM_TOKEN": "telegram-token",
             "TELEGRAM_CHAT_ID": "chat-id",
             "WITHINGS_CLIENT_ID": "withings-client-id",
@@ -60,8 +63,14 @@ class Settings:
             "GLOBAL_BACKOFF_FACTOR": 0.90,
             "CYCLE_DAYS": 28,
             "PETE_LOG_LEVEL": "INFO",
+            "PETE_LOG_FORMAT": "json",
             "PETE_LOG_TO_CONSOLE": True,
+            "PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS": 10,
+            "PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS": 60.0,
+            "PETEEEBOT_SYNC_TIMEOUT_SECONDS": 300.0,
+            "PETEEEBOT_PROCESS_TIMEOUT_SECONDS": 900.0,
             "WGER_EXPAND_STRETCH_ROUTINES": False,
+            "PETEEEBOT_PLANNER_FEATURE_FLAGS": "",
         }
         defaults.update(overrides)
 

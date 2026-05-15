@@ -20,18 +20,30 @@ _LEVEL_MAP: Dict[str, int] = {
 _SENSITIVE_KEYS = {
     "password", "secret", "token", "api_key", "authorization", "auth", "cookie", "session",
 }
+_SAFE_IDENTITY_KEYS = {
+    "auth_scheme",
+    "session_id",
+    "request_id",
+    "correlation_id",
+    "job_id",
+    "user_id",
+    "username",
+    "roles",
+}
 
 
 def _safe_value(key: str, value: Any) -> Any:
     lowered = key.lower()
+    if lowered in _SAFE_IDENTITY_KEYS:
+        return value
     if lowered in _SENSITIVE_KEYS or any(marker in lowered for marker in _SENSITIVE_KEYS):
         return "[REDACTED]"
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     if isinstance(value, (list, tuple, set)):
-        return f"<{type(value).__name__} size={len(value)}>"
+        return [_safe_value(key, item) for item in list(value)[:25]]
     if isinstance(value, dict):
-        return f"<dict keys={len(value)}>"
+        return {str(item_key): _safe_value(str(item_key), item_value) for item_key, item_value in value.items()}
     return repr(value)
 
 
@@ -48,13 +60,30 @@ def log_checkpoint(
 
     corr = {k: _safe_value(k, v) for k, v in (correlation or {}).items()}
     summ = {k: _safe_value(k, v) for k, v in (summary or {}).items()}
-    payload = {
-        "checkpoint": checkpoint,
-        "outcome": outcome,
-        "correlation": corr,
-        "summary": summ,
-    }
-    log_message(f"CHECKPOINT {payload}", level=level, tag=tag)
+    log_event(
+        event="checkpoint",
+        message=f"CHECKPOINT {checkpoint} {outcome}",
+        level=level,
+        tag=tag,
+        checkpoint=checkpoint,
+        outcome=outcome,
+        correlation=corr,
+        summary=summ,
+    )
+
+
+def log_event(
+    *,
+    event: str,
+    message: str | None = None,
+    level: str = "INFO",
+    tag: str | None = None,
+    **fields: Any,
+) -> None:
+    """Emit a structured event with redacted, JSON-friendly fields."""
+
+    safe_fields = {key: _safe_value(key, value) for key, value in fields.items()}
+    log_message(message or event, level=level, tag=tag, extra={"event": event, **safe_fields})
 
 
 def log_message(msg: str, level: str = "INFO", tag: str | None = None, **kwargs) -> None:

@@ -1,10 +1,17 @@
-import subprocess
-
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
-from pete_e.api_routes.dependencies import get_plan_service, validate_api_key
+from pete_e.api_routes.dependencies import (
+    DEFAULT_PROCESS_TIMEOUT_SECONDS,
+    audit_command_event,
+    enforce_command_rate_limit,
+    get_plan_service,
+    prepare_job_context,
+    start_guarded_high_risk_process,
+    validate_api_key,
+)
 from pete_e.application.exceptions import ApplicationError
+from pete_e.domain.auth import ROLE_OPERATOR
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
 
@@ -53,7 +60,30 @@ async def run_pete_plan_async(
     weeks: int = Query(1),
     start_date: str = Query(...),
     x_api_key: str = Header(None),
+    timeout: float = Query(DEFAULT_PROCESS_TIMEOUT_SECONDS, ge=30, le=3600),
 ):
-    validate_api_key(request, x_api_key)
-    subprocess.Popen(["pete", "plan", "--weeks", str(weeks), "--start-date", start_date])
-    return {"status": "Started", "weeks": weeks, "start_date": start_date}
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
+    enforce_command_rate_limit(request, "plan")
+    job_id = prepare_job_context(request, "plan")
+    summary = {"weeks": weeks, "start_date": start_date}
+    audit_command_event(request, command="plan", outcome="started", summary=summary)
+    try:
+        start_guarded_high_risk_process(
+            "plan",
+            ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            timeout_seconds=timeout,
+            job_id=job_id,
+        )
+    except Exception as exc:
+        audit_command_event(
+            request,
+            command="plan",
+            outcome="failed",
+            summary={"status_code": getattr(exc, "status_code", 500), "error": str(getattr(exc, "detail", exc))},
+            level="ERROR",
+        )
+        raise
+
+    response = {"status": "Started", **summary}
+    audit_command_event(request, command="plan", outcome="succeeded", summary=response)
+    return response

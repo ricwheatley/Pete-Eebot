@@ -49,10 +49,15 @@ def recent_workouts(
 
 
 @router.get("/coach_state")
-def coach_state(request: Request, date: str = Query(...), x_api_key: str = Header(None)):
+def coach_state(
+    request: Request,
+    date: str = Query(...),
+    profile: str | None = None,
+    x_api_key: str = Header(None),
+):
     validate_api_key(request, x_api_key)
     try:
-        return get_metrics_service().coach_state(date)
+        return get_metrics_service().coach_state(date, profile_slug=profile)
     except ApplicationError:
         raise
     except Exception as exc:
@@ -60,10 +65,16 @@ def coach_state(request: Request, date: str = Query(...), x_api_key: str = Heade
 
 
 @router.get("/goal_state")
-def goal_state(request: Request, x_api_key: str = Header(None)):
+def goal_state(
+    request: Request,
+    profile: str | None = None,
+    x_api_key: str = Header(None),
+):
     validate_api_key(request, x_api_key)
     try:
-        return get_metrics_service().goal_state()
+        return get_metrics_service().goal_state(profile_slug=profile)
+    except ApplicationError:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

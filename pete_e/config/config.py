@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     USER_HEIGHT_CM: int
     USER_GOAL_WEIGHT_KG: float
     USER_TIMEZONE: str = "Europe/London"
+    PETEEEBOT_DEFAULT_PROFILE_SLUG: str = "default"
+    PETEEEBOT_DEFAULT_PROFILE_NAME: str | None = None
 
     # --- API CREDENTIALS (from environment) ---
     TELEGRAM_TOKEN: SecretStr
@@ -118,9 +120,25 @@ class Settings(BaseSettings):
 
     # --- API KEYS (from environment) ---
     PETEEEBOT_API_KEY: str | None = None
+    PETEEEBOT_SESSION_COOKIE_NAME: str = "peteeebot_session"
+    PETEEEBOT_CSRF_COOKIE_NAME: str = "peteeebot_csrf"
+    PETEEEBOT_SESSION_COOKIE_DOMAIN: str | None = None
+    PETEEEBOT_SESSION_COOKIE_SECURE: bool | None = None
+    PETEEEBOT_SESSION_COOKIE_SAMESITE: str = "lax"
+    PETEEEBOT_CORS_ALLOWED_ORIGINS: str = ""
+    PETEEEBOT_ENABLE_HSTS: bool | None = None
+    PETEEEBOT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 5
+    PETEEEBOT_LOGIN_RATE_LIMIT_WINDOW_SECONDS: float = 300.0
+    PETEEEBOT_LOGIN_LOCKOUT_SECONDS: float = 900.0
+    PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS: float = 1.0
     GITHUB_WEBHOOK_SECRET: SecretStr | None = None
     DEPLOY_SCRIPT_PATH: Path | None = None
+    PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS: int = 10
+    PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS: float = 60.0
+    PETEEEBOT_SYNC_TIMEOUT_SECONDS: float = 300.0
+    PETEEEBOT_PROCESS_TIMEOUT_SECONDS: float = 900.0
     PETE_LOG_LEVEL: str = "INFO"
+    PETE_LOG_FORMAT: str = "json"
     PETE_LOG_TO_CONSOLE: bool = True
 
     # --- SANITY CHECK ALERTS ---
@@ -169,6 +187,7 @@ class Settings(BaseSettings):
     WGER_MAX_RETRIES: int = 3
     WGER_BACKOFF_BASE: float = 1.0
     WGER_EXPAND_STRETCH_ROUTINES: bool = False
+    PETEEEBOT_PLANNER_FEATURE_FLAGS: str = ""
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

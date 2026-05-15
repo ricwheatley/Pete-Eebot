@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in - Pete-Eebot</title>
+    <link rel="stylesheet" href="/static/operator_console.css">
+    <script src="/static/operator_console.js" defer></script>
+  </head>
+  <body class="login-shell">
+    <main class="login-panel" aria-labelledby="login-title">
+      <div class="login-brand">
+        <span class="brand-mark">P</span>
+        <div>
+          <p class="eyebrow">Pete-Eebot</p>
+          <h1 id="login-title">Operator sign in</h1>
+        </div>
+      </div>
+      <form class="login-form" data-login-form data-next="{{ next_path }}">
+        <label>
+          <span>Username or email</span>
+          <input name="login" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Password</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p class="form-error" data-form-error hidden></p>
+        <button class="primary-button" type="submit">Sign in</button>
+      </form>
+    </main>
+  </body>
+</html>

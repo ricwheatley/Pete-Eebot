@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import datetime as dt
+import json
 import logging
 import os
 import sys
@@ -17,22 +21,81 @@ LOGGER_NAME = "pete_e.history"
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024  # 5 MB per log file
 DEFAULT_BACKUP_COUNT = 7
 LOG_LEVEL_ENV_VAR = "PETE_LOG_LEVEL"
+LOG_FORMAT_ENV_VAR = "PETE_LOG_FORMAT"
+STRUCTURED_LOG_VERSION = 1
+RESERVED_LOG_RECORD_KEYS = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "message",
+    "module",
+    "msecs",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
 
 _logger: Optional[logging.Logger] = None
 _configured: bool = False
+_log_context: contextvars.ContextVar[dict[str, object]] = contextvars.ContextVar(
+    "pete_log_context",
+    default={},
+)
 
 class TaggedLogger(logging.LoggerAdapter):
     """Logger adapter that injects a tag field for structured Pete logs."""
 
     def process(self, msg, kwargs):
-        # If no 'extra' dict was passed, create one
-        extra = kwargs.get("extra", {})
-        # Insert a default tag if missing
+        extra = dict(current_log_context())
+        extra.update(kwargs.get("extra", {}))
         if "tag" not in extra:
             extra["tag"] = self.extra.get("tag", "GEN")
         kwargs["extra"] = extra
         return msg, kwargs
-        """Perform process."""
+
+
+def current_log_context() -> dict[str, object]:
+    """Return the currently bound structured logging context."""
+
+    return dict(_log_context.get())
+
+
+def bind_log_context(**fields: object) -> contextvars.Token:
+    """Merge fields into the active structured logging context."""
+
+    context = current_log_context()
+    context.update({key: value for key, value in fields.items() if value is not None})
+    return _log_context.set(context)
+
+
+def reset_log_context(token: contextvars.Token) -> None:
+    """Restore a previous logging context token."""
+
+    _log_context.reset(token)
+
+
+@contextlib.contextmanager
+def log_context(**fields: object):
+    """Temporarily bind structured fields to all Pete log records."""
+
+    token = bind_log_context(**fields)
+    try:
+        yield
+    finally:
+        reset_log_context(token)
 
 def _resolve_level(level: Optional[str]) -> int:
     """Translate a textual level into the numeric value logging expects."""
@@ -57,6 +120,65 @@ def _build_formatter() -> logging.Formatter:
     formatter.converter = time.gmtime
     return formatter
     """Perform build formatter."""
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    return repr(value)
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Render log records as one compact JSON object per line."""
+
+    def converter(self, timestamp):  # type: ignore[override]
+        return dt.datetime.fromtimestamp(timestamp, tz=dt.timezone.utc)
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = self.converter(record.created).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        payload: dict[str, object] = {
+            "schema_version": STRUCTURED_LOG_VERSION,
+            "timestamp": timestamp,
+            "level": record.levelname,
+            "logger": record.name,
+            "tag": getattr(record, "tag", "GEN"),
+            "message": record.getMessage(),
+        }
+
+        for key, value in record.__dict__.items():
+            if key in RESERVED_LOG_RECORD_KEYS or key in payload:
+                continue
+            if value is None:
+                continue
+            payload[key] = value
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            payload["stack"] = self.formatStack(record.stack_info)
+
+        return json.dumps(payload, default=_json_default, ensure_ascii=False, separators=(",", ":"))
+
+
+def _build_json_formatter() -> logging.Formatter:
+    return JsonLogFormatter()
+
+
+def _resolve_log_format() -> str:
+    candidate = str(get_env(LOG_FORMAT_ENV_VAR, default="json") or "json").strip().lower()
+    if candidate in {"json", "text"}:
+        return candidate
+    print(
+        f"Pete logger: unknown log format '{candidate}', defaulting to json.",
+        file=sys.stderr,
+    )
+    return "json"
+
+
+def _build_configured_formatter() -> logging.Formatter:
+    if _resolve_log_format() == "text":
+        return _build_formatter()
+    return _build_json_formatter()
 
 
 def _setting_was_provided(name: str) -> bool:
@@ -101,7 +223,7 @@ def configure_logging(
     numeric_level = _resolve_level(level)
     logger.setLevel(numeric_level)
 
-    formatter = _build_formatter()
+    formatter = _build_configured_formatter()
     resolved_path = Path(log_path) if log_path is not None else settings.log_path
     log_path_notice = None
     if log_path is None:

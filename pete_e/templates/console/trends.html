@@ -1,0 +1,48 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="Trend snapshot sections">
+  <article class="panel">
+    <div class="panel-heading">
+      <h2>Readiness</h2>
+      {{ ui.badge(trends_view.summary.readiness_state or "Unknown", "neutral") }}
+    </div>
+    <dl class="stat-list">
+      <div>
+        <dt>Reliability</dt>
+        <dd>{{ trends_view.summary.data_reliability_flag or trends_view.data_quality.reliability_flag or "Unknown" }}</dd>
+      </div>
+      <div>
+        <dt>Underfueling flag</dt>
+        <dd>{{ "Yes" if trends_view.summary.possible_underfueling_flag else "No" }}</dd>
+      </div>
+      <div>
+        <dt>Last data date</dt>
+        <dd>{{ trends_view.data_quality.last_sync_at or "Missing" }}</dd>
+      </div>
+    </dl>
+  </article>
+
+  {% for snapshot in trends_view.snapshots %}
+  <article class="panel metric-card">
+    <span class="metric-label">{{ snapshot.label }}</span>
+    <strong class="metric-value">
+      {{ snapshot.value if snapshot.value is not none else "Missing" }}
+      {% if snapshot.value is not none %}<span>{{ snapshot.unit }}</span>{% endif %}
+    </strong>
+    <span class="metric-comparison">{{ snapshot.comparison }}</span>
+    <span class="metric-delta">
+      {{ snapshot.delta_label }}:
+      {{ snapshot.delta if snapshot.delta is not none else "Unknown" }}
+    </span>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

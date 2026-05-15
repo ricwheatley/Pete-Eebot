@@ -1,0 +1,114 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="System status sections">
+  <article class="panel panel-wide">
+    <div class="panel-heading">
+      <h2>Health Checks</h2>
+      {{ ui.badge("OK" if status_view.health.ok else "Attention", "ok" if status_view.health.ok else "danger") }}
+    </div>
+    {% if status_view.health.error %}
+      {{ ui.empty_state(status_view.health.error) }}
+    {% elif status_view.health.checks %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Check</th>
+            <th scope="col">State</th>
+            <th scope="col">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for check in status_view.health.checks %}
+          <tr>
+            <td>{{ check.name }}</td>
+            <td>{{ ui.badge("OK" if check.ok else "Fail", check.tone) }}</td>
+            <td>{{ check.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ ui.empty_state("No health check results available.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Sync Freshness</h2>
+    <dl class="stat-list">
+      <div>
+        <dt>Last data date</dt>
+        <dd>{{ status_view.sync_freshness.last_sync_at or "Missing" }}</dd>
+      </div>
+      <div>
+        <dt>Stale days</dt>
+        <dd>{{ status_view.sync_freshness.stale_days if status_view.sync_freshness.stale_days is not none else "Unknown" }}</dd>
+      </div>
+      <div>
+        <dt>Reliability</dt>
+        <dd>{{ status_view.sync_freshness.reliability_flag or status_view.sync_freshness.status or "Unknown" }}</dd>
+      </div>
+      <div>
+        <dt>Completeness</dt>
+        <dd>{{ status_view.sync_freshness.completeness_pct if status_view.sync_freshness.completeness_pct is not none else "Unknown" }}{% if status_view.sync_freshness.completeness_pct is not none %}%{% endif %}</dd>
+      </div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <div class="panel-heading">
+      <h2>Last Sync Outcome</h2>
+      {% if status_view.last_sync.status == "observed" %}
+        {{ ui.badge("Success" if status_view.last_sync.success else "Failed", "ok" if status_view.last_sync.success else "danger") }}
+      {% else %}
+        {{ ui.badge(status_view.last_sync.status | title, "neutral") }}
+      {% endif %}
+    </div>
+    {% if status_view.last_sync.message %}
+      {{ ui.empty_state(status_view.last_sync.message) }}
+    {% else %}
+      <dl class="stat-list">
+        <div>
+          <dt>Run</dt>
+          <dd>{{ status_view.last_sync.label or "Unknown" }}</dd>
+        </div>
+        <div>
+          <dt>Attempts</dt>
+          <dd>{{ status_view.last_sync.attempts or "Unknown" }}</dd>
+        </div>
+        <div>
+          <dt>Window</dt>
+          <dd>{{ status_view.last_sync.days or "Unknown" }} day{% if status_view.last_sync.days != 1 %}s{% endif %}</dd>
+        </div>
+      </dl>
+      {% if status_view.last_sync.source_rows %}
+        <table class="data-table compact-table">
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for source in status_view.last_sync.source_rows %}
+            <tr>
+              <td>{{ source.name }}</td>
+              <td>{{ ui.badge(source.status, source.tone) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        {{ ui.empty_state("No source statuses reported.") }}
+      {% endif %}
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

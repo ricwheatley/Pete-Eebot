@@ -19,6 +19,7 @@ from tenacity import (
     wait_random,
 )
 
+from pete_e import observability
 from pete_e.infrastructure import log_utils
 
 if TYPE_CHECKING:
@@ -170,6 +171,9 @@ def _run_with_retry(
         else:
             reason = f"exception: {exception}"
 
+        sources = exception.failed_sources if isinstance(exception, SyncAttemptFailedError) else ["exception"]
+        for source in sources or ["unknown"]:
+            observability.record_job_retry(operation=summary_label, source=str(source))
         log_utils.log_message(
             (
                 f"{label} attempt {retry_state.attempt_number}/{max_attempts} "

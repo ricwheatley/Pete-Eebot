@@ -63,6 +63,8 @@ This separation keeps policy in the domain layer while isolating external depend
 
 ## Quickstart (Recommended: Python venv)
 
+Supported runtime profile today is a native Python virtual environment on a Linux/Raspberry Pi host, with Postgres reachable from the host. `docker-compose.yml` is kept only for local Postgres development (`docker compose up -d db`); Pete-Eebot does not currently ship or support an application container image.
+
 ### 1) Prerequisites
 
 - Python 3.11+

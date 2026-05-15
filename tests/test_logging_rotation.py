@@ -1,4 +1,5 @@
 import logging
+import json
 import sys
 from logging.handlers import RotatingFileHandler
 
@@ -100,3 +101,28 @@ def test_console_handler_can_be_enabled_explicitly(tmp_path, monkeypatch):
     finally:
         logging_setup.reset_logging()
     """Perform test console handler can be enabled explicitly."""
+
+
+def test_json_formatter_emits_structured_context(tmp_path):
+    log_path = tmp_path / "pete_history.log"
+    base_logger = logging_setup.configure_logging(log_path=log_path, force=True)
+    try:
+        with logging_setup.log_context(request_id="req-1", job_id="sync-abc"):
+            logging_setup.get_logger("API").info(
+                "GET /status 200",
+                extra={"event": "http_request", "outcome": "succeeded", "http_status": 200},
+            )
+        for handler in base_logger.handlers:
+            if hasattr(handler, "flush"):
+                handler.flush()
+
+        payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert payload["schema_version"] == logging_setup.STRUCTURED_LOG_VERSION
+        assert payload["tag"] == "API"
+        assert payload["event"] == "http_request"
+        assert payload["outcome"] == "succeeded"
+        assert payload["request_id"] == "req-1"
+        assert payload["job_id"] == "sync-abc"
+        assert payload["http_status"] == 200
+    finally:
+        logging_setup.reset_logging()

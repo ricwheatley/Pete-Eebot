@@ -53,7 +53,7 @@ FastAPI app exists and routers are separated by concern (metrics, plans, nutriti
 
 Auth/security today for API:
 
-- API key required (`PETEEEBOT_API_KEY`) via header or query string.
+- API key required (`PETEEEBOT_API_KEY`) via the `X-API-Key` header. Query-string API-key auth was removed in Phase 1.
 - Webhook signature required (`X-Hub-Signature-256`) with HMAC SHA256.
 - Fails closed when core secrets are unset.
 
@@ -77,7 +77,7 @@ Auth/security today for API:
 ### Security risks (remote exposure)
 
 1. **Single shared API key model** is insufficient for browser-facing multi-session access.
-2. **API key accepted in query params** raises leakage risk through logs/history/referers.
+2. **API key in query params** is rejected after Phase 1 because it raises leakage risk through logs/history/referrers.
 3. **`subprocess.Popen` endpoints** (`run_pete_plan_async`, webhook deploy) can become remote code execution blast-radius multipliers if perimeter controls fail.
 4. No explicit CSRF/session model for browser use.
 5. Secrets remain `.env` and local files; workable for Pi local ops, weaker for internet-facing threat model.
@@ -168,9 +168,9 @@ Auth/security today for API:
 
 ## Deployment
 
-- **Decision:** maintain two supported profiles:
-  - **Profile A (primary):** internet-exposed self-hosted VM/Pi behind reverse proxy + TLS + firewall
-  - **Profile B:** containerized single-instance host with optional managed services
+- **Decision:** maintain one supported production profile now and one future target profile:
+  - **Current supported profile (primary):** native Python virtual environment on an internet-exposed self-hosted VM/Pi behind reverse proxy + TLS + firewall.
+  - **Future target profile:** containerized single-instance host with optional managed services, after a fresh application Dockerfile is designed and validated.
 - **Rationale:** supports immediate public-internet target without over-complicating ops.
 
 ---
@@ -246,7 +246,7 @@ Exit criteria:
 
 - Keep webhook HMAC validation.
 - Enforce HTTPS-only ingress (reverse proxy + cert automation).
-- Remove API key in query string for UI calls.
+- Keep API keys out of query strings for all UI/API calls.
 - Add secure cookie sessions, CSRF protection, same-site policy.
 - Restrict command endpoints behind stronger auth + explicit audit logging.
 
@@ -273,7 +273,7 @@ Exit criteria:
 - Bind FastAPI to localhost only; expose only reverse proxy.
 - Maintain encrypted backup strategy and test restore quarterly.
 
-### Cloud single-instance (future, optional)
+### Cloud single-instance (future, optional; not currently supported)
 
 - Containerized app + managed Postgres.
 - Secret manager instead of plain `.env` where feasible.
@@ -302,7 +302,7 @@ Exit criteria:
 3. Production surface target: **web UI primary**; CLI should be dev/test only.
 4. Secrets boundary: **local/free-first** (no mandatory paid secret manager).
 5. Deploy SLO: **brief maintenance windows acceptable** (no strict zero-downtime requirement).
-6. Legacy Dockerfile: **unused** and can be removed/replaced.
+6. Legacy Dockerfile: **unused** and retired on 2026-05-15; `docker-compose.yml` is currently DB-only.
 
 ---
 

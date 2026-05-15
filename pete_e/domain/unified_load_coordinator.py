@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence
 
 from pete_e.domain import logging as log_utils
+from pete_e.domain.planner_flags import PlannerFeatureFlags
 
 
 class PlanDecisionReasonCode(str, Enum):
@@ -18,6 +19,7 @@ class PlanDecisionReasonCode(str, Enum):
     CANDIDATE_GENERATED = "candidate_generated"
     CANDIDATE_REJECTED = "candidate_rejected"
     CONSTRAINT_APPLIED = "constraint_applied"
+    FEATURE_FLAG_APPLIED = "feature_flag_applied"
     WEEK_FINALIZED = "week_finalized"
 
 
@@ -172,10 +174,17 @@ class PlanDecisionTrace:
 class UnifiedLoadCoordinator:
     """Unified planner load coordinator with deterministic constraint execution."""
 
-    def __init__(self, *, context_assembler: Optional[ContextAssembler] = None, stress_budget_engine: Optional[StressBudgetEngine] = None) -> None:
+    def __init__(
+        self,
+        *,
+        context_assembler: Optional[ContextAssembler] = None,
+        stress_budget_engine: Optional[StressBudgetEngine] = None,
+        feature_flags: PlannerFeatureFlags | None = None,
+    ) -> None:
         self._decision_trace: List[PlanDecisionTrace] = []
         self._context_assembler = context_assembler
         self._stress_budget_engine = stress_budget_engine or StressBudgetEngine()
+        self._feature_flags = feature_flags or PlannerFeatureFlags()
 
     @property
     def decision_trace(self) -> Sequence[PlanDecisionTrace]:
@@ -265,10 +274,24 @@ class UnifiedLoadCoordinator:
             self._apply_long_run_vs_lower_strength_volume,
             self._apply_heavy_strength_vs_run_quality,
             self._apply_bilateral_recovery_backoff,
-            self._apply_hard_session_spacing,
         )
         for fn in ordered_constraints:
             feasible = fn(context, feasible)
+        if self._feature_flags.experimental_relaxed_session_spacing:
+            affected = self._hard_session_spacing_drop_count(feasible)
+            if affected:
+                self._emit_trace(PlanDecisionTrace(
+                    week_number=context.week_number,
+                    stage="feature_flag_experimental_relaxed_session_spacing",
+                    reason_code=PlanDecisionReasonCode.FEATURE_FLAG_APPLIED,
+                    detail="Experimental relaxed spacing kept quality runs near heavy lower-body strength.",
+                    payload={
+                        "flag": "experimental_relaxed_session_spacing",
+                        "affected_sessions": affected,
+                    },
+                ))
+        else:
+            feasible = self._apply_hard_session_spacing(context, feasible)
         self._emit_trace(
             PlanDecisionTrace(
                 week_number=context.week_number,
@@ -366,7 +389,7 @@ class UnifiedLoadCoordinator:
         dropped = 0
         kept: List[Dict[str, Any]] = []
         for session in sessions:
-            if session.get("session_type") == "run" and session.get("quality") in {"high", "moderate"} and float(session.get("stress", 0.0)) >= 5.0 and not session.get("override_spacing"):
+            if self._violates_hard_session_spacing(session, heavy_days):
                 run_day = int(session.get("day_of_week"))
                 if any(abs(run_day - heavy_day) <= 1 for heavy_day in heavy_days):
                     dropped += 1
@@ -381,6 +404,34 @@ class UnifiedLoadCoordinator:
                 payload={"removed_sessions": dropped},
             ))
         return kept
+
+    def _hard_session_spacing_drop_count(self, sessions: Sequence[Dict[str, Any]]) -> int:
+        heavy_days = {
+            int(s.get("day_of_week"))
+            for s in sessions
+            if s.get("session_type") == "strength" and s.get("lift") in {"squat", "deadlift"} and s.get("intensity_tag") == "heavy_top_set"
+        }
+        if not heavy_days:
+            return 0
+        affected = 0
+        for session in sessions:
+            if self._violates_hard_session_spacing(session, heavy_days):
+                run_day = int(session.get("day_of_week"))
+                if any(abs(run_day - heavy_day) <= 1 for heavy_day in heavy_days):
+                    affected += 1
+        return affected
+
+    @staticmethod
+    def _violates_hard_session_spacing(session: Dict[str, Any], heavy_days: set[int]) -> bool:
+        if not heavy_days:
+            return False
+        if session.get("session_type") != "run":
+            return False
+        if session.get("quality") not in {"high", "moderate"}:
+            return False
+        if float(session.get("stress", 0.0)) < 5.0:
+            return False
+        return not session.get("override_spacing")
 
     def finalize_week(
         self,
