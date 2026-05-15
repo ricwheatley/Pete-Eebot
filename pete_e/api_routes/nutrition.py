@@ -11,6 +11,7 @@ from pete_e.api_routes.dependencies import (
     validate_api_key,
 )
 from pete_e.application.exceptions import ApplicationError
+from pete_e.domain.auth import ROLE_OPERATOR
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
 
@@ -25,7 +26,7 @@ def log_macros(
     payload: dict[str, Any] | None = None,
     x_api_key: str = Header(None),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "nutrition_log")
     try:
         return get_nutrition_service().log_macros(payload or {})
@@ -42,7 +43,7 @@ def update_nutrition_log(
     payload: dict[str, Any] | None = None,
     x_api_key: str = Header(None),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "nutrition_update")
     try:
         return get_nutrition_service().update_log(log_id, payload or {})

@@ -8,6 +8,7 @@ import time
 import pytest
 
 from pete_e import api_errors
+from pete_e import api_security
 from pete_e.api_routes import dependencies
 from pete_e.application.exceptions import ValidationError
 from pete_e.application.concurrency_guard import high_risk_operation_guard
@@ -39,6 +40,27 @@ def test_success_responses_receive_correlation_headers_from_middleware() -> None
 
     assert response.headers[api_errors.CORRELATION_ID_HEADER] == "ui-request-123"
     assert response.headers[api_errors.REQUEST_ID_HEADER] == "ui-request-123"
+
+
+def test_security_headers_middleware_applies_baseline_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(api_security, "_hsts_enabled", lambda: True)
+
+    async def _call_next(request):  # noqa: ARG001
+        return SimpleNamespace(headers={})
+
+    response = asyncio.run(api_security.security_headers_middleware(_Request(), _call_next))
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+    assert response.headers["Strict-Transport-Security"].startswith("max-age=")
+
+
+def test_cors_origins_are_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PETEEEBOT_CORS_ALLOWED_ORIGINS", "https://ui.example.com, https://ops.example.com")
+
+    assert api_security.configured_cors_origins() == ["https://ui.example.com", "https://ops.example.com"]
 
 
 def test_error_response_schema_includes_generated_correlation_id() -> None:

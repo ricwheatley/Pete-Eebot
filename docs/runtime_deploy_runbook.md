@@ -231,16 +231,88 @@ Confirm the response includes `X-Correlation-ID` and `X-Request-ID`. Command end
 
 ---
 
-## 7) Stale Commands / Drift Found During Phase 0 Audit
+## 7) Security Operations
 
-### 7.1 Retired container app image
+### 7.1 Browser session hardening
+
+Browser users authenticate with `/auth/login`, receive an HTTP-only session cookie, and must send the readable CSRF cookie value back in `X-CSRF-Token` for state-changing requests. Session cookies should stay secure in production:
+
+```bash
+PETEEEBOT_SESSION_COOKIE_SECURE=true
+PETEEEBOT_SESSION_COOKIE_SAMESITE=lax
+PETEEEBOT_SESSION_COOKIE_DOMAIN=
+```
+
+Failed login attempts are tracked per normalized login and client address inside the API process. Defaults:
+
+```bash
+PETEEEBOT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5
+PETEEEBOT_LOGIN_RATE_LIMIT_WINDOW_SECONDS=300
+PETEEEBOT_LOGIN_LOCKOUT_SECONDS=900
+PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS=1
+```
+
+The first failures return normal authentication errors, immediate retries are backed off with `429`, and repeated failures lock the login/client tuple temporarily with `Retry-After`.
+
+### 7.2 CORS and security headers
+
+CORS is fail-closed by default. Leave `PETEEEBOT_CORS_ALLOWED_ORIGINS` empty for same-origin browser deployment. If the UI is served from a separate origin, set an explicit comma-separated allowlist:
+
+```bash
+PETEEEBOT_CORS_ALLOWED_ORIGINS=https://ops.example.com
+PETEEEBOT_ENABLE_HSTS=true
+```
+
+The API applies baseline response headers: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and production HSTS.
+
+### 7.3 Machine API-key scope
+
+`PETEEEBOT_API_KEY` is for machine actors only, such as private GPT actions, internal automation, and smoke checks. It is accepted only on the explicit machine API route set documented in `docs/api_endpoint_inventory.md`; browser auth endpoints such as `/auth/login`, `/auth/logout`, and `/auth/session` do not accept it.
+
+Browser users should use session cookies and RBAC. Read-only users can read summaries/plans/logs; command endpoints such as `/sync`, `/run_pete_plan_async`, and nutrition writes require an `operator` or `owner` session. Machine API-key calls remain available for the listed machine endpoints and are not treated as browser users.
+
+### 7.4 Machine API-key rotation
+
+Use this procedure whenever the key may have leaked, after changing GPT/action clients, and on a regular maintenance cadence.
+
+1. Generate a new high-entropy key on the host:
+
+```bash
+python - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+```
+
+2. Update `PETEEEBOT_API_KEY` in `/home/ricwheatley/pete-eebot/.env`. Do not commit the value.
+3. Update every machine client that sends `X-API-Key`, including private GPT action configuration, Postman/local smoke-check environments, and trusted automation.
+4. Restart the API service so the new environment is loaded:
+
+```bash
+sudo systemctl restart peteeebot.service
+```
+
+5. Verify the new key and confirm the old key fails:
+
+```bash
+curl -i -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/status?timeout=5"
+curl -i -H "X-API-Key: <old-key>" "http://127.0.0.1:8000/api/v1/status?timeout=5"
+```
+
+The first call should return `200`; the old key should return `401`.
+
+---
+
+## 8) Stale Commands / Drift Found During Phase 0 Audit
+
+### 8.1 Retired container app image
 
 - Removed the legacy app `Dockerfile`.
 - Removed the Compose `app` service that built the stale image and then idled with `tail -f /dev/null`.
 - Kept `docker-compose.yml` as the supported local Postgres helper.
 - If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `requirements.txt`, `pete_e/`, `scripts/`, `init-db/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
 
-### 7.2 Disabled/missing cron scripts
+### 8.2 Disabled/missing cron scripts
 
 The following entries exist in cron CSV but referenced scripts are missing in this repo snapshot:
 
