@@ -58,6 +58,7 @@ if "fastapi" not in sys.modules:
     sys.modules["fastapi.responses"] = responses_module
 
 from pete_e.api_routes import dependencies, metrics, nutrition, plan
+from pete_e import api
 
 
 class _StubMetricsService:
@@ -96,6 +97,45 @@ class _StubNutritionService:
             "total_estimated_calories": 2005,
             "meals_logged": 4,
         }
+
+
+def test_api_v1_mounts_key_read_routes():
+    mounted_routes = {
+        (method, route.path)
+        for route in getattr(api.app, "routes", [])
+        for method in getattr(route, "methods", set())
+    }
+
+    key_read_paths = [
+        "/metrics_overview",
+        "/daily_summary",
+        "/recent_workouts",
+        "/coach_state",
+        "/goal_state",
+        "/user_notes",
+        "/plan_context",
+        "/nutrition/daily-summary",
+        "/plan_for_day",
+        "/plan_for_week",
+        "/plan_decision_trace",
+        "/status",
+        "/logs",
+    ]
+
+    for path in key_read_paths:
+        assert ("GET", f"{api.API_V1_PREFIX}{path}") in mounted_routes
+
+
+def test_legacy_routes_remain_mounted_during_v1_transition():
+    mounted_routes = {
+        (method, route.path)
+        for route in getattr(api.app, "routes", [])
+        for method in getattr(route, "methods", set())
+    }
+
+    assert ("GET", "/metrics_overview") in mounted_routes
+    assert ("GET", "/plan_for_day") in mounted_routes
+    assert ("GET", "/nutrition/daily-summary") in mounted_routes
 
 
 def test_metrics_overview_contract_shape(monkeypatch):

@@ -19,17 +19,48 @@ from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 
 settings = _settings  # Backward-compatible module export for tests/consumers.
-__all__ = ["app", "status", "sync", "settings", "logs", "github_webhook"]
+API_V1_PREFIX = "/api/v1"
+LEGACY_ROUTE_DEPRECATION_NOTE = (
+    "Unversioned API routes remain available for transition only. "
+    "New UI and machine clients should use /api/v1."
+)
+
+ROUTERS = (
+    root_router,
+    metrics_router,
+    nutrition_router,
+    plan_router,
+    status_sync_router,
+    logs_webhooks_router,
+)
+
+__all__ = [
+    "API_V1_PREFIX",
+    "LEGACY_ROUTE_DEPRECATION_NOTE",
+    "ROUTERS",
+    "app",
+    "github_webhook",
+    "include_api_routers",
+    "logs",
+    "settings",
+    "status",
+    "sync",
+]
 
 app = FastAPI(title="Pete-Eebot API")
 
+
+def include_api_routers(api_app: FastAPI) -> None:
+    """Mount both legacy and versioned API routes during the transition."""
+
+    for router in ROUTERS:
+        api_app.include_router(router)
+    for router in ROUTERS:
+        api_app.include_router(router, prefix=API_V1_PREFIX)
+
+
 if hasattr(app, "include_router"):
-    app.include_router(root_router)
-    app.include_router(metrics_router)
-    app.include_router(nutrition_router)
-    app.include_router(plan_router)
-    app.include_router(status_sync_router)
-    app.include_router(logs_webhooks_router)
+    include_api_routers(app)
 
 
 def status(

@@ -65,11 +65,18 @@ if "fastapi" not in sys.modules:
 
     class APIRouter:
         def __init__(self, *args, **kwargs):
-            pass
+            self.routes = []
             """Initialize this object."""
 
         def get(self, *args, **kwargs):
             def decorator(func):
+                self.routes.append(
+                    types.SimpleNamespace(
+                        path=args[0],
+                        methods={"GET"},
+                        endpoint=func,
+                    )
+                )
                 return func
                 """Perform decorator."""
             return decorator
@@ -77,6 +84,13 @@ if "fastapi" not in sys.modules:
 
         def post(self, *args, **kwargs):
             def decorator(func):
+                self.routes.append(
+                    types.SimpleNamespace(
+                        path=args[0],
+                        methods={"POST"},
+                        endpoint=func,
+                    )
+                )
                 return func
                 """Perform decorator."""
             return decorator
@@ -84,12 +98,31 @@ if "fastapi" not in sys.modules:
 
         def patch(self, *args, **kwargs):
             def decorator(func):
+                self.routes.append(
+                    types.SimpleNamespace(
+                        path=args[0],
+                        methods={"PATCH"},
+                        endpoint=func,
+                    )
+                )
                 return func
                 """Perform decorator."""
             return decorator
             """Perform patch."""
 
         def include_router(self, *args, **kwargs):
+            if not args:
+                return None
+            router = args[0]
+            prefix = kwargs.get("prefix", "")
+            for route in getattr(router, "routes", []):
+                self.routes.append(
+                    types.SimpleNamespace(
+                        path=f"{prefix}{route.path}",
+                        methods=set(route.methods),
+                        endpoint=route.endpoint,
+                    )
+                )
             return None
             """Perform include router."""
         """Represent APIRouter."""

@@ -2,6 +2,8 @@
 
 Last audited: 2026-05-15.
 
+Versioning note: each path below is also mounted under `/api/v1` as the preferred API surface. For example, `/metrics_overview` is available as `/api/v1/metrics_overview`. Unversioned routes remain temporarily for backward compatibility and are deprecated from 2026-05-15; see `docs/api_v1_migration_note.md`.
+
 Classification definitions:
 
 - **Read:** returns data or status without mutating application state.
