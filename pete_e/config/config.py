@@ -118,6 +118,11 @@ class Settings(BaseSettings):
 
     # --- API KEYS (from environment) ---
     PETEEEBOT_API_KEY: str | None = None
+    PETEEEBOT_SESSION_COOKIE_NAME: str = "peteeebot_session"
+    PETEEEBOT_CSRF_COOKIE_NAME: str = "peteeebot_csrf"
+    PETEEEBOT_SESSION_COOKIE_DOMAIN: str | None = None
+    PETEEEBOT_SESSION_COOKIE_SECURE: bool | None = None
+    PETEEEBOT_SESSION_COOKIE_SAMESITE: str = "lax"
     GITHUB_WEBHOOK_SECRET: SecretStr | None = None
     DEPLOY_SCRIPT_PATH: Path | None = None
     PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS: int = 10

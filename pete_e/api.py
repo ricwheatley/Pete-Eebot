@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 
 from pete_e.api_routes import (
+    auth_router,
     logs_webhooks_router,
     metrics_router,
     nutrition_router,
@@ -29,6 +30,7 @@ LEGACY_ROUTE_DEPRECATION_NOTE = (
 )
 
 ROUTERS = (
+    auth_router,
     root_router,
     metrics_router,
     nutrition_router,
@@ -42,6 +44,7 @@ __all__ = [
     "LEGACY_ROUTE_DEPRECATION_NOTE",
     "ROUTERS",
     "app",
+    "auth_router",
     "github_webhook",
     "include_api_routers",
     "logs",
