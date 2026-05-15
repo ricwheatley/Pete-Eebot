@@ -1,6 +1,8 @@
 import concurrent.futures
+import hashlib
 import hmac
 import math
+import secrets
 from pathlib import Path
 import subprocess
 import threading
@@ -14,6 +16,7 @@ from pete_e.application.concurrency_guard import OperationInProgress, high_risk_
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.user_service import UserService
 from pete_e.config import get_env, settings
+from pete_e.domain.auth import AuthUser, RoleName, normalize_role
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 
@@ -23,6 +26,8 @@ DEFAULT_COMMAND_RATE_LIMIT_MAX_REQUESTS = int(get_env("PETEEEBOT_COMMAND_RATE_LI
 DEFAULT_COMMAND_RATE_LIMIT_WINDOW_SECONDS = float(get_env("PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS", 60.0))
 DEFAULT_SYNC_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_SYNC_TIMEOUT_SECONDS", 300.0))
 DEFAULT_PROCESS_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_PROCESS_TIMEOUT_SECONDS", 900.0))
+CSRF_HEADER_NAME = "X-CSRF-Token"
+SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
@@ -57,6 +62,139 @@ def configured_api_key() -> str:
     if not configured:
         raise HTTPException(status_code=503, detail="PETEEEBOT_API_KEY is not configured")
     return configured
+
+
+def session_cookie_name() -> str:
+    return str(get_env("PETEEEBOT_SESSION_COOKIE_NAME", "peteeebot_session") or "peteeebot_session")
+
+
+def csrf_cookie_name() -> str:
+    return str(get_env("PETEEEBOT_CSRF_COOKIE_NAME", "peteeebot_csrf") or "peteeebot_csrf")
+
+
+def csrf_header_name() -> str:
+    return CSRF_HEADER_NAME
+
+
+def session_cookie_samesite() -> str:
+    candidate = str(get_env("PETEEEBOT_SESSION_COOKIE_SAMESITE", "lax") or "lax").strip().lower()
+    return candidate if candidate in {"lax", "strict", "none"} else "lax"
+
+
+def session_cookie_secure() -> bool:
+    configured = getattr(settings, "PETEEEBOT_SESSION_COOKIE_SECURE", None)
+    if configured is not None:
+        return bool(configured)
+
+    environment = str(get_env("ENVIRONMENT", "development") or "development").strip().lower()
+    return environment not in {"dev", "development", "local", "test", "testing"}
+
+
+def _cookie_domain() -> str | None:
+    value = get_env("PETEEEBOT_SESSION_COOKIE_DOMAIN", None)
+    candidate = str(value).strip() if value else ""
+    return candidate or None
+
+
+def _request_cookie(request: Request, name: str) -> str | None:
+    cookies = getattr(request, "cookies", None)
+    if isinstance(cookies, dict):
+        value = cookies.get(name)
+        return str(value) if value else None
+
+    headers = getattr(request, "headers", {}) or {}
+    raw_cookie = headers.get("cookie") or headers.get("Cookie") or ""
+    for part in str(raw_cookie).split(";"):
+        cookie_name, separator, value = part.strip().partition("=")
+        if separator and cookie_name == name and value:
+            return value
+    return None
+
+
+def session_token_from_request(request: Request) -> str | None:
+    return _request_cookie(request, session_cookie_name())
+
+
+def _header_value(request: Request, name: str) -> str | None:
+    headers = getattr(request, "headers", {}) or {}
+    if name in headers:
+        return str(headers[name])
+
+    lower_name = name.lower()
+    for key, value in headers.items():
+        if str(key).lower() == lower_name:
+            return str(value)
+    return None
+
+
+def generate_csrf_token(session_token: str) -> str:
+    nonce = secrets.token_urlsafe(32)
+    digest = hmac.new(
+        session_token.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{nonce}.{digest}"
+
+
+def _valid_csrf_token(session_token: str, csrf_token: str) -> bool:
+    nonce, separator, digest = str(csrf_token or "").partition(".")
+    if not separator or not nonce or not digest:
+        return False
+    expected = hmac.new(
+        session_token.encode("utf-8"),
+        nonce.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(digest, expected)
+
+
+def csrf_token_from_request(request: Request) -> str | None:
+    header_token = _header_value(request, CSRF_HEADER_NAME)
+    cookie_token = _request_cookie(request, csrf_cookie_name())
+    if not header_token or not cookie_token:
+        return None
+    if not hmac.compare_digest(str(header_token), str(cookie_token)):
+        return None
+    return str(header_token)
+
+
+def set_session_cookies(response, session_token: str, csrf_token: str) -> None:
+    cookie_kwargs = {
+        "path": "/",
+        "domain": _cookie_domain(),
+        "secure": session_cookie_secure(),
+        "samesite": session_cookie_samesite(),
+    }
+    set_cookie = getattr(response, "set_cookie", None)
+    if not callable(set_cookie):
+        return
+
+    set_cookie(
+        key=session_cookie_name(),
+        value=session_token,
+        httponly=True,
+        **cookie_kwargs,
+    )
+    set_cookie(
+        key=csrf_cookie_name(),
+        value=csrf_token,
+        httponly=False,
+        **cookie_kwargs,
+    )
+
+
+def clear_session_cookies(response) -> None:
+    cookie_kwargs = {
+        "path": "/",
+        "domain": _cookie_domain(),
+        "secure": session_cookie_secure(),
+        "samesite": session_cookie_samesite(),
+    }
+    delete_cookie = getattr(response, "delete_cookie", None)
+    if callable(delete_cookie):
+        delete_cookie(key=session_cookie_name(), httponly=True, **cookie_kwargs)
+        delete_cookie(key=csrf_cookie_name(), httponly=False, **cookie_kwargs)
 
 
 def configured_webhook_secret() -> bytes:
@@ -119,11 +257,85 @@ def get_user_service() -> UserService:
     return _user_service
 
 
+def _request_method(request: Request) -> str:
+    return str(getattr(request, "method", "GET") or "GET").upper()
+
+
+def _mark_authenticated_request(request: Request, *, scheme: str, user: AuthUser | None = None) -> None:
+    state = getattr(request, "state", None)
+    if state is None:
+        return
+    setattr(state, "auth_scheme", scheme)
+    if user is not None:
+        setattr(state, "auth_user", user)
+
+
+def current_user_from_session(request: Request) -> AuthUser | None:
+    token = session_token_from_request(request)
+    if not token:
+        return None
+
+    user = get_user_service().validate_session_token(token)
+    if user is not None:
+        _mark_authenticated_request(request, scheme="session", user=user)
+    return user
+
+
+def enforce_csrf_for_session(request: Request, session_token: str | None = None) -> None:
+    token = session_token or session_token_from_request(request)
+    csrf_token = csrf_token_from_request(request)
+    if not token or not csrf_token:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "csrf_required", "message": "Missing CSRF token"},
+        )
+    if not _valid_csrf_token(token, csrf_token):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "csrf_invalid", "message": "Invalid CSRF token"},
+        )
+
+
+def require_browser_user(request: Request, *, require_csrf: bool = False) -> AuthUser:
+    token = session_token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = get_user_service().validate_session_token(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    if require_csrf:
+        enforce_csrf_for_session(request, token)
+
+    _mark_authenticated_request(request, scheme="session", user=user)
+    return user
+
+
+def require_role(request: Request, role: RoleName | str, *, require_csrf: bool = False) -> AuthUser:
+    user = require_browser_user(request, require_csrf=require_csrf)
+    if not user.has_role(normalize_role(str(role))):
+        raise HTTPException(status_code=403, detail="Insufficient role")
+    return user
+
+
 def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> None:
-    configured_key = configured_api_key()
     key = x_api_key
-    if not key or not hmac.compare_digest(key, configured_key):
+    if key:
+        if hmac.compare_digest(key, configured_api_key()):
+            _mark_authenticated_request(request, scheme="api_key")
+            return
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    token = session_token_from_request(request)
+    if token:
+        user = get_user_service().validate_session_token(token)
+        if user is not None:
+            if _request_method(request) not in SAFE_HTTP_METHODS:
+                enforce_csrf_for_session(request, token)
+            _mark_authenticated_request(request, scheme="session", user=user)
+            return
+
+    raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 def _client_identity(request: Request) -> str:
