@@ -12,6 +12,7 @@ from pete_e.api_routes import (
 )
 from pete_e.api_routes.dependencies import (
     DEFAULT_SYNC_TIMEOUT_SECONDS,
+    audit_command_event,
     enforce_command_rate_limit,
     get_status_service,
     run_guarded_high_risk_operation,
@@ -125,6 +126,7 @@ def sync(
 ):
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
+    audit_command_event(request, command="sync", outcome="started", summary={"days": days, "retries": retries})
     try:
         result = run_guarded_high_risk_operation(
             "sync",
@@ -132,11 +134,18 @@ def sync(
             timeout_seconds=timeout,
         )
     except Exception as exc:
+        audit_command_event(
+            request,
+            command="sync",
+            outcome="failed",
+            summary={"status_code": getattr(exc, "status_code", 500), "error": str(getattr(exc, "detail", exc))},
+            level="ERROR",
+        )
         if isinstance(exc, HTTPException):
             raise
         raise HTTPException(status_code=500, detail=str(exc))
 
-    return {
+    response = {
         "success": result.success,
         "attempts": result.attempts,
         "failed_sources": result.failed_sources,
@@ -145,3 +154,5 @@ def sync(
         "label": result.label,
         "summary": result.summary_line(days=days),
     }
+    audit_command_event(request, command="sync", outcome="succeeded", summary=response)
+    return response
