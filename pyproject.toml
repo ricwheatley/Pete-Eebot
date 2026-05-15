@@ -40,3 +40,9 @@ pete = "pete_e.cli.messenger:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.setuptools.package-data]
+pete_e = [
+    "templates/**/*.html",
+    "static/**/*",
+]

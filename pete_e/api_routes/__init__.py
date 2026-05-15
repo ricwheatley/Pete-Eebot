@@ -5,6 +5,7 @@ from pete_e.api_routes.nutrition import router as nutrition_router
 from pete_e.api_routes.plan import router as plan_router
 from pete_e.api_routes.root import router as root_router
 from pete_e.api_routes.status_sync import router as status_sync_router
+from pete_e.api_routes.web import router as web_router
 
 __all__ = [
     "auth_router",
@@ -14,4 +15,5 @@ __all__ = [
     "plan_router",
     "root_router",
     "status_sync_router",
+    "web_router",
 ]
