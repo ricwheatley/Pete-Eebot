@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
+from typing import Callable
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import fastapi
 from fastapi import HTTPException, Request
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from pete_e.api_routes import dependencies
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user
+from pete_e.application.web_console import WebConsoleReadModel
+from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
+from pete_e.config import settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
 
 try:  # pragma: no cover - exercised when Starlette is installed.
@@ -158,7 +165,32 @@ def _render(template_name: str, **context):
     return HTMLResponse(template.render(**context))
 
 
-def _render_console(request: Request, page_key: str, *, min_role: RoleName = ROLE_READ_ONLY):
+def _console_read_model() -> WebConsoleReadModel:
+    return WebConsoleReadModel(
+        metrics_service=dependencies.get_metrics_service(),
+        nutrition_service=dependencies.get_nutrition_service(),
+        plan_service=dependencies.get_plan_service(),
+        status_service=dependencies.get_status_service(),
+    )
+
+
+def _operator_today() -> date:
+    try:
+        timezone = ZoneInfo(str(getattr(settings, "USER_TIMEZONE", "Europe/London")))
+    except ZoneInfoNotFoundError:
+        return date.today()
+    return datetime.now(timezone).date()
+
+
+def _render_console(
+    request: Request,
+    page_key: str,
+    *,
+    min_role: RoleName = ROLE_READ_ONLY,
+    template_name: str = "console/page.html",
+    context_loader: Callable[[], dict[str, object]] | None = None,
+    **context,
+):
     try:
         user = require_browser_user(request)
     except HTTPException as exc:
@@ -169,15 +201,19 @@ def _render_console(request: Request, page_key: str, *, min_role: RoleName = ROL
     if not _role_visible(user, min_role):
         raise HTTPException(status_code=403, detail="Insufficient role")
 
+    if context_loader is not None:
+        context.update(context_loader())
+
     page = PAGE_CONTENT[page_key]
     return _render(
-        "console/page.html",
+        template_name,
         active_nav=page_key,
         nav_items=visible_nav_items(user),
         page=page,
         request_path=_request_path(request),
         user=user,
         user_display_name=_display_name(user),
+        **context,
     )
 
 
@@ -195,22 +231,44 @@ def console_index(request: Request):
 
 @router.get("/console/status")
 def console_status(request: Request):
-    return _render_console(request, "status")
+    return _render_console(
+        request,
+        "status",
+        template_name="console/status.html",
+        context_loader=lambda: {
+            "status_view": _console_read_model().status(target_date=_operator_today(), timeout=DEFAULT_TIMEOUT_SECONDS)
+        },
+    )
 
 
 @router.get("/console/plan")
 def console_plan(request: Request):
-    return _render_console(request, "plan")
+    return _render_console(
+        request,
+        "plan",
+        template_name="console/plan.html",
+        context_loader=lambda: {"plan_view": _console_read_model().plan(target_date=_operator_today())},
+    )
 
 
 @router.get("/console/trends")
 def console_trends(request: Request):
-    return _render_console(request, "trends")
+    return _render_console(
+        request,
+        "trends",
+        template_name="console/trends.html",
+        context_loader=lambda: {"trends_view": _console_read_model().trends(target_date=_operator_today())},
+    )
 
 
 @router.get("/console/nutrition")
 def console_nutrition(request: Request):
-    return _render_console(request, "nutrition")
+    return _render_console(
+        request,
+        "nutrition",
+        template_name="console/nutrition.html",
+        context_loader=lambda: {"nutrition_view": _console_read_model().nutrition(target_date=_operator_today())},
+    )
 
 
 @router.get("/console/operations")

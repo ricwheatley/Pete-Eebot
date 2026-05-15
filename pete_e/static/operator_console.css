@@ -10,6 +10,10 @@
   --accent-dark: #154f55;
   --focus: #be7b16;
   --danger: #a83232;
+  --danger-bg: #fdecec;
+  --ok: #1f7a4d;
+  --ok-bg: #e7f5ee;
+  --neutral-bg: #eef2f6;
 }
 
 * {
@@ -206,6 +210,157 @@ h2 {
   background: var(--surface);
 }
 
+.panel-wide {
+  grid-column: span 2;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-heading h2 {
+  margin-bottom: 0;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--neutral-bg);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.status-ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+.status-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.data-table th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 8px 0;
+}
+
+.stat-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.stat-list div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.stat-list dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.stat-list dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 700;
+}
+
+.empty-state {
+  margin: 0;
+  color: var(--muted);
+}
+
+.trace-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.trace-list li strong,
+.trace-list li span {
+  display: block;
+}
+
+.trace-list li span {
+  color: var(--muted);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.metric-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.inline-card {
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.metric-label,
+.metric-comparison,
+.metric-delta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.metric-value {
+  font-size: 1.55rem;
+  line-height: 1.1;
+}
+
+.metric-value span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .login-shell {
   display: grid;
   min-height: 100vh;
@@ -289,5 +444,14 @@ h2 {
 
   .content {
     padding: 24px 16px;
+  }
+
+  .panel-wide {
+    grid-column: span 1;
+  }
+
+  .data-table {
+    display: block;
+    overflow-x: auto;
   }
 }
