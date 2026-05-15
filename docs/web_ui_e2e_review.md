@@ -12,7 +12,6 @@ The main review result is: **security posture is materially improved, but the Ph
 
 The highest-priority production gaps are:
 
-- API service startup docs still show binding Uvicorn to `0.0.0.0`, while the target plan calls for localhost-only app binding behind TLS reverse proxy.
 - Browser auth has no documented or callable owner bootstrap path, and no password reset/recovery flow.
 - Several console operations still start raw CLI subprocesses rather than durable, inspectable jobs.
 - The console lacks a Logs page even though incident playbooks refer to console-based log triage.
@@ -47,7 +46,7 @@ The highest-priority production gaps are:
 | Audit trails | Partial | Structured audit logs exist. There is no durable DB audit/job table or console audit view. |
 | Password reset flow | Missing | Required by Phase 2 prompt/plan; no route, CLI, or doc path found. |
 | Admin/user management UI | Missing | `/console/admin` is a placeholder only. |
-| Public-internet deployment binding | Gap | `docs/runtime_deploy_runbook.md` documents `uvicorn ... --host 0.0.0.0`; plan recommends app bound to localhost behind reverse proxy/TLS/firewall. |
+| Public-internet deployment binding | Pass | `docs/runtime_deploy_runbook.md` now documents localhost app binding behind reverse proxy/TLS/firewall, with production readiness gates in `docs/production_readiness_checklist.md`. |
 
 ## Daily Operator Workflow Review
 
@@ -97,7 +96,6 @@ These should move into web only if the operation becomes routine, can be safely 
 
 | Gap | Why it matters | Estimate |
 | --- | --- | --- |
-| Bind API to localhost in production docs and add reverse-proxy/TLS checklist | Current runbook shows direct `0.0.0.0` binding, which conflicts with the public-internet security model. | 0.5-1 day |
 | Add owner bootstrap/recovery procedure | The auth tables exist, but there is no documented or callable way to create the first owner or recover access without ad hoc code/SQL. | 1-2 days |
 | Add a first-class Logs console page | Incident playbooks reference console log triage, but the UI has no Logs page. Operators must call API/CLI manually. | 1-2 days |
 

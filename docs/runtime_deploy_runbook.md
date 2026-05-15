@@ -4,6 +4,10 @@ Last audited: 2026-05-15.
 
 This runbook documents **what currently exists in this repository** for runtime, deploy, migrations, and ops checks.
 
+Before exposing a host to production traffic or making a material production
+change, complete `docs/production_readiness_checklist.md` and record signoff
+with `docs/production_readiness_signoff_template.md`.
+
 ## Supported Deployment Profiles
 
 Supported today:
@@ -47,8 +51,9 @@ Not supported today:
 - Webhook deploy trigger endpoint: `POST /webhook` in `pete_e/api_routes/logs_webhooks.py`.
 - Structured JSON log schema and request/job triage workflow: `docs/logging_observability.md`.
 - Webhook executes configured deploy script path with `subprocess.Popen([DEPLOY_SCRIPT_PATH])` after HMAC validation.
-- Operator guide startup command currently documented as:
-  - `uvicorn pete_e.api:app --host 0.0.0.0 --port 8000`
+- Production startup should bind the app to localhost/private ingress behind
+  the TLS reverse proxy:
+  - `uvicorn pete_e.api:app --host 127.0.0.1 --port 8000`
 
 ### 1.4 DB migration path
 
@@ -119,7 +124,7 @@ Assumed host layout used by deploy scripts:
 ```bash
 cd /home/ricwheatley/pete-eebot/app
 set -a && . /home/ricwheatley/pete-eebot/.env && set +a
-/home/ricwheatley/pete-eebot/venv/bin/uvicorn pete_e.api:app --host 0.0.0.0 --port 8000
+/home/ricwheatley/pete-eebot/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
 ```
 
 ### 3.2 Cron schedule install/refresh
