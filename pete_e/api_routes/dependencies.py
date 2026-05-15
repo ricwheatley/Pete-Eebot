@@ -89,7 +89,7 @@ def get_status_service() -> StatusService:
 
 def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> None:
     configured_key = configured_api_key()
-    key = x_api_key or request.query_params.get("api_key")
+    key = x_api_key
     if not key or not hmac.compare_digest(key, configured_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
