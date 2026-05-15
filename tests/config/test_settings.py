@@ -107,4 +107,14 @@ def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: d
     assert settings.BACKUP_ENCRYPTION_KEY_FILE is not None
     assert str(settings.BACKUP_ENCRYPTION_KEY_FILE) == "/home/pi/.backup_key"
     assert settings.PETEEEBOT_RESTART_TIMEOUT_SECONDS == 30
+    assert settings.PETEEEBOT_PLANNER_FEATURE_FLAGS == ""
     """Perform test operational cron and backup settings are accepted."""
+
+
+def test_planner_feature_flag_setting_is_accepted(base_settings_data: dict) -> None:
+    settings = Settings(
+        **base_settings_data,
+        PETEEEBOT_PLANNER_FEATURE_FLAGS="experimental_relaxed_session_spacing=true",
+    )
+
+    assert settings.PETEEEBOT_PLANNER_FEATURE_FLAGS == "experimental_relaxed_session_spacing=true"

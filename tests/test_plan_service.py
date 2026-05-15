@@ -107,3 +107,102 @@ def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> Non
     assert saved_payload["weeks"] == 4
     assert len(saved_payload["plan_weeks"]) == 4
     """Perform test plan service persists full plan."""
+
+
+def test_plan_service_audits_planner_feature_flag_effects(monkeypatch: pytest.MonkeyPatch) -> None:
+    audit_events: list[dict[str, Any]] = []
+
+    class StubDal(StubPlanRepository):
+        def get_latest_training_maxes(self) -> Dict[str, float]:
+            return _training_maxes()
+
+        def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
+            return 99
+
+    service = PlanService(dal=StubDal())
+
+    def stub_create_plan(*args, **kwargs) -> Dict[str, Any]:
+        return {
+            "start_date": date(2024, 1, 1),
+            "weeks": 1,
+            "plan_weeks": [{"week_number": 1, "workouts": []}],
+            "metadata": {
+                "planner_feature_flag_overrides": {
+                    "experimental_relaxed_session_spacing": True,
+                },
+                "planner_feature_flag_effects": [
+                    {
+                        "week_number": 1,
+                        "stage": "feature_flag_experimental_relaxed_session_spacing",
+                        "detail": "Experimental relaxed spacing kept quality runs near heavy lower-body strength.",
+                        "payload": {
+                            "flag": "experimental_relaxed_session_spacing",
+                            "affected_sessions": 1,
+                        },
+                    }
+                ],
+                "plan_decision_trace": {},
+            },
+        }
+
+    monkeypatch.setattr(service.factory, "create_unified_531_block_plan", stub_create_plan)
+    monkeypatch.setattr(
+        "pete_e.application.services.log_utils.log_checkpoint",
+        lambda **event: audit_events.append(event),
+    )
+
+    assert service.create_and_persist_531_block(start_date=date(2024, 1, 1)) == 99
+    assert audit_events == [
+        {
+            "checkpoint": "planner_feature_flags",
+            "outcome": "applied",
+            "correlation": {
+                "workflow": "plan_generation",
+                "start_date": "2024-01-01",
+            },
+            "summary": {
+                "flags": {
+                    "experimental_relaxed_session_spacing": True,
+                },
+                "effects": [
+                    {
+                        "week_number": 1,
+                        "stage": "feature_flag_experimental_relaxed_session_spacing",
+                        "detail": "Experimental relaxed spacing kept quality runs near heavy lower-body strength.",
+                        "payload": {
+                            "flag": "experimental_relaxed_session_spacing",
+                            "affected_sessions": 1,
+                        },
+                    }
+                ],
+            },
+            "tag": "AUDIT",
+        }
+    ]
+
+
+def test_plan_service_does_not_audit_inactive_planner_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    audit_events: list[dict[str, Any]] = []
+
+    service = PlanService(dal=StubPlanRepository())
+
+    def stub_create_plan(*args, **kwargs) -> Dict[str, Any]:
+        return {
+            "start_date": date(2024, 1, 1),
+            "weeks": 1,
+            "plan_weeks": [{"week_number": 1, "workouts": []}],
+            "metadata": {
+                "planner_feature_flag_overrides": {},
+                "planner_feature_flag_effects": [],
+                "plan_decision_trace": {},
+            },
+        }
+
+    monkeypatch.setattr(service.factory, "create_unified_531_block_plan", stub_create_plan)
+    monkeypatch.setattr(
+        "pete_e.application.services.log_utils.log_checkpoint",
+        lambda **event: audit_events.append(event),
+    )
+
+    service.create_and_persist_531_block(start_date=date(2024, 1, 1))
+    assert audit_events == []

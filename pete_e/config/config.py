@@ -185,6 +185,7 @@ class Settings(BaseSettings):
     WGER_MAX_RETRIES: int = 3
     WGER_BACKOFF_BASE: float = 1.0
     WGER_EXPAND_STRETCH_ROUTINES: bool = False
+    PETEEEBOT_PLANNER_FEATURE_FLAGS: str = ""
 
     @model_validator(mode="after")
     def build_database_url(self) -> "Settings":

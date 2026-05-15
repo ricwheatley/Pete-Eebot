@@ -9,6 +9,8 @@ import random
 from datetime import date
 from typing import Dict, Any, List, Optional
 
+from pete_e.domain.configuration import get_settings
+from pete_e.domain.planner_flags import PlannerFeatureFlags
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.running_planner import RunningGoal, RunningPlanner
@@ -17,14 +19,24 @@ from pete_e.domain.unified_load_coordinator import GlobalTrainingContext, Sessio
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
 
-    def __init__(self, plan_repository: PlanRepository):
+    def __init__(
+        self,
+        plan_repository: PlanRepository,
+        *,
+        planner_feature_flags: PlannerFeatureFlags | None = None,
+    ):
         """
         Requires a PlanRepository to fetch necessary data like assistance pools
         and core exercise IDs.
         """
         self.plan_repository = plan_repository
+        self.planner_feature_flags = (
+            planner_feature_flags
+            if planner_feature_flags is not None
+            else get_settings().planner_feature_flags
+        )
         self.running_planner = RunningPlanner()
-        self.unified_load_coordinator = UnifiedLoadCoordinator()
+        self.unified_load_coordinator = UnifiedLoadCoordinator(feature_flags=self.planner_feature_flags)
 
     def _pick_random(self, items: List[Any], k: int) -> List[Any]:
         """Safely picks k random items from a list."""
@@ -200,6 +212,9 @@ class PlanFactory:
             "plan_weeks": plan_weeks,
             "metadata": {
                 "planner_version": "unified_load_coordinator_v1",
+                "planner_feature_flags": self.planner_feature_flags.to_dict(),
+                "planner_feature_flag_overrides": self.planner_feature_flags.non_default_flags(),
+                "planner_feature_flag_effects": self._feature_flag_effects(trace_by_week),
                 "plan_decision_trace": trace_by_week,
             },
         }
@@ -259,6 +274,19 @@ class PlanFactory:
 
     def _workout_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         return dict(candidate.get("workout") or {})
+
+    def _feature_flag_effects(self, trace_by_week: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        effects: List[Dict[str, Any]] = []
+        for week, traces in trace_by_week.items():
+            for item in traces:
+                if item.get("reason_code") == "feature_flag_applied":
+                    effects.append({
+                        "week_number": int(week),
+                        "stage": item.get("stage"),
+                        "detail": item.get("detail"),
+                        "payload": item.get("payload") or {},
+                    })
+        return effects
 
     def create_strength_test_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:
         """Builds a 1-week AMRAP strength test plan. Returns a structured dictionary."""

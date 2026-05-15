@@ -316,6 +316,17 @@ curl -i -H "X-API-Key: <old-key>" "http://127.0.0.1:8000/api/v1/status?timeout=5
 
 The first call should return `200`; the old key should return `401`.
 
+### 7.5 Planner feature flags
+
+Planner experiments default off. Configure them only through explicit environment overrides:
+
+```bash
+PETEEEBOT_PLANNER_FEATURE_FLAGS=""
+PETEEEBOT_PLANNER_FEATURE_FLAGS="experimental_relaxed_session_spacing=true"
+```
+
+Restart the API/job process after changing the value. See `docs/planner_feature_flags.md` for the current flag registry, audit-log query, and rollback procedure.
+
 ---
 
 ## 8) Stale Commands / Drift Found During Phase 0 Audit
