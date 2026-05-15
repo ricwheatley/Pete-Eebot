@@ -37,6 +37,87 @@ if "pydantic_settings" not in sys.modules:
     sys.modules["pydantic_settings"] = settings_module
 
 
+if "fastapi" not in sys.modules:
+    fastapi_module = types.ModuleType("fastapi")
+
+    class HTTPException(Exception):
+        def __init__(self, status_code: int, detail=None):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+            """Initialize this object."""
+        """Represent HTTPException."""
+
+    class Request:
+        def __init__(self, query_params: dict | None = None, headers: dict | None = None):
+            self.query_params = query_params or {}
+            self.headers = headers or {}
+            """Initialize this object."""
+
+        async def body(self) -> bytes:
+            return b""
+            """Perform body."""
+        """Represent Request."""
+
+    def _identity(value=None, **kwargs):
+        return value
+        """Perform identity."""
+
+    class APIRouter:
+        def __init__(self, *args, **kwargs):
+            pass
+            """Initialize this object."""
+
+        def get(self, *args, **kwargs):
+            def decorator(func):
+                return func
+                """Perform decorator."""
+            return decorator
+            """Perform get."""
+
+        def post(self, *args, **kwargs):
+            def decorator(func):
+                return func
+                """Perform decorator."""
+            return decorator
+            """Perform post."""
+
+        def patch(self, *args, **kwargs):
+            def decorator(func):
+                return func
+                """Perform decorator."""
+            return decorator
+            """Perform patch."""
+
+        def include_router(self, *args, **kwargs):
+            return None
+            """Perform include router."""
+        """Represent APIRouter."""
+
+    fastapi_module.APIRouter = APIRouter
+    fastapi_module.FastAPI = APIRouter
+    fastapi_module.Query = _identity
+    fastapi_module.Header = _identity
+    fastapi_module.HTTPException = HTTPException
+    fastapi_module.Request = Request
+    fastapi_module.__file__ = __file__
+
+    responses_module = types.ModuleType("fastapi.responses")
+
+    class StreamingResponse:
+        def __init__(self, content, media_type=None):
+            self.content = content
+            self.media_type = media_type
+            """Initialize this object."""
+        """Represent StreamingResponse."""
+
+    responses_module.StreamingResponse = StreamingResponse
+    responses_module.__file__ = __file__
+
+    sys.modules["fastapi"] = fastapi_module
+    sys.modules["fastapi.responses"] = responses_module
+
+
 if "psycopg" not in sys.modules:
     psycopg = types.ModuleType("psycopg")
     rows_module = types.ModuleType("psycopg.rows")

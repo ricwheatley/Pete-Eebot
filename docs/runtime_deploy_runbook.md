@@ -4,6 +4,17 @@ Last audited: 2026-05-15.
 
 This runbook documents **what currently exists in this repository** for runtime, deploy, migrations, and ops checks.
 
+## Supported Deployment Profiles
+
+Supported today:
+
+- **Production/reference:** native Python virtual environment on a Linux/Raspberry Pi host, with cron/systemd orchestration and Postgres reachable from the host.
+- **Local development database:** `docker compose up -d db` for Postgres only.
+
+Not supported today:
+
+- A containerized Pete-Eebot application image. The legacy Dockerfile was retired on 2026-05-15 because it copied paths that no longer exist (`migration.py`, `knowledge`, `integrations`) and the image was not part of the active production deploy chain.
+
 ## 1) Runtime/Deploy Topology Audit
 
 ### 1.1 CLI entrypoints
@@ -64,7 +75,7 @@ python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
 ```
 
-3. Start local Postgres with Compose (optional local path in repo).
+3. Start local Postgres with Compose (optional local path in repo). Compose intentionally starts only Postgres; run the app from the host virtual environment.
 
 ```bash
 docker compose up -d db
@@ -212,6 +223,15 @@ curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/status?timeou
 ---
 
 ## 7) Stale Commands / Drift Found During Phase 0 Audit
+
+### 7.1 Retired container app image
+
+- Removed the legacy app `Dockerfile`.
+- Removed the Compose `app` service that built the stale image and then idled with `tail -f /dev/null`.
+- Kept `docker-compose.yml` as the supported local Postgres helper.
+- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `requirements.txt`, `pete_e/`, `scripts/`, `init-db/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
+
+### 7.2 Disabled/missing cron scripts
 
 The following entries exist in cron CSV but referenced scripts are missing in this repo snapshot:
 

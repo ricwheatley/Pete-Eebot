@@ -1,7 +1,11 @@
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
-from pete_e.api_routes.dependencies import get_status_service, validate_api_key
+from pete_e.api_routes.dependencies import (
+    get_status_service,
+    run_guarded_high_risk_operation,
+    validate_api_key,
+)
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 
@@ -33,8 +37,13 @@ def sync(
 ):
     validate_api_key(request, x_api_key)
     try:
-        result = run_sync_with_retries(days=days, retries=retries)
+        result = run_guarded_high_risk_operation(
+            "sync",
+            lambda: run_sync_with_retries(days=days, retries=retries),
+        )
     except Exception as exc:
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=500, detail=str(exc))
 
     return {

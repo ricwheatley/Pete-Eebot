@@ -16,6 +16,8 @@ Pete Eebot is a Python application with Postgres as its source of truth. The pra
 - the Telegram listener
 - the optional FastAPI service
 
+Supported deployment profile today: run the application natively from a Python virtual environment on Linux/Raspberry Pi, with Postgres available as a service. Docker Compose is supported only as a local Postgres helper; there is no supported Pete-Eebot application container image.
+
 ## 1. Mental Model
 
 The important operating concepts are:
@@ -90,7 +92,7 @@ python -m pip install --no-deps -e .
 
 For a new database, apply `init-db/schema.sql`.
 
-Docker path:
+Docker path for local Postgres only:
 
 ```bash
 docker compose up -d db
@@ -802,6 +804,8 @@ Available endpoints include:
 - `GET /logs?lines=100`
 - `POST /run_pete_plan_async?weeks=4&start_date=YYYY-MM-DD`
 - `POST /webhook`
+
+For the full read/command/admin classification, see `docs/api_endpoint_inventory.md`.
 
 Protected endpoints require:
 
