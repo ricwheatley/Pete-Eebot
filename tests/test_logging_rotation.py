@@ -6,6 +6,7 @@ from logging.handlers import RotatingFileHandler
 import pytest
 
 from pete_e import logging_setup
+from pete_e.infrastructure import log_utils
 
 LOGGER_TAG = "TEST"
 
@@ -124,5 +125,33 @@ def test_json_formatter_emits_structured_context(tmp_path):
         assert payload["request_id"] == "req-1"
         assert payload["job_id"] == "sync-abc"
         assert payload["http_status"] == 200
+    finally:
+        logging_setup.reset_logging()
+
+
+def test_checkpoint_redacts_reset_secret_but_keeps_revocation_status(tmp_path):
+    log_path = tmp_path / "pete_history.log"
+    base_logger = logging_setup.configure_logging(log_path=log_path, force=True)
+    try:
+        log_utils.log_checkpoint(
+            checkpoint="owner_password_recovery",
+            outcome="succeeded",
+            correlation={"actor": "local_cli"},
+            summary={
+                "target_login": "owner@example.com",
+                "password": "new-password123",
+                "sessions_revoked": True,
+            },
+            tag="AUDIT",
+        )
+        for handler in base_logger.handlers:
+            if hasattr(handler, "flush"):
+                handler.flush()
+
+        payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert payload["checkpoint"] == "owner_password_recovery"
+        assert payload["summary"]["password"] == "[REDACTED]"
+        assert payload["summary"]["sessions_revoked"] is True
+        assert "new-password123" not in json.dumps(payload)
     finally:
         logging_setup.reset_logging()

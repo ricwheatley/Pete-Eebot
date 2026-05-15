@@ -19,11 +19,12 @@ from pete_e.api_routes.dependencies import (
     DEFAULT_SYNC_TIMEOUT_SECONDS,
     audit_command_event,
     enforce_command_rate_limit,
+    get_job_service,
     get_status_service,
     prepare_job_context,
-    run_guarded_high_risk_operation,
     validate_api_key,
 )
+from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.application import alerts
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
@@ -57,15 +58,12 @@ def healthz():
 @router.get("/readyz")
 def readyz(timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1)):
     try:
-        payload = _checks_payload(get_status_service().run_checks(timeout=timeout))
-    except Exception as exc:
-        payload = {
-            "ok": False,
-            "checks": [],
-            "summary": str(exc),
-            "error": str(exc),
-        }
-    return _json_response(payload, status_code=200 if payload["ok"] else 503)
+        detailed_payload = _checks_payload(get_status_service().run_checks(timeout=timeout))
+        ok = bool(detailed_payload["ok"])
+    except Exception:
+        ok = False
+    payload = {"ok": ok, "status": "healthy" if ok else "unhealthy"}
+    return _json_response(payload, status_code=200 if ok else 503)
 
 
 @router.get("/metrics")
@@ -101,13 +99,22 @@ def sync(
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
     job_id = prepare_job_context(request, "sync")
-    audit_command_event(request, command="sync", outcome="started", summary={"days": days, "retries": retries})
+    summary = {"days": days, "retries": retries}
+    audit_command_event(request, command="sync", outcome="started", summary=summary)
     try:
-        result = run_guarded_high_risk_operation(
-            "sync",
-            lambda: run_sync_with_retries(days=days, retries=retries),
-            timeout_seconds=timeout,
+        correlation_id = get_or_create_correlation_id(request)
+        requester = getattr(getattr(request, "state", None), "auth_user", None)
+        result = get_job_service().run_callback(
             job_id=job_id,
+            operation="sync",
+            callback=lambda: run_sync_with_retries(days=days, retries=retries),
+            requester=requester,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=timeout,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=lambda sync_result: sync_result.summary_line(days=days),
         )
     except Exception as exc:
         audit_command_event(
@@ -129,6 +136,7 @@ def sync(
         "undelivered_alerts": result.undelivered_alerts,
         "label": result.label,
         "summary": result.summary_line(days=days),
+        "job_id": job_id,
     }
     audit_command_event(request, command="sync", outcome="succeeded", summary=response)
     return response

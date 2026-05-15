@@ -184,6 +184,8 @@ pete logs JOB 100
 
 Logs are JSON lines in production. Use `docs/logging_observability.md` for the field schema and request/job triage workflow.
 
+Current and recent command jobs are visible in the browser console at `/console/jobs`. Use it after running sync, plan generation, message resend, or deploy-triggered workflows to confirm status, requester, auth scheme, timestamps, exit code, and redacted output summaries. Search `/console/history` when you need the durable audit trail for request ID, job ID, user, auth scheme, command, outcome, and safe summary; structured `AUDIT` logs remain a secondary timeline.
+
 ### 3.2 Daily Operation
 
 Standard daily ingest:
@@ -191,6 +193,8 @@ Standard daily ingest:
 ```bash
 pete sync --days 1
 ```
+
+`pete sync` participates in the same database-backed high-risk operation lock as the API and console command paths, so cron and manual CLI syncs will not overlap with an active API/console sync, plan generation, message resend, or deploy job.
 
 Withings-only branch:
 

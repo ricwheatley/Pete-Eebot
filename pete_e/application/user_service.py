@@ -5,8 +5,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
-from pete_e.application.exceptions import BadRequestError, ConflictError
-from pete_e.domain.auth import AuthUser, CreatedSession, RoleName, StoredUser, UserSession, normalize_roles
+from pete_e.application.exceptions import BadRequestError, ConflictError, NotFoundError
+from pete_e.domain.auth import (
+    AuthUser,
+    CreatedSession,
+    ROLE_OWNER,
+    RoleName,
+    StoredUser,
+    UserSession,
+    normalize_roles,
+)
 from pete_e.infrastructure.passwords import (
     generate_session_token,
     hash_password,
@@ -33,6 +41,15 @@ class UserRepository(Protocol):
         ...
 
     def get_user_by_id(self, user_id: int) -> AuthUser | None:
+        ...
+
+    def has_user_with_role(self, role: RoleName) -> bool:
+        ...
+
+    def update_user_password(self, user_id: int, password_hash: str, when: datetime) -> None:
+        ...
+
+    def revoke_user_sessions(self, user_id: int, when: datetime) -> None:
         ...
 
     def record_successful_login(self, user_id: int, when: datetime) -> None:
@@ -63,6 +80,14 @@ def normalize_login(value: str) -> str:
     return str(value or "").strip().lower()
 
 
+def _validate_password(password: str) -> None:
+    if not isinstance(password, str) or len(password) < 8:
+        raise BadRequestError(
+            "password must be at least 8 characters",
+            code="password_too_short",
+        )
+
+
 class UserService:
     def __init__(
         self,
@@ -86,11 +111,7 @@ class UserService:
         username_normalized = normalize_login(username_clean)
         if not username_normalized:
             raise BadRequestError("username is required", code="username_required")
-        if not isinstance(password, str) or len(password) < 8:
-            raise BadRequestError(
-                "password must be at least 8 characters",
-                code="password_too_short",
-            )
+        _validate_password(password)
 
         email_clean = str(email).strip() if email is not None else None
         if email_clean == "":
@@ -111,6 +132,42 @@ class UserService:
             password_hash=hash_password(password),
             roles=normalize_roles(roles),
         )
+
+    def bootstrap_owner(
+        self,
+        *,
+        username: str,
+        password: str,
+        email: str | None = None,
+        display_name: str | None = None,
+    ) -> AuthUser:
+        if self.repository.has_user_with_role(ROLE_OWNER):
+            raise ConflictError("an owner user already exists", code="owner_already_exists")
+
+        return self.create_user(
+            username=username,
+            email=email,
+            display_name=display_name,
+            password=password,
+            roles=(ROLE_OWNER,),
+        )
+
+    def reset_owner_password(self, *, login: str, password: str) -> AuthUser:
+        login_normalized = normalize_login(login)
+        if not login_normalized:
+            raise BadRequestError("login is required", code="login_required")
+        _validate_password(password)
+
+        stored = self.repository.get_user_by_login(login_normalized)
+        if stored is None or not stored.user.is_active:
+            raise NotFoundError("owner user not found", code="owner_not_found")
+        if not stored.user.is_owner:
+            raise BadRequestError("target user is not an owner", code="target_not_owner")
+
+        when = datetime.now(timezone.utc)
+        self.repository.update_user_password(stored.user.id, hash_password(password), when)
+        self.repository.revoke_user_sessions(stored.user.id, when)
+        return stored.user
 
     def authenticate_user(self, login: str, password: str) -> AuthUser | None:
         login_normalized = normalize_login(login)

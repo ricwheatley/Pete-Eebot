@@ -38,7 +38,7 @@ def test_high_risk_guard_rejects_overlap() -> None:
     assert exc.value.active_operation == "sync"
 
 
-def test_sync_endpoint_returns_conflict_when_high_risk_operation_active(monkeypatch) -> None:
+def test_sync_endpoint_returns_conflict_when_durable_job_lock_active(monkeypatch) -> None:
     calls = {"sync": 0}
     monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
     monkeypatch.setattr(
@@ -47,17 +47,26 @@ def test_sync_endpoint_returns_conflict_when_high_risk_operation_active(monkeypa
         lambda days, retries: calls.__setitem__("sync", calls["sync"] + 1),
     )
 
-    high_risk_operation_guard.acquire("plan")
-    try:
-        with pytest.raises(status_sync.HTTPException) as exc:
-            status_sync.sync(
-                request=_Request(),
-                x_api_key="test-key",
-                days=1,
-                retries=1,
+    class _JobService:
+        def run_callback(self, **kwargs):
+            raise status_sync.HTTPException(
+                status_code=409,
+                detail={
+                    "code": "operation_in_progress",
+                    "requested_operation": kwargs["operation"],
+                    "active_operation": "plan",
+                },
             )
-    finally:
-        high_risk_operation_guard.release()
+
+    monkeypatch.setattr(status_sync, "get_job_service", lambda: _JobService())
+
+    with pytest.raises(status_sync.HTTPException) as exc:
+        status_sync.sync(
+            request=_Request(),
+            x_api_key="test-key",
+            days=1,
+            retries=1,
+        )
 
     assert exc.value.status_code == 409
     assert exc.value.detail["requested_operation"] == "sync"

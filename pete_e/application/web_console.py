@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import date, timedelta
 from typing import Any, Callable
+
+from fastapi import HTTPException
+
+from pete_e.api_routes.logs_webhooks import read_recent_log_lines
 
 
 def current_week_start(target_date: date) -> date:
@@ -40,6 +46,78 @@ def _source_rows(source_statuses: dict[str, Any] | None) -> list[dict[str, Any]]
 def _metric_value(payload: dict[str, Any], key: str) -> Any:
     entry = ((payload.get("metrics") or {}).get(key) or {})
     return entry.get("value")
+
+
+_TEXT_LOG_RE = re.compile(r"^\[(?P<timestamp>[^\]]+)\]\s+\[(?P<level>[^\]]+)\]\s+\[(?P<tag>[^\]]+)\]\s+(?P<message>.*)$")
+
+
+def _string_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _nested_log_value(payload: dict[str, Any], key: str) -> Any:
+    if payload.get(key) is not None:
+        return payload.get(key)
+    for container_key in ("correlation", "summary"):
+        container = payload.get(container_key)
+        if isinstance(container, dict) and container.get(key) is not None:
+            return container.get(key)
+    return None
+
+
+def _parse_log_row(line: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        return {
+            "timestamp": _string_or_none(payload.get("timestamp")),
+            "request_id": _string_or_none(_nested_log_value(payload, "request_id")),
+            "job_id": _string_or_none(_nested_log_value(payload, "job_id")),
+            "level": _string_or_none(payload.get("level")) or "-",
+            "tag": _string_or_none(payload.get("tag")) or "-",
+            "outcome": _string_or_none(_nested_log_value(payload, "outcome")),
+            "message": _string_or_none(payload.get("message")) or line,
+            "raw": line,
+            "structured": True,
+        }
+
+    match = _TEXT_LOG_RE.match(line)
+    if match:
+        return {
+            "timestamp": match.group("timestamp"),
+            "request_id": None,
+            "job_id": None,
+            "level": match.group("level").strip() or "-",
+            "tag": match.group("tag").strip() or "-",
+            "outcome": None,
+            "message": match.group("message").strip(),
+            "raw": line,
+            "structured": False,
+        }
+
+    return {
+        "timestamp": None,
+        "request_id": None,
+        "job_id": None,
+        "level": "-",
+        "tag": "-",
+        "outcome": None,
+        "message": line,
+        "raw": line,
+        "structured": False,
+    }
+
+
+def _matches_filter(value: Any, expected: str | None) -> bool:
+    if not expected:
+        return True
+    return str(value or "").strip().lower() == expected.strip().lower()
 
 
 class WebConsoleReadModel:
@@ -183,6 +261,41 @@ class WebConsoleReadModel:
                 "data_quality": {"status": "unavailable"},
             },
         )
+
+    def logs(self, *, lines: int, tag: str | None = None, outcome: str | None = None) -> dict[str, Any]:
+        try:
+            requested_lines = int(lines)
+        except (TypeError, ValueError):
+            requested_lines = 200
+        safe_lines = max(1, min(requested_lines, 1000))
+        try:
+            payload = read_recent_log_lines(safe_lines)
+        except HTTPException as exc:
+            return {
+                "status": "unavailable",
+                "error": str(exc.detail),
+                "path": None,
+                "requested_lines": safe_lines,
+                "filters": {"tag": tag or "", "outcome": outcome or ""},
+                "rows": [],
+                "returned_count": 0,
+            }
+
+        raw_lines = [str(line) for line in payload.get("lines", [])]
+        rows = [_parse_log_row(line) for line in raw_lines]
+        rows = [
+            row
+            for row in rows
+            if _matches_filter(row.get("tag"), tag) and _matches_filter(row.get("outcome"), outcome)
+        ]
+        return {
+            "status": "observed",
+            "path": payload.get("path"),
+            "requested_lines": safe_lines,
+            "filters": {"tag": tag or "", "outcome": outcome or ""},
+            "rows": rows,
+            "returned_count": len(rows),
+        }
 
     def _health_checks(self, timeout: float) -> dict[str, Any]:
         results = self._status_service.run_checks(timeout=timeout)

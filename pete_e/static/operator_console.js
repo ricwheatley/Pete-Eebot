@@ -67,6 +67,19 @@ function setCommandResult(form, message, tone = "neutral") {
   result.hidden = false;
 }
 
+function commandResultMessage(body) {
+  const parts = [body.summary || `${body.command || "Command"} ${body.status}.`];
+  if (body.source_statuses && typeof body.source_statuses === "object") {
+    const statuses = Object.entries(body.source_statuses)
+      .map(([source, status]) => `${source}: ${status}`)
+      .join(", ");
+    if (statuses) {
+      parts.push(`Sources: ${statuses}`);
+    }
+  }
+  return parts.join("\n");
+}
+
 async function submitCommand(form) {
   const button = form.querySelector("[data-command-submit]");
   const csrfToken = readCookie("peteeebot_csrf");
@@ -96,7 +109,7 @@ async function submitCommand(form) {
       setCommandResult(form, String(detail), "danger");
       return;
     }
-    setCommandResult(form, body.summary || `${body.command || "Command"} ${body.status}.`, "ok");
+    setCommandResult(form, commandResultMessage(body), body.success === false ? "danger" : "ok");
   } catch (error) {
     setCommandResult(form, "Command request failed.", "danger");
   } finally {

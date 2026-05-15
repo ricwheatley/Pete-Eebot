@@ -19,6 +19,7 @@ from pete_e.api_logging import session_fingerprint
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
+from pete_e.application.jobs import ApplicationJobService
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService, normalize_login
@@ -28,6 +29,7 @@ from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.profile_repository import PostgresProfileRepository
+from pete_e.infrastructure.job_repository import PostgresApplicationJobRepository
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e import observability
 
@@ -74,6 +76,7 @@ _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
 _user_service: UserService | None = None
 _profile_service: ProfileService | None = None
+_job_service: ApplicationJobService | None = None
 _command_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="api-command",
@@ -313,6 +316,14 @@ def get_profile_service() -> ProfileService:
         dal = get_dal()
         _profile_service = ProfileService(PostgresProfileRepository(pool=dal.pool))
     return _profile_service
+
+
+def get_job_service() -> ApplicationJobService:
+    global _job_service
+    if _job_service is None:
+        dal = get_dal()
+        _job_service = ApplicationJobService(PostgresApplicationJobRepository(pool=dal.pool))
+    return _job_service
 
 
 def _request_method(request: Request) -> str:
@@ -597,6 +608,8 @@ def audit_command_event(
     user = getattr(state, "auth_user", None)
     auth_scheme = getattr(state, "auth_scheme", None)
     job_id = getattr(state, "job_id", None)
+    request_id = get_or_create_correlation_id(request)
+    correlation_id = request_id
     user_summary = {}
     if isinstance(user, AuthUser):
         user_summary = {
@@ -605,6 +618,35 @@ def audit_command_event(
             "roles": list(user.roles),
         }
 
+    try:
+        recorder = getattr(get_job_service(), "record_command_event", None)
+        if callable(recorder):
+            recorder(
+                request_id=request_id,
+                correlation_id=correlation_id,
+                job_id=job_id,
+                requester=user if isinstance(user, AuthUser) else None,
+                auth_scheme=auth_scheme,
+                command=command,
+                outcome=outcome,
+                summary=summary or {},
+                client_identity=_client_identity(request),
+            )
+    except Exception as exc:
+        log_utils.log_checkpoint(
+            checkpoint="operator_command_audit_persist",
+            outcome="failed",
+            correlation={
+                "command": command,
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+                "job_id": job_id,
+            },
+            summary={"error": str(exc)},
+            level="ERROR",
+            tag="AUDIT",
+        )
+
     log_utils.log_checkpoint(
         checkpoint="operator_command",
         outcome=outcome,
@@ -612,8 +654,8 @@ def audit_command_event(
             "command": command,
             "auth_scheme": auth_scheme,
             "client": _client_identity(request),
-            "request_id": get_or_create_correlation_id(request),
-            "correlation_id": get_or_create_correlation_id(request),
+            "request_id": request_id,
+            "correlation_id": correlation_id,
             "job_id": job_id,
             "session_id": session_fingerprint(session_token_from_request(request)),
             **user_summary,

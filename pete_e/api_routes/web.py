@@ -12,16 +12,26 @@ from fastapi import HTTPException, Request
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from pete_e.api_routes import dependencies
+from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user, require_role
-from pete_e.application.sync import run_sync_with_retries
+from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.web_console import WebConsoleReadModel
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
 from pete_e.config import settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
+from pete_e.domain.daily_sync import AppleHealthIngestResult
 
 try:  # pragma: no cover - exercised when Starlette is installed.
+    from starlette.responses import JSONResponse
     from starlette.responses import HTMLResponse, RedirectResponse
 except ImportError:  # pragma: no cover - keeps lightweight unit-test stubs importable.
+    class JSONResponse:  # type: ignore[no-redef]
+        def __init__(self, content: dict, status_code: int = 200, headers: dict[str, str] | None = None):
+            self.content = content
+            self.status_code = status_code
+            self.headers = headers or {}
+
     class HTMLResponse:  # type: ignore[no-redef]
         def __init__(self, content: str = "", status_code: int = 200, headers: dict[str, str] | None = None):
             self.body = content.encode("utf-8")
@@ -39,6 +49,8 @@ TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 COMMAND_CONFIRMATIONS = {
     "sync": "RUN SYNC",
+    "withings_sync": "RUN WITHINGS SYNC",
+    "apple_ingest": "RUN APPLE INGEST",
     "plan": "GENERATE PLAN",
     "message_resend": "RESEND MESSAGE",
 }
@@ -63,6 +75,9 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("plan", "Plan", "/console/plan", ROLE_READ_ONLY),
     NavItem("trends", "Trends", "/console/trends", ROLE_READ_ONLY),
     NavItem("nutrition", "Nutrition", "/console/nutrition", ROLE_READ_ONLY),
+    NavItem("logs", "Logs", "/console/logs", ROLE_READ_ONLY),
+    NavItem("jobs", "Jobs", "/console/jobs", ROLE_OPERATOR),
+    NavItem("history", "History", "/console/history", ROLE_OPERATOR),
     NavItem("operations", "Operations", "/console/operations", ROLE_OPERATOR),
     NavItem("admin", "Admin", "/console/admin", ROLE_OWNER),
 )
@@ -112,6 +127,30 @@ PAGE_CONTENT: dict[str, dict[str, object]] = {
         "panels": [
             {"title": "Today", "body": "No daily macro totals loaded."},
             {"title": "Recent Logs", "body": "No recent nutrition logs loaded."},
+        ],
+    },
+    "logs": {
+        "title": "Logs",
+        "eyebrow": "Observability",
+        "summary": "Recent application logs with request and job correlation.",
+        "panels": [
+            {"title": "Recent Lines", "body": "No log lines loaded."},
+        ],
+    },
+    "jobs": {
+        "title": "Jobs",
+        "eyebrow": "Operations",
+        "summary": "Durable command execution status.",
+        "panels": [
+            {"title": "Recent Jobs", "body": "No jobs have been recorded."},
+        ],
+    },
+    "history": {
+        "title": "Command History",
+        "eyebrow": "Audit",
+        "summary": "Searchable durable audit records for console command operations.",
+        "panels": [
+            {"title": "Recent Commands", "body": "No command history has been recorded."},
         ],
     },
     "operations": {
@@ -195,6 +234,24 @@ def _command_cards(today: date) -> list[dict[str, object]]:
             ],
         },
         {
+            "key": "withings_sync",
+            "title": "Withings Sync",
+            "body": "Refresh only Withings measurements and source summaries.",
+            "endpoint": "/console/operations/run-withings-sync",
+            "confirmation": COMMAND_CONFIRMATIONS["withings_sync"],
+            "fields": [
+                {"name": "days", "label": "Days", "type": "number", "value": 7, "min": 1, "max": 30},
+                {"name": "retries", "label": "Retries", "type": "number", "value": 1, "min": 0, "max": 5},
+            ],
+        },
+        {
+            "key": "apple_ingest",
+            "title": "Apple Ingest",
+            "body": "Ingest only Apple Health exports from Dropbox.",
+            "endpoint": "/console/operations/ingest-apple",
+            "confirmation": COMMAND_CONFIRMATIONS["apple_ingest"],
+        },
+        {
             "key": "plan",
             "title": "Generate Plan",
             "body": "Start the plan generator.",
@@ -243,6 +300,21 @@ def _payload_int(payload: dict[str, Any] | None, key: str, default: int, *, min_
     if value < min_value or value > max_value:
         raise HTTPException(status_code=400, detail=f"{key} must be between {min_value} and {max_value}")
     return value
+
+
+def _query_value(request: Request, key: str, default: str = "") -> str:
+    query_params = getattr(request, "query_params", {}) or {}
+    getter = getattr(query_params, "get", None)
+    value = getter(key, default) if callable(getter) else default
+    return str(default if value is None else value)
+
+
+def _query_int(request: Request, key: str, default: int, *, min_value: int, max_value: int) -> int:
+    try:
+        value = int(_query_value(request, key, str(default)).strip() or default)
+    except (TypeError, ValueError):
+        value = default
+    return max(min_value, min(value, max_value))
 
 
 def _require_operator_command_user(request: Request, command: str) -> AuthUser:
@@ -299,6 +371,49 @@ def _audit_command_failure(request: Request, command: str, exc: Exception) -> No
         summary={"status_code": status_code, "error": str(getattr(exc, "detail", exc))},
         level="ERROR",
     )
+
+
+def _apple_ingest_source_statuses(result: AppleHealthIngestResult) -> dict[str, str]:
+    statuses = dict(result.statuses or {})
+    if statuses:
+        return {str(source): str(status) for source, status in statuses.items()}
+    return {"Apple Health": "ok" if result.success else "failed"}
+
+
+def _apple_ingest_failed_sources(result: AppleHealthIngestResult) -> list[str]:
+    failures = [str(source) for source in result.failures or ()]
+    if failures or result.success:
+        return failures
+    return ["Apple Health"]
+
+
+def _apple_ingest_summary(result: AppleHealthIngestResult) -> str:
+    statuses = _apple_ingest_source_statuses(result)
+    status_fragment = ", ".join(f"{source}={status}" for source, status in statuses.items())
+    verdict = "success" if result.success else "failed"
+    import_summary = result.summary
+    if import_summary is None:
+        return f"Apple ingest summary: result={verdict} | {status_fragment}"
+    return (
+        f"Apple ingest summary: result={verdict} | {status_fragment} | "
+        f"files={len(import_summary.sources)} | workouts={import_summary.workouts} | "
+        f"metric_points={import_summary.daily_points} | hr_days={import_summary.hr_days} | "
+        f"sleep_days={import_summary.sleep_days}"
+    )
+
+
+def _apple_ingest_import_summary(result: AppleHealthIngestResult) -> dict[str, Any] | None:
+    import_summary = result.summary
+    if import_summary is None:
+        return None
+    return {
+        "sources": list(import_summary.sources),
+        "source_file_count": len(import_summary.sources),
+        "workouts": import_summary.workouts,
+        "daily_points": import_summary.daily_points,
+        "hr_days": import_summary.hr_days,
+        "sleep_days": import_summary.sleep_days,
+    }
 
 
 def _render_console(
@@ -390,6 +505,109 @@ def console_nutrition(request: Request):
     )
 
 
+@router.get("/console/logs")
+def console_logs(request: Request):
+    lines = _query_int(request, "lines", 200, min_value=1, max_value=1000)
+    tag = _query_value(request, "tag").strip()
+    outcome = _query_value(request, "outcome").strip()
+    return _render_console(
+        request,
+        "logs",
+        template_name="console/logs.html",
+        context_loader=lambda: {
+            "logs_view": _console_read_model().logs(
+                lines=lines,
+                tag=tag or None,
+                outcome=outcome or None,
+            )
+        },
+    )
+
+
+@router.get("/console/jobs")
+def console_jobs(request: Request):
+    limit = _query_int(request, "limit", 25, min_value=1, max_value=100)
+    return _render_console(
+        request,
+        "jobs",
+        min_role=ROLE_OPERATOR,
+        template_name="console/jobs.html",
+        context_loader=lambda: {
+            "current_jobs": dependencies.get_job_service().list_current_jobs(limit=10),
+            "jobs": dependencies.get_job_service().list_recent_jobs(limit=limit),
+            "selected_job": None,
+        },
+    )
+
+
+@router.get("/console/jobs/{job_id}")
+def console_job_detail(request: Request, job_id: str):
+    return _render_console(
+        request,
+        "jobs",
+        min_role=ROLE_OPERATOR,
+        template_name="console/jobs.html",
+        context_loader=lambda: {
+            "current_jobs": dependencies.get_job_service().list_current_jobs(limit=10),
+            "jobs": dependencies.get_job_service().list_recent_jobs(limit=25),
+            "selected_job": _require_job(job_id),
+        },
+    )
+
+
+@router.get("/console/jobs/{job_id}/status")
+def console_job_status(request: Request, job_id: str):
+    require_role(request, ROLE_OPERATOR)
+    job = _require_job(job_id)
+    return JSONResponse({"job": job.to_status_payload()})
+
+
+def _command_history_context(request: Request) -> dict[str, object]:
+    limit = _query_int(request, "limit", 25, min_value=1, max_value=100)
+    query = _query_value(request, "q").strip()
+    command = _query_value(request, "command").strip()
+    outcome = _query_value(request, "outcome").strip()
+    entries = dependencies.get_job_service().list_command_history(
+        limit=limit,
+        query=query or None,
+        command=command or None,
+        outcome=outcome or None,
+    )
+    return {
+        "history_entries": entries,
+        "history_filters": {
+            "limit": limit,
+            "q": query,
+            "command": command,
+            "outcome": outcome,
+        },
+    }
+
+
+@router.get("/console/history")
+def console_command_history(request: Request):
+    return _render_console(
+        request,
+        "history",
+        min_role=ROLE_OPERATOR,
+        template_name="console/history.html",
+        context_loader=lambda: _command_history_context(request),
+    )
+
+
+@router.get("/console/history.json")
+def console_command_history_api(request: Request):
+    require_role(request, ROLE_OPERATOR)
+    context = _command_history_context(request)
+    entries = context["history_entries"]
+    return JSONResponse(
+        {
+            "filters": context["history_filters"],
+            "entries": [entry.to_payload() for entry in entries],
+        }
+    )
+
+
 @router.get("/console/operations")
 def console_operations(request: Request):
     return _render_console(
@@ -410,15 +628,23 @@ def console_run_sync(request: Request, payload: dict[str, Any] | None = None):
     retries = _payload_int(payload, "retries", 1, min_value=0, max_value=5)
     summary = {"days": days, "retries": retries}
     job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    requester = getattr(getattr(request, "state", None), "auth_user", None)
     _audit_command_start(request, command, summary)
 
     try:
         dependencies.enforce_command_rate_limit(request, command)
-        result = dependencies.run_guarded_high_risk_operation(
-            command,
-            lambda: run_sync_with_retries(days=days, retries=retries),
-            timeout_seconds=dependencies.DEFAULT_SYNC_TIMEOUT_SECONDS,
+        result = dependencies.get_job_service().run_callback(
             job_id=job_id,
+            operation=command,
+            callback=lambda: run_sync_with_retries(days=days, retries=retries),
+            requester=requester,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_SYNC_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=lambda sync_result: sync_result.summary_line(days=days),
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
@@ -429,6 +655,8 @@ def console_run_sync(request: Request, payload: dict[str, Any] | None = None):
         "command": command,
         "success": result.success,
         "summary": result.summary_line(days=days),
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
         "attempts": result.attempts,
         "failed_sources": result.failed_sources,
         "source_statuses": result.source_statuses,
@@ -437,10 +665,100 @@ def console_run_sync(request: Request, payload: dict[str, Any] | None = None):
     return payload_out
 
 
+@router.post("/console/operations/run-withings-sync")
+def console_run_withings_sync(request: Request, payload: dict[str, Any] | None = None):
+    command = "withings_sync"
+    _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+    days = _payload_int(payload, "days", 7, min_value=1, max_value=30)
+    retries = _payload_int(payload, "retries", 1, min_value=0, max_value=5)
+    summary = {"days": days, "retries": retries, "source": "Withings"}
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    requester = getattr(getattr(request, "state", None), "auth_user", None)
+    _audit_command_start(request, command, summary)
+
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        result = dependencies.get_job_service().run_callback(
+            job_id=job_id,
+            operation=command,
+            callback=lambda: run_withings_only_with_retries(days=days, retries=retries),
+            requester=requester,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_SYNC_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=lambda sync_result: sync_result.summary_line(days=days),
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    payload_out = {
+        "status": "completed",
+        "command": command,
+        "success": result.success,
+        "summary": result.summary_line(days=days),
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "attempts": result.attempts,
+        "failed_sources": result.failed_sources,
+        "source_statuses": result.source_statuses,
+    }
+    _audit_command_success(request, command, payload_out)
+    return payload_out
+
+
+@router.post("/console/operations/ingest-apple")
+def console_ingest_apple(request: Request, payload: dict[str, Any] | None = None):
+    command = "apple_ingest"
+    _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+    summary = {"source": "Apple Health"}
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    requester = getattr(getattr(request, "state", None), "auth_user", None)
+    _audit_command_start(request, command, summary)
+
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        result = dependencies.get_job_service().run_callback(
+            job_id=job_id,
+            operation=command,
+            callback=run_apple_health_ingest,
+            requester=requester,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_SYNC_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=_apple_ingest_summary,
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    payload_out = {
+        "status": "completed",
+        "command": command,
+        "success": result.success,
+        "summary": _apple_ingest_summary(result),
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "failed_sources": _apple_ingest_failed_sources(result),
+        "source_statuses": _apple_ingest_source_statuses(result),
+        "import_summary": _apple_ingest_import_summary(result),
+    }
+    _audit_command_success(request, command, payload_out)
+    return payload_out
+
+
 @router.post("/console/operations/generate-plan")
 def console_generate_plan(request: Request, payload: dict[str, Any] | None = None):
     command = "plan"
-    _require_operator_command_user(request, command)
+    user = _require_operator_command_user(request, command)
     _require_command_confirmation(request, command, payload)
     weeks = _payload_int(payload, "weeks", 1, min_value=1, max_value=12)
     start_date = str(_payload_value(payload, "start_date", _operator_today().isoformat())).strip()
@@ -451,19 +769,33 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
 
     summary = {"weeks": weeks, "start_date": start_date}
     job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
     _audit_command_start(request, command, summary)
     try:
         dependencies.enforce_command_rate_limit(request, command)
-        dependencies.start_guarded_high_risk_process(
-            command,
-            ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+        dependencies.get_job_service().enqueue_subprocess(
             job_id=job_id,
+            operation=command,
+            command=["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
         raise
 
-    response = {"status": "started", "command": command, **summary}
+    response = {
+        "status": "queued",
+        "command": command,
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
     _audit_command_success(request, command, response)
     return response
 
@@ -471,7 +803,7 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
 @router.post("/console/operations/resend-message")
 def console_resend_message(request: Request, payload: dict[str, Any] | None = None):
     command = "message_resend"
-    _require_operator_command_user(request, command)
+    user = _require_operator_command_user(request, command)
     _require_command_confirmation(request, command, payload)
     message_type = str(_payload_value(payload, "message_type", "plan")).strip()
     if message_type not in MESSAGE_TYPES:
@@ -479,19 +811,33 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
 
     summary = {"message_type": message_type}
     job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
     _audit_command_start(request, command, summary)
     try:
         dependencies.enforce_command_rate_limit(request, command)
-        dependencies.start_guarded_high_risk_process(
-            command,
-            ["pete", "message", f"--{message_type}", "--send"],
+        dependencies.get_job_service().enqueue_subprocess(
             job_id=job_id,
+            operation=command,
+            command=["pete", "message", f"--{message_type}", "--send"],
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
         raise
 
-    response = {"status": "started", "command": command, **summary}
+    response = {
+        "status": "queued",
+        "command": command,
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
     _audit_command_success(request, command, response)
     return response
 
@@ -499,3 +845,10 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
 @router.get("/console/admin")
 def console_admin(request: Request):
     return _render_console(request, "admin", min_role=ROLE_OWNER)
+
+
+def _require_job(job_id: str):
+    job = dependencies.get_job_service().get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
