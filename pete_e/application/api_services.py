@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import re
 from typing import Any, Dict
 
 from pete_e.config import settings
@@ -570,3 +571,77 @@ class StatusService:
 
         return run_status_checks(timeout=timeout)
         """Perform run checks."""
+
+    def last_sync_outcome(self, lines: int = 500) -> Dict[str, Any]:
+        """Return the latest persisted sync summary from the application log."""
+
+        log_path = settings.log_path
+        if not log_path.exists():
+            return {
+                "status": "missing",
+                "source_statuses": {},
+                "failed_sources": [],
+                "message": f"Log file not found: {log_path}",
+            }
+
+        try:
+            with log_path.open("r", encoding="utf-8") as log_file:
+                log_lines = log_file.readlines()
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "source_statuses": {},
+                "failed_sources": [],
+                "message": str(exc),
+            }
+
+        for line in reversed(log_lines[-max(1, lines) :]):
+            parsed = _parse_sync_summary_line(line)
+            if parsed:
+                return parsed
+
+        return {
+            "status": "missing",
+            "source_statuses": {},
+            "failed_sources": [],
+            "message": "No sync summary found in recent logs.",
+        }
+
+
+_SYNC_SUMMARY_RE = re.compile(
+    r"Sync summary:\s*run=(?P<label>[^|]+)\|\s*days=(?P<days>\d+)\s*\|"
+    r"\s*attempts=(?P<attempts>\d+)\s*\|\s*result=(?P<result>[^|]+)\|(?P<sources>.*)$"
+)
+_LOG_TIMESTAMP_RE = re.compile(r"^\[(?P<timestamp>[^\]]+)\]")
+
+
+def _parse_sync_summary_line(line: str) -> Dict[str, Any] | None:
+    match = _SYNC_SUMMARY_RE.search(line)
+    if not match:
+        return None
+
+    source_statuses: Dict[str, str] = {}
+    sources_fragment = match.group("sources").strip()
+    if sources_fragment and sources_fragment != "sources=unreported":
+        for token in sources_fragment.split(","):
+            source, separator, status = token.strip().partition("=")
+            if separator and source:
+                source_statuses[source] = status.strip()
+
+    result = match.group("result").strip().lower()
+    timestamp_match = _LOG_TIMESTAMP_RE.search(line)
+    failed_sources = sorted(
+        source for source, status in source_statuses.items() if str(status).lower() == "failed"
+    )
+    return {
+        "status": "observed",
+        "ran_at": timestamp_match.group("timestamp") if timestamp_match else None,
+        "label": match.group("label").strip(),
+        "days": int(match.group("days")),
+        "attempts": int(match.group("attempts")),
+        "success": result == "success",
+        "result": result,
+        "source_statuses": source_statuses,
+        "failed_sources": failed_sources,
+        "summary": line.strip(),
+    }

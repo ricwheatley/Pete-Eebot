@@ -1,0 +1,101 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="Nutrition summary sections">
+  <article class="panel">
+    <div class="panel-heading">
+      <h2>Today</h2>
+      {{ ui.badge(nutrition_view.data_quality.nutrition_data_quality or nutrition_view.data_quality.status or "Unknown", "neutral") }}
+    </div>
+    {% if nutrition_view.error %}
+      {{ ui.empty_state(nutrition_view.error) }}
+    {% elif nutrition_view.meals_logged %}
+      <dl class="stat-list">
+        <div>
+          <dt>Date</dt>
+          <dd>{{ nutrition_view.date }}</dd>
+        </div>
+        <div>
+          <dt>Meals logged</dt>
+          <dd>{{ nutrition_view.meals_logged }}</dd>
+        </div>
+        <div>
+          <dt>Calories</dt>
+          <dd>{{ nutrition_view.total_estimated_calories }} kcal</dd>
+        </div>
+        <div>
+          <dt>Last logged</dt>
+          <dd>{{ nutrition_view.data_quality.last_logged_at or "Unknown" }}</dd>
+        </div>
+      </dl>
+    {% else %}
+      {{ ui.empty_state("No nutrition entries logged for today.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Macro Totals</h2>
+    <div class="metric-grid">
+      <div class="metric-card inline-card">
+        <span class="metric-label">Protein</span>
+        <strong class="metric-value">{{ nutrition_view.total_protein_g or 0 }} <span>g</span></strong>
+      </div>
+      <div class="metric-card inline-card">
+        <span class="metric-label">Carbs</span>
+        <strong class="metric-value">{{ nutrition_view.total_carbs_g or 0 }} <span>g</span></strong>
+      </div>
+      <div class="metric-card inline-card">
+        <span class="metric-label">Fat</span>
+        <strong class="metric-value">{{ nutrition_view.total_fat_g or 0 }} <span>g</span></strong>
+      </div>
+      <div class="metric-card inline-card">
+        <span class="metric-label">Fiber</span>
+        <strong class="metric-value">{{ nutrition_view.total_fiber_g or 0 }} <span>g</span></strong>
+      </div>
+      <div class="metric-card inline-card">
+        <span class="metric-label">Alcohol</span>
+        <strong class="metric-value">{{ nutrition_view.total_alcohol_g or 0 }} <span>g</span></strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h2>Sources</h2>
+    {% if nutrition_view.source_breakdown %}
+      <dl class="stat-list">
+        {% for source, count in nutrition_view.source_breakdown.items() %}
+        <div>
+          <dt>{{ source }}</dt>
+          <dd>{{ count }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    {% else %}
+      {{ ui.empty_state("No source breakdown available.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel">
+    <h2>Confidence</h2>
+    {% if nutrition_view.confidence_breakdown %}
+      <dl class="stat-list">
+        {% for confidence, count in nutrition_view.confidence_breakdown.items() %}
+        <div>
+          <dt>{{ confidence }}</dt>
+          <dd>{{ count }}</dd>
+        </div>
+        {% endfor %}
+      </dl>
+    {% else %}
+      {{ ui.empty_state("No confidence breakdown available.") }}
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

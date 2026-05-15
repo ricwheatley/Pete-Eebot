@@ -1,0 +1,90 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="Current plan sections">
+  <article class="panel">
+    <h2>Plan Context</h2>
+    {% if plan_view.context.error %}
+      {{ ui.empty_state(plan_view.context.error) }}
+    {% elif plan_view.context.active_plan %}
+      <dl class="stat-list">
+        <div>
+          <dt>Week</dt>
+          <dd>{{ plan_view.context.current_week_number or "Unknown" }} of {{ plan_view.context.total_weeks or "Unknown" }}</dd>
+        </div>
+        <div>
+          <dt>Phase</dt>
+          <dd>{{ plan_view.context.strength_phase or "Unknown" }}</dd>
+        </div>
+        <div>
+          <dt>Deload due</dt>
+          <dd>{{ "Yes" if plan_view.context.deload_due else "No" }}</dd>
+        </div>
+        <div>
+          <dt>Week start</dt>
+          <dd>{{ plan_view.week_start }}</dd>
+        </div>
+      </dl>
+    {% else %}
+      {{ ui.empty_state("No active plan is available.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Current Week Plan</h2>
+    {% if plan_view.week_plan.error %}
+      {{ ui.empty_state(plan_view.week_plan.error) }}
+    {% elif plan_view.week_plan.rows %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Exercise</th>
+            <th scope="col">Sets</th>
+            <th scope="col">Reps</th>
+            <th scope="col">Target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in plan_view.week_plan.rows %}
+          <tr>
+            <td>{{ row.workout_date or row.date or "-" }}</td>
+            <td>{{ row.exercise_name or row.name or "Planned session" }}</td>
+            <td>{{ row.sets if row.sets is not none else "-" }}</td>
+            <td>{{ row.reps if row.reps is not none else "-" }}</td>
+            <td>{{ row.target_weight_kg if row.target_weight_kg is not none else "-" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ ui.empty_state("No workouts are planned for this week.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Decision Trace</h2>
+    {% if plan_view.decision_trace.error %}
+      {{ ui.empty_state(plan_view.decision_trace.error) }}
+    {% elif plan_view.decision_trace.trace %}
+      <ol class="trace-list">
+        {% for item in plan_view.decision_trace.trace %}
+        <li>
+          <strong>{{ item.stage or item.reason_code or "Decision" }}</strong>
+          <span>{{ item.reason_code or item.decision or item.summary or item.message or "Recorded planner decision" }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      {{ ui.empty_state("No decision trace is recorded for this plan week.") }}
+    {% endif %}
+  </article>
+</section>
+{% endblock %}
