@@ -29,6 +29,9 @@ Classification definitions:
 | GET | `/plan_for_week?start_date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/plan.py` | Planned workout rows for one week. |
 | GET | `/plan_decision_trace?plan_id=N&week_number=N` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/plan.py` | Planner decision trace for one plan week. |
 | POST | `/run_pete_plan_async?weeks=N&start_date=YYYY-MM-DD` | Command | Machine `X-API-Key` or `operator`/`owner` browser session | `pete_e/api_routes/plan.py` | Starts `pete plan`; guarded as high-risk until the spawned process exits. |
+| GET | `/healthz` | Read | None | `pete_e/api_routes/status_sync.py` | Liveness probe; confirms the API process can serve requests without running dependency checks. |
+| GET | `/readyz?timeout=N` | Admin | None | `pete_e/api_routes/status_sync.py` | Readiness probe; runs DB and external dependency checks and returns `503` when any check fails. |
+| GET | `/metrics` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/status_sync.py` | Prometheus text metrics for guarded jobs, retries, failures, and dependency health. |
 | GET | `/status?timeout=N` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/status_sync.py` | Runs operational health checks. |
 | POST | `/sync?days=N&retries=N` | Command | Machine `X-API-Key` or `operator`/`owner` browser session | `pete_e/api_routes/status_sync.py` | Runs sync in-process; guarded as high-risk for the duration of the call. |
 | GET | `/logs?lines=N` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/logs_webhooks.py` | Returns recent application log lines. |

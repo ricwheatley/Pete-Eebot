@@ -86,3 +86,29 @@ jq -c 'select(.tag=="AUDIT" and .checkpoint=="operator_command")' /var/log/pete_
 6. Without shell access, use `GET /api/v1/logs?lines=200` or the console log view, then filter locally by `request_id` or `job_id`.
 
 If `jq` is unavailable, `pete logs`, `pete logs API 100`, and `pete logs JOB 100` render both JSON and legacy text log lines.
+
+## Metrics and Probes
+
+The API exposes Prometheus text metrics at `GET /api/v1/metrics` and the legacy transition path `GET /metrics`. This endpoint requires the machine API key or an authenticated browser session.
+
+```bash
+curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" \
+  http://127.0.0.1:8000/api/v1/metrics
+```
+
+Key emitted metrics:
+
+| Metric | Type | Meaning |
+| --- | --- | --- |
+| `peteeebot_job_runs_total` | counter | Guarded job completions by `operation` and `outcome`. |
+| `peteeebot_job_failures_total` | counter | Guarded job failures and timeouts. |
+| `peteeebot_job_duration_seconds` | summary | Guarded job latency count/sum by operation and outcome. |
+| `peteeebot_job_retries_total` | counter | Sync and external API retry attempts by operation/source. |
+| `peteeebot_dependency_health` | gauge | Latest readiness result for DB and external dependencies. |
+| `peteeebot_external_api_health` | gauge | Latest readiness result for Dropbox, Withings, Telegram, and wger. |
+
+Probe endpoints:
+
+- `GET /healthz` is a liveness probe and does not touch dependencies.
+- `GET /readyz?timeout=3` runs the same meaningful dependency checks as `/status`, including DB, Dropbox, Withings, Telegram, and wger. It returns `200` only when all checks pass and `503` when any dependency fails.
+- `GET /api/v1/status?timeout=3` remains the authenticated operational status endpoint with the same check details and a human-readable summary.
