@@ -931,9 +931,25 @@ def logs(
     with log_file.open("r", encoding="utf-8") as f:
         lines = f.readlines()
 
+    def _json_log_payload(line: str) -> dict[str, Any] | None:
+        try:
+            payload = jsonlib.loads(line)
+        except jsonlib.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else None
+
     # Filter by tag if specified
     if tag:
-        filtered = [line for line in lines if f"[{tag.upper()}]" in line]
+        tag_upper = tag.upper()
+        filtered = []
+        for line in lines:
+            payload = _json_log_payload(line)
+            if payload is not None:
+                if str(payload.get("tag", "")).upper() == tag_upper:
+                    filtered.append(line)
+                continue
+            if f"[{tag_upper}]" in line:
+                filtered.append(line)
         display_lines = filtered[-number:]
         console.print(f"\n📜 [bold cyan]Showing last {number} [{tag.upper()}] log lines:[/bold cyan]\n")
     else:
@@ -967,6 +983,30 @@ def logs(
 
     # Print the logs with style
     for line in display_lines:
+        payload = _json_log_payload(line)
+        if payload is not None:
+            time_str = str(payload.get("timestamp", ""))
+            level = str(payload.get("level", "INFO")).upper()
+            tag_str = str(payload.get("tag", "GEN")).upper()
+            msg = str(payload.get("message", ""))
+            level_color = level_colors.get(level, "white")
+            tag_color = tag_colors.get(tag_str, "dim")
+
+            text = Text()
+            text.append(f"[{time_str}] ", style="dim")
+            text.append(f"[{level}] ", style=f"bold {level_color}")
+            text.append(f"[{tag_str}] ", style=f"bold {tag_color}")
+            text.append(msg, style="white")
+            extras = [
+                f"{field}={payload[field]}"
+                for field in ("request_id", "job_id", "outcome", "http_status", "duration_ms")
+                if payload.get(field) is not None
+            ]
+            if extras:
+                text.append(" " + " ".join(extras), style="dim")
+            console.print(text)
+            continue
+
         match = log_pattern.match(line)
         if not match:
             console.print(line.rstrip())

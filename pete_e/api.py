@@ -15,10 +15,12 @@ from pete_e.api_routes.dependencies import (
     audit_command_event,
     enforce_command_rate_limit,
     get_status_service,
+    prepare_job_context,
     run_guarded_high_risk_operation,
     validate_api_key,
 )
 from pete_e.api_errors import install_api_error_handlers
+from pete_e.api_logging import install_request_logging_middleware
 from pete_e.api_security import install_security_middleware
 from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.application.sync import run_sync_with_retries
@@ -64,6 +66,7 @@ __all__ = [
 app = FastAPI(title="Pete-Eebot API")
 install_security_middleware(app)
 install_api_error_handlers(app)
+install_request_logging_middleware(app)
 
 
 def mount_static_assets(api_app: FastAPI) -> None:
@@ -126,12 +129,14 @@ def sync(
 ):
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
+    job_id = prepare_job_context(request, "sync")
     audit_command_event(request, command="sync", outcome="started", summary={"days": days, "retries": retries})
     try:
         result = run_guarded_high_risk_operation(
             "sync",
             lambda: run_sync_with_retries(days=days, retries=retries),
             timeout_seconds=timeout,
+            job_id=job_id,
         )
     except Exception as exc:
         audit_command_event(

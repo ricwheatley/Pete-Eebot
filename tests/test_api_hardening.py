@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from pete_e import api_logging
 from pete_e import api_errors
 from pete_e import api_security
 from pete_e.api_routes import dependencies
@@ -40,6 +41,28 @@ def test_success_responses_receive_correlation_headers_from_middleware() -> None
 
     assert response.headers[api_errors.CORRELATION_ID_HEADER] == "ui-request-123"
     assert response.headers[api_errors.REQUEST_ID_HEADER] == "ui-request-123"
+
+
+def test_request_logging_middleware_emits_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    events = []
+    monkeypatch.setattr(api_logging.log_utils, "log_event", lambda **kwargs: events.append(kwargs))
+
+    async def _call_next(request):
+        request.state.auth_scheme = "api_key"
+        return SimpleNamespace(headers={}, status_code=204)
+
+    request = _Request({api_errors.REQUEST_ID_HEADER: "req-structured-1"})
+    request.method = "POST"
+    request.scope = {"path": "/api/v1/sync"}
+    response = asyncio.run(api_logging.request_logging_middleware(request, _call_next))
+
+    assert response.status_code == 204
+    assert events[-1]["event"] == "http_request"
+    assert events[-1]["outcome"] == "succeeded"
+    assert events[-1]["request_id"] == "req-structured-1"
+    assert events[-1]["http_method"] == "POST"
+    assert events[-1]["http_path"] == "/api/v1/sync"
+    assert events[-1]["http_status"] == 204
 
 
 def test_security_headers_middleware_applies_baseline_headers(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -18,6 +18,9 @@ from pete_e.api_routes.dependencies import (
     session_token_from_request,
     set_session_cookies,
 )
+from pete_e.api_errors import get_or_create_correlation_id
+from pete_e.api_logging import session_fingerprint
+from pete_e.infrastructure import log_utils
 
 Response = getattr(fastapi, "Response", object)
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
@@ -61,6 +64,16 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
     user = get_user_service().authenticate_user(str(login_value), str(password))
     if user is None:
         record_login_failure(request, str(login_value))
+        log_utils.log_event(
+            event="auth_login",
+            message="login failed",
+            tag="AUTH",
+            level="WARNING",
+            outcome="failed",
+            request_id=get_or_create_correlation_id(request),
+            client_ip=_client_ip(request),
+            login=str(login_value),
+        )
         raise HTTPException(status_code=401, detail="Invalid login or password")
 
     record_login_success(request, str(login_value))
@@ -71,6 +84,22 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
     )
     csrf_token = generate_csrf_token(created.token)
     set_session_cookies(response, created.token, csrf_token)
+    state = getattr(request, "state", None)
+    if state is not None:
+        setattr(state, "auth_scheme", "session")
+        setattr(state, "auth_user", user)
+    log_utils.log_event(
+        event="auth_login",
+        message="login succeeded",
+        tag="AUTH",
+        outcome="succeeded",
+        request_id=get_or_create_correlation_id(request),
+        client_ip=_client_ip(request),
+        user_id=user.id,
+        username=user.username,
+        roles=list(user.roles),
+        session_id=session_fingerprint(created.token),
+    )
 
     return {
         "authenticated": True,
@@ -90,6 +119,14 @@ def logout(request: Request, response: Response):
     enforce_csrf_for_session(request, session_token)
     get_user_service().revoke_session_token(session_token)
     clear_session_cookies(response)
+    log_utils.log_event(
+        event="auth_logout",
+        message="logout succeeded",
+        tag="AUTH",
+        outcome="succeeded",
+        request_id=get_or_create_correlation_id(request),
+        session_id=session_fingerprint(session_token),
+    )
     return {"authenticated": False}
 
 

@@ -1,4 +1,5 @@
 import concurrent.futures
+import contextvars
 from dataclasses import dataclass, field
 import hashlib
 import hmac
@@ -8,11 +9,13 @@ from pathlib import Path
 import subprocess
 import threading
 import time
+import uuid
 from typing import Any, Callable, Mapping, TypeVar
 
 from fastapi import Header, HTTPException, Request
 
 from pete_e.api_errors import get_or_create_correlation_id
+from pete_e.api_logging import session_fingerprint
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
@@ -20,6 +23,7 @@ from pete_e.application.user_service import UserService, normalize_login
 from pete_e.config import get_env, settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName, normalize_role
 from pete_e.infrastructure import log_utils
+from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 
@@ -340,8 +344,19 @@ def _mark_authenticated_request(request: Request, *, scheme: str, user: AuthUser
     if state is None:
         return
     setattr(state, "auth_scheme", scheme)
+    fields: dict[str, Any] = {"auth_scheme": scheme}
     if user is not None:
         setattr(state, "auth_user", user)
+        fields.update(
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "roles": list(user.roles),
+            }
+        )
+    if scheme == "session":
+        fields["session_id"] = session_fingerprint(session_token_from_request(request))
+    bind_log_context(**fields)
 
 
 def current_user_from_session(request: Request) -> AuthUser | None:
@@ -567,6 +582,7 @@ def audit_command_event(
     state = getattr(request, "state", None)
     user = getattr(state, "auth_user", None)
     auth_scheme = getattr(state, "auth_scheme", None)
+    job_id = getattr(state, "job_id", None)
     user_summary = {}
     if isinstance(user, AuthUser):
         user_summary = {
@@ -582,13 +598,72 @@ def audit_command_event(
             "command": command,
             "auth_scheme": auth_scheme,
             "client": _client_identity(request),
+            "request_id": get_or_create_correlation_id(request),
             "correlation_id": get_or_create_correlation_id(request),
+            "job_id": job_id,
+            "session_id": session_fingerprint(session_token_from_request(request)),
             **user_summary,
         },
         summary=summary or {},
         level=level,
         tag="AUDIT",
     )
+
+
+def new_job_id(operation: str) -> str:
+    safe_operation = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in operation.lower()).strip("-")
+    return f"{safe_operation or 'job'}-{uuid.uuid4().hex[:12]}"
+
+
+def prepare_job_context(request: Request | None, operation: str) -> str:
+    job_id = new_job_id(operation)
+    if request is not None and getattr(request, "state", None) is not None:
+        setattr(request.state, "job_id", job_id)
+    bind_log_context(job_id=job_id, component="job")
+    return job_id
+
+
+def _log_job_event(
+    *,
+    operation: str,
+    job_id: str,
+    outcome: str,
+    level: str = "INFO",
+    summary: Mapping[str, Any] | None = None,
+) -> None:
+    log_utils.log_event(
+        event="background_job",
+        message=f"job {operation} {outcome}",
+        tag="JOB",
+        level=level,
+        operation=operation,
+        job_id=job_id,
+        outcome=outcome,
+        summary=summary or {},
+    )
+
+
+def _run_job_callback(operation: str, job_id: str, callback: Callable[[], T]) -> T:
+    _log_job_event(operation=operation, job_id=job_id, outcome="started")
+    started = time.perf_counter()
+    try:
+        result = callback()
+    except Exception as exc:
+        _log_job_event(
+            operation=operation,
+            job_id=job_id,
+            outcome="failed",
+            level="ERROR",
+            summary={"duration_ms": round((time.perf_counter() - started) * 1000, 2), "error": str(exc)},
+        )
+        raise
+    _log_job_event(
+        operation=operation,
+        job_id=job_id,
+        outcome="succeeded",
+        summary={"duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+    )
+    return result
 
 
 def _operation_conflict(exc: OperationInProgress) -> HTTPException:
@@ -608,28 +683,47 @@ def run_guarded_high_risk_operation(
     callback: Callable[[], T],
     *,
     timeout_seconds: float | None = None,
+    job_id: str | None = None,
 ) -> T:
+    job_id = job_id or new_job_id(operation)
     if timeout_seconds is None or timeout_seconds <= 0:
+        token = bind_log_context(job_id=job_id, component="job")
         try:
-            return high_risk_operation_guard.run(operation, callback)
+            return high_risk_operation_guard.run(
+                operation,
+                lambda: _run_job_callback(operation, job_id, callback),
+            )
         except OperationInProgress as exc:
             raise _operation_conflict(exc) from exc
+        finally:
+            reset_log_context(token)
 
     try:
         high_risk_operation_guard.acquire(operation)
     except OperationInProgress as exc:
         raise _operation_conflict(exc) from exc
 
+    parent_token = bind_log_context(job_id=job_id, component="job")
+    worker_context = contextvars.copy_context()
+    reset_log_context(parent_token)
+
     def _run_and_release() -> T:
         try:
-            return callback()
+            return _run_job_callback(operation, job_id, callback)
         finally:
             high_risk_operation_guard.release()
 
-    future = _command_executor.submit(_run_and_release)
+    future = _command_executor.submit(worker_context.run, _run_and_release)
     try:
         return future.result(timeout=timeout_seconds)
     except concurrent.futures.TimeoutError as exc:
+        _log_job_event(
+            operation=operation,
+            job_id=job_id,
+            outcome="timeout",
+            level="ERROR",
+            summary={"timeout_seconds": timeout_seconds},
+        )
         raise HTTPException(
             status_code=504,
             detail={
@@ -646,27 +740,54 @@ def start_guarded_high_risk_process(
     command: list[str],
     *,
     timeout_seconds: float | None = DEFAULT_PROCESS_TIMEOUT_SECONDS,
+    job_id: str | None = None,
 ) -> subprocess.Popen:
+    job_id = job_id or new_job_id(operation)
     try:
         high_risk_operation_guard.acquire(operation)
     except OperationInProgress as exc:
         raise _operation_conflict(exc) from exc
 
     try:
+        _log_job_event(
+            operation=operation,
+            job_id=job_id,
+            outcome="started",
+            summary={"command": command[:1]},
+        )
         process = subprocess.Popen(command)
     except Exception:
         high_risk_operation_guard.release()
         raise
 
     def _release_when_finished() -> None:
+        started = time.perf_counter()
         try:
             try:
                 if timeout_seconds is None or timeout_seconds <= 0:
-                    process.wait()
+                    return_code = process.wait()
                 else:
-                    process.wait(timeout=timeout_seconds)
+                    return_code = process.wait(timeout=timeout_seconds)
+                outcome = "succeeded" if return_code == 0 else "failed"
+                _log_job_event(
+                    operation=operation,
+                    job_id=job_id,
+                    outcome=outcome,
+                    level="INFO" if return_code == 0 else "ERROR",
+                    summary={
+                        "return_code": return_code,
+                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    },
+                )
             except TypeError:
-                process.wait()
+                return_code = process.wait()
+                _log_job_event(
+                    operation=operation,
+                    job_id=job_id,
+                    outcome="succeeded" if return_code == 0 else "failed",
+                    level="INFO" if return_code == 0 else "ERROR",
+                    summary={"return_code": return_code},
+                )
             except subprocess.TimeoutExpired:
                 terminate = getattr(process, "terminate", None)
                 if callable(terminate):
@@ -678,11 +799,19 @@ def start_guarded_high_risk_process(
                     if callable(kill):
                         kill()
                     process.wait()
+                _log_job_event(
+                    operation=operation,
+                    job_id=job_id,
+                    outcome="timeout",
+                    level="ERROR",
+                    summary={"timeout_seconds": timeout_seconds},
+                )
         finally:
             high_risk_operation_guard.release()
 
+    worker_context = contextvars.copy_context()
     threading.Thread(
-        target=_release_when_finished,
+        target=lambda: worker_context.run(_release_when_finished),
         name=f"{operation}-guard-release",
         daemon=True,
     ).start()

@@ -136,6 +136,7 @@ class Settings(BaseSettings):
     PETEEEBOT_SYNC_TIMEOUT_SECONDS: float = 300.0
     PETEEEBOT_PROCESS_TIMEOUT_SECONDS: float = 900.0
     PETE_LOG_LEVEL: str = "INFO"
+    PETE_LOG_FORMAT: str = "json"
     PETE_LOG_TO_CONSOLE: bool = True
 
     # --- SANITY CHECK ALERTS ---

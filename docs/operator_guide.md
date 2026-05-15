@@ -176,7 +176,11 @@ View recent logs:
 pete logs
 pete logs SYNC 100
 pete logs PLAN 100
+pete logs API 100
+pete logs JOB 100
 ```
+
+Logs are JSON lines in production. Use `docs/logging_observability.md` for the field schema and request/job triage workflow.
 
 ### 3.2 Daily Operation
 

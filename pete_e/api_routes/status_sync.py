@@ -6,6 +6,7 @@ from pete_e.api_routes.dependencies import (
     audit_command_event,
     enforce_command_rate_limit,
     get_status_service,
+    prepare_job_context,
     run_guarded_high_risk_operation,
     validate_api_key,
 )
@@ -42,12 +43,14 @@ def sync(
 ):
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
+    job_id = prepare_job_context(request, "sync")
     audit_command_event(request, command="sync", outcome="started", summary={"days": days, "retries": retries})
     try:
         result = run_guarded_high_risk_operation(
             "sync",
             lambda: run_sync_with_retries(days=days, retries=retries),
             timeout_seconds=timeout,
+            job_id=job_id,
         )
     except Exception as exc:
         audit_command_event(
