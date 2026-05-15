@@ -13,10 +13,10 @@ Pete-Eebot already has strong fundamentals for incremental evolution into a remo
 - practical security controls (API key gate, webhook signature validation, encrypted cloud backups)
 
 The best path is **evolution, not rewrite**:
-1. preserve the current CLI + automation backbone,
-2. harden the existing FastAPI surface,
-3. add an operator-oriented web UI on top of current read APIs,
-4. introduce session-based auth and RBAC-lite,
+1. preserve the current domain/application core while transitioning production operations to web-driven workflows,
+2. harden the existing FastAPI surface for public-internet exposure,
+3. add a production-grade web UI as the primary operator surface,
+4. introduce session-based auth with multi-user RBAC from day one,
 5. progressively move unsafe imperative endpoints/operations behind job orchestration and auditable controls.
 
 A full redesign is not currently required. Targeted modularisation and platform hardening are the highest-leverage changes.
@@ -92,7 +92,7 @@ Auth/security today for API:
 
 1. Current boundaries are mostly good, but some route handlers directly invoke subprocesses/imperative actions.
 2. Existing APIs are practical but not versioned/documented as stable product contracts for web client evolution.
-3. Single-user assumptions are embedded in config and workflows; that is fine now but should be explicit for future extensibility.
+3. Single-user assumptions are currently embedded in config/workflows, but future near-term multi-user support requires elevating identity/authorization boundaries early.
 
 ---
 
@@ -106,7 +106,7 @@ Auth/security today for API:
 
 1. **Core engine (unchanged in principle):**
    - domain + application orchestration remains the source of business logic.
-   - CLI remains first-class for operations and incident fallback.
+   - CLI becomes a development/testing tool; production user operations move to web UI and background jobs.
 
 2. **Hardened service API layer:**
    - keep FastAPI but formalize into:
@@ -117,7 +117,7 @@ Auth/security today for API:
 
 3. **Web UI (operator console):**
    - a minimal server-rendered or SPA frontend consuming same FastAPI.
-   - initial UX: status, latest sync health, plan/week view, readiness trends, recent alerts, config diagnostics.
+   - initial UX: status, latest sync health, plan/week view, readiness trends, recent alerts, config diagnostics, and authenticated command actions.
 
 4. **Auth gateway model:**
    - migrate from single API key to user session auth for browser.
@@ -138,8 +138,8 @@ Auth/security today for API:
 
 ## Frontend
 
-- **Decision:** Start with lightweight server-rendered templates (FastAPI + Jinja2) _or_ a minimal SPA only after API contracts stabilize.
-- **Rationale:** lowest ops overhead for a single-user production personal system; easier auth/session integration and reduced deployment complexity.
+- **Decision:** Start with server-rendered templates (FastAPI + Jinja2) as the first production UI, then evaluate SPA only if interaction complexity grows.
+- **Rationale:** lowest operational burden for public-internet hosting while still supporting fast iteration and robust session security.
 
 ## Backend/API
 
@@ -148,13 +148,13 @@ Auth/security today for API:
 
 ## Auth
 
-- **Decision:** Add session auth (password + TOTP optional) for browser users; keep API key auth only for machine integrations/webhooks.
-- **Rationale:** shared API key is not appropriate for remote UI.
+- **Decision:** Add multi-user session auth (email/username + password, optional TOTP) with RBAC roles (`owner`, `operator`, `read_only`) and per-user audit trails.
+- **Rationale:** public internet exposure and 12-month multi-user needs require identity-based controls, not shared secrets.
 
 ## Config/secrets
 
-- **Decision:** Keep `.env` for local/Pi baseline, but add optional secrets provider adapters (Docker secrets / 1Password / Vault / cloud secret manager) behind config abstraction.
-- **Rationale:** preserve simplicity while enabling stronger remote-hosted posture.
+- **Decision:** Keep local-file secrets initially (`.env` + strict file permissions), with optional free secrets migration path later (e.g., SOPS+age in private repo or self-hosted Vaultwarden/Bitwarden if desired).
+- **Rationale:** avoids recurring cost while still improving operational hygiene.
 
 ## Jobs
 
@@ -169,9 +169,9 @@ Auth/security today for API:
 ## Deployment
 
 - **Decision:** maintain two supported profiles:
-  - **Profile A:** Pi/self-hosted (systemd + reverse proxy + TLS)
-  - **Profile B:** containerized VM/cloud single-instance (managed Postgres optional)
-- **Rationale:** avoid forced migration while enabling future portability.
+  - **Profile A (primary):** internet-exposed self-hosted VM/Pi behind reverse proxy + TLS + firewall
+  - **Profile B:** containerized single-instance host with optional managed services
+- **Rationale:** supports immediate public-internet target without over-complicating ops.
 
 ---
 
@@ -197,14 +197,15 @@ Exit criteria:
 Exit criteria:
 - Stable read APIs for dashboard and plan views.
 
-## Phase 2 — Authentication and session model (1–2 weeks)
+## Phase 2 — Authentication, authorization, and internet hardening (2–3 weeks)
 
-- Implement user table + credential storage (single-user supported, extensible).
-- Add login/logout/session cookie, secure flags, CSRF protection.
-- Keep existing API key for automation, but scope and rotate.
+- Implement user/auth tables, hashed passwords, session store, and RBAC roles.
+- Add login/logout/session cookie, secure flags, CSRF protection, password reset flow.
+- Add brute-force protections (rate limit + lockout/backoff), strict CORS, and security headers.
+- Keep API keys only for machine actors (webhook/internal jobs), scope and rotate.
 
 Exit criteria:
-- Browser access requires authenticated session.
+- Browser access requires authenticated user sessions with role-based authorization.
 
 ## Phase 3 — Minimal web operator console (2–4 weeks)
 
@@ -217,7 +218,7 @@ Exit criteria:
 - Add safe command controls with confirmation flows (run sync, generate plan, resend message).
 
 Exit criteria:
-- Daily operator workflows possible entirely via web UI while CLI remains available.
+- Daily operator workflows possible entirely via web UI; CLI retained only for dev/test and emergency break-glass ops.
 
 ## Phase 4 — Observability and operations maturity (1–2 weeks)
 
@@ -254,7 +255,7 @@ Exit criteria:
 - Secret rotation policy for API keys, bot tokens, OAuth creds.
 - Optional TOTP/MFA for admin login.
 - Principle-of-least-privilege process user and filesystem perms.
-- Network boundary: private LAN/VPN-first exposure for Pi; no raw public port.
+- Network boundary: public internet exposure behind reverse proxy/WAF-style controls, firewall allowlists where possible, no direct app port exposure.
 
 ### Command safety
 
@@ -265,14 +266,14 @@ Exit criteria:
 
 ## Deployment model
 
-### Self-hosted Pi (recommended immediate)
+### Public-internet self-hosted (recommended immediate)
 
-- Keep existing systemd + cron model.
-- Front with Caddy/Nginx for TLS and auth-aware proxy headers.
-- Run FastAPI (uvicorn/gunicorn) bound localhost; proxy from 443.
-- Maintain current backup strategy (encrypted cloud option).
+- Keep systemd service management with controlled maintenance windows.
+- Front with Caddy/Nginx on 443 with automatic TLS, HSTS, and request size/time limits.
+- Bind FastAPI to localhost only; expose only reverse proxy.
+- Maintain encrypted backup strategy and test restore quarterly.
 
-### Cloud single-instance (future)
+### Cloud single-instance (future, optional)
 
 - Containerized app + managed Postgres.
 - Secret manager instead of plain `.env` where feasible.
@@ -283,7 +284,7 @@ Exit criteria:
 
 ## Operational considerations
 
-- **Do not remove CLI workflows.** They are resilient fallback controls.
+- Production UX should be web-first; CLI retained for development/testing and controlled break-glass recovery only.
 - Keep cron-based automation until job system proves stable; then progressively consolidate.
 - Add recovery playbooks for:
   - OAuth expiry/re-auth
@@ -294,14 +295,14 @@ Exit criteria:
 
 ---
 
-## Open questions / assumptions
+## Confirmed assumptions (from product direction)
 
-1. Is remote access intended over public internet, VPN-only, or LAN-only?
-2. Is there any requirement for multi-user access within 12 months?
-3. Which operations are acceptable from UI vs CLI-only (e.g., deploy trigger)?
-4. Preferred trust boundary for secrets (local files vs external manager)?
-5. Is zero-downtime deploy required, or brief maintenance windows acceptable?
-6. Is the stale Dockerfile still used anywhere operationally, or can it be safely replaced?
+1. Remote access target: **public internet**.
+2. Multi-user requirement: **yes, within 12 months**.
+3. Production surface target: **web UI primary**; CLI should be dev/test only.
+4. Secrets boundary: **local/free-first** (no mandatory paid secret manager).
+5. Deploy SLO: **brief maintenance windows acceptable** (no strict zero-downtime requirement).
+6. Legacy Dockerfile: **unused** and can be removed/replaced.
 
 ---
 
