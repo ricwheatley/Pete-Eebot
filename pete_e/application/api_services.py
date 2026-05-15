@@ -11,6 +11,7 @@ from typing import Any, Dict
 from pete_e.config import settings
 from pete_e.application.nutrition_service import build_nutrition_context
 from pete_e.application import alerts
+from pete_e.application.profile_service import ProfileService
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.exceptions import BadRequestError, DataAccessError
@@ -181,8 +182,9 @@ class _DateParserMixin:
 class MetricsService(_DateParserMixin):
     """Read-only service exposing metrics related stored procedures."""
 
-    def __init__(self, dal: PostgresDal):
+    def __init__(self, dal: PostgresDal, *, profile_service: ProfileService | None = None):
         self._dal = dal
+        self._profile_service = profile_service or ProfileService()
         """Initialize this object."""
 
     def overview(self, iso_date: str) -> Dict[str, Any]:
@@ -251,8 +253,9 @@ class MetricsService(_DateParserMixin):
         }
         """Perform recent workouts."""
 
-    def coach_state(self, iso_date: str) -> Dict[str, Any]:
+    def coach_state(self, iso_date: str, *, profile_slug: str | None = None) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
+        profile = self._profile_service.resolve_profile(profile_slug)
         history_start = target_date - timedelta(days=34)
         try:
             rows = list(self._dal.get_historical_data(history_start, target_date) or [])
@@ -328,7 +331,8 @@ class MetricsService(_DateParserMixin):
             "recent_workouts": workouts,
             "plan_context": plan_context,
             "nutrition": nutrition_context,
-            "goal_state": self.goal_state(),
+            "profile": profile.as_public_dict(),
+            "goal_state": self.goal_state(profile_slug=profile.slug),
             "data_quality": data_quality,
             "missing_subjective_inputs": [
                 "pain_location_and_severity",
@@ -346,8 +350,10 @@ class MetricsService(_DateParserMixin):
         }
         """Perform coach state."""
 
-    def goal_state(self) -> Dict[str, Any]:
+    def goal_state(self, *, profile_slug: str | None = None) -> Dict[str, Any]:
+        profile = self._profile_service.resolve_profile(profile_slug)
         return {
+            "profile": profile.as_public_dict(),
             "running_goal": {
                 "target_race": getattr(settings, "RUNNING_TARGET_RACE", None),
                 "race_date": _json_safe(getattr(settings, "RUNNING_RACE_DATE", None)),
@@ -355,7 +361,8 @@ class MetricsService(_DateParserMixin):
                 "weight_loss_target_kg": _json_safe(getattr(settings, "RUNNING_WEIGHT_LOSS_TARGET_KG", None)),
             },
             "body_composition_goal": {
-                "goal_weight_kg": _json_safe(getattr(settings, "USER_GOAL_WEIGHT_KG", None)),
+                "goal_weight_kg": _json_safe(profile.goal_weight_kg),
+                "height_cm": _json_safe(profile.height_cm),
             },
             "strength": {
                 "training_maxes_kg": _json_safe(self._latest_training_maxes()),

@@ -17,8 +17,8 @@ Classification definitions:
 | GET | `/metrics_overview?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Metrics dashboard overview for a date. |
 | GET | `/daily_summary?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Daily health/training summary. |
 | GET | `/recent_workouts?days=N&end_date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Recent workout history. |
-| GET | `/coach_state?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Coach context/readiness state. |
-| GET | `/goal_state` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Current goal metadata. |
+| GET | `/coach_state?date=YYYY-MM-DD&profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Coach context/readiness state; `profile` is optional and defaults to the single-user profile. |
+| GET | `/goal_state?profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Current goal metadata; `profile` is optional and defaults to the single-user profile. |
 | GET | `/user_notes?days=N` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Recent user notes. |
 | GET | `/plan_context?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Active plan phase/context. |
 | GET | `/sse` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Server-sent heartbeat stream. |

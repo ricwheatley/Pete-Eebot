@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     USER_HEIGHT_CM: int
     USER_GOAL_WEIGHT_KG: float
     USER_TIMEZONE: str = "Europe/London"
+    PETEEEBOT_DEFAULT_PROFILE_SLUG: str = "default"
+    PETEEEBOT_DEFAULT_PROFILE_NAME: str | None = None
 
     # --- API CREDENTIALS (from environment) ---
     TELEGRAM_TOKEN: SecretStr
