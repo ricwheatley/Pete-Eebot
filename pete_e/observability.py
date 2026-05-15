@@ -25,6 +25,8 @@ _HELP: dict[str, str] = {
     "peteeebot_external_api_health": "Latest external API health result from readiness checks, 1 for healthy and 0 for unhealthy.",
     "peteeebot_external_api_latency_seconds": "External API readiness-check latency in seconds.",
     "peteeebot_external_api_failures_total": "Total failed external API readiness checks.",
+    "peteeebot_alert_events_total": "Total alert events emitted or suppressed by alert type, severity, and outcome.",
+    "peteeebot_alert_active": "Latest active alert state by alert type and severity, 1 for active and 0 for cleared.",
 }
 _TYPES: dict[str, str] = {
     "peteeebot_job_runs_total": "counter",
@@ -37,6 +39,8 @@ _TYPES: dict[str, str] = {
     "peteeebot_external_api_health": "gauge",
     "peteeebot_external_api_latency_seconds": "summary",
     "peteeebot_external_api_failures_total": "counter",
+    "peteeebot_alert_events_total": "counter",
+    "peteeebot_alert_active": "gauge",
 }
 
 _lock = threading.Lock()
@@ -96,6 +100,25 @@ def record_dependency_check(
             )
             if not ok:
                 _inc_counter_locked("peteeebot_external_api_failures_total", external_labels)
+
+
+def record_alert_event(*, alert_type: str, severity: str, outcome: str = "emitted") -> None:
+    labels = {
+        "alert_type": alert_type,
+        "severity": severity,
+        "outcome": outcome,
+    }
+    with _lock:
+        _inc_counter_locked("peteeebot_alert_events_total", labels)
+
+
+def set_alert_active(*, alert_type: str, severity: str, active: bool) -> None:
+    labels = {
+        "alert_type": alert_type,
+        "severity": severity,
+    }
+    with _lock:
+        _set_gauge_locked("peteeebot_alert_active", 1.0 if active else 0.0, labels)
 
 
 def render_prometheus() -> str:
@@ -165,4 +188,3 @@ def _format_number(value: float) -> str:
     if float(value).is_integer():
         return str(int(value))
     return f"{value:.12g}"
-

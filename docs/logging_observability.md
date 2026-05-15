@@ -56,6 +56,19 @@ Command audit records use:
 | `correlation.job_id` | Job spawned by the command when available. |
 | `summary` | Safe command parameters or result summary. Secrets and raw tokens are redacted. |
 
+Alert records use:
+
+| Field | Meaning |
+| --- | --- |
+| `event` | `alert_event`. |
+| `tag` | `ALERT`. |
+| `alert_type` | `stale_ingest`, `auth_expiry`, or `repeated_failures`. |
+| `severity` | `P1`, `P2`, or `P3`; see `docs/runtime_deploy_runbook.md`. |
+| `title` | Short operator-facing alert title. |
+| `dedupe_key` | In-process suppression key used to avoid repeated Telegram noise. |
+| `summary.message` | Human-readable incident summary. |
+| `summary.*` | Safe incident context such as provider, stale days, failure streak, threshold, and job ID. |
+
 ## Local Triage Workflow
 
 1. Capture the user-visible request ID. API responses include both `X-Request-ID` and `X-Correlation-ID`; browser/API error bodies include `error.correlation_id`.
@@ -83,7 +96,7 @@ jq -c 'select(.outcome=="failed" or .outcome=="timeout" or (.http_status // 0) >
 jq -c 'select(.tag=="AUDIT" and .checkpoint=="operator_command")' /var/log/pete_eebot/pete_history.log
 ```
 
-6. Without shell access, use `GET /api/v1/logs?lines=200` or the console log view, then filter locally by `request_id` or `job_id`.
+6. Without shell access, use `GET /api/v1/logs?lines=200`, then filter locally by `request_id` or `job_id`.
 
 If `jq` is unavailable, `pete logs`, `pete logs API 100`, and `pete logs JOB 100` render both JSON and legacy text log lines.
 
@@ -106,6 +119,8 @@ Key emitted metrics:
 | `peteeebot_job_retries_total` | counter | Sync and external API retry attempts by operation/source. |
 | `peteeebot_dependency_health` | gauge | Latest readiness result for DB and external dependencies. |
 | `peteeebot_external_api_health` | gauge | Latest readiness result for Dropbox, Withings, Telegram, and wger. |
+| `peteeebot_alert_events_total` | counter | Alert events by `alert_type`, `severity`, and `outcome` (`emitted` or `deduped`). |
+| `peteeebot_alert_active` | gauge | Latest active alert state by `alert_type` and `severity`. |
 
 Probe endpoints:
 

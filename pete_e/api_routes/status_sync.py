@@ -25,6 +25,7 @@ from pete_e.api_routes.dependencies import (
     validate_api_key,
 )
 from pete_e.application.sync import run_sync_with_retries
+from pete_e.application import alerts
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 from pete_e import observability
 from pete_e.domain.auth import ROLE_OPERATOR
@@ -34,6 +35,9 @@ router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastA
 
 def _checks_payload(results):
     checks = [{"name": r.name, "ok": r.ok, "detail": r.detail} for r in results]
+    for check in checks:
+        if not check["ok"]:
+            alerts.emit_auth_expiry_if_needed(provider=check["name"], detail=check["detail"])
     return {
         "ok": all(result["ok"] for result in checks),
         "checks": checks,

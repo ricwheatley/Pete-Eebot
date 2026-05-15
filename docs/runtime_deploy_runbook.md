@@ -341,3 +341,96 @@ Current replacement guidance:
 - Use `scripts/backup_db.sh` for operational backups (already present and wired).
 - Keep the corresponding cron rows disabled until replacement scripts are added.
 
+---
+
+## 9) Alert Response Playbooks
+
+Pete-Eebot emits alert events through structured logs, Prometheus metrics, and Telegram when `PETEEEBOT_ALERT_TELEGRAM_ENABLED=true`.
+
+Runtime alert controls:
+
+```bash
+PETEEEBOT_ALERT_TELEGRAM_ENABLED=true
+PETEEEBOT_ALERT_DEDUPE_SECONDS=3600
+PETEEEBOT_STALE_INGEST_ALERT_DAYS=3
+PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD=3
+```
+
+Alert metrics:
+
+- `peteeebot_alert_events_total{alert_type,severity,outcome}` counts emitted and deduped alerts.
+- `peteeebot_alert_active{alert_type,severity}` marks the latest in-process active alert state.
+
+Structured alert logs use `tag=ALERT`, `event=alert_event`, `alert_type`, `severity`, `dedupe_key`, and a safe `summary` object. See `docs/logging_observability.md` for the full schema.
+
+### 9.1 Severity mapping and response expectations
+
+| Severity | Meaning | Response expectation |
+| --- | --- | --- |
+| `P1` | Automation cannot be trusted or an auth token is unrecoverable without action. Examples: no ingest baseline at all, ingest stale for 7+ days, repeated failures continuing well past threshold, invalid refresh token. | Acknowledge immediately during waking hours. Stop relying on generated coaching output until status is green or the incident is understood. Rotate/reauth/fix before the next scheduled report. |
+| `P2` | Core workflow degraded but diagnosis can start from the console. Examples: ingest stale for 3-6 days, Withings/Dropbox/wger auth check reports token expiry, sync/plan/message command failure streak reaches threshold. | Investigate same day. Use console Status, Logs, and Operations pages to isolate source and run one confirmed remediation command if appropriate. |
+| `P3` | Warning-level degradation or early signal. Examples: lower freshness threshold in a test profile, transient alert before repeated-failure threshold escalates. | Review during next operating window. Watch for repeat alerts or worsening readiness/source quality. |
+
+### 9.2 No-shell incident diagnosis
+
+Use these steps when you only have browser/API access:
+
+1. Open `/console/status`.
+2. Check **Health Checks** for failed dependencies. A provider detail containing `expired`, `unauthorized`, `invalid_grant`, or `invalid refresh` maps to an auth-expiry incident.
+3. Check **Sync Freshness** for `Last data date`, `Stale days`, `Reliability`, and `Completeness`.
+4. Check **Last Sync Outcome** for source-level failures. The failed source narrows the next action.
+5. Call `GET /api/v1/logs?lines=200` with a browser session or machine key. Filter for `ALERT`, `ERROR`, `failed`, the alert `dedupe_key`, or a visible request/job ID.
+6. If the fault is stale ingest or a transient source failure, use `/console/operations` to run a confirmed sync once.
+7. Re-open `/console/status` and confirm readiness, freshness, and last sync source statuses.
+8. If the alert remains P1/P2 after one confirmed remediation attempt, avoid repeated manual commands and move to shell/operator access or provider reauthorization.
+
+### 9.3 Stale ingest playbook
+
+Trigger: `alert_type=stale_ingest`.
+
+Primary diagnosis without shell:
+
+- `/console/status` -> **Sync Freshness** shows stale days and completeness.
+- `/console/status` -> **Last Sync Outcome** shows whether the previous run failed by source.
+- `/api/v1/logs?lines=200` shows the last `Sync summary` and any `ALERT` event.
+
+Response:
+
+- If `Last Sync Outcome` is missing, check whether cron/service health is also failing in **Health Checks**.
+- If one source failed, treat it as a provider-specific incident first.
+- If all sources are old, run one manual sync from `/console/operations`.
+- For `P1`, pause trust in daily coaching output until the console shows fresh data.
+
+### 9.4 Auth expiry playbook
+
+Trigger: `alert_type=auth_expiry`.
+
+Primary diagnosis without shell:
+
+- `/console/status` -> failed provider detail usually names `token expired`, `unauthorized`, `invalid_grant`, or missing credentials.
+- `GET /api/v1/status?timeout=5` gives the same provider check details for machine clients.
+- `GET /api/v1/logs?lines=200` shows the alert and the dependency check failure.
+
+Response:
+
+- Withings: complete the Withings browser auth flow documented in `docs/operator_guide.md`, then verify with `/console/status`.
+- Dropbox: refresh the Dropbox app credentials/refresh token in the environment, then restart through normal deploy/service operations.
+- wger: verify `WGER_API_KEY` or username/password auth settings.
+- Do not repeatedly run sync while auth remains expired; it will only extend the failure streak.
+
+### 9.5 Repeated failure playbook
+
+Trigger: `alert_type=repeated_failures`.
+
+Primary diagnosis without shell:
+
+- `/api/v1/logs?lines=200` -> filter by the alert `job_id` or operation name.
+- `/console/status` -> compare health checks and last sync source failures.
+- `/console/operations` -> confirm whether a command is currently rate-limited or blocked by the high-risk operation guard.
+
+Response:
+
+- If the failures are sync failures with a single failed source, follow the provider-specific stale/auth playbook.
+- If failures are timeouts, check whether the operation eventually completed in logs before retrying.
+- If repeated failures are from plan or message resend commands, do not retry more than once from the console; escalate to shell access so process output and environment can be inspected.
+
