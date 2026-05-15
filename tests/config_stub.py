@@ -61,6 +61,10 @@ class Settings:
             "CYCLE_DAYS": 28,
             "PETE_LOG_LEVEL": "INFO",
             "PETE_LOG_TO_CONSOLE": True,
+            "PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS": 10,
+            "PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS": 60.0,
+            "PETEEEBOT_SYNC_TIMEOUT_SECONDS": 300.0,
+            "PETEEEBOT_PROCESS_TIMEOUT_SECONDS": 900.0,
             "WGER_EXPAND_STRETCH_ROUTINES": False,
         }
         defaults.update(overrides)

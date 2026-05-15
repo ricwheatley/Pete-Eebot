@@ -2,6 +2,8 @@ import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
 from pete_e.api_routes.dependencies import (
+    DEFAULT_PROCESS_TIMEOUT_SECONDS,
+    enforce_command_rate_limit,
     get_plan_service,
     start_guarded_high_risk_process,
     validate_api_key,
@@ -55,10 +57,13 @@ async def run_pete_plan_async(
     weeks: int = Query(1),
     start_date: str = Query(...),
     x_api_key: str = Header(None),
+    timeout: float = Query(DEFAULT_PROCESS_TIMEOUT_SECONDS, ge=30, le=3600),
 ):
     validate_api_key(request, x_api_key)
+    enforce_command_rate_limit(request, "plan")
     start_guarded_high_risk_process(
         "plan",
         ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+        timeout_seconds=timeout,
     )
     return {"status": "Started", "weeks": weeks, "start_date": start_date}

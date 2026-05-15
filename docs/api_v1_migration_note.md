@@ -13,6 +13,9 @@ Phase 1 introduces a versioned API namespace at `/api/v1` for the existing FastA
   - versioned paths such as `/api/v1/metrics_overview`
 - The versioned routes call the same handlers as the legacy routes, so response shapes remain compatible during the transition.
 - API-key protected routes now accept the key only via the `X-API-Key` header. `?api_key=...` query-string authentication is rejected.
+- API errors now use a shared `{ "error": { "code", "message", "correlation_id", "details?" } }` envelope.
+- Requests may supply `X-Correlation-ID` or `X-Request-ID`; responses include both headers. If absent, the API generates a correlation UUID.
+- Command routes now have process-local rate limits and practical execution timeouts.
 - Key read-route wiring is covered by `tests/integration/test_api_contracts.py`.
 
 ## Client migration path
@@ -39,3 +42,18 @@ curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/coach_
 ```
 
 Do not put `api_key` in the query string.
+
+For UI calls, include a stable request ID when available:
+
+```bash
+curl -sS \
+  -H "X-API-Key: $PETEEEBOT_API_KEY" \
+  -H "X-Correlation-ID: ui-20260515-001" \
+  "http://127.0.0.1:8000/api/v1/status?timeout=5"
+```
+
+Command defaults:
+
+- Rate limit: 10 requests per 60 seconds per command/client.
+- Sync timeout: 300 seconds unless overridden with `timeout=`.
+- Plan/deploy subprocess timeout: 900 seconds unless overridden by environment or, for plan, `timeout=`.
