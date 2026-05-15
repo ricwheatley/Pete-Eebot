@@ -373,9 +373,45 @@ class Orchestrator:
             report_date=target,
             action_date=action_date,
         )
+        nutrition_line = self._build_nutrition_summary_line(target)
         if guidance:
-            return f"{report.rstrip()}\n{guidance}"
+            combined = f"{report.rstrip()}\n\n{guidance}"
+            if nutrition_line:
+                combined = f"{combined}\n\n{nutrition_line}"
+            return combined
+        if nutrition_line:
+            return f"{report.rstrip()}\n\n{nutrition_line}"
         return report
+
+
+    def _build_nutrition_summary_line(self, target_date: date) -> str | None:
+        loader = getattr(self.dal, "get_nutrition_daily_summary", None)
+        if not callable(loader):
+            return None
+
+        try:
+            summary = loader(target_date) or {}
+        except Exception as exc:  # pragma: no cover - defensive guard
+            log_utils.warn(f"Failed to load nutrition summary for {target_date.isoformat()}: {exc}")
+            return None
+
+        meals = int(summary.get("meals_logged") or 0)
+        if meals <= 0:
+            return None
+
+        calories = coerce_decimal_to_float(summary.get("calories_est"))
+        protein = coerce_decimal_to_float(summary.get("protein_g"))
+        carbs = coerce_decimal_to_float(summary.get("carbs_g"))
+        fat = coerce_decimal_to_float(summary.get("fat_g"))
+
+        if None in (calories, protein, carbs, fat):
+            return None
+
+        return (
+            "Yesterday you logged "
+            f"{calories:.0f} kcal with macros at {protein:.0f}g protein, "
+            f"{carbs:.0f}g carbs, and {fat:.0f}g fat."
+        )
 
     def build_trainer_message(self, message_date: date | None = None) -> str:
         """Compose Pierre's trainer check-in for the supplied date."""
@@ -451,7 +487,7 @@ class Orchestrator:
                 adjustment=adjustment,
             )
             if status == "updated":
-                message = f"{message} Wger has been updated for today's session."
+                message = f"{message}\n\nI've sent the updates to Wger for you."
             elif status == "unavailable":
                 message = f"{message} Wger update unavailable; apply this manually today."
             else:
