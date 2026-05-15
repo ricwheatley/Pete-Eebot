@@ -22,6 +22,12 @@ paths:
             type: string
             format: date
           description: Date in YYYY-MM-DD format. Use the most recent complete date for coaching decisions.
+        - name: profile
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional profile slug. Defaults to the single-user default profile.
       responses:
         "200":
           description: Coach-ready state for the requested date.
@@ -167,6 +173,13 @@ paths:
     get:
       operationId: get_goal_state
       summary: Get long-range goals and training maxes
+      parameters:
+        - name: profile
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional profile slug. Defaults to the single-user default profile.
       responses:
         "200":
           description: Current goals and strength training max context.
@@ -255,6 +268,8 @@ components:
         date:
           type: string
           format: date
+        profile:
+          $ref: "#/components/schemas/UserProfile"
         summary:
           type: object
           properties:
@@ -530,6 +545,8 @@ components:
       type: object
       additionalProperties: true
       properties:
+        profile:
+          $ref: "#/components/schemas/UserProfile"
         running_goal:
           type: object
           additionalProperties: true
@@ -551,6 +568,9 @@ components:
           properties:
             goal_weight_kg:
               type: number
+              nullable: true
+            height_cm:
+              type: integer
               nullable: true
         strength:
           type: object
@@ -574,6 +594,33 @@ components:
               type: string
             sub_3_marathon_half_equivalent:
               type: string
+    UserProfile:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: integer
+          nullable: true
+        slug:
+          type: string
+        display_name:
+          type: string
+        date_of_birth:
+          type: string
+          format: date
+          nullable: true
+        height_cm:
+          type: integer
+          nullable: true
+        goal_weight_kg:
+          type: number
+          nullable: true
+        timezone:
+          type: string
+        is_default:
+          type: boolean
+        is_active:
+          type: boolean
     PlanContext:
       type: object
       additionalProperties: true

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Callable
 
 from pete_e.application.adapter_contracts import NotificationChannel
+from pete_e.application.profile_service import ProfileService
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
@@ -13,6 +14,7 @@ from pete_e.domain.narrative_builder import NarrativeBuilder
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.profile_repository import PostgresProfileRepository
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.telegram_notification_channel import TelegramNotificationChannel
 from pete_e.infrastructure.user_repository import PostgresUserRepository
@@ -55,6 +57,10 @@ def provide_plan_service(*, dal: PostgresDal) -> PlanService:
 
 def provide_user_service(*, dal: PostgresDal) -> UserService:
     return UserService(PostgresUserRepository(pool=dal.pool))
+
+
+def provide_profile_service(*, dal: PostgresDal) -> ProfileService:
+    return ProfileService(PostgresProfileRepository(pool=dal.pool))
 
 
 def provide_wger_export_service(*, dal: PostgresDal, wger_client: WgerClient) -> WgerExportService:

@@ -20,12 +20,14 @@ from pete_e.application.api_services import MetricsService, PlanService, StatusS
 from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
+from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.config import get_env, settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName, normalize_role
 from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.profile_repository import PostgresProfileRepository
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e import observability
 
@@ -71,6 +73,7 @@ _nutrition_service: NutritionService | None = None
 _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
 _user_service: UserService | None = None
+_profile_service: ProfileService | None = None
 _command_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="api-command",
@@ -271,7 +274,7 @@ def get_dal() -> PostgresDal:
 def get_metrics_service() -> MetricsService:
     global _metrics_service
     if _metrics_service is None:
-        _metrics_service = MetricsService(get_dal())
+        _metrics_service = MetricsService(get_dal(), profile_service=get_profile_service())
     return _metrics_service
 
 
@@ -302,6 +305,14 @@ def get_user_service() -> UserService:
         dal = get_dal()
         _user_service = UserService(PostgresUserRepository(pool=dal.pool))
     return _user_service
+
+
+def get_profile_service() -> ProfileService:
+    global _profile_service
+    if _profile_service is None:
+        dal = get_dal()
+        _profile_service = ProfileService(PostgresProfileRepository(pool=dal.pool))
+    return _profile_service
 
 
 def _request_method(request: Request) -> str:

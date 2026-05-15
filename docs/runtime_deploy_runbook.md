@@ -327,6 +327,22 @@ PETEEEBOT_PLANNER_FEATURE_FLAGS="experimental_relaxed_session_spacing=true"
 
 Restart the API/job process after changing the value. See `docs/planner_feature_flags.md` for the current flag registry, audit-log query, and rollback procedure.
 
+### 7.6 Optional multi-profile foundation
+
+The coached-person profile layer is optional. Existing single-user deployments
+continue to use the `USER_DATE_OF_BIRTH`, `USER_HEIGHT_CM`,
+`USER_GOAL_WEIGHT_KG`, and `USER_TIMEZONE` settings as the default profile
+facts. Apply the Phase 5.3 schema only when you want database-backed profile
+metadata:
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260515_add_user_profiles.sql
+```
+
+The migration does not rewrite or split existing training, nutrition, Withings,
+Apple, or wger data. See `docs/multi_profile_migration_note.md` for apply,
+rollback, and future profile-scoping guidance.
+
 ---
 
 ## 8) Stale Commands / Drift Found During Phase 0 Audit
