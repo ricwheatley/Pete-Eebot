@@ -14,12 +14,14 @@ from pete_e.application.composition import (
     provide_plan_service,
     provide_postgres_dal,
     provide_telegram_client,
+    provide_telegram_notification_channel,
     provide_user_service,
     provide_validation_service,
     provide_wger_client,
     provide_wger_export_service,
     provide_withings_client,
 )
+from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
@@ -95,6 +97,10 @@ def _register_defaults(container: Container) -> None:
     container.register(AppleDropboxClient, factory=lambda _c: provide_apple_dropbox_client())
     container.register(WithingsClient, factory=lambda _c: provide_withings_client())
     container.register(TelegramClient, factory=lambda _c: provide_telegram_client())
+    container.register(
+        NotificationChannel,
+        factory=lambda c: provide_telegram_notification_channel(client=c.resolve(TelegramClient)),
+    )
     container.register(
         AppleHealthIngestor,
         factory=lambda c: provide_apple_health_ingestor(
