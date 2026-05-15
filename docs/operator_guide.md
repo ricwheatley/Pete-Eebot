@@ -811,6 +811,8 @@ Protected endpoints require:
 
 - `X-API-Key: <PETEEEBOT_API_KEY>`
 
+Do not send `PETEEEBOT_API_KEY` as a query parameter. API-key protected routes reject `?api_key=...`; header auth is the supported mechanism.
+
 Webhook requirements:
 
 - `GITHUB_WEBHOOK_SECRET` must be configured

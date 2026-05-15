@@ -228,6 +228,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
+      description: Send PETEEEBOT_API_KEY in this header. Query-string API keys are not accepted.
   responses:
     BadRequest:
       description: Invalid request parameter.

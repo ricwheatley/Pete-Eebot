@@ -14,25 +14,27 @@ Classification definitions:
 | --- | --- | --- | --- | --- | --- |
 | GET | `/` | Read | None | `pete_e/api_routes/root.py` | Root health/banner response. |
 | POST | `/` | Read | None | `pete_e/api_routes/root.py` | Backward-compatible no-op root response; does not mutate state. |
-| GET | `/metrics_overview?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/metrics.py` | Metrics dashboard overview for a date. |
-| GET | `/daily_summary?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/metrics.py` | Daily health/training summary. |
-| GET | `/recent_workouts?days=N&end_date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/metrics.py` | Recent workout history. |
-| GET | `/coach_state?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/metrics.py` | Coach context/readiness state. |
-| GET | `/goal_state` | Read | API key | `pete_e/api_routes/metrics.py` | Current goal metadata. |
-| GET | `/user_notes?days=N` | Read | API key | `pete_e/api_routes/metrics.py` | Recent user notes. |
-| GET | `/plan_context?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/metrics.py` | Active plan phase/context. |
-| GET | `/sse` | Read | API key | `pete_e/api_routes/metrics.py` | Server-sent heartbeat stream. |
-| GET | `/nutrition/daily-summary?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/nutrition.py` | Nutrition aggregate for a day. |
-| POST | `/nutrition/log-macros` | Command | API key | `pete_e/api_routes/nutrition.py` | Creates a nutrition log entry. |
-| PATCH | `/nutrition/log-macros/{log_id}` | Command | API key | `pete_e/api_routes/nutrition.py` | Updates a nutrition log entry. |
-| GET | `/plan_for_day?date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/plan.py` | Planned workout rows for one day. |
-| GET | `/plan_for_week?start_date=YYYY-MM-DD` | Read | API key | `pete_e/api_routes/plan.py` | Planned workout rows for one week. |
-| GET | `/plan_decision_trace?plan_id=N&week_number=N` | Read | API key | `pete_e/api_routes/plan.py` | Planner decision trace for one plan week. |
-| POST | `/run_pete_plan_async?weeks=N&start_date=YYYY-MM-DD` | Command | API key | `pete_e/api_routes/plan.py` | Starts `pete plan`; guarded as high-risk until the spawned process exits. |
-| GET | `/status?timeout=N` | Admin | API key | `pete_e/api_routes/status_sync.py` | Runs operational health checks. |
-| POST | `/sync?days=N&retries=N` | Command | API key | `pete_e/api_routes/status_sync.py` | Runs sync in-process; guarded as high-risk for the duration of the call. |
-| GET | `/logs?lines=N` | Admin | API key | `pete_e/api_routes/logs_webhooks.py` | Returns recent application log lines. |
+| GET | `/metrics_overview?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Metrics dashboard overview for a date. |
+| GET | `/daily_summary?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Daily health/training summary. |
+| GET | `/recent_workouts?days=N&end_date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Recent workout history. |
+| GET | `/coach_state?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Coach context/readiness state. |
+| GET | `/goal_state` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Current goal metadata. |
+| GET | `/user_notes?days=N` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Recent user notes. |
+| GET | `/plan_context?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Active plan phase/context. |
+| GET | `/sse` | Read | `X-API-Key` header | `pete_e/api_routes/metrics.py` | Server-sent heartbeat stream. |
+| GET | `/nutrition/daily-summary?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/nutrition.py` | Nutrition aggregate for a day. |
+| POST | `/nutrition/log-macros` | Command | `X-API-Key` header | `pete_e/api_routes/nutrition.py` | Creates a nutrition log entry. |
+| PATCH | `/nutrition/log-macros/{log_id}` | Command | `X-API-Key` header | `pete_e/api_routes/nutrition.py` | Updates a nutrition log entry. |
+| GET | `/plan_for_day?date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/plan.py` | Planned workout rows for one day. |
+| GET | `/plan_for_week?start_date=YYYY-MM-DD` | Read | `X-API-Key` header | `pete_e/api_routes/plan.py` | Planned workout rows for one week. |
+| GET | `/plan_decision_trace?plan_id=N&week_number=N` | Read | `X-API-Key` header | `pete_e/api_routes/plan.py` | Planner decision trace for one plan week. |
+| POST | `/run_pete_plan_async?weeks=N&start_date=YYYY-MM-DD` | Command | `X-API-Key` header | `pete_e/api_routes/plan.py` | Starts `pete plan`; guarded as high-risk until the spawned process exits. |
+| GET | `/status?timeout=N` | Admin | `X-API-Key` header | `pete_e/api_routes/status_sync.py` | Runs operational health checks. |
+| POST | `/sync?days=N&retries=N` | Command | `X-API-Key` header | `pete_e/api_routes/status_sync.py` | Runs sync in-process; guarded as high-risk for the duration of the call. |
+| GET | `/logs?lines=N` | Admin | `X-API-Key` header | `pete_e/api_routes/logs_webhooks.py` | Returns recent application log lines. |
 | POST | `/webhook` | Admin | GitHub HMAC | `pete_e/api_routes/logs_webhooks.py` | Deploy-sensitive GitHub webhook; guarded as high-risk until the deploy process exits. |
+
+Protected API-key routes reject `api_key` query parameters. Send the key only in the `X-API-Key` header so secrets do not leak into browser history, logs, or referrers.
 
 ## High-Risk Operation Guard
 

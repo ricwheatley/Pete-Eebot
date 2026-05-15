@@ -11,7 +11,8 @@ Phase 1 introduces a versioned API namespace at `/api/v1` for the existing FastA
 - Every existing route module mounted by `pete_e/api.py` is now mounted twice:
   - legacy unversioned paths such as `/metrics_overview`
   - versioned paths such as `/api/v1/metrics_overview`
-- The versioned routes call the same handlers as the legacy routes, so response shapes and auth behavior are intentionally unchanged in this phase.
+- The versioned routes call the same handlers as the legacy routes, so response shapes remain compatible during the transition.
+- API-key protected routes now accept the key only via the `X-API-Key` header. `?api_key=...` query-string authentication is rejected.
 - Key read-route wiring is covered by `tests/integration/test_api_contracts.py`.
 
 ## Client migration path
@@ -28,3 +29,13 @@ Existing clients may continue to call unversioned routes during the transition w
 4. Remove unversioned routes in a later hardening phase after a production deploy has run without legacy route traffic.
 
 Until removal, bug fixes must preserve payload compatibility between legacy and `/api/v1` equivalents.
+
+## Auth usage
+
+Use header-based API-key auth:
+
+```bash
+curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/coach_state?date=2026-05-15"
+```
+
+Do not put `api_key` in the query string.
