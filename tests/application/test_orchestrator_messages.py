@@ -31,6 +31,9 @@ class _SummaryDal:
         pass
         """Perform close."""
 
+    def get_nutrition_daily_summary(self, target_date: date):
+        return {"meals_logged": 0}
+
     def get_historical_data(self, start_date: date, end_date: date):  # pragma: no cover - used in tests
         return []
         """Perform get historical data."""
@@ -257,7 +260,7 @@ def test_get_daily_summary_appends_running_backoff_guidance():
 
     assert result.startswith("rendered-narrative")
     assert "Today's run adjustment for Quality run" in result
-    assert "Wger has been updated for today's session" in result
+    assert "I've sent the updates to Wger for you." in result
     assert export_service.calls
     assert export_service.calls[0]["force_overwrite"] is True
     assert export_service.calls[0]["daily_adjustment"].adjust_runs is True
@@ -277,9 +280,8 @@ def test_get_daily_summary_does_not_label_strength_plan_as_run_adjustment():
 
     assert result.startswith("rendered-narrative")
     assert "Run adjustment" not in result
-    assert "Today's gym adjustment for Deadlifts" in result
-    assert "Deadlifts 120 kg -> 114 kg" in result
-    assert "Wger has been updated for today's session" in result
+    assert "adjust today's Deadlifts & Romanian Deadlift session" in result
+    assert "I've sent the updates to Wger for you." in result
     assert export_service.calls[0]["daily_adjustment"].adjust_strength is True
     """Perform test get daily summary does not label strength plan as run adjustment."""
 
@@ -316,3 +318,25 @@ def test_send_telegram_message_uses_client():
     assert telegram.messages == ["Salut"]
     """Perform test send telegram message uses client."""
 
+
+
+def test_get_daily_summary_includes_nutrition_macro_summary():
+    target_date = date(2026, 5, 14)
+
+    class _NutritionDal(_SummaryDal):
+        def get_nutrition_daily_summary(self, target_date: date):
+            return {
+                "meals_logged": 3,
+                "calories_est": 2450,
+                "protein_g": 180,
+                "carbs_g": 250,
+                "fat_g": 70,
+            }
+
+    dal = _NutritionDal([{"metric_name": "weight", "yesterday_value": 82.0}])
+    builder = _NarrativeBuilder()
+    orch = _orchestrator_for(dal, narrative_builder=builder)
+
+    result = orch.get_daily_summary(target_date=target_date)
+
+    assert "Yesterday you logged 2450 kcal with macros at 180g protein, 250g carbs, and 70g fat." in result
