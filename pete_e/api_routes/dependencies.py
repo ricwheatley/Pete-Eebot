@@ -1,7 +1,10 @@
-from pathlib import Path
+import concurrent.futures
 import hmac
+import math
+from pathlib import Path
 import subprocess
 import threading
+import time
 from typing import Callable, TypeVar
 
 from fastapi import Header, HTTPException, Request
@@ -9,16 +12,34 @@ from fastapi import Header, HTTPException, Request
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
 T = TypeVar("T")
+
+DEFAULT_COMMAND_RATE_LIMIT_MAX_REQUESTS = int(get_env("PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS", 10))
+DEFAULT_COMMAND_RATE_LIMIT_WINDOW_SECONDS = float(get_env("PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS", 60.0))
+DEFAULT_SYNC_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_SYNC_TIMEOUT_SECONDS", 300.0))
+DEFAULT_PROCESS_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_PROCESS_TIMEOUT_SECONDS", 900.0))
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
 _nutrition_service: NutritionService | None = None
 _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
+_command_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="api-command",
+)
+_rate_limit_lock = threading.Lock()
+_rate_limit_events: dict[tuple[str, str], list[float]] = {}
+
+
+def _http_exception(status_code: int, detail, headers: dict[str, str] | None = None) -> HTTPException:
+    try:
+        return HTTPException(status_code=status_code, detail=detail, headers=headers)
+    except TypeError:
+        return HTTPException(status_code=status_code, detail=detail)
 
 
 def _secret_to_str(value) -> str:
@@ -94,10 +115,57 @@ def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> 
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
+def _client_identity(request: Request) -> str:
+    headers = getattr(request, "headers", {}) or {}
+    forwarded_for = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None)
+    return str(host or "local")
+
+
+def reset_command_rate_limits() -> None:
+    with _rate_limit_lock:
+        _rate_limit_events.clear()
+
+
+def enforce_command_rate_limit(
+    request: Request,
+    operation: str,
+    *,
+    max_requests: int = DEFAULT_COMMAND_RATE_LIMIT_MAX_REQUESTS,
+    window_seconds: float = DEFAULT_COMMAND_RATE_LIMIT_WINDOW_SECONDS,
+) -> None:
+    if max_requests <= 0 or window_seconds <= 0:
+        return
+
+    now = time.monotonic()
+    key = (operation, _client_identity(request))
+    with _rate_limit_lock:
+        events = [timestamp for timestamp in _rate_limit_events.get(key, []) if now - timestamp < window_seconds]
+        if len(events) >= max_requests:
+            retry_after = max(1, math.ceil(window_seconds - (now - events[0])))
+            _rate_limit_events[key] = events
+            raise _http_exception(
+                status_code=429,
+                detail={
+                    "code": "rate_limited",
+                    "message": f"Rate limit exceeded for {operation}",
+                    "operation": operation,
+                    "retry_after_seconds": retry_after,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+        events.append(now)
+        _rate_limit_events[key] = events
+
+
 def _operation_conflict(exc: OperationInProgress) -> HTTPException:
     return HTTPException(
         status_code=409,
         detail={
+            "code": "operation_in_progress",
             "message": str(exc),
             "requested_operation": exc.requested_operation,
             "active_operation": exc.active_operation,
@@ -105,16 +173,49 @@ def _operation_conflict(exc: OperationInProgress) -> HTTPException:
     )
 
 
-def run_guarded_high_risk_operation(operation: str, callback: Callable[[], T]) -> T:
+def run_guarded_high_risk_operation(
+    operation: str,
+    callback: Callable[[], T],
+    *,
+    timeout_seconds: float | None = None,
+) -> T:
+    if timeout_seconds is None or timeout_seconds <= 0:
+        try:
+            return high_risk_operation_guard.run(operation, callback)
+        except OperationInProgress as exc:
+            raise _operation_conflict(exc) from exc
+
     try:
-        return high_risk_operation_guard.run(operation, callback)
+        high_risk_operation_guard.acquire(operation)
     except OperationInProgress as exc:
         raise _operation_conflict(exc) from exc
+
+    def _run_and_release() -> T:
+        try:
+            return callback()
+        finally:
+            high_risk_operation_guard.release()
+
+    future = _command_executor.submit(_run_and_release)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "command_timeout",
+                "message": f"{operation} exceeded {timeout_seconds:g}s timeout",
+                "operation": operation,
+                "timeout_seconds": timeout_seconds,
+            },
+        ) from exc
 
 
 def start_guarded_high_risk_process(
     operation: str,
     command: list[str],
+    *,
+    timeout_seconds: float | None = DEFAULT_PROCESS_TIMEOUT_SECONDS,
 ) -> subprocess.Popen:
     try:
         high_risk_operation_guard.acquire(operation)
@@ -129,7 +230,24 @@ def start_guarded_high_risk_process(
 
     def _release_when_finished() -> None:
         try:
-            process.wait()
+            try:
+                if timeout_seconds is None or timeout_seconds <= 0:
+                    process.wait()
+                else:
+                    process.wait(timeout=timeout_seconds)
+            except TypeError:
+                process.wait()
+            except subprocess.TimeoutExpired:
+                terminate = getattr(process, "terminate", None)
+                if callable(terminate):
+                    terminate()
+                try:
+                    process.wait(timeout=10)
+                except Exception:
+                    kill = getattr(process, "kill", None)
+                    if callable(kill):
+                        kill()
+                    process.wait()
         finally:
             high_risk_operation_guard.release()
 

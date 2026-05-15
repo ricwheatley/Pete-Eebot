@@ -813,6 +813,34 @@ Protected endpoints require:
 
 Do not send `PETEEEBOT_API_KEY` as a query parameter. API-key protected routes reject `?api_key=...`; header auth is the supported mechanism.
 
+API responses include correlation headers:
+
+- send `X-Correlation-ID` or `X-Request-ID` from clients when you have one
+- if omitted, the API generates one
+- responses include both `X-Correlation-ID` and `X-Request-ID`
+
+Error responses use this envelope:
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded for sync",
+    "correlation_id": "example-request-id",
+    "details": {
+      "operation": "sync",
+      "retry_after_seconds": 42
+    }
+  }
+}
+```
+
+Command protection defaults:
+
+- command rate limit: `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS=10` per `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS=60`
+- sync timeout: `PETEEEBOT_SYNC_TIMEOUT_SECONDS=300`, also overridable per request with `POST /sync?...&timeout=300`
+- plan/deploy subprocess timeout: `PETEEEBOT_PROCESS_TIMEOUT_SECONDS=900`, with plan overridable per request using `timeout=`
+
 Webhook requirements:
 
 - `GITHUB_WEBHOOK_SECRET` must be configured

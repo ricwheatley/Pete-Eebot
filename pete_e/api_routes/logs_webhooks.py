@@ -8,6 +8,7 @@ from fastapi import Header, HTTPException, Query, Request
 from pete_e.api_routes.dependencies import (
     configured_deploy_script_path,
     configured_webhook_secret,
+    enforce_command_rate_limit,
     start_guarded_high_risk_process,
     validate_api_key,
 )
@@ -33,6 +34,7 @@ def logs(request: Request, x_api_key: str = Header(None), lines: int = Query(50,
 
 @router.post("/webhook")
 async def github_webhook(request: Request):
+    enforce_command_rate_limit(request, "deploy")
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:

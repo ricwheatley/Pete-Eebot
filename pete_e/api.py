@@ -9,10 +9,13 @@ from pete_e.api_routes import (
     status_sync_router,
 )
 from pete_e.api_routes.dependencies import (
+    DEFAULT_SYNC_TIMEOUT_SECONDS,
+    enforce_command_rate_limit,
     get_status_service,
     run_guarded_high_risk_operation,
     validate_api_key,
 )
+from pete_e.api_errors import install_api_error_handlers
 from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.config import settings as _settings
@@ -48,6 +51,7 @@ __all__ = [
 ]
 
 app = FastAPI(title="Pete-Eebot API")
+install_api_error_handlers(app)
 
 
 def include_api_routers(api_app: FastAPI) -> None:
@@ -83,12 +87,15 @@ def sync(
     x_api_key: str = Header(None),
     days: int = Query(7, ge=1),
     retries: int = Query(3, ge=0),
+    timeout: float = Query(DEFAULT_SYNC_TIMEOUT_SECONDS, ge=1, le=900),
 ):
     validate_api_key(request, x_api_key)
+    enforce_command_rate_limit(request, "sync")
     try:
         result = run_guarded_high_risk_operation(
             "sync",
             lambda: run_sync_with_retries(days=days, retries=retries),
+            timeout_seconds=timeout,
         )
     except Exception as exc:
         if isinstance(exc, HTTPException):

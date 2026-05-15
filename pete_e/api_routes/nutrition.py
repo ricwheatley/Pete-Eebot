@@ -5,7 +5,11 @@ from typing import Any
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
-from pete_e.api_routes.dependencies import get_nutrition_service, validate_api_key
+from pete_e.api_routes.dependencies import (
+    enforce_command_rate_limit,
+    get_nutrition_service,
+    validate_api_key,
+)
 from pete_e.application.exceptions import ApplicationError
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
@@ -22,6 +26,7 @@ def log_macros(
     x_api_key: str = Header(None),
 ):
     validate_api_key(request, x_api_key)
+    enforce_command_rate_limit(request, "nutrition_log")
     try:
         return get_nutrition_service().log_macros(payload or {})
     except ApplicationError as exc:
@@ -38,6 +43,7 @@ def update_nutrition_log(
     x_api_key: str = Header(None),
 ):
     validate_api_key(request, x_api_key)
+    enforce_command_rate_limit(request, "nutrition_update")
     try:
         return get_nutrition_service().update_log(log_id, payload or {})
     except ApplicationError as exc:

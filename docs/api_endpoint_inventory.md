@@ -36,6 +36,24 @@ Classification definitions:
 
 Protected API-key routes reject `api_key` query parameters. Send the key only in the `X-API-Key` header so secrets do not leak into browser history, logs, or referrers.
 
+## Error and Correlation Contract
+
+All API errors use a common envelope:
+
+```json
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Invalid or missing API key",
+    "correlation_id": "7f0f4a10-2e67-4b5a-94a9-9e8f27dbcf5d"
+  }
+}
+```
+
+When useful, `error.details` contains machine-readable context such as the active guarded operation or validation errors.
+
+Clients may send either `X-Correlation-ID` or `X-Request-ID`. If neither is present, the API generates a UUID. Responses include both `X-Correlation-ID` and `X-Request-ID` with the resolved value so UI clients and logs can tie a failed request to operator-visible diagnostics.
+
 ## High-Risk Operation Guard
 
 The current Phase 0 guard is process-local and intentionally minimal. It serializes API-triggered high-risk workflows so only one of these can run at a time in the API process:
@@ -44,4 +62,21 @@ The current Phase 0 guard is process-local and intentionally minimal. It seriali
 - `POST /run_pete_plan_async`
 - `POST /webhook`
 
-Overlap attempts return `409 Conflict` with the requested and currently active operation names. The guard covers the full synchronous sync call, and it remains held for plan/deploy subprocesses until their `wait()` completes.
+Overlap attempts return `409 Conflict` with the requested and currently active operation names in the shared error envelope. The guard covers the full synchronous sync call, and it remains held for plan/deploy subprocesses until their `wait()` completes.
+
+## Command Protections
+
+State-changing command routes have process-local throttling. Defaults are:
+
+- `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS=10`
+- `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS=60`
+
+When exceeded, the API returns `429` with `error.code=rate_limited` and a `Retry-After` header.
+
+High-risk commands also have execution time bounds:
+
+- `POST /sync`: default `timeout=300` seconds, accepted query range `1..900`.
+- `POST /run_pete_plan_async`: default subprocess timeout `900` seconds, accepted query range `30..3600`.
+- `POST /webhook`: uses `PETEEEBOT_PROCESS_TIMEOUT_SECONDS` for the deploy subprocess.
+
+If synchronous command execution exceeds its timeout, the API returns `504` with `error.code=command_timeout`. The underlying guarded operation remains protected until its worker actually finishes, so a timed-out sync cannot immediately overlap with plan or deploy.

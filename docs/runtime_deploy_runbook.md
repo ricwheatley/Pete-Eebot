@@ -220,6 +220,15 @@ set -a && . /home/ricwheatley/pete-eebot/.env && set +a
 curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/status?timeout=5"
 ```
 
+```bash
+curl -sS -i \
+  -H "X-API-Key: $PETEEEBOT_API_KEY" \
+  -H "X-Correlation-ID: smoke-$(date +%Y%m%d%H%M%S)" \
+  "http://127.0.0.1:8000/api/v1/status?timeout=5"
+```
+
+Confirm the response includes `X-Correlation-ID` and `X-Request-ID`. Command endpoints return the same headers on errors, including `429` rate-limit and `504` timeout responses.
+
 ---
 
 ## 7) Stale Commands / Drift Found During Phase 0 Audit
