@@ -168,9 +168,9 @@ Auth/security today for API:
 
 ## Deployment
 
-- **Decision:** maintain two supported profiles:
-  - **Profile A (primary):** internet-exposed self-hosted VM/Pi behind reverse proxy + TLS + firewall
-  - **Profile B:** containerized single-instance host with optional managed services
+- **Decision:** maintain one supported production profile now and one future target profile:
+  - **Current supported profile (primary):** native Python virtual environment on an internet-exposed self-hosted VM/Pi behind reverse proxy + TLS + firewall.
+  - **Future target profile:** containerized single-instance host with optional managed services, after a fresh application Dockerfile is designed and validated.
 - **Rationale:** supports immediate public-internet target without over-complicating ops.
 
 ---
@@ -273,7 +273,7 @@ Exit criteria:
 - Bind FastAPI to localhost only; expose only reverse proxy.
 - Maintain encrypted backup strategy and test restore quarterly.
 
-### Cloud single-instance (future, optional)
+### Cloud single-instance (future, optional; not currently supported)
 
 - Containerized app + managed Postgres.
 - Secret manager instead of plain `.env` where feasible.
@@ -302,7 +302,7 @@ Exit criteria:
 3. Production surface target: **web UI primary**; CLI should be dev/test only.
 4. Secrets boundary: **local/free-first** (no mandatory paid secret manager).
 5. Deploy SLO: **brief maintenance windows acceptable** (no strict zero-downtime requirement).
-6. Legacy Dockerfile: **unused** and can be removed/replaced.
+6. Legacy Dockerfile: **unused** and retired on 2026-05-15; `docker-compose.yml` is currently DB-only.
 
 ---
 

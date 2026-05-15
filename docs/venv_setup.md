@@ -1,8 +1,8 @@
 # Pete Eebot Virtual Environment Deployment
 
-These steps provision a lightweight Python virtual environment that runs Pete Eebot natively on a Raspberry Pi (or any Linux host) without the memory overhead of Docker. The pinned dependencies live in `requirements.txt`, so recreating the same environment later is reproducible.
+These steps provision a lightweight Python virtual environment that runs Pete Eebot natively on a Raspberry Pi (or any Linux host). The pinned dependencies live in `requirements.txt`, so recreating the same environment later is reproducible.
 
-> **Recommended path:** The virtual environment install keeps the idle footprint below 100 MB on a Raspberry Pi 4, while still exposing the same CLI entry points as the container image.
+> **Recommended path:** The virtual environment install keeps the idle footprint below 100 MB on a Raspberry Pi 4 and is the supported application runtime profile. Docker Compose is only used as an optional local Postgres helper.
 
 ---
 

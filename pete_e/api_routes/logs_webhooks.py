@@ -1,7 +1,6 @@
 import datetime
 import hashlib
 import hmac
-import subprocess
 
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
@@ -9,6 +8,7 @@ from fastapi import Header, HTTPException, Query, Request
 from pete_e.api_routes.dependencies import (
     configured_deploy_script_path,
     configured_webhook_secret,
+    start_guarded_high_risk_process,
     validate_api_key,
 )
 from pete_e.config import settings
@@ -48,7 +48,7 @@ async def github_webhook(request: Request):
     if not hmac.compare_digest(mac.hexdigest(), sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-    subprocess.Popen([str(configured_deploy_script_path())])
+    start_guarded_high_risk_process("deploy", [str(configured_deploy_script_path())])
 
     return {
         "status": "Deployment triggered",
