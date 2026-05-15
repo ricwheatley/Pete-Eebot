@@ -67,6 +67,7 @@ class Settings:
             "PETEEEBOT_SYNC_TIMEOUT_SECONDS": 300.0,
             "PETEEEBOT_PROCESS_TIMEOUT_SECONDS": 900.0,
             "WGER_EXPAND_STRETCH_ROUTINES": False,
+            "PETEEEBOT_PLANNER_FEATURE_FLAGS": "",
         }
         defaults.update(overrides)
 

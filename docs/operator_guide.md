@@ -43,6 +43,8 @@ Weekly automation behaviour:
 
 For unified planner internals (context assembly, stress budget, constraint catalog, and decision trace semantics), see `docs/unified_global_planner.md`.
 
+Planner experiments are gated by feature flags. See `docs/planner_feature_flags.md` for safe defaults, override syntax, audit-log checks, and rollback steps.
+
 - the Sunday review path validates the upcoming week
 - if the active plan is at its rollover point, Pete creates the next plan block
 - otherwise it re-exports the upcoming active week to wger

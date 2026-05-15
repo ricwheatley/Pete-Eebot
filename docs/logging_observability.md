@@ -96,6 +96,12 @@ jq -c 'select(.outcome=="failed" or .outcome=="timeout" or (.http_status // 0) >
 jq -c 'select(.tag=="AUDIT" and .checkpoint=="operator_command")' /var/log/pete_eebot/pete_history.log
 ```
 
+Planner feature-flag audit records use checkpoint `planner_feature_flags` with tag `AUDIT`. They are emitted only when a non-default planner flag changes plan generation:
+
+```bash
+jq -c 'select(.tag=="AUDIT" and .checkpoint=="planner_feature_flags")' /var/log/pete_eebot/pete_history.log
+```
+
 6. Without shell access, use `GET /api/v1/logs?lines=200`, then filter locally by `request_id` or `job_id`.
 
 If `jq` is unavailable, `pete logs`, `pete logs API 100`, and `pete logs JOB 100` render both JSON and legacy text log lines.

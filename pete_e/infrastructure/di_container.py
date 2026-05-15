@@ -29,6 +29,7 @@ from pete_e.config import settings as app_settings
 from pete_e.domain.configuration import DomainSettings, configure as configure_domain
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
+from pete_e.domain.planner_flags import parse_planner_feature_flags
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
@@ -47,6 +48,9 @@ configure_domain(
         baseline_days=app_settings.BASELINE_DAYS,
         cycle_days=app_settings.CYCLE_DAYS,
         phrases_path=app_settings.phrases_path,
+        planner_feature_flags=parse_planner_feature_flags(
+            getattr(app_settings, "PETEEEBOT_PLANNER_FEATURE_FLAGS", "")
+        ),
     )
 )
 

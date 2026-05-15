@@ -53,6 +53,7 @@ class PlanService:
             health_metrics=health_metrics,
             recent_runs=recent_runs,
         )
+        self._audit_planner_feature_flag_effects(plan_dict, start_date=start_date)
         plan_entity = self.plan_mapper.from_dict(plan_dict)
         payload = self.plan_mapper.to_persistence_payload(plan_entity)
 
@@ -61,6 +62,28 @@ class PlanService:
         plan_id = self.dal.save_full_plan(payload)
         log_utils.info(f"Successfully created and persisted plan_id: {plan_id}")
         return plan_id
+
+    def _audit_planner_feature_flag_effects(self, plan_dict: Dict[str, Any], *, start_date: date) -> None:
+        metadata = plan_dict.get("metadata") if isinstance(plan_dict, dict) else {}
+        if not isinstance(metadata, dict):
+            return
+        overrides = metadata.get("planner_feature_flag_overrides")
+        effects = metadata.get("planner_feature_flag_effects")
+        if not overrides or not effects:
+            return
+        log_utils.log_checkpoint(
+            checkpoint="planner_feature_flags",
+            outcome="applied",
+            correlation={
+                "workflow": "plan_generation",
+                "start_date": start_date.isoformat(),
+            },
+            summary={
+                "flags": overrides,
+                "effects": effects,
+            },
+            tag="AUDIT",
+        )
 
     def _load_recent_health_metrics(self) -> List[Dict[str, Any]]:
         loader = getattr(self.dal, "get_historical_metrics", None)
