@@ -796,8 +796,12 @@ If you need to push the edited week back out, the cleanest operator route is usu
 Start the API:
 
 ```bash
-uvicorn pete_e.api:app --host 0.0.0.0 --port 8000
+uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
 ```
+
+For production internet exposure, bind the app to localhost or a private
+interface behind the TLS reverse proxy. Do not expose the Uvicorn port directly
+to the public internet.
 
 Available endpoints include:
 
