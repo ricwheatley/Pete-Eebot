@@ -120,6 +120,31 @@ def _matches_filter(value: Any, expected: str | None) -> bool:
     return str(value or "").strip().lower() == expected.strip().lower()
 
 
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_number(value: Any, *, decimals: int = 1) -> str:
+    num = _to_float(value)
+    if num is None:
+        return "Missing"
+    if decimals <= 0:
+        return str(int(round(num)))
+    return f"{num:.{decimals}f}"
+
+
+def _format_minutes_for_snapshot(value: Any) -> tuple[str, str]:
+    minutes = _to_float(value)
+    if minutes is None:
+        return "Missing", "min"
+    if minutes >= 60:
+        return f"{minutes / 60:.1f}", "h"
+    return _format_number(minutes, decimals=0), "min"
+
+
 class WebConsoleReadModel:
     """Composes existing read services into UI-focused page payloads."""
 
@@ -208,37 +233,49 @@ class WebConsoleReadModel:
 
         baselines = coach_state.get("baselines") or {}
         derived = coach_state.get("derived") or {}
+        sleep_value_display, sleep_unit_display = _format_minutes_for_snapshot(
+            baselines.get("sleep_avg_7d_minutes") or _metric_value(daily_summary, "sleep_asleep_minutes")
+        )
         snapshots = [
             {
                 "label": "Weight",
-                "value": baselines.get("weight_avg_7d_kg") or _metric_value(daily_summary, "weight_kg"),
+                "value": _format_number(
+                    baselines.get("weight_avg_7d_kg") or _metric_value(daily_summary, "weight_kg"),
+                    decimals=1,
+                ),
                 "unit": "kg",
                 "comparison": "7d average",
-                "delta": derived.get("weight_rate_pct_bw_per_week"),
+                "delta": _format_number(derived.get("weight_rate_pct_bw_per_week"), decimals=2),
                 "delta_label": "% BW/week",
             },
             {
                 "label": "Sleep",
-                "value": baselines.get("sleep_avg_7d_minutes") or _metric_value(daily_summary, "sleep_asleep_minutes"),
-                "unit": "min",
+                "value": sleep_value_display,
+                "unit": sleep_unit_display,
                 "comparison": "7d average",
-                "delta": derived.get("sleep_debt_7d_minutes"),
+                "delta": _format_number(derived.get("sleep_debt_7d_minutes"), decimals=0),
                 "delta_label": "sleep debt",
             },
             {
                 "label": "HRV",
-                "value": baselines.get("hrv_avg_7d_ms") or _metric_value(daily_summary, "hrv_sdnn_ms"),
+                "value": _format_number(
+                    baselines.get("hrv_avg_7d_ms") or _metric_value(daily_summary, "hrv_sdnn_ms"),
+                    decimals=1,
+                ),
                 "unit": "ms",
                 "comparison": "7d average",
-                "delta": derived.get("hrv_delta_vs_28d_ms"),
+                "delta": _format_number(derived.get("hrv_delta_vs_28d_ms"), decimals=1),
                 "delta_label": "vs 28d",
             },
             {
                 "label": "Volume",
-                "value": derived.get("strength_load_7d_kg") or _metric_value(daily_summary, "strength_volume_kg"),
+                "value": _format_number(
+                    derived.get("strength_load_7d_kg") or _metric_value(daily_summary, "strength_volume_kg"),
+                    decimals=0,
+                ),
                 "unit": "kg",
                 "comparison": "strength 7d",
-                "delta": derived.get("run_load_7d_km"),
+                "delta": _format_number(derived.get("run_load_7d_km"), decimals=1),
                 "delta_label": "run km 7d",
             },
         ]
