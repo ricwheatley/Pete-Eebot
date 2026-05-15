@@ -226,20 +226,19 @@ def _build_backoff_message(
     runs: Sequence[_PlanItem],
     adjustment: DailyWgerAdjustment,
 ) -> str:
-    trigger = _trigger_text(adjustment.reasons)
     parts: list[str] = []
 
     if strength and adjustment.adjust_strength:
-        load_changes = _load_change_summary(strength, adjustment.weight_multiplier)
         effort = _effort_adjustment_text(adjustment)
-        if load_changes:
+        readiness = _readiness_reason_sentence(adjustment.reasons)
+        session_name = _session_summary(strength)
+        if readiness:
             parts.append(
-                f"Today's gym adjustment for {_session_summary(strength)}: reduce bar load "
-                f"{_percent_drop(adjustment.weight_multiplier)} ({load_changes}); {effort}"
+                f"{readiness} so we're going to adjust today's {session_name} session. We'll {effort}"
             )
         else:
             parts.append(
-                f"Today's gym adjustment for {_session_summary(strength)}: {effort}"
+                f"We're going to adjust today's {session_name} session. We'll {effort}"
             )
 
     if runs and adjustment.adjust_runs:
@@ -257,7 +256,7 @@ def _build_backoff_message(
             "Readiness adjustment: no programmed session today, so keep it to easy walking or mobility"
         )
 
-    return ". ".join(part.rstrip(".") for part in parts) + f".{trigger}"
+    return ". ".join(part.rstrip(".") for part in parts) + "."
 
 
 def _validation_decision_from_adjustment(
@@ -377,11 +376,13 @@ def _effort_adjustment_text(adjustment: DailyWgerAdjustment) -> str:
     return ", ".join(clauses) + " and keep reps crisp"
 
 
-def _trigger_text(reasons: Sequence[str]) -> str:
-    cleaned = [reason.strip() for reason in reasons if reason and reason.strip()]
+def _readiness_reason_sentence(reasons: Sequence[str]) -> str:
+    cleaned = [reason.strip().rstrip(".") for reason in reasons if reason and reason.strip()]
     if not cleaned:
         return ""
-    return " Trigger: " + "; ".join(cleaned[:2]) + "."
+    if len(cleaned) == 1:
+        return cleaned[0]
+    return f"{cleaned[0]} and {cleaned[1]}"
 
 
 def _percent_drop(multiplier: float) -> str:
