@@ -8,6 +8,7 @@ from pete_e.api_routes import (
     plan_router,
     root_router,
     status_sync_router,
+    web_router,
 )
 from pete_e.api_routes.dependencies import (
     DEFAULT_SYNC_TIMEOUT_SECONDS,
@@ -23,6 +24,7 @@ from pete_e.application.sync import run_sync_with_retries
 from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 from pete_e.domain.auth import ROLE_OPERATOR
+from pete_e.api_routes.web import STATIC_DIR
 
 settings = _settings  # Backward-compatible module export for tests/consumers.
 API_V1_PREFIX = "/api/v1"
@@ -40,6 +42,7 @@ ROUTERS = (
     status_sync_router,
     logs_webhooks_router,
 )
+WEB_ROUTERS = (web_router,)
 
 __all__ = [
     "API_V1_PREFIX",
@@ -49,15 +52,31 @@ __all__ = [
     "auth_router",
     "github_webhook",
     "include_api_routers",
+    "include_web_routers",
     "logs",
     "settings",
     "status",
     "sync",
+    "web_router",
 ]
 
 app = FastAPI(title="Pete-Eebot API")
 install_security_middleware(app)
 install_api_error_handlers(app)
+
+
+def mount_static_assets(api_app: FastAPI) -> None:
+    """Mount browser assets when running on real FastAPI/Starlette."""
+
+    mount = getattr(api_app, "mount", None)
+    if not callable(mount):
+        return
+    try:
+        from fastapi.staticfiles import StaticFiles
+    except ImportError:  # pragma: no cover - lightweight test stubs.
+        return
+
+    mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def include_api_routers(api_app: FastAPI) -> None:
@@ -69,8 +88,17 @@ def include_api_routers(api_app: FastAPI) -> None:
         api_app.include_router(router, prefix=API_V1_PREFIX)
 
 
+def include_web_routers(api_app: FastAPI) -> None:
+    """Mount server-rendered browser routes once, outside API versioning."""
+
+    for router in WEB_ROUTERS:
+        api_app.include_router(router)
+
+
 if hasattr(app, "include_router"):
     include_api_routers(app)
+    include_web_routers(app)
+    mount_static_assets(app)
 
 
 def status(
