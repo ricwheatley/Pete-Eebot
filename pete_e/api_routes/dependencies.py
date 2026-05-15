@@ -12,8 +12,10 @@ from fastapi import Header, HTTPException, Request
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
+from pete_e.application.user_service import UserService
 from pete_e.config import get_env, settings
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.user_repository import PostgresUserRepository
 
 T = TypeVar("T")
 
@@ -27,6 +29,7 @@ _metrics_service: MetricsService | None = None
 _nutrition_service: NutritionService | None = None
 _plan_service: PlanService | None = None
 _status_service: StatusService | None = None
+_user_service: UserService | None = None
 _command_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="api-command",
@@ -106,6 +109,14 @@ def get_status_service() -> StatusService:
     if _status_service is None:
         _status_service = StatusService(get_dal())
     return _status_service
+
+
+def get_user_service() -> UserService:
+    global _user_service
+    if _user_service is None:
+        dal = get_dal()
+        _user_service = UserService(PostgresUserRepository(pool=dal.pool))
+    return _user_service
 
 
 def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> None:

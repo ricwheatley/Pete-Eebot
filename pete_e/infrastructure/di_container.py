@@ -14,12 +14,14 @@ from pete_e.application.composition import (
     provide_plan_service,
     provide_postgres_dal,
     provide_telegram_client,
+    provide_user_service,
     provide_validation_service,
     provide_wger_client,
     provide_wger_export_service,
     provide_withings_client,
 )
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
 from pete_e.config import settings as app_settings
 from pete_e.domain.configuration import DomainSettings, configure as configure_domain
@@ -101,6 +103,7 @@ def _register_defaults(container: Container) -> None:
         ),
     )
     container.register(PlanService, factory=lambda c: provide_plan_service(dal=c.resolve(PostgresDal)))
+    container.register(UserService, factory=lambda c: provide_user_service(dal=c.resolve(PostgresDal)))
     container.register(
         WgerExportService,
         factory=lambda c: provide_wger_export_service(
