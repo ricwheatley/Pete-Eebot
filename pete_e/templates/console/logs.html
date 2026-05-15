@@ -1,0 +1,68 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="Log viewer">
+  <article class="panel panel-wide">
+    <div class="panel-heading">
+      <h2>Recent Lines</h2>
+      {{ ui.badge(logs_view.returned_count ~ " shown", "neutral") }}
+    </div>
+
+    <form class="filter-form" method="get" action="/console/logs">
+      <label>
+        <span>Lines</span>
+        <input type="number" name="lines" min="1" max="1000" value="{{ logs_view.requested_lines }}">
+      </label>
+      <label>
+        <span>Tag</span>
+        <input type="text" name="tag" value="{{ logs_view.filters.tag }}" placeholder="API">
+      </label>
+      <label>
+        <span>Outcome</span>
+        <input type="text" name="outcome" value="{{ logs_view.filters.outcome }}" placeholder="failed">
+      </label>
+      <button class="primary-button filter-button" type="submit">Apply</button>
+    </form>
+
+    {% if logs_view.error %}
+      {{ ui.empty_state(logs_view.error) }}
+    {% elif logs_view.rows %}
+      <table class="data-table log-table">
+        <thead>
+          <tr>
+            <th scope="col">Time</th>
+            <th scope="col">Request ID</th>
+            <th scope="col">Job ID</th>
+            <th scope="col">Level</th>
+            <th scope="col">Tag</th>
+            <th scope="col">Outcome</th>
+            <th scope="col">Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in logs_view.rows %}
+          <tr>
+            <td class="nowrap">{{ row.timestamp or "-" }}</td>
+            <td class="mono-cell">{{ row.request_id or "-" }}</td>
+            <td class="mono-cell">{{ row.job_id or "-" }}</td>
+            <td>{{ row.level }}</td>
+            <td>{{ row.tag }}</td>
+            <td>{{ row.outcome or "-" }}</td>
+            <td>{{ row.message }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ ui.empty_state("No log rows match the selected filters.") }}
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

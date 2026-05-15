@@ -5,11 +5,12 @@ from pete_e.api_routes.dependencies import (
     DEFAULT_PROCESS_TIMEOUT_SECONDS,
     audit_command_event,
     enforce_command_rate_limit,
+    get_job_service,
     get_plan_service,
     prepare_job_context,
-    start_guarded_high_risk_process,
     validate_api_key,
 )
+from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.exceptions import ApplicationError
 from pete_e.domain.auth import ROLE_OPERATOR
 
@@ -68,11 +69,18 @@ async def run_pete_plan_async(
     summary = {"weeks": weeks, "start_date": start_date}
     audit_command_event(request, command="plan", outcome="started", summary=summary)
     try:
-        start_guarded_high_risk_process(
-            "plan",
-            ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
-            timeout_seconds=timeout,
+        correlation_id = get_or_create_correlation_id(request)
+        requester = getattr(getattr(request, "state", None), "auth_user", None)
+        get_job_service().enqueue_subprocess(
             job_id=job_id,
+            operation="plan",
+            command=["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            requester=requester,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=timeout,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
         )
     except Exception as exc:
         audit_command_event(
@@ -84,6 +92,11 @@ async def run_pete_plan_async(
         )
         raise
 
-    response = {"status": "Started", **summary}
+    response = {
+        "status": "queued",
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        **summary,
+    }
     audit_command_event(request, command="plan", outcome="succeeded", summary=response)
     return response

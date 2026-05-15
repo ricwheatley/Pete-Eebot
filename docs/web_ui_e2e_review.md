@@ -6,15 +6,15 @@ Scope: implemented Phases 0-4 from `docs/web_ui_evolution_plan.md`, plus Phase 5
 
 ## Executive Summary
 
-The implementation covers most of the planned foundation: `/api/v1` exists, browser sessions and RBAC are in place, command endpoints have CSRF/rate-limit/confirmation controls, the operator console renders the required status/plan/trends/nutrition views, and observability now includes structured logs, correlation IDs, Prometheus-style metrics, and alert hooks.
+The implementation covers most of the planned foundation: `/api/v1` exists, browser sessions and RBAC are in place, command endpoints have CSRF/rate-limit/confirmation controls, the operator console renders the required status/plan/trends/nutrition/logs views, and observability now includes structured logs, correlation IDs, Prometheus-style metrics, and alert hooks.
 
-The main review result is: **security posture is materially improved, but the Phase 3 exit criterion is not fully met yet.** Daily web operation is possible for status, all-source sync, current plan review, trend review, nutrition summary, and message resend. It is not yet fully web-possible for source-specific ingest, morning report preview/send, OAuth recovery, a first-class log viewer, or weekly review/strength-test lifecycle commands.
+The main review result is: **security posture is materially improved, but the Phase 3 exit criterion is not fully met yet.** Daily web operation is possible for status, all-source sync, Withings-only sync, Apple-only ingest, current plan review, trend review, nutrition summary, recent log triage, and message resend. It is not yet fully web-possible for morning report preview/send, OAuth recovery, or weekly review/strength-test lifecycle commands.
 
 The highest-priority production gaps are:
 
-- Browser auth has no documented or callable owner bootstrap path, and no password reset/recovery flow.
+- Browser auth now has a local-only documented owner bootstrap and owner password recovery path; a browser-native owner/user management UI is still missing.
 - Several console operations still start raw CLI subprocesses rather than durable, inspectable jobs.
-- The console lacks a Logs page even though incident playbooks refer to console-based log triage.
+- The console Logs page is backed by recent file logs rather than durable, indexed audit/job storage.
 
 ## Phase Completion Snapshot
 
@@ -22,9 +22,9 @@ The highest-priority production gaps are:
 | --- | --- | --- | --- |
 | Phase 0 | Runtime docs, retired stale Dockerfile, endpoint inventory, concurrency guard | Mostly complete | `docs/runtime_deploy_runbook.md`, `docs/api_endpoint_inventory.md`, `pete_e/application/concurrency_guard.py`, guarded sync/plan/deploy paths |
 | Phase 1 | `/api/v1`, no query API keys, error envelope, correlation IDs, command protections | Complete for reviewed surface | `pete_e/api.py`, `pete_e/api_errors.py`, `pete_e/api_routes/dependencies.py`, `tests/test_api_auth.py`, `tests/test_api_hardening.py` |
-| Phase 2 | User/session/RBAC, cookies, CSRF, brute force controls, CORS, security headers | Mostly complete, recovery/bootstrap gaps remain | `migrations/20260515_add_auth_users_sessions_rbac.sql`, `pete_e/api_routes/auth.py`, `pete_e/api_security.py`, `tests/test_browser_auth.py` |
+| Phase 2 | User/session/RBAC, cookies, CSRF, brute force controls, CORS, security headers | Mostly complete; local bootstrap/recovery exists, browser-native reset UI remains missing | `migrations/20260515_add_auth_users_sessions_rbac.sql`, `pete_e/api_routes/auth.py`, `pete_e/api_security.py`, `tests/test_browser_auth.py`, `pete bootstrap-owner`, `pete reset-owner-password` |
 | Phase 3 | Minimal web console and daily operator workflows via web | Partially complete | `pete_e/api_routes/web.py`, `pete_e/application/web_console.py`, templates under `pete_e/templates/console`, `tests/test_web_console.py` |
-| Phase 4 | Structured logs, metrics, readiness, alerts, playbooks | Mostly complete, UI integration gap remains | `pete_e/api_logging.py`, `pete_e/observability.py`, `pete_e/application/alerts.py`, `docs/logging_observability.md`, `docs/runtime_deploy_runbook.md` |
+| Phase 4 | Structured logs, metrics, readiness, alerts, playbooks | Mostly complete | `pete_e/api_logging.py`, `pete_e/observability.py`, `pete_e/application/alerts.py`, `docs/logging_observability.md`, `docs/runtime_deploy_runbook.md`, `/console/logs` |
 | Phase 5 | Optional adapter contracts, feature flags, multi-profile foundation | Present as foundation | `pete_e/application/adapter_contracts.py`, `docs/adapter_extension_guide.md`, `docs/planner_feature_flags.md`, `docs/multi_profile_migration_note.md` |
 
 ## Security Posture Review
@@ -43,8 +43,8 @@ The highest-priority production gaps are:
 | Webhook HMAC validation | Pass | GitHub webhook validates `X-Hub-Signature-256`. |
 | Command endpoint safety | Partial | Commands are allowlisted, RBAC/CSRF protected, rate-limited, confirmed, audited, and guarded. Plan/deploy/message still execute direct subprocesses. |
 | Job-level locking | Partial | Process-local guard exists. It is not DB-backed and does not coordinate across multiple API processes or cron. |
-| Audit trails | Partial | Structured audit logs exist. There is no durable DB audit/job table or console audit view. |
-| Password reset flow | Missing | Required by Phase 2 prompt/plan; no route, CLI, or doc path found. |
+| Audit trails | Partial | Structured audit logs exist and are visible through `/console/logs`. There is no durable DB audit/job table. |
+| Password reset flow | Partial | Local-only `pete reset-owner-password` exists for owners and revokes sessions. There is still no browser-native owner/user management UI. |
 | Admin/user management UI | Missing | `/console/admin` is a placeholder only. |
 | Public-internet deployment binding | Pass | `docs/runtime_deploy_runbook.md` now documents localhost app binding behind reverse proxy/TLS/firewall, with production readiness gates in `docs/production_readiness_checklist.md`. |
 
@@ -52,8 +52,8 @@ The highest-priority production gaps are:
 
 | Workflow | Web status | Current web/API path | Gap |
 | --- | --- | --- | --- |
-| Sign in/out | Web possible | `/login`, `/auth/login`, `/auth/logout` | Owner bootstrap/recovery is not documented. |
-| Health checks | Web possible | `/console/status`, `/api/v1/status`, `/readyz` | `/readyz` exposes detailed dependency status unauthenticated unless the reverse proxy restricts it. |
+| Sign in/out | Web possible | `/login`, `/auth/login`, `/auth/logout` | First owner bootstrap and owner password recovery are documented as local-only commands. |
+| Health checks | Web possible | `/console/status`, `/api/v1/status`, `/readyz` | `/readyz` is public but returns only coarse readiness; detailed dependency status requires authenticated status surfaces. |
 | Last sync outcome and source failures | Web possible | `/console/status` | Good enough for daily triage. |
 | View current week plan | Web possible | `/console/plan`, `/api/v1/plan_for_week` | Good enough for daily review. |
 | View decision trace | Web possible | `/console/plan`, `/api/v1/plan_decision_trace` | Good enough for daily review. |
@@ -61,11 +61,11 @@ The highest-priority production gaps are:
 | View nutrition summary | Web possible | `/console/nutrition`, `/api/v1/nutrition/daily-summary` | Console is read-only. |
 | Log or edit macros | API possible, not console possible | `POST/PATCH /api/v1/nutrition/log-macros` | Add console forms if human operators need this outside GPT/action clients. |
 | Run standard all-source sync | Web possible | `/console/operations/run-sync`, `/api/v1/sync` | Good enough for daily remediation. |
-| Run Withings-only sync | CLI-only | `pete withings-sync` | No web command. |
-| Run Apple-only ingest | CLI-only | `pete ingest-apple` | No web command. |
+| Run Withings-only sync | Web possible | `/console/operations/run-withings-sync`, `pete withings-sync` | Operator command uses RBAC, CSRF, typed confirmation, rate limit, durable job service, source-level result payload, and audit history. |
+| Run Apple-only ingest | Web possible | `/console/operations/ingest-apple`, `pete ingest-apple` | Operator command uses RBAC, CSRF, typed confirmation, rate limit, durable job service, Apple Health source status, import counts, and audit history. |
 | Generate/send daily summary | Partial | `/console/operations/resend-message` with `summary` | No preview, no date override, does not expose `pete morning-report`. |
 | Generate/send trainer message | Web possible | `/console/operations/resend-message` with `trainer` | No preview. |
-| View recent logs | API possible, not console possible | `/api/v1/logs?lines=N` | Runbook references console Logs, but no Logs nav/page exists. |
+| View recent logs | Web possible | `/console/logs?lines=N`, `/api/v1/logs?lines=N` | Console supports recent count plus basic tag/outcome filters; logs are still file-backed rather than indexed durable job/audit state. |
 | Run weekly plan message resend | Web possible | `/console/operations/resend-message` with `plan` | No preview. |
 | Generate next plan block | Web possible | `/console/operations/generate-plan`, `/api/v1/run_pete_plan_async` | Starts subprocess and has no job status page. |
 
@@ -96,8 +96,8 @@ These should move into web only if the operation becomes routine, can be safely 
 
 | Gap | Why it matters | Estimate |
 | --- | --- | --- |
-| Add owner bootstrap/recovery procedure | The auth tables exist, but there is no documented or callable way to create the first owner or recover access without ad hoc code/SQL. | 1-2 days |
-| Add a first-class Logs console page | Incident playbooks reference console log triage, but the UI has no Logs page. Operators must call API/CLI manually. | 1-2 days |
+| Add owner bootstrap/recovery procedure | Implemented with local-only `pete bootstrap-owner` and `pete reset-owner-password`; browser-native user management remains a later admin UI gap. | Done |
+| Add a first-class Logs console page | Implemented with `/console/logs`, read-only RBAC, recent line count, tag/outcome filters, and request/job correlation columns. Durable indexed audit/job history remains a P1 gap. | Done |
 
 ### P1
 
@@ -105,11 +105,11 @@ These should move into web only if the operation becomes routine, can be safely 
 | --- | --- | --- |
 | Replace CLI subprocess commands with an application job service for plan/message/deploy | Current controls reduce risk but do not provide durable job status, stdout/stderr capture, or multi-process coordination. | 4-8 days |
 | Add password reset or owner-driven password recovery | Phase 2 requested reset flow. Without it, routine auth recovery is a shell/SQL break-glass operation. | 2-4 days |
-| Add web source-specific ingest actions | Withings-only and Apple-only paths are common remediation workflows but remain CLI-only. | 2-3 days |
+| Add web source-specific ingest actions | Withings-only and Apple-only paths now run from `/console/operations` with source-level success/failure and durable audit/job records. | Done |
 | Add morning-report preview/send command | The scheduler runs `pete morning-report --send`, but console only resends `pete message --summary`. | 1-2 days |
 | Add weekly review and strength-test lifecycle commands | `scripts.run_sunday_review` and `pete lets-begin` are weekly/cycle operations with no web surface. | 3-5 days |
 | Add durable audit/job history storage | Logs are useful but not queryable product state; in-memory metrics reset on restart. | 4-7 days |
-| Restrict or redact unauthenticated readiness details | `/readyz` is unauthenticated and returns dependency details. Safe if reverse-proxy restricted, leaky if public. | 0.5-1 day |
+| Keep unauthenticated readiness coarse | `/readyz` is unauthenticated and returns only `healthy`/`unhealthy`; detailed dependency names/errors stay in `/api/v1/status` and `/console/status`. | Done |
 
 ### P2
 
@@ -124,4 +124,4 @@ These should move into web only if the operation becomes routine, can be safely 
 
 ## Release Recommendation
 
-Do not treat Phases 0-4 as fully closed until the P0 items are complete. After that, the system is reasonable for a controlled single-operator web rollout behind TLS/reverse proxy, with CLI retained for break-glass and cycle-level operations. Phase 3 should remain open until the P1 daily/weekly workflow gaps are either implemented or explicitly reclassified as break-glass.
+With the P0 items complete and source-specific ingest now web-possible, the system is reasonable for a controlled single-operator web rollout behind TLS/reverse proxy, with CLI retained for break-glass and cycle-level operations. Phase 3 should remain open until the remaining P1 daily/weekly workflow gaps are either implemented or explicitly reclassified as break-glass.

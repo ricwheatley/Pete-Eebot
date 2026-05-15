@@ -23,6 +23,7 @@ _SENSITIVE_KEYS = {
 _SAFE_IDENTITY_KEYS = {
     "auth_scheme",
     "session_id",
+    "sessions_revoked",
     "request_id",
     "correlation_id",
     "job_id",

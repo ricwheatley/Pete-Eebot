@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+import json
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,8 @@ from pete_e.api_routes import dependencies, web
 from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY
+from pete_e.domain.daily_sync import AppleHealthImportSummary, AppleHealthIngestResult
+from pete_e.domain.jobs import ApplicationJob, CommandHistoryEntry
 
 
 class _Request:
@@ -166,6 +169,114 @@ class _NutritionService:
         }
 
 
+class _JobService:
+    def __init__(self) -> None:
+        self.enqueued: list[dict] = []
+        self.command_events: list[dict] = []
+        self.history = [
+            CommandHistoryEntry(
+                id=7,
+                request_id="req-123",
+                correlation_id="req-123",
+                job_id="plan-job-1",
+                requester_user_id=1,
+                requester_username="pete",
+                auth_scheme="session",
+                command="plan",
+                outcome="succeeded",
+                safe_summary={"weeks": 4, "start_date": "2026-05-18"},
+                client_identity="127.0.0.1",
+                created_at=datetime(2026, 5, 15, 9, 2, tzinfo=timezone.utc),
+            )
+        ]
+        self.jobs = [
+            ApplicationJob(
+                id="plan-job-1",
+                operation="plan",
+                requester_user_id=1,
+                requester_username="pete",
+                status="succeeded",
+                request_id="req-123",
+                correlation_id="req-123",
+                request_summary={"weeks": 4, "start_date": "2026-05-18"},
+                created_at=datetime(2026, 5, 15, 9, 0, tzinfo=timezone.utc),
+                started_at=datetime(2026, 5, 15, 9, 1, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 5, 15, 9, 2, tzinfo=timezone.utc),
+                exit_code=0,
+                result_summary="plan completed successfully.",
+                stdout_summary="created plan 42",
+            )
+        ]
+
+    def enqueue_subprocess(self, **kwargs):
+        self.enqueued.append(kwargs)
+        return ApplicationJob(
+            id=kwargs["job_id"],
+            operation=kwargs["operation"],
+            requester_user_id=kwargs["requester"].id,
+            requester_username=kwargs["requester"].username,
+            status="queued",
+            request_id=kwargs["request_id"],
+            correlation_id=kwargs["correlation_id"],
+            request_summary=kwargs["request_summary"],
+        )
+
+    def run_callback(self, **kwargs):
+        self.enqueued.append(kwargs)
+        return kwargs["callback"]()
+
+    def list_recent_jobs(self, *, limit: int = 25):
+        return self.jobs[:limit]
+
+    def list_current_jobs(self, *, limit: int = 10):
+        return [job for job in self.jobs if not job.is_terminal][:limit]
+
+    def get_job(self, job_id: str):
+        return next((job for job in self.jobs if job.id == job_id), None)
+
+    def record_command_event(self, **kwargs):
+        self.command_events.append(kwargs)
+        entry = CommandHistoryEntry(
+            id=len(self.command_events),
+            request_id=kwargs["request_id"],
+            correlation_id=kwargs["correlation_id"],
+            job_id=kwargs["job_id"],
+            requester_user_id=kwargs["requester"].id if kwargs["requester"] is not None else None,
+            requester_username=kwargs["requester"].username if kwargs["requester"] is not None else None,
+            auth_scheme=kwargs["auth_scheme"],
+            command=kwargs["command"],
+            outcome=kwargs["outcome"],
+            safe_summary=kwargs["summary"],
+            client_identity=kwargs["client_identity"],
+        )
+        self.history.insert(0, entry)
+        return entry
+
+    def list_command_history(
+        self,
+        *,
+        limit: int = 25,
+        query: str | None = None,
+        command: str | None = None,
+        outcome: str | None = None,
+    ):
+        rows = self.history
+        if command:
+            rows = [entry for entry in rows if entry.command == command]
+        if outcome:
+            rows = [entry for entry in rows if entry.outcome == outcome]
+        if query:
+            needle = query.lower()
+            rows = [
+                entry
+                for entry in rows
+                if needle in entry.request_id.lower()
+                or (entry.job_id and needle in entry.job_id.lower())
+                or (entry.requester_username and needle in entry.requester_username.lower())
+            ]
+        return rows[:limit]
+
+
 def _body(response) -> str:
     body = getattr(response, "body", b"")
     if isinstance(body, bytes):
@@ -195,6 +306,7 @@ def _install_console_services(monkeypatch: pytest.MonkeyPatch, user_service: _Us
     monkeypatch.setattr(dependencies, "get_metrics_service", lambda: _MetricsService())
     monkeypatch.setattr(dependencies, "get_plan_service", lambda: _PlanService())
     monkeypatch.setattr(dependencies, "get_nutrition_service", lambda: _NutritionService())
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: _JobService())
 
 
 def test_console_route_redirects_unauthenticated_browser_request() -> None:
@@ -217,6 +329,7 @@ def test_console_page_renders_authenticated_layout_with_read_only_nav(monkeypatc
     assert "System Status" in html
     assert "Pete-Eebot" in html
     assert 'href="/console/plan"' in html
+    assert 'href="/console/logs"' in html
     assert 'href="/console/operations"' not in html
     assert 'href="/console/admin"' not in html
 
@@ -305,6 +418,95 @@ def test_nutrition_page_renders_missing_daily_summary_state(monkeypatch: pytest.
     assert "No nutrition entries logged for today." in html
 
 
+def test_logs_page_renders_recent_log_fields_for_read_only_user(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "pete_history.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-05-15T08:00:00.000Z",
+                        "level": "INFO",
+                        "tag": "API",
+                        "message": "GET /api/v1/status 200",
+                        "request_id": "req-123",
+                        "outcome": "succeeded",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-05-15T08:01:00.000Z",
+                        "level": "ERROR",
+                        "tag": "AUDIT",
+                        "message": "CHECKPOINT operator_command failed",
+                        "outcome": "failed",
+                        "correlation": {"request_id": "req-456", "job_id": "sync-abc"},
+                    }
+                ),
+                "[2026-05-15T08:02:00Z] [WARNING] [SYNC] Sync summary: run=daily",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    service = _UserService(_user(ROLE_READ_ONLY))
+    _install_console_services(monkeypatch, service)
+    monkeypatch.setattr(type(api.settings), "log_path", property(lambda self: log_path))
+
+    response = web.console_logs(
+        _Request(path="/console/logs", cookies={dependencies.session_cookie_name(): service.token})
+    )
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert "Recent Lines" in html
+    assert "req-123" in html
+    assert "sync-abc" in html
+    assert "AUDIT" in html
+    assert "failed" in html
+    assert "Sync summary: run=daily" in html
+
+
+def test_logs_page_filters_by_tag_and_outcome(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log_path = tmp_path / "pete_history.log"
+    log_path.write_text(
+        "\n".join(
+            [
+                json.dumps({"level": "INFO", "tag": "API", "outcome": "succeeded", "message": "status ok"}),
+                json.dumps(
+                    {
+                        "level": "ERROR",
+                        "tag": "JOB",
+                        "outcome": "failed",
+                        "message": "job sync failed",
+                        "job_id": "sync-failed",
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    service = _UserService(_user(ROLE_READ_ONLY))
+    _install_console_services(monkeypatch, service)
+    monkeypatch.setattr(type(api.settings), "log_path", property(lambda self: log_path))
+
+    response = web.console_logs(
+        _Request(
+            path="/console/logs",
+            cookies={dependencies.session_cookie_name(): service.token},
+            query_params={"lines": "100", "tag": "JOB", "outcome": "failed"},
+        )
+    )
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert "job sync failed" in html
+    assert "sync-failed" in html
+    assert "status ok" not in html
+
+
 def test_status_service_reads_latest_sync_outcome_from_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     log_path = tmp_path / "pete_history.log"
     log_path.write_text(
@@ -374,12 +576,98 @@ def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.
     html = _body(response)
     assert response.status_code == 200
     assert "Run Sync" in html
+    assert "Withings Sync" in html
+    assert "Apple Ingest" in html
     assert "Generate Plan" in html
     assert "Resend Message" in html
     assert "RUN SYNC" in html
+    assert "RUN WITHINGS SYNC" in html
+    assert "RUN APPLE INGEST" in html
     assert "GENERATE PLAN" in html
     assert "RESEND MESSAGE" in html
     assert 'data-endpoint="/console/operations/run-sync"' in html
+    assert 'data-endpoint="/console/operations/run-withings-sync"' in html
+    assert 'data-endpoint="/console/operations/ingest-apple"' in html
+
+
+def test_jobs_page_renders_recent_jobs_for_operator(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+
+    response = web.console_jobs(
+        _Request(path="/console/jobs", cookies={dependencies.session_cookie_name(): service.token})
+    )
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert "Current Jobs" in html
+    assert "Recent Jobs" in html
+    assert "plan-job-1" in html
+    assert "succeeded" in html
+
+
+def test_command_history_page_renders_searchable_audit_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+
+    response = web.console_command_history(
+        _Request(
+            path="/console/history",
+            cookies={dependencies.session_cookie_name(): service.token},
+            query_params={"q": "plan-job", "command": "plan", "outcome": "succeeded"},
+        )
+    )
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert "Command History" in html
+    assert "plan-job-1" in html
+    assert "req-123" in html
+    assert "session" in html
+    assert "start_date" in html
+
+
+def test_command_history_api_returns_recent_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+
+    response = web.console_command_history_api(
+        _Request(path="/console/history.json", cookies={dependencies.session_cookie_name(): service.token}),
+    )
+
+    body = getattr(response, "content", None)
+    if body is None:
+        body = json.loads(getattr(response, "body", b"{}").decode("utf-8"))
+    assert response.status_code == 200
+    assert body["entries"][0]["request_id"] == "req-123"
+    assert body["entries"][0]["job_id"] == "plan-job-1"
+    assert body["entries"][0]["auth_scheme"] == "session"
+
+
+def test_job_status_api_requires_operator_and_returns_job_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+
+    response = web.console_job_status(
+        _Request(path="/console/jobs/plan-job-1/status", cookies={dependencies.session_cookie_name(): service.token}),
+        "plan-job-1",
+    )
+
+    body = getattr(response, "content", None)
+    if body is None:
+        body = json.loads(getattr(response, "body", b"{}").decode("utf-8"))
+    assert response.status_code == 200
+    assert body == {
+        "job": job_service.jobs[0].to_status_payload(),
+    }
 
 
 def test_console_command_requires_operator_role_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -462,13 +750,11 @@ def test_console_run_sync_executes_after_confirmation_and_audits(
     csrf_token = dependencies.generate_csrf_token(service.token)
     audit_events: list[dict] = []
     captured: dict[str, tuple[int, int]] = {}
+    job_service = _JobService()
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
     monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
-    monkeypatch.setattr(
-        dependencies,
-        "run_guarded_high_risk_operation",
-        lambda operation, callback, timeout_seconds=None, job_id=None: callback(),
-    )
+    monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "sync-job-test")
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
     monkeypatch.setattr(
         dependencies,
         "audit_command_event",
@@ -503,26 +789,142 @@ def test_console_run_sync_executes_after_confirmation_and_audits(
 
     assert captured["args"] == (2, 0)
     assert payload["status"] == "completed"
+    assert payload["job_id"] == "sync-job-test"
     assert payload["success"] is True
+    assert job_service.enqueued[0]["operation"] == "sync"
     assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
+
+
+def test_console_run_withings_sync_uses_job_service_and_reports_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    audit_events: list[dict] = []
+    captured: dict[str, tuple[int, int]] = {}
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
+    monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "withings-job-test")
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+    monkeypatch.setattr(
+        dependencies,
+        "audit_command_event",
+        lambda request, **event: audit_events.append(event),
+    )
+
+    def _withings(days: int, retries: int) -> SyncResult:
+        captured["args"] = (days, retries)
+        return SyncResult(
+            success=False,
+            attempts=2,
+            failed_sources=["Withings"],
+            source_statuses={"Withings": "failed", "Database": "ok"},
+            label="withings-only",
+            undelivered_alerts=[],
+        )
+
+    monkeypatch.setattr(web, "run_withings_only_with_retries", _withings)
+
+    payload = web.console_run_withings_sync(
+        _Request(
+            path="/console/operations/run-withings-sync",
+            method="POST",
+            headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+            cookies={
+                dependencies.session_cookie_name(): service.token,
+                dependencies.csrf_cookie_name(): csrf_token,
+            },
+        ),
+        payload={"confirmation": "RUN WITHINGS SYNC", "days": 7, "retries": 2},
+    )
+
+    assert captured["args"] == (7, 2)
+    assert payload["status"] == "completed"
+    assert payload["job_id"] == "withings-job-test"
+    assert payload["success"] is False
+    assert payload["source_statuses"] == {"Withings": "failed", "Database": "ok"}
+    assert "Withings=failed" in payload["summary"]
+    assert job_service.enqueued[0]["operation"] == "withings_sync"
+    assert job_service.enqueued[0]["request_summary"] == {"days": 7, "retries": 2, "source": "Withings"}
+    assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
+    assert audit_events[-1]["summary"]["source_statuses"]["Withings"] == "failed"
+
+
+def test_console_apple_ingest_uses_job_service_and_reports_sources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    audit_events: list[dict] = []
+    job_service = _JobService()
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
+    monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "apple-job-test")
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+    monkeypatch.setattr(
+        dependencies,
+        "audit_command_event",
+        lambda request, **event: audit_events.append(event),
+    )
+
+    def _apple() -> AppleHealthIngestResult:
+        return AppleHealthIngestResult(
+            success=True,
+            summary=AppleHealthImportSummary(
+                sources=("HealthAutoExport-1.json",),
+                workouts=3,
+                daily_points=42,
+                hr_days=2,
+                sleep_days=1,
+            ),
+            failures=(),
+            statuses={"Apple Health": "ok"},
+            alerts=(),
+        )
+
+    monkeypatch.setattr(web, "run_apple_health_ingest", _apple)
+
+    payload = web.console_ingest_apple(
+        _Request(
+            path="/console/operations/ingest-apple",
+            method="POST",
+            headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+            cookies={
+                dependencies.session_cookie_name(): service.token,
+                dependencies.csrf_cookie_name(): csrf_token,
+            },
+        ),
+        payload={"confirmation": "RUN APPLE INGEST"},
+    )
+
+    assert payload["status"] == "completed"
+    assert payload["job_id"] == "apple-job-test"
+    assert payload["success"] is True
+    assert payload["source_statuses"] == {"Apple Health": "ok"}
+    assert payload["failed_sources"] == []
+    assert payload["import_summary"]["source_file_count"] == 1
+    assert "Apple Health=ok" in payload["summary"]
+    assert "workouts=3" in payload["summary"]
+    assert job_service.enqueued[0]["operation"] == "apple_ingest"
+    assert job_service.enqueued[0]["request_summary"] == {"source": "Apple Health"}
+    assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
+    assert audit_events[-1]["summary"]["source_statuses"] == {"Apple Health": "ok"}
 
 
 def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _UserService(_user(ROLE_OPERATOR))
     csrf_token = dependencies.generate_csrf_token(service.token)
-    commands: list[tuple[str, list[str]]] = []
+    job_service = _JobService()
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
     monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
     monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
-    monkeypatch.setattr(
-        dependencies,
-        "start_guarded_high_risk_process",
-        lambda operation, command, **kwargs: commands.append((operation, command)),
-    )
+    monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "plan-job-test")
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
     request = _Request(
         path="/console/operations/generate-plan",
         method="POST",
-        headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+        headers={dependencies.CSRF_HEADER_NAME: csrf_token, "X-Request-ID": "req-plan-1"},
         cookies={
             dependencies.session_cookie_name(): service.token,
             dependencies.csrf_cookie_name(): csrf_token,
@@ -538,12 +940,28 @@ def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: 
         payload={"confirmation": "RESEND MESSAGE", "message_type": "trainer"},
     )
 
-    assert plan_payload == {"status": "started", "command": "plan", "weeks": 4, "start_date": "2026-05-18"}
-    assert message_payload == {"status": "started", "command": "message_resend", "message_type": "trainer"}
-    assert commands == [
-        ("plan", ["pete", "plan", "--weeks", "4", "--start-date", "2026-05-18"]),
-        ("message_resend", ["pete", "message", "--trainer", "--send"]),
-    ]
+    assert plan_payload == {
+        "status": "queued",
+        "command": "plan",
+        "job_id": "plan-job-test",
+        "status_url": "/console/jobs/plan-job-test",
+        "status_api_url": "/console/jobs/plan-job-test/status",
+        "weeks": 4,
+        "start_date": "2026-05-18",
+    }
+    assert message_payload == {
+        "status": "queued",
+        "command": "message_resend",
+        "job_id": "plan-job-test",
+        "status_url": "/console/jobs/plan-job-test",
+        "status_api_url": "/console/jobs/plan-job-test/status",
+        "message_type": "trainer",
+    }
+    assert job_service.enqueued[0]["command"] == ["pete", "plan", "--weeks", "4", "--start-date", "2026-05-18"]
+    assert job_service.enqueued[0]["requester"].username == "pete"
+    assert job_service.enqueued[0]["request_id"] == "req-plan-1"
+    assert job_service.enqueued[1]["command"] == ["pete", "message", "--trainer", "--send"]
+    assert job_service.enqueued[1]["operation"] == "message_resend"
 
 
 def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
@@ -554,6 +972,13 @@ def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
     }
 
     assert ("GET", "/console/status") in mounted_routes
+    assert ("GET", "/console/logs") in mounted_routes
+    assert ("GET", "/console/jobs") in mounted_routes
+    assert ("GET", "/console/jobs/{job_id}/status") in mounted_routes
+    assert ("GET", "/console/history") in mounted_routes
+    assert ("GET", "/console/history.json") in mounted_routes
     assert ("POST", "/console/operations/run-sync") in mounted_routes
+    assert ("POST", "/console/operations/run-withings-sync") in mounted_routes
+    assert ("POST", "/console/operations/ingest-apple") in mounted_routes
     assert ("GET", "/login") in mounted_routes
     assert ("GET", f"{api.API_V1_PREFIX}/console/status") not in mounted_routes

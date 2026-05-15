@@ -177,6 +177,49 @@ class PostgresUserRepository:
 
         return self._user_from_row(row, roles)
 
+    def has_user_with_role(self, role: RoleName) -> bool:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM auth_user_roles ur
+                    JOIN auth_users u ON u.id = ur.user_id
+                    WHERE ur.role_name = %s
+                      AND u.is_active = true
+                    LIMIT 1
+                    """,
+                    (role,),
+                )
+                return cur.fetchone() is not None
+
+    def update_user_password(self, user_id: int, password_hash: str, when: datetime) -> None:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE auth_users
+                    SET password_hash = %s,
+                        password_changed_at = %s,
+                        updated_at = now()
+                    WHERE id = %s
+                    """,
+                    (password_hash, when, user_id),
+                )
+
+    def revoke_user_sessions(self, user_id: int, when: datetime) -> None:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE auth_sessions
+                    SET revoked_at = COALESCE(revoked_at, %s)
+                    WHERE user_id = %s
+                      AND revoked_at IS NULL
+                    """,
+                    (when, user_id),
+                )
+
     def record_successful_login(self, user_id: int, when: datetime) -> None:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:

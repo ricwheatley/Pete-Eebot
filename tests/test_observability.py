@@ -153,8 +153,9 @@ def test_readyz_returns_503_when_dependency_check_fails(monkeypatch) -> None:
 
     assert getattr(response, "status_code", 200) == 503
     payload = _response_payload(response)
-    assert payload["ok"] is False
-    assert payload["checks"][1] == {"name": "Withings", "ok": False, "detail": "token expired"}
+    assert payload == {"ok": False, "status": "unhealthy"}
+    assert "Withings" not in json.dumps(payload)
+    assert "token expired" not in json.dumps(payload)
     metrics = observability.render_prometheus()
     assert 'peteeebot_alert_events_total{alert_type="auth_expiry",outcome="emitted",severity="P2"} 1' in metrics
 
@@ -169,7 +170,28 @@ def test_readyz_returns_200_when_dependencies_are_healthy(monkeypatch) -> None:
     response = status_sync.readyz(timeout=0.5)
 
     assert getattr(response, "status_code", 200) == 200
-    assert _response_payload(response)["ok"] is True
+    assert _response_payload(response) == {"ok": True, "status": "healthy"}
+
+
+def test_authenticated_status_keeps_dependency_details(monkeypatch) -> None:
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
+
+    class _StatusService:
+        def run_checks(self, timeout):
+            assert timeout == 1.2
+            return [
+                CheckResult("DB", True, "2ms"),
+                CheckResult("Withings", False, "token expired"),
+            ]
+
+    monkeypatch.setattr(status_sync, "get_status_service", lambda: _StatusService())
+
+    payload = status_sync.status(request=_Request(), x_api_key="test-key", timeout=1.2)
+
+    assert payload["ok"] is False
+    assert payload["checks"][1] == {"name": "Withings", "ok": False, "detail": "token expired"}
+    assert "Withings" in payload["summary"]
+    assert "token expired" in payload["summary"]
 
 
 def test_prometheus_metrics_endpoint_requires_api_key_and_returns_text(monkeypatch) -> None:

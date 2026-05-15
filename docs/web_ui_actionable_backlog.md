@@ -20,23 +20,30 @@ Acceptance criteria:
 
 Estimate: 1-2 days
 
+Status: Implemented on 2026-05-15 with local-only `pete bootstrap-owner`
+and `pete reset-owner-password` commands. See
+`docs/runtime_deploy_runbook.md` section 7.2.
+
 Acceptance criteria:
 
-- A documented supported path exists to create the first `owner` user.
-- The path does not require hand-writing password hashes.
-- Tests cover creating an owner and rejecting duplicate usernames/emails.
-- Recovery instructions exist for a lost owner password or locked account.
+- [x] A documented supported path exists to create the first `owner` user.
+- [x] The path does not require hand-writing password hashes.
+- [x] Tests cover creating an owner and rejecting duplicate usernames/emails.
+- [x] Recovery instructions exist for a lost owner password or locked account.
 
 ### WEB-P0-003 - Add Logs page to operator console
 
 Estimate: 1-2 days
 
+Status: Implemented on 2026-05-15 with `/console/logs`, read-only RBAC,
+recent line count, tag/outcome filters, and request/job correlation columns.
+
 Acceptance criteria:
 
-- `/console/logs` is visible to authenticated users.
-- Page supports recent line count and basic tag/outcome filtering.
-- Log output includes request ID, job ID, level, tag, outcome, and message where present.
-- Existing incident playbooks point to the page instead of a non-existent console Logs view.
+- [x] `/console/logs` is visible to authenticated users.
+- [x] Page supports recent line count and basic tag/outcome filtering.
+- [x] Log output includes request ID, job ID, level, tag, outcome, and message where present.
+- [x] Existing incident playbooks point to the page instead of a non-existent console Logs view.
 
 ## P1
 
@@ -55,12 +62,15 @@ Acceptance criteria:
 
 Estimate: 2-4 days
 
+Status: Implemented on 2026-05-15 as a local-only owner recovery command. A
+browser-native owner/user management UI remains a future enhancement.
+
 Acceptance criteria:
 
-- Owner can reset another user's password or a documented single-host recovery command exists.
-- Reset flow revokes existing sessions for the affected user.
-- Audit log records reset events without logging secrets.
-- Tests cover reset authorization and session revocation.
+- [x] Owner can reset another user's password or a documented single-host recovery command exists.
+- [x] Reset flow revokes existing sessions for the affected user.
+- [x] Audit log records reset events without logging secrets.
+- [x] Tests cover reset authorization and session revocation.
 
 ### WEB-P1-003 - Add source-specific ingest commands
 

@@ -6,7 +6,6 @@ from datetime import date
 from typing import Protocol
 
 from pete_e.application.exceptions import BadRequestError, ConflictError, NotFoundError
-from pete_e.config import settings
 from pete_e.domain.auth import AuthUser
 from pete_e.domain.profile import (
     UserProfile,
@@ -50,6 +49,8 @@ class ProfileService:
 
     @property
     def settings_profile(self) -> UserProfile:
+        from pete_e.config import settings
+
         return profile_from_settings(settings)
 
     def resolve_profile(

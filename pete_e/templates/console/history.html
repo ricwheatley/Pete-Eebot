@@ -1,0 +1,78 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel" aria-label="Command history">
+  <div class="panel-heading">
+    <h2>Recent Commands</h2>
+    {{ ui.badge(history_entries|length ~ " shown", "neutral") }}
+  </div>
+
+  <form class="filter-form" method="get" action="/console/history">
+    <label>
+      <span>Search</span>
+      <input type="search" name="q" value="{{ history_filters.q }}" placeholder="request, job, user">
+    </label>
+    <label>
+      <span>Command</span>
+      <input type="text" name="command" value="{{ history_filters.command }}" placeholder="sync">
+    </label>
+    <label>
+      <span>Outcome</span>
+      <input type="text" name="outcome" value="{{ history_filters.outcome }}" placeholder="failed">
+    </label>
+    <label>
+      <span>Limit</span>
+      <input type="number" name="limit" min="1" max="100" value="{{ history_filters.limit }}">
+    </label>
+    <button class="primary-button filter-button" type="submit">Apply</button>
+  </form>
+
+  {% if history_entries %}
+  <div class="table-wrap">
+    <table class="data-table log-table">
+      <thead>
+        <tr>
+          <th scope="col">Time</th>
+          <th scope="col">Command</th>
+          <th scope="col">Outcome</th>
+          <th scope="col">User</th>
+          <th scope="col">Auth</th>
+          <th scope="col">Request ID</th>
+          <th scope="col">Job ID</th>
+          <th scope="col">Summary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in history_entries %}
+        <tr>
+          <td class="nowrap">{{ entry.created_at or "-" }}</td>
+          <td>{{ entry.command }}</td>
+          <td>{{ entry.outcome }}</td>
+          <td>{{ entry.requester_username or "system" }}</td>
+          <td>{{ entry.auth_scheme or "-" }}</td>
+          <td class="mono-cell">{{ entry.request_id }}</td>
+          <td class="mono-cell">
+            {% if entry.job_id %}
+            <a href="/console/jobs/{{ entry.job_id }}">{{ entry.job_id }}</a>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+          <td><code>{{ entry.safe_summary|tojson }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ ui.empty_state("No command history rows match the selected filters.") }}
+  {% endif %}
+</section>
+{% endblock %}

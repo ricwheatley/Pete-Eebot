@@ -9,6 +9,7 @@ notifications.
 """
 
 import os
+import uuid
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, List, Optional
 try:  # pragma: no cover - optional rich dependency for enhanced CLI output
@@ -81,14 +82,19 @@ from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.exceptions import (
     ApplicationError,
+    BadRequestError,
+    ConflictError,
     DataAccessError,
+    NotFoundError,
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
+from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.apple_health_ingestor import AppleIngestError
 from pete_e.infrastructure.withings_client import WithingsClient
@@ -107,6 +113,9 @@ console = Console()
 _APPLICATION_EXIT_CODES: dict[type[ApplicationError], int] = {
     ValidationError: 2,
     PlanRolloverError: 3,
+    BadRequestError: 2,
+    ConflictError: 2,
+    NotFoundError: 2,
     DataAccessError: 4,
 }
 
@@ -135,10 +144,108 @@ def _exit_for_application_error(exc: ApplicationError, *, context: str) -> None:
     _echo_error(f"{context} failed: {exc}")
     raise typer.Exit(code=exit_code)
 
+
+def _password_from_env_or_prompt(env_name: str) -> str:
+    resolved_env_name = str(env_name or "").strip()
+    if resolved_env_name:
+        password = os.environ.get(resolved_env_name)
+        if password is not None:
+            return password
+
+    prompt = getattr(typer, "prompt", None)
+    if not callable(prompt):
+        raise RuntimeError(
+            f"Set {resolved_env_name or 'PETEEEBOT_BOOTSTRAP_OWNER_PASSWORD'} "
+            "when running this command non-interactively."
+        )
+    return str(prompt("Owner password", hide_input=True, confirmation_prompt=True))
+
+
+def _audit_owner_password_reset(
+    *,
+    outcome: str,
+    login: str,
+    user=None,
+    error: ApplicationError | None = None,
+) -> None:
+    correlation: dict[str, object] = {"actor": "local_cli"}
+    if user is not None:
+        correlation.update(
+            {
+                "target_user_id": getattr(user, "id", None),
+                "target_username": getattr(user, "username", None),
+                "target_roles": list(getattr(user, "roles", ())),
+            }
+        )
+    summary: dict[str, object] = {
+        "target_login": normalize_login(login),
+        "method": "local_cli",
+        "sessions_revoked": outcome == "succeeded",
+    }
+    if error is not None:
+        summary["error_code"] = error.code
+
+    log_utils.log_checkpoint(
+        checkpoint="owner_password_recovery",
+        outcome=outcome,
+        correlation=correlation,
+        summary=summary,
+        level="INFO" if outcome == "succeeded" else "WARNING",
+        tag="AUDIT",
+    )
+
+
 def _build_orchestrator() -> "OrchestratorType":
     """Lazy import helper to avoid CLI/orchestrator circular dependencies."""
     from pete_e.application.orchestrator import Orchestrator as _Orchestrator
     return _Orchestrator()
+
+
+def _new_cli_job_id(operation: str) -> str:
+    safe_operation = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in operation.lower()).strip("-")
+    return f"{safe_operation or 'job'}-cli-{uuid.uuid4().hex[:10]}"
+
+
+def _run_cli_application_job(
+    *,
+    operation: str,
+    callback,
+    request_summary: dict[str, Any],
+    result_summary_builder=None,
+):
+    """Run cron/manual CLI commands through the durable job lock when available."""
+
+    from pete_e.application.jobs import ApplicationJobService
+    from pete_e.infrastructure.job_repository import PostgresApplicationJobRepository
+
+    job_id = _new_cli_job_id(operation)
+    try:
+        return ApplicationJobService(PostgresApplicationJobRepository()).run_callback(
+            job_id=job_id,
+            operation=operation,
+            callback=callback,
+            requester=None,
+            request_id=job_id,
+            correlation_id=job_id,
+            request_summary=request_summary,
+            timeout_seconds=None,
+            auth_scheme="cli",
+            result_summary_builder=result_summary_builder,
+        )
+    except Exception as exc:
+        status_code = getattr(exc, "status_code", None)
+        if status_code == 409:
+            detail = getattr(exc, "detail", None)
+            message = detail.get("message") if isinstance(detail, dict) else str(detail or exc)
+            _echo_error(message)
+            raise typer.Exit(code=2)
+        if isinstance(exc, ApplicationError):
+            raise
+        log_utils.log_message(
+            f"Durable job wrapper unavailable for CLI {operation}; running command directly: {exc}",
+            "WARN",
+        )
+        return callback()
 
 
 def _format_body_age_line(trend) -> str | None:
@@ -565,6 +672,75 @@ def _patch_cli_runner_boolean_flags() -> None:
 _patch_cli_runner_boolean_flags()
 
 
+@app.command("bootstrap-owner")
+def bootstrap_owner(
+    username: Annotated[
+        str,
+        Option("--username", "-u", help="Username for the first browser owner account."),
+    ] = "",
+    email: Annotated[
+        Optional[str],
+        Option("--email", help="Optional owner email address for browser login."),
+    ] = None,
+    display_name: Annotated[
+        Optional[str],
+        Option("--display-name", help="Optional display name shown in the console."),
+    ] = None,
+    password_env: Annotated[
+        str,
+        Option(
+            "--password-env",
+            help="Environment variable containing the new password; prompts securely if unset.",
+        ),
+    ] = "PETEEEBOT_BOOTSTRAP_OWNER_PASSWORD",
+) -> None:
+    """Create the first local browser owner account."""
+
+    password = _password_from_env_or_prompt(password_env)
+    service = UserService(PostgresUserRepository())
+    try:
+        user = service.bootstrap_owner(
+            username=username,
+            email=email,
+            display_name=display_name,
+            password=password,
+        )
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Owner bootstrap")
+
+    typer.echo(f"Owner user created: {user.username} (id={user.id})")
+    typer.echo("Sign in at /login with this username or email.")
+
+
+@app.command("reset-owner-password")
+def reset_owner_password(
+    login: Annotated[
+        str,
+        Option("--login", "-l", help="Existing owner username or email."),
+    ] = "",
+    password_env: Annotated[
+        str,
+        Option(
+            "--password-env",
+            help="Environment variable containing the new password; prompts securely if unset.",
+        ),
+    ] = "PETEEEBOT_RESET_OWNER_PASSWORD",
+) -> None:
+    """Reset a local owner password and revoke that owner's browser sessions."""
+
+    password = _password_from_env_or_prompt(password_env)
+    service = UserService(PostgresUserRepository())
+    try:
+        user = service.reset_owner_password(login=login, password=password)
+    except ApplicationError as exc:
+        _audit_owner_password_reset(outcome="failed", login=login, error=exc)
+        _exit_for_application_error(exc, context="Owner password reset")
+
+    _audit_owner_password_reset(outcome="succeeded", login=login, user=user)
+    typer.echo(f"Owner password reset: {user.username} (id={user.id})")
+    typer.echo("Existing browser sessions for that owner have been revoked.")
+
+
 @app.command()
 def sync(
     days: Annotated[int, Option(help="Number of past days to backfill.")] = 7,
@@ -578,7 +754,12 @@ def sync(
     """
     log_utils.log_message(f"Starting manual sync for the last {days} days.", "INFO")
     try:
-        result = run_sync_with_retries(days=days, retries=retries)
+        result = _run_cli_application_job(
+            operation="sync",
+            callback=lambda: run_sync_with_retries(days=days, retries=retries),
+            request_summary={"days": days, "retries": retries, "source": "cli"},
+            result_summary_builder=lambda sync_result: sync_result.summary_line(days=days),
+        )
     except ApplicationError as exc:
         _exit_for_application_error(exc, context="Manual sync")
     if result.success:

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
-from pete_e.application.exceptions import ConflictError
+from pete_e.application.exceptions import BadRequestError, ConflictError, NotFoundError
 from pete_e.application.user_service import UserService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, StoredUser, UserSession
 from pete_e.infrastructure.passwords import hash_password, hash_session_token, verify_password
@@ -20,6 +21,7 @@ class FakeUserRepository:
         self.last_login_user_id: int | None = None
         self.touched_token_hash: str | None = None
         self.revoked_token_hash: str | None = None
+        self.revoked_user_id: int | None = None
 
     def create_user(
         self,
@@ -59,6 +61,19 @@ class FakeUserRepository:
     def get_user_by_id(self, user_id):
         stored = self.users.get(user_id)
         return None if stored is None else stored.user
+
+    def has_user_with_role(self, role):
+        return any(role in stored.user.roles and stored.user.is_active for stored in self.users.values())
+
+    def update_user_password(self, user_id, password_hash, when):
+        stored = self.users[user_id]
+        self.users[user_id] = StoredUser(user=stored.user, password_hash=password_hash)
+
+    def revoke_user_sessions(self, user_id, when):
+        self.revoked_user_id = user_id
+        for token_hash, (session, session_user_id) in list(self.sessions.items()):
+            if session_user_id == user_id and session.revoked_at is None:
+                self.sessions[token_hash] = (replace(session, revoked_at=when), session_user_id)
 
     def record_successful_login(self, user_id, when):
         self.last_login_user_id = user_id
@@ -131,6 +146,74 @@ def test_create_user_defaults_to_read_only_and_rejects_duplicate_login() -> None
     assert user.roles == (ROLE_READ_ONLY,)
     with pytest.raises(ConflictError):
         service.create_user(username="VIEWER", password="password123")
+
+
+def test_create_user_rejects_duplicate_email() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+
+    service.create_user(username="owner", email="owner@example.com", password="password123")
+
+    with pytest.raises(ConflictError):
+        service.create_user(username="other", email="OWNER@example.com", password="password123")
+
+
+def test_bootstrap_owner_creates_owner_when_none_exists() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+
+    user = service.bootstrap_owner(
+        username="owner",
+        email="owner@example.com",
+        display_name="Owner",
+        password="password123",
+    )
+
+    assert user.roles == (ROLE_OWNER,)
+    assert repo.get_user_by_login("owner@example.com") is not None
+
+
+def test_bootstrap_owner_rejects_existing_owner() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+
+    service.bootstrap_owner(username="owner", password="password123")
+
+    with pytest.raises(ConflictError):
+        service.bootstrap_owner(username="second-owner", password="password123")
+
+
+def test_reset_owner_password_requires_owner_and_revokes_sessions() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    owner = service.bootstrap_owner(username="owner", password="password123")
+    old_hash = repo.get_user_by_login("owner").password_hash
+    created = service.create_session(owner)
+
+    reset_user = service.reset_owner_password(login="OWNER", password="new-password123")
+
+    stored = repo.get_user_by_login("owner")
+    assert reset_user == owner
+    assert stored.password_hash != old_hash
+    assert verify_password("new-password123", stored.password_hash)
+    assert repo.revoked_user_id == owner.id
+    assert service.validate_session_token(created.token) is None
+
+
+def test_reset_owner_password_rejects_non_owner() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    service.create_user(username="viewer", password="password123")
+    old_hash = repo.get_user_by_login("viewer").password_hash
+
+    with pytest.raises(BadRequestError):
+        service.reset_owner_password(login="viewer", password="new-password123")
+
+    assert repo.get_user_by_login("viewer").password_hash == old_hash
+    assert repo.revoked_user_id is None
+
+    with pytest.raises(NotFoundError):
+        service.reset_owner_password(login="missing", password="new-password123")
 
 
 def test_authenticate_user_accepts_username_or_email_and_records_login() -> None:

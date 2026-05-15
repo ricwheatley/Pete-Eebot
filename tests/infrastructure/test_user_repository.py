@@ -77,3 +77,46 @@ def test_get_user_for_active_session_filters_revoked_and_expired_sessions() -> N
     assert "s.revoked_at IS NULL" in session_sql
     assert "s.expires_at > %s" in session_sql
     assert "u.is_active = true" in session_sql
+
+
+def test_has_user_with_role_checks_active_users() -> None:
+    cur = MagicMock()
+    cur.fetchone.return_value = (1,)
+    pool = _pool_with_cursor(cur)
+    repo = PostgresUserRepository(pool=pool)
+
+    assert repo.has_user_with_role(ROLE_OWNER) is True
+
+    sql, params = cur.execute.call_args.args
+    assert "FROM auth_user_roles ur" in sql
+    assert "JOIN auth_users u" in sql
+    assert "u.is_active = true" in sql
+    assert params == (ROLE_OWNER,)
+
+
+def test_update_user_password_updates_hash_and_timestamp() -> None:
+    cur = MagicMock()
+    now = datetime.now(timezone.utc)
+    pool = _pool_with_cursor(cur)
+    repo = PostgresUserRepository(pool=pool)
+
+    repo.update_user_password(7, "new-hash", now)
+
+    sql, params = cur.execute.call_args.args
+    assert "UPDATE auth_users" in sql
+    assert "password_changed_at = %s" in sql
+    assert params == ("new-hash", now, 7)
+
+
+def test_revoke_user_sessions_revokes_active_sessions_only() -> None:
+    cur = MagicMock()
+    now = datetime.now(timezone.utc)
+    pool = _pool_with_cursor(cur)
+    repo = PostgresUserRepository(pool=pool)
+
+    repo.revoke_user_sessions(7, now)
+
+    sql, params = cur.execute.call_args.args
+    assert "UPDATE auth_sessions" in sql
+    assert "revoked_at IS NULL" in sql
+    assert params == (now, 7)

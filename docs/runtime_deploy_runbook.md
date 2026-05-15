@@ -51,9 +51,13 @@ Not supported today:
 - Webhook deploy trigger endpoint: `POST /webhook` in `pete_e/api_routes/logs_webhooks.py`.
 - Structured JSON log schema and request/job triage workflow: `docs/logging_observability.md`.
 - Webhook executes configured deploy script path with `subprocess.Popen([DEPLOY_SCRIPT_PATH])` after HMAC validation.
-- Production startup should bind the app to localhost/private ingress behind
-  the TLS reverse proxy:
+- Production startup should bind the app to localhost behind the TLS reverse
+  proxy:
   - `uvicorn pete_e.api:app --host 127.0.0.1 --port 8000`
+- Do not bind production Uvicorn to `0.0.0.0` or a public interface. A
+  private-network bind is allowed only for an explicitly documented private
+  ingress hop where host firewall rules block direct internet access to the app
+  port.
 
 ### 1.4 DB migration path
 
@@ -127,7 +131,49 @@ set -a && . /home/ricwheatley/pete-eebot/.env && set +a
 /home/ricwheatley/pete-eebot/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
 ```
 
-### 3.2 Cron schedule install/refresh
+The production default is loopback-only Uvicorn. Use the same host/port in the
+systemd unit unless a reviewed deployment note documents a private-network-only
+exception. The app port must not be reachable directly from the public internet.
+
+### 3.2 Reverse proxy and network boundary
+
+Production internet exposure must go through a maintained TLS reverse proxy such
+as Caddy or Nginx:
+
+- Public ingress serves HTTPS on `443`; port `80` is used only for ACME
+  validation and HTTP-to-HTTPS redirect.
+- The proxy forwards to `http://127.0.0.1:8000`.
+- The host firewall permits public access only to intended ingress ports,
+  normally `80/tcp` and `443/tcp`; `8000/tcp` remains loopback-only or blocked
+  from every public interface.
+- TLS certificates are automatically renewed and renewal failures are monitored.
+- HTTP requests redirect to HTTPS before reaching the app.
+- HSTS is enabled after HTTPS has been verified stable. Set
+  `PETEEEBOT_ENABLE_HSTS=true` for app responses, or enforce an equivalent
+  `Strict-Transport-Security` header at the proxy.
+- The proxy forwards `Host`, scheme/proto, and client IP headers so request logs
+  and redirects preserve the public request context.
+- `/readyz` is unauthenticated but returns only coarse readiness. Detailed
+  dependency names and errors remain behind authenticated `/api/v1/status` and
+  `/console/status`.
+
+Set conservative proxy limits. Use route-specific exceptions only when an
+operator workflow really needs them:
+
+- Request body size: default to `1m` for the API and webhook surface. Increase
+  only for a documented route that accepts larger payloads.
+- Request headers: cap total header size to a small operational value such as
+  `8k` to `16k`.
+- Header/body receive timeouts: keep short, for example `10s`.
+- Upstream connect timeout: keep short, for example `5s`.
+- Upstream read/send timeout: `60s` is enough for read/status/API-action calls.
+  If command endpoints such as `/sync` or plan generation are intentionally
+  exposed through the proxy, configure route-specific timeouts at or above the
+  app command timeout (`PETEEEBOT_SYNC_TIMEOUT_SECONDS`, default `300s`, and
+  `PETEEEBOT_PROCESS_TIMEOUT_SECONDS`, default `900s`) or keep those commands
+  available only through trusted local/operator access.
+
+### 3.3 Cron schedule install/refresh
 
 ```bash
 cd /home/ricwheatley/pete-eebot/app
@@ -135,7 +181,7 @@ set -a && . /home/ricwheatley/pete-eebot/.env && set +a
 /home/ricwheatley/pete-eebot/venv/bin/python3 -m pete_e.infrastructure.cron_manager --write --activate --summary
 ```
 
-### 3.3 Heartbeat service check (ad hoc)
+### 3.4 Heartbeat service check (ad hoc)
 
 ```bash
 cd /home/ricwheatley/pete-eebot/app
@@ -199,11 +245,13 @@ openssl enc -d -aes-256-cbc -pbkdf2 \
 
 ## 6) Smoke-check Commands After Deploy
 
-Run in order:
+Run in order. These checks deliberately exercise both the local app port and
+the public HTTPS proxy path.
 
 ```bash
 cd /home/ricwheatley/pete-eebot/app
 set -a && . /home/ricwheatley/pete-eebot/.env && set +a
+PUBLIC_BASE_URL="https://ops.example.com"
 ```
 
 ```bash
@@ -227,12 +275,12 @@ curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/status?timeou
 ```
 
 ```bash
-curl -sS -i "http://127.0.0.1:8000/healthz"
-curl -sS -i "http://127.0.0.1:8000/readyz?timeout=5"
+curl -fsS -i "http://127.0.0.1:8000/healthz"
+curl -fsS -i "http://127.0.0.1:8000/readyz?timeout=5"
 ```
 
 ```bash
-curl -sS -i \
+curl -fsS -i \
   -H "X-API-Key: $PETEEEBOT_API_KEY" \
   -H "X-Correlation-ID: smoke-$(date +%Y%m%d%H%M%S)" \
   "http://127.0.0.1:8000/api/v1/status?timeout=5"
@@ -240,14 +288,53 @@ curl -sS -i \
 
 Confirm the response includes `X-Correlation-ID` and `X-Request-ID`. Command endpoints return the same headers on errors, including `429` rate-limit and `504` timeout responses.
 
+Verify the public HTTPS path through the reverse proxy:
+
+```bash
+curl -fsS -D - -o /dev/null "$PUBLIC_BASE_URL/healthz"
+```
+
+```bash
+curl -fsS -i \
+  -H "X-API-Key: $PETEEEBOT_API_KEY" \
+  -H "X-Correlation-ID: smoke-public-$(date +%Y%m%d%H%M%S)" \
+  "$PUBLIC_BASE_URL/api/v1/status?timeout=5"
+```
+
+Confirm the public responses use HTTPS, include the expected security headers,
+and include HSTS once production HTTPS is stable:
+
+```bash
+curl -fsS -D - -o /dev/null "$PUBLIC_BASE_URL/healthz" | grep -Ei \
+  '^(strict-transport-security|content-security-policy|x-content-type-options|x-frame-options|referrer-policy|permissions-policy):'
+```
+
+Include the public coarse readiness probe in the HTTPS smoke transcript:
+
+```bash
+curl -fsS -D - -o /dev/null "$PUBLIC_BASE_URL/readyz?timeout=5"
+```
+
+Confirm direct public access to the app port fails from a network outside the
+host:
+
+```bash
+curl --connect-timeout 5 -sS -i "http://<public-host-or-ip>:8000/healthz"
+```
+
+This last command should fail to connect or time out. A successful response
+means Uvicorn or the firewall/proxy boundary is exposed incorrectly.
+
 Prometheus-compatible metrics are exposed on the versioned metrics endpoint:
 
 ```bash
-curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" \
+curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" \
   "http://127.0.0.1:8000/api/v1/metrics"
 ```
 
 The scrape includes guarded job latency/counts, job failures, retry counters, and latest dependency health gauges. Prometheus scrape jobs should send the machine key as `X-API-Key` and target `/api/v1/metrics`.
+
+Durable command execution uses `application_jobs` for status/history and `application_operation_locks` for the shared high-risk lock. Command audit events are also persisted to `web_console_command_history`, linking request ID, job ID, user, auth scheme, command, outcome, client identity, and a redacted safe summary. Inspect `/console/jobs` for execution state and `/console/history` or `/console/history.json?q=<request-or-job-id>` for searchable recent command audit history. Structured `AUDIT` and `JOB` log lines remain a secondary diagnostic stream for correlation and raw incident timelines.
 
 ---
 
@@ -274,7 +361,57 @@ PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS=1
 
 The first failures return normal authentication errors, immediate retries are backed off with `429`, and repeated failures lock the login/client tuple temporarily with `Retry-After`.
 
-### 7.2 CORS and security headers
+### 7.2 First owner bootstrap and local recovery
+
+Browser owner accounts are created from the host shell only. There is no public
+HTTP route for first-owner bootstrap.
+
+Before starting the web console for the first time, apply the auth migration and
+create one owner:
+
+```bash
+psql "$DATABASE_URL" -f migrations/20260515_add_auth_users_sessions_rbac.sql
+pete bootstrap-owner --username ric --email ric@example.com --display-name "Ric"
+```
+
+The command prompts for the password with hidden input and confirmation. For
+non-interactive provisioning, pass the password through an environment variable
+instead of putting it on the command line:
+
+```bash
+PETEEEBOT_BOOTSTRAP_OWNER_PASSWORD="$(pass show peteeebot/browser-owner)" \
+  pete bootstrap-owner --username ric --email ric@example.com --display-name "Ric"
+```
+
+`pete bootstrap-owner` always creates the account with the `owner` role, hashes
+the password through the application password helper, rejects duplicate
+usernames/emails, and refuses to run once an active owner already exists.
+
+Lost owner password recovery is also shell-only:
+
+```bash
+PETEEEBOT_RESET_OWNER_PASSWORD="$(pass show peteeebot/browser-owner-new)" \
+  pete reset-owner-password --login ric@example.com
+```
+
+That command only targets existing active owners, updates the password hash, and
+revokes that owner's browser sessions. It emits an `AUDIT` checkpoint named
+`owner_password_recovery` with the local CLI actor, target owner identity, reset
+outcome, and whether sessions were revoked. It never logs the submitted password
+or the resulting password hash.
+
+Verify the reset audit record before handing the account back:
+
+```bash
+jq -c 'select(.tag=="AUDIT" and .checkpoint=="owner_password_recovery")' \
+  /var/log/pete_eebot/pete_history.log
+```
+
+If the account is temporarily locked by failed login throttling, either wait
+`PETEEEBOT_LOGIN_LOCKOUT_SECONDS` or restart the API process to clear the
+in-memory throttle state after verifying the reset.
+
+### 7.3 CORS and security headers
 
 CORS is fail-closed by default. Leave `PETEEEBOT_CORS_ALLOWED_ORIGINS` empty for same-origin browser deployment. If the UI is served from a separate origin, set an explicit comma-separated allowlist:
 
@@ -285,13 +422,13 @@ PETEEEBOT_ENABLE_HSTS=true
 
 The API applies baseline response headers: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, and production HSTS.
 
-### 7.3 Machine API-key scope
+### 7.4 Machine API-key scope
 
 `PETEEEBOT_API_KEY` is for machine actors only, such as private GPT actions, internal automation, and smoke checks. It is accepted only on the explicit machine API route set documented in `docs/api_endpoint_inventory.md`; browser auth endpoints such as `/auth/login`, `/auth/logout`, and `/auth/session` do not accept it.
 
 Browser users should use session cookies and RBAC. Read-only users can read summaries/plans/logs; command endpoints such as `/sync`, `/run_pete_plan_async`, and nutrition writes require an `operator` or `owner` session. Machine API-key calls remain available for the listed machine endpoints and are not treated as browser users.
 
-### 7.4 Machine API-key rotation
+### 7.5 Machine API-key rotation
 
 Use this procedure whenever the key may have leaked, after changing GPT/action clients, and on a regular maintenance cadence.
 
@@ -321,7 +458,7 @@ curl -i -H "X-API-Key: <old-key>" "http://127.0.0.1:8000/api/v1/status?timeout=5
 
 The first call should return `200`; the old key should return `401`.
 
-### 7.5 Planner feature flags
+### 7.6 Planner feature flags
 
 Planner experiments default off. Configure them only through explicit environment overrides:
 
@@ -332,7 +469,7 @@ PETEEEBOT_PLANNER_FEATURE_FLAGS="experimental_relaxed_session_spacing=true"
 
 Restart the API/job process after changing the value. See `docs/planner_feature_flags.md` for the current flag registry, audit-log query, and rollback procedure.
 
-### 7.6 Optional multi-profile foundation
+### 7.7 Optional multi-profile foundation
 
 The coached-person profile layer is optional. Existing single-user deployments
 continue to use the `USER_DATE_OF_BIRTH`, `USER_HEIGHT_CM`,
@@ -411,10 +548,11 @@ Use these steps when you only have browser/API access:
 2. Check **Health Checks** for failed dependencies. A provider detail containing `expired`, `unauthorized`, `invalid_grant`, or `invalid refresh` maps to an auth-expiry incident.
 3. Check **Sync Freshness** for `Last data date`, `Stale days`, `Reliability`, and `Completeness`.
 4. Check **Last Sync Outcome** for source-level failures. The failed source narrows the next action.
-5. Call `GET /api/v1/logs?lines=200` with a browser session or machine key. Filter for `ALERT`, `ERROR`, `failed`, the alert `dedupe_key`, or a visible request/job ID.
-6. If the fault is stale ingest or a transient source failure, use `/console/operations` to run a confirmed sync once.
-7. Re-open `/console/status` and confirm readiness, freshness, and last sync source statuses.
-8. If the alert remains P1/P2 after one confirmed remediation attempt, avoid repeated manual commands and move to shell/operator access or provider reauthorization.
+5. Open `/console/history` and search by request ID, job ID, command, user, or outcome to confirm which operator command ran and whether it was accepted, rejected, queued, or failed.
+6. Open `/console/logs?lines=200`. Filter for `ALERT`, `ERROR`, `failed`, the alert `dedupe_key`, or a visible request/job ID. Use `GET /api/v1/logs?lines=200` only when a raw API response is easier.
+7. If the fault is stale ingest or a transient source failure, use `/console/operations` to run a confirmed sync once.
+8. Re-open `/console/status` and confirm readiness, freshness, and last sync source statuses.
+9. If the alert remains P1/P2 after one confirmed remediation attempt, avoid repeated manual commands and move to shell/operator access or provider reauthorization.
 
 ### 9.3 Stale ingest playbook
 
@@ -424,7 +562,8 @@ Primary diagnosis without shell:
 
 - `/console/status` -> **Sync Freshness** shows stale days and completeness.
 - `/console/status` -> **Last Sync Outcome** shows whether the previous run failed by source.
-- `/api/v1/logs?lines=200` shows the last `Sync summary` and any `ALERT` event.
+- `/console/history?command=sync` shows the latest accepted/rejected manual sync commands with request/job correlation.
+- `/console/logs?lines=200` shows the last `Sync summary` and any `ALERT` event.
 
 Response:
 
@@ -441,7 +580,7 @@ Primary diagnosis without shell:
 
 - `/console/status` -> failed provider detail usually names `token expired`, `unauthorized`, `invalid_grant`, or missing credentials.
 - `GET /api/v1/status?timeout=5` gives the same provider check details for machine clients.
-- `GET /api/v1/logs?lines=200` shows the alert and the dependency check failure.
+- `/console/logs?lines=200` shows the alert and the dependency check failure.
 
 Response:
 
@@ -456,7 +595,8 @@ Trigger: `alert_type=repeated_failures`.
 
 Primary diagnosis without shell:
 
-- `/api/v1/logs?lines=200` -> filter by the alert `job_id` or operation name.
+- `/console/history` -> filter by the alert `job_id`, request ID, command, or `outcome=failed`.
+- `/console/logs?lines=200` -> filter by the alert `job_id` or operation name.
 - `/console/status` -> compare health checks and last sync source failures.
 - `/console/operations` -> confirm whether a command is currently rate-limited or blocked by the high-risk operation guard.
 

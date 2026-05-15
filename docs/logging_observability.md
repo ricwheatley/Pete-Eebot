@@ -33,7 +33,7 @@ HTTP request records use:
 | `duration_ms` | Request duration in milliseconds. |
 | `client_ip` | Caller IP, preferring `X-Forwarded-For`. |
 
-Background job records use:
+Durable command jobs are stored in `application_jobs`; the high-risk overlap lock is stored in `application_operation_locks`. Console operators can inspect current and recent rows at `/console/jobs`. Durable command audit rows are stored in `web_console_command_history` and are searchable from `/console/history`; structured logs remain the secondary diagnostic stream. Background job log records use:
 
 | Field | Meaning |
 | --- | --- |
@@ -44,10 +44,19 @@ Background job records use:
 | `summary.return_code` | Subprocess return code where applicable. |
 | `summary.timeout_seconds` | Configured timeout for timeout outcomes. |
 
+Subprocess jobs also persist redacted stdout/stderr summaries on the job row. Secret-like `token=`, `secret=`, `password=`, and `api_key=` fragments are redacted before storage.
+
 Command audit records use:
 
 | Field | Meaning |
 | --- | --- |
+| `web_console_command_history.request_id` | Request that initiated the command. |
+| `web_console_command_history.job_id` | Job spawned by the command when available. |
+| `web_console_command_history.requester_*` | Browser user identity when available. |
+| `web_console_command_history.auth_scheme` | `session`, `api_key`, `github_webhook_hmac`, `cli`, or missing for pre-auth failures. |
+| `web_console_command_history.command` | User-facing command name. |
+| `web_console_command_history.outcome` | Command audit outcome. |
+| `web_console_command_history.safe_summary` | Redacted command parameters or result summary. |
 | `event` | `checkpoint`. |
 | `checkpoint` | `operator_command`. |
 | `outcome` | `started`, `succeeded`, `failed`, `authorization_denied`, or `confirmation_failed`. |
@@ -84,6 +93,8 @@ jq -c 'select(.request_id=="<request-id>")' /var/log/pete_eebot/pete_history.log
 jq -c 'select(.job_id=="<job-id>")' /var/log/pete_eebot/pete_history.log
 ```
 
+Operators with browser access can also open `/console/jobs/<job-id>` to view status, timestamps, requester, exit code, failure reason, and captured output summaries.
+
 4. Check all failed or timed-out records in the recent log:
 
 ```bash
@@ -96,13 +107,21 @@ jq -c 'select(.outcome=="failed" or .outcome=="timeout" or (.http_status // 0) >
 jq -c 'select(.tag=="AUDIT" and .checkpoint=="operator_command")' /var/log/pete_eebot/pete_history.log
 ```
 
+Owner password recovery records use checkpoint `owner_password_recovery` with tag
+`AUDIT`. They include the local CLI actor, target owner identity, reset outcome,
+and session revocation status, but never include the submitted password or hash:
+
+```bash
+jq -c 'select(.tag=="AUDIT" and .checkpoint=="owner_password_recovery")' /var/log/pete_eebot/pete_history.log
+```
+
 Planner feature-flag audit records use checkpoint `planner_feature_flags` with tag `AUDIT`. They are emitted only when a non-default planner flag changes plan generation:
 
 ```bash
 jq -c 'select(.tag=="AUDIT" and .checkpoint=="planner_feature_flags")' /var/log/pete_eebot/pete_history.log
 ```
 
-6. Without shell access, use `GET /api/v1/logs?lines=200`, then filter locally by `request_id` or `job_id`.
+6. Without shell access, use `/console/logs?lines=200` and filter by tag, outcome, `request_id`, or `job_id`. Use `GET /api/v1/logs?lines=200` when a raw machine-readable response is needed.
 
 If `jq` is unavailable, `pete logs`, `pete logs API 100`, and `pete logs JOB 100` render both JSON and legacy text log lines.
 
@@ -131,5 +150,5 @@ Key emitted metrics:
 Probe endpoints:
 
 - `GET /healthz` is a liveness probe and does not touch dependencies.
-- `GET /readyz?timeout=3` runs the same meaningful dependency checks as `/status`, including DB, Dropbox, Withings, Telegram, and wger. It returns `200` only when all checks pass and `503` when any dependency fails.
-- `GET /api/v1/status?timeout=3` remains the authenticated operational status endpoint with the same check details and a human-readable summary.
+- `GET /readyz?timeout=3` runs the same meaningful dependency checks as `/status`, including DB and external providers, but returns only coarse readiness: `{"ok":true,"status":"healthy"}` or `{"ok":false,"status":"unhealthy"}`. It returns `200` only when all checks pass and `503` when any dependency fails.
+- `GET /api/v1/status?timeout=3` remains the authenticated operational status endpoint with dependency names, error details, and a human-readable summary.
