@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import json
 from decimal import Decimal
 import re
 from typing import Any, Dict
@@ -630,12 +631,20 @@ def _parse_sync_summary_line(line: str) -> Dict[str, Any] | None:
 
     result = match.group("result").strip().lower()
     timestamp_match = _LOG_TIMESTAMP_RE.search(line)
+    timestamp = timestamp_match.group("timestamp") if timestamp_match else None
+    if timestamp is None:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            payload = {}
+        if isinstance(payload, dict):
+            timestamp = payload.get("timestamp")
     failed_sources = sorted(
         source for source, status in source_statuses.items() if str(status).lower() == "failed"
     )
     return {
         "status": "observed",
-        "ran_at": timestamp_match.group("timestamp") if timestamp_match else None,
+        "ran_at": timestamp,
         "label": match.group("label").strip(),
         "days": int(match.group("days")),
         "attempts": int(match.group("attempts")),

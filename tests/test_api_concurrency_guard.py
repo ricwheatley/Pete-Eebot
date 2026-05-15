@@ -86,3 +86,19 @@ def test_spawned_high_risk_process_holds_guard_until_wait_completes(monkeypatch)
     assert exc.value.status_code == 409
     assert exc.value.detail["requested_operation"] == "sync"
     assert exc.value.detail["active_operation"] == "plan"
+
+
+def test_guarded_operation_logs_job_id(monkeypatch) -> None:
+    events = []
+    monkeypatch.setattr(dependencies.log_utils, "log_event", lambda **kwargs: events.append(kwargs))
+
+    result = dependencies.run_guarded_high_risk_operation(
+        "sync",
+        lambda: "ok",
+        job_id="sync-testjob",
+    )
+
+    assert result == "ok"
+    job_events = [event for event in events if event["event"] == "background_job"]
+    assert [event["outcome"] for event in job_events] == ["started", "succeeded"]
+    assert all(event["job_id"] == "sync-testjob" for event in job_events)

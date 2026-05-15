@@ -467,7 +467,7 @@ def test_console_run_sync_executes_after_confirmation_and_audits(
     monkeypatch.setattr(
         dependencies,
         "run_guarded_high_risk_operation",
-        lambda operation, callback, timeout_seconds=None: callback(),
+        lambda operation, callback, timeout_seconds=None, job_id=None: callback(),
     )
     monkeypatch.setattr(
         dependencies,

@@ -45,6 +45,7 @@ Not supported today:
 - ASGI app module: `pete_e.api:app` (FastAPI).
 - Router composition happens in `pete_e/api.py`.
 - Webhook deploy trigger endpoint: `POST /webhook` in `pete_e/api_routes/logs_webhooks.py`.
+- Structured JSON log schema and request/job triage workflow: `docs/logging_observability.md`.
 - Webhook executes configured deploy script path with `subprocess.Popen([DEPLOY_SCRIPT_PATH])` after HMAC validation.
 - Operator guide startup command currently documented as:
   - `uvicorn pete_e.api:app --host 0.0.0.0 --port 8000`

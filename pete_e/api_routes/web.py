@@ -409,6 +409,7 @@ def console_run_sync(request: Request, payload: dict[str, Any] | None = None):
     days = _payload_int(payload, "days", 3, min_value=1, max_value=30)
     retries = _payload_int(payload, "retries", 1, min_value=0, max_value=5)
     summary = {"days": days, "retries": retries}
+    job_id = dependencies.prepare_job_context(request, command)
     _audit_command_start(request, command, summary)
 
     try:
@@ -417,6 +418,7 @@ def console_run_sync(request: Request, payload: dict[str, Any] | None = None):
             command,
             lambda: run_sync_with_retries(days=days, retries=retries),
             timeout_seconds=dependencies.DEFAULT_SYNC_TIMEOUT_SECONDS,
+            job_id=job_id,
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
@@ -448,12 +450,14 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
         raise HTTPException(status_code=400, detail="start_date must use YYYY-MM-DD") from exc
 
     summary = {"weeks": weeks, "start_date": start_date}
+    job_id = dependencies.prepare_job_context(request, command)
     _audit_command_start(request, command, summary)
     try:
         dependencies.enforce_command_rate_limit(request, command)
         dependencies.start_guarded_high_risk_process(
             command,
             ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            job_id=job_id,
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
@@ -474,12 +478,14 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
         raise HTTPException(status_code=400, detail="message_type must be summary, trainer, or plan")
 
     summary = {"message_type": message_type}
+    job_id = dependencies.prepare_job_context(request, command)
     _audit_command_start(request, command, summary)
     try:
         dependencies.enforce_command_rate_limit(request, command)
         dependencies.start_guarded_high_risk_process(
             command,
             ["pete", "message", f"--{message_type}", "--send"],
+            job_id=job_id,
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)

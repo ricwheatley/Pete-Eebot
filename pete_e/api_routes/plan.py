@@ -6,6 +6,7 @@ from pete_e.api_routes.dependencies import (
     audit_command_event,
     enforce_command_rate_limit,
     get_plan_service,
+    prepare_job_context,
     start_guarded_high_risk_process,
     validate_api_key,
 )
@@ -63,6 +64,7 @@ async def run_pete_plan_async(
 ):
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "plan")
+    job_id = prepare_job_context(request, "plan")
     summary = {"weeks": weeks, "start_date": start_date}
     audit_command_event(request, command="plan", outcome="started", summary=summary)
     try:
@@ -70,6 +72,7 @@ async def run_pete_plan_async(
             "plan",
             ["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
             timeout_seconds=timeout,
+            job_id=job_id,
         )
     except Exception as exc:
         audit_command_event(

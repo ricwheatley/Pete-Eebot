@@ -60,6 +60,7 @@ class Settings:
             "GLOBAL_BACKOFF_FACTOR": 0.90,
             "CYCLE_DAYS": 28,
             "PETE_LOG_LEVEL": "INFO",
+            "PETE_LOG_FORMAT": "json",
             "PETE_LOG_TO_CONSOLE": True,
             "PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS": 10,
             "PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS": 60.0,

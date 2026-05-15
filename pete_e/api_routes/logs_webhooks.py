@@ -10,6 +10,7 @@ from pete_e.api_routes.dependencies import (
     configured_deploy_script_path,
     configured_webhook_secret,
     enforce_command_rate_limit,
+    prepare_job_context,
     start_guarded_high_risk_process,
     validate_api_key,
 )
@@ -51,9 +52,10 @@ async def github_webhook(request: Request):
     if not hmac.compare_digest(mac.hexdigest(), sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
+    job_id = prepare_job_context(request, "deploy")
     audit_command_event(request, command="deploy", outcome="started", summary={"source": "github_webhook"})
     try:
-        start_guarded_high_risk_process("deploy", [str(configured_deploy_script_path())])
+        start_guarded_high_risk_process("deploy", [str(configured_deploy_script_path())], job_id=job_id)
     except Exception as exc:
         audit_command_event(
             request,
