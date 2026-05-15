@@ -26,6 +26,7 @@ from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.user_repository import PostgresUserRepository
+from pete_e import observability
 
 T = TypeVar("T")
 
@@ -49,6 +50,7 @@ MACHINE_API_KEY_EXACT_PATHS = frozenset(
         "/user_notes",
         "/plan_context",
         "/sse",
+        "/metrics",
         "/nutrition/daily-summary",
         "/nutrition/log-macros",
         "/plan_for_day",
@@ -649,19 +651,31 @@ def _run_job_callback(operation: str, job_id: str, callback: Callable[[], T]) ->
     try:
         result = callback()
     except Exception as exc:
+        duration_seconds = time.perf_counter() - started
+        observability.record_job_completed(
+            operation=operation,
+            outcome="failed",
+            duration_seconds=duration_seconds,
+        )
         _log_job_event(
             operation=operation,
             job_id=job_id,
             outcome="failed",
             level="ERROR",
-            summary={"duration_ms": round((time.perf_counter() - started) * 1000, 2), "error": str(exc)},
+            summary={"duration_ms": round(duration_seconds * 1000, 2), "error": str(exc)},
         )
         raise
+    duration_seconds = time.perf_counter() - started
+    observability.record_job_completed(
+        operation=operation,
+        outcome="succeeded",
+        duration_seconds=duration_seconds,
+    )
     _log_job_event(
         operation=operation,
         job_id=job_id,
         outcome="succeeded",
-        summary={"duration_ms": round((time.perf_counter() - started) * 1000, 2)},
+        summary={"duration_ms": round(duration_seconds * 1000, 2)},
     )
     return result
 
@@ -714,9 +728,15 @@ def run_guarded_high_risk_operation(
             high_risk_operation_guard.release()
 
     future = _command_executor.submit(worker_context.run, _run_and_release)
+    started = time.perf_counter()
     try:
         return future.result(timeout=timeout_seconds)
     except concurrent.futures.TimeoutError as exc:
+        observability.record_job_completed(
+            operation=operation,
+            outcome="timeout",
+            duration_seconds=time.perf_counter() - started,
+        )
         _log_job_event(
             operation=operation,
             job_id=job_id,
@@ -757,6 +777,11 @@ def start_guarded_high_risk_process(
         )
         process = subprocess.Popen(command)
     except Exception:
+        observability.record_job_completed(
+            operation=operation,
+            outcome="failed",
+            duration_seconds=0.0,
+        )
         high_risk_operation_guard.release()
         raise
 
@@ -769,6 +794,12 @@ def start_guarded_high_risk_process(
                 else:
                     return_code = process.wait(timeout=timeout_seconds)
                 outcome = "succeeded" if return_code == 0 else "failed"
+                duration_seconds = time.perf_counter() - started
+                observability.record_job_completed(
+                    operation=operation,
+                    outcome=outcome,
+                    duration_seconds=duration_seconds,
+                )
                 _log_job_event(
                     operation=operation,
                     job_id=job_id,
@@ -776,15 +807,21 @@ def start_guarded_high_risk_process(
                     level="INFO" if return_code == 0 else "ERROR",
                     summary={
                         "return_code": return_code,
-                        "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                        "duration_ms": round(duration_seconds * 1000, 2),
                     },
                 )
             except TypeError:
                 return_code = process.wait()
+                outcome = "succeeded" if return_code == 0 else "failed"
+                observability.record_job_completed(
+                    operation=operation,
+                    outcome=outcome,
+                    duration_seconds=time.perf_counter() - started,
+                )
                 _log_job_event(
                     operation=operation,
                     job_id=job_id,
-                    outcome="succeeded" if return_code == 0 else "failed",
+                    outcome=outcome,
                     level="INFO" if return_code == 0 else "ERROR",
                     summary={"return_code": return_code},
                 )
@@ -805,6 +842,11 @@ def start_guarded_high_risk_process(
                     outcome="timeout",
                     level="ERROR",
                     summary={"timeout_seconds": timeout_seconds},
+                )
+                observability.record_job_completed(
+                    operation=operation,
+                    outcome="timeout",
+                    duration_seconds=time.perf_counter() - started,
                 )
         finally:
             high_risk_operation_guard.release()

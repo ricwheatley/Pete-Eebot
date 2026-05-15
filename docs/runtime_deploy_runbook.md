@@ -222,6 +222,11 @@ curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/status?timeou
 ```
 
 ```bash
+curl -sS -i "http://127.0.0.1:8000/healthz"
+curl -sS -i "http://127.0.0.1:8000/readyz?timeout=5"
+```
+
+```bash
 curl -sS -i \
   -H "X-API-Key: $PETEEEBOT_API_KEY" \
   -H "X-Correlation-ID: smoke-$(date +%Y%m%d%H%M%S)" \
@@ -229,6 +234,15 @@ curl -sS -i \
 ```
 
 Confirm the response includes `X-Correlation-ID` and `X-Request-ID`. Command endpoints return the same headers on errors, including `429` rate-limit and `504` timeout responses.
+
+Prometheus-compatible metrics are exposed on the versioned metrics endpoint:
+
+```bash
+curl -sS -H "X-API-Key: $PETEEEBOT_API_KEY" \
+  "http://127.0.0.1:8000/api/v1/metrics"
+```
+
+The scrape includes guarded job latency/counts, job failures, retry counters, and latest dependency health gauges. Prometheus scrape jobs should send the machine key as `X-API-Key` and target `/api/v1/metrics`.
 
 ---
 

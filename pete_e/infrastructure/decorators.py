@@ -6,6 +6,7 @@ import functools
 import time
 from typing import Any, Callable, Iterable, Optional, Tuple, Type, TypeVar
 
+from pete_e import observability
 from pete_e.infrastructure import log_utils
 
 TFunc = TypeVar("TFunc", bound=Callable[..., Any])
@@ -57,6 +58,10 @@ def retry_on_network_error(
                     method = _extract_arg("method", 0, args, kwargs)
                     path = _extract_arg("path", 1, args, kwargs)
                     sleep_for = backoff_base * (2 ** attempt)
+                    observability.record_job_retry(
+                        operation="external_api_request",
+                        source=self.__class__.__name__,
+                    )
 
                     if status_code is None:
                         log_utils.warn(
