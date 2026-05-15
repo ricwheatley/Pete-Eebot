@@ -17,6 +17,7 @@ from fastapi import Header, HTTPException, Request
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_logging import session_fingerprint
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
+from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.user_service import UserService, normalize_login
@@ -645,6 +646,10 @@ def _log_job_event(
     )
 
 
+def _job_outcome_from_result(result: Any) -> str:
+    return "failed" if getattr(result, "success", True) is False else "succeeded"
+
+
 def _run_job_callback(operation: str, job_id: str, callback: Callable[[], T]) -> T:
     _log_job_event(operation=operation, job_id=job_id, outcome="started")
     started = time.perf_counter()
@@ -657,6 +662,12 @@ def _run_job_callback(operation: str, job_id: str, callback: Callable[[], T]) ->
             outcome="failed",
             duration_seconds=duration_seconds,
         )
+        alerts.record_operation_outcome(
+            operation=operation,
+            outcome="failed",
+            job_id=job_id,
+            context={"error": str(exc), "duration_ms": round(duration_seconds * 1000, 2)},
+        )
         _log_job_event(
             operation=operation,
             job_id=job_id,
@@ -666,15 +677,23 @@ def _run_job_callback(operation: str, job_id: str, callback: Callable[[], T]) ->
         )
         raise
     duration_seconds = time.perf_counter() - started
+    outcome = _job_outcome_from_result(result)
     observability.record_job_completed(
         operation=operation,
-        outcome="succeeded",
+        outcome=outcome,
         duration_seconds=duration_seconds,
+    )
+    alerts.record_operation_outcome(
+        operation=operation,
+        outcome=outcome,
+        job_id=job_id,
+        context={"duration_ms": round(duration_seconds * 1000, 2)},
     )
     _log_job_event(
         operation=operation,
         job_id=job_id,
-        outcome="succeeded",
+        outcome=outcome,
+        level="INFO" if outcome == "succeeded" else "ERROR",
         summary={"duration_ms": round(duration_seconds * 1000, 2)},
     )
     return result
@@ -737,6 +756,12 @@ def run_guarded_high_risk_operation(
             outcome="timeout",
             duration_seconds=time.perf_counter() - started,
         )
+        alerts.record_operation_outcome(
+            operation=operation,
+            outcome="timeout",
+            job_id=job_id,
+            context={"timeout_seconds": timeout_seconds},
+        )
         _log_job_event(
             operation=operation,
             job_id=job_id,
@@ -782,6 +807,7 @@ def start_guarded_high_risk_process(
             outcome="failed",
             duration_seconds=0.0,
         )
+        alerts.record_operation_outcome(operation=operation, outcome="failed", job_id=job_id)
         high_risk_operation_guard.release()
         raise
 
@@ -800,6 +826,12 @@ def start_guarded_high_risk_process(
                     outcome=outcome,
                     duration_seconds=duration_seconds,
                 )
+                alerts.record_operation_outcome(
+                    operation=operation,
+                    outcome=outcome,
+                    job_id=job_id,
+                    context={"return_code": return_code, "duration_ms": round(duration_seconds * 1000, 2)},
+                )
                 _log_job_event(
                     operation=operation,
                     job_id=job_id,
@@ -817,6 +849,12 @@ def start_guarded_high_risk_process(
                     operation=operation,
                     outcome=outcome,
                     duration_seconds=time.perf_counter() - started,
+                )
+                alerts.record_operation_outcome(
+                    operation=operation,
+                    outcome=outcome,
+                    job_id=job_id,
+                    context={"return_code": return_code},
                 )
                 _log_job_event(
                     operation=operation,
@@ -847,6 +885,12 @@ def start_guarded_high_risk_process(
                     operation=operation,
                     outcome="timeout",
                     duration_seconds=time.perf_counter() - started,
+                )
+                alerts.record_operation_outcome(
+                    operation=operation,
+                    outcome="timeout",
+                    job_id=job_id,
+                    context={"timeout_seconds": timeout_seconds},
                 )
         finally:
             high_risk_operation_guard.release()

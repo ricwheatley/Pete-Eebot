@@ -10,6 +10,7 @@ from typing import Any, Dict
 
 from pete_e.config import settings
 from pete_e.application.nutrition_service import build_nutrition_context
+from pete_e.application import alerts
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.exceptions import BadRequestError, DataAccessError
@@ -456,13 +457,20 @@ class MetricsService(_DateParserMixin):
             reliability = "low"
         elif stale_days > 0 or completeness < 80.0:
             reliability = "moderate"
-        return {
+        data_quality = {
             "last_sync_at": last_sync.isoformat() if last_sync else None,
             "stale_days": stale_days,
             "completeness_pct": completeness,
             "reliability_flag": reliability,
             "primary_fields": list(_PRIMARY_FIELDS),
         }
+        alerts.emit_stale_ingest_if_needed(
+            source="daily_summary",
+            stale_days=stale_days,
+            last_sync_at=data_quality["last_sync_at"],
+            completeness_pct=completeness,
+        )
+        return data_quality
         """Perform coach data quality."""
 
     @staticmethod

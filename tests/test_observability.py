@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
 from pete_e import observability
 from pete_e.api_routes import dependencies, status_sync
+from pete_e.application import alerts
+from pete_e.application.api_services import MetricsService
 from pete_e.cli.status import CheckResult
 from pete_e.infrastructure.decorators import retry_on_network_error
 
@@ -101,7 +105,40 @@ def test_dependency_check_emits_external_api_health_metric() -> None:
     assert 'peteeebot_external_api_latency_seconds_count{dependency="Withings",outcome="failed"} 1' in metrics
 
 
+def test_stale_ingest_alert_emits_structured_metric(monkeypatch) -> None:
+    observability.reset_metrics()
+    alerts.reset_alert_state()
+    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
+    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+    monkeypatch.setenv("PETEEEBOT_STALE_INGEST_ALERT_DAYS", "3")
+
+    payload = MetricsService(dal=None)._coach_data_quality(
+        rows=[
+            {
+                "date": date(2026, 5, 10),
+                "weight_kg": 88.0,
+                "sleep_asleep_minutes": 420,
+                "hr_resting": 50,
+                "hrv_sdnn_ms": 45,
+                "strength_volume_kg": 5000,
+            }
+        ],
+        last_7=[],
+        target_date=date(2026, 5, 15),
+    )
+
+    assert payload["stale_days"] == 5
+    metrics = observability.render_prometheus()
+    assert 'peteeebot_alert_events_total{alert_type="stale_ingest",outcome="emitted",severity="P2"} 1' in metrics
+    assert 'peteeebot_alert_active{alert_type="stale_ingest",severity="P2"} 1' in metrics
+
+
 def test_readyz_returns_503_when_dependency_check_fails(monkeypatch) -> None:
+    observability.reset_metrics()
+    alerts.reset_alert_state()
+    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
+    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+
     class _StatusService:
         def run_checks(self, timeout):
             assert timeout == 1.2
@@ -118,6 +155,8 @@ def test_readyz_returns_503_when_dependency_check_fails(monkeypatch) -> None:
     payload = _response_payload(response)
     assert payload["ok"] is False
     assert payload["checks"][1] == {"name": "Withings", "ok": False, "detail": "token expired"}
+    metrics = observability.render_prometheus()
+    assert 'peteeebot_alert_events_total{alert_type="auth_expiry",outcome="emitted",severity="P2"} 1' in metrics
 
 
 def test_readyz_returns_200_when_dependencies_are_healthy(monkeypatch) -> None:
@@ -143,3 +182,22 @@ def test_prometheus_metrics_endpoint_requires_api_key_and_returns_text(monkeypat
     text = _response_text(response)
     assert "# TYPE peteeebot_job_runs_total counter" in text
     assert 'peteeebot_job_runs_total{operation="sync",outcome="succeeded"} 1' in text
+
+
+def test_repeated_failed_jobs_emit_alert_metric(monkeypatch) -> None:
+    observability.reset_metrics()
+    alerts.reset_alert_state()
+    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
+    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+    monkeypatch.setenv("PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD", "2")
+
+    for _ in range(2):
+        result = dependencies.run_guarded_high_risk_operation(
+            "sync",
+            lambda: SimpleNamespace(success=False),
+        )
+        assert result.success is False
+
+    metrics = observability.render_prometheus()
+    assert 'peteeebot_job_failures_total{operation="sync",outcome="failed"} 2' in metrics
+    assert 'peteeebot_alert_events_total{alert_type="repeated_failures",outcome="emitted",severity="P2"} 1' in metrics
