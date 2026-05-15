@@ -38,6 +38,17 @@ Protected machine routes reject `api_key` query parameters. Send the machine key
 
 Browser sessions are role checked. Read routes allow any authenticated user. Command routes require an `operator` or `owner` session and valid CSRF token for browser requests.
 
+## Browser Console Command Routes
+
+The server-rendered operator console is mounted outside `/api/v1`. These routes are browser-session only and do not accept the machine API key.
+
+| Method | Path | Classification | Auth | Source | Notes |
+| --- | --- | --- | --- | --- | --- |
+| GET | `/console/operations` | Read | `operator`/`owner` browser session | `pete_e/api_routes/web.py` | Renders command controls with typed confirmation phrases. |
+| POST | `/console/operations/run-sync` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Runs sync through the high-risk operation guard. Confirmation phrase: `RUN SYNC`. |
+| POST | `/console/operations/generate-plan` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Starts `pete plan` through the high-risk operation guard. Confirmation phrase: `GENERATE PLAN`. |
+| POST | `/console/operations/resend-message` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Starts `pete message --<type> --send` through the high-risk operation guard. Confirmation phrase: `RESEND MESSAGE`. |
+
 ## Error and Correlation Contract
 
 All API errors use a common envelope:
@@ -82,3 +93,7 @@ High-risk commands also have execution time bounds:
 - `POST /webhook`: uses `PETEEEBOT_PROCESS_TIMEOUT_SECONDS` for the deploy subprocess.
 
 If synchronous command execution exceeds its timeout, the API returns `504` with `error.code=command_timeout`. The underlying guarded operation remains protected until its worker actually finishes, so a timed-out sync cannot immediately overlap with plan or deploy.
+
+## Command Audit Logging
+
+Operator command handlers emit `CHECKPOINT` log entries with tag `AUDIT` and checkpoint `operator_command`. Events include the command name, outcome, correlation ID, authenticated user where available, auth scheme, client identity, and a redacted summary. Browser console handlers audit `authorization_denied`, `confirmation_failed`, `started`, `succeeded`, and `failed` outcomes. Existing API-triggered sync, plan, and deploy commands also audit start/success/failure outcomes.

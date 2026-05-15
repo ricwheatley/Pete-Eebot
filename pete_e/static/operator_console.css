@@ -34,7 +34,8 @@ a {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -102,7 +103,8 @@ input {
 }
 
 .icon-button,
-.primary-button {
+.primary-button,
+.danger-button {
   min-height: 40px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -123,8 +125,22 @@ input {
   font-weight: 700;
 }
 
+.danger-button {
+  width: 100%;
+  padding: 0 16px;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 800;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .icon-button:hover,
-.primary-button:hover {
+.primary-button:hover,
+.danger-button:not(:disabled):hover {
   border-color: var(--accent-dark);
 }
 
@@ -208,6 +224,71 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.command-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.command-form {
+  display: grid;
+  gap: 12px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.command-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.command-form label span,
+.confirmation-copy {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.command-form input,
+.command-form select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
+.confirmation-copy,
+.command-result {
+  margin: 0;
+}
+
+.command-result {
+  min-height: 24px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.command-result[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.command-result[data-tone="danger"] {
+  color: var(--danger);
 }
 
 .panel-wide {
@@ -405,8 +486,11 @@ h2 {
 }
 
 .login-form input:focus,
+.command-form input:focus,
+.command-form select:focus,
 .icon-button:focus-visible,
 .primary-button:focus-visible,
+.danger-button:focus-visible,
 .nav-link:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--focus), transparent 55%);
   outline-offset: 2px;
@@ -448,6 +532,10 @@ h2 {
 
   .panel-wide {
     grid-column: span 1;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
   }
 
   .data-table {

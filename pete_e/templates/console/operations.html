@@ -1,0 +1,77 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="command-grid" aria-label="Operator commands">
+  {% for command in command_cards %}
+  <article class="panel command-panel">
+    <div class="panel-heading">
+      <h2>{{ command.title }}</h2>
+      {{ ui.badge("Operator", "neutral") }}
+    </div>
+    <p>{{ command.body }}</p>
+
+    <form
+      class="command-form"
+      data-command-form
+      data-endpoint="{{ command.endpoint }}"
+      data-confirmation="{{ command.confirmation }}"
+    >
+      {% if command.fields %}
+        <div class="field-grid">
+          {% for field in command.fields %}
+          <label>
+            <span>{{ field.label }}</span>
+            <input
+              name="{{ field.name }}"
+              type="{{ field.type }}"
+              value="{{ field.value }}"
+              {% if field.min is defined %}min="{{ field.min }}"{% endif %}
+              {% if field.max is defined %}max="{{ field.max }}"{% endif %}
+            >
+          </label>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if command.message_types %}
+        <label>
+          <span>Message</span>
+          <select name="message_type">
+            {% for option in command.message_types %}
+            <option value="{{ option.value }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      {% endif %}
+
+      <label>
+        <span>Confirmation</span>
+        <input
+          name="confirmation"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          data-confirmation-input
+          aria-describedby="{{ command.key }}-confirmation"
+        >
+      </label>
+      <p class="confirmation-copy" id="{{ command.key }}-confirmation">
+        Type <strong>{{ command.confirmation }}</strong> to enable this command.
+      </p>
+
+      <button class="danger-button" type="submit" disabled data-command-submit>
+        {{ command.title }}
+      </button>
+      <p class="command-result" hidden data-command-result></p>
+    </form>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

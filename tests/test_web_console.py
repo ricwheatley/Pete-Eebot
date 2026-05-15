@@ -7,6 +7,7 @@ import pytest
 
 from pete_e import api
 from pete_e.api_routes import dependencies, web
+from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY
 
@@ -16,11 +17,13 @@ class _Request:
         self,
         *,
         path: str = "/console/status",
+        method: str = "GET",
+        headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
         query_params: dict[str, str] | None = None,
     ) -> None:
-        self.method = "GET"
-        self.headers = {}
+        self.method = method
+        self.headers = headers or {}
         self.cookies = cookies or {}
         self.query_params = query_params or {}
         self.client = SimpleNamespace(host="127.0.0.1")
@@ -360,6 +363,189 @@ def test_read_only_user_cannot_open_operator_page(monkeypatch: pytest.MonkeyPatc
     assert exc.value.status_code == 403
 
 
+def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+
+    response = web.console_operations(
+        _Request(path="/console/operations", cookies={dependencies.session_cookie_name(): service.token})
+    )
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert "Run Sync" in html
+    assert "Generate Plan" in html
+    assert "Resend Message" in html
+    assert "RUN SYNC" in html
+    assert "GENERATE PLAN" in html
+    assert "RESEND MESSAGE" in html
+    assert 'data-endpoint="/console/operations/run-sync"' in html
+
+
+def test_console_command_requires_operator_role_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_READ_ONLY))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+
+    with pytest.raises(web.HTTPException) as exc:
+        web.console_run_sync(
+            _Request(
+                path="/console/operations/run-sync",
+                method="POST",
+                headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+                cookies={
+                    dependencies.session_cookie_name(): service.token,
+                    dependencies.csrf_cookie_name(): csrf_token,
+                },
+            ),
+            payload={"confirmation": "RUN SYNC"},
+        )
+
+    assert exc.value.status_code == 403
+
+
+def test_console_command_requires_csrf_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+
+    with pytest.raises(web.HTTPException) as exc:
+        web.console_run_sync(
+            _Request(
+                path="/console/operations/run-sync",
+                method="POST",
+                cookies={dependencies.session_cookie_name(): service.token},
+            ),
+            payload={"confirmation": "RUN SYNC"},
+        )
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "csrf_required"
+
+
+def test_console_command_requires_exact_confirmation_and_audits_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    audit_events: list[dict] = []
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(
+        dependencies,
+        "audit_command_event",
+        lambda request, **event: audit_events.append(event),
+    )
+
+    with pytest.raises(web.HTTPException) as exc:
+        web.console_run_sync(
+            _Request(
+                path="/console/operations/run-sync",
+                method="POST",
+                headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+                cookies={
+                    dependencies.session_cookie_name(): service.token,
+                    dependencies.csrf_cookie_name(): csrf_token,
+                },
+            ),
+            payload={"confirmation": "sync please"},
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "confirmation_required"
+    assert audit_events[-1]["command"] == "sync"
+    assert audit_events[-1]["outcome"] == "confirmation_failed"
+
+
+def test_console_run_sync_executes_after_confirmation_and_audits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    audit_events: list[dict] = []
+    captured: dict[str, tuple[int, int]] = {}
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
+    monkeypatch.setattr(
+        dependencies,
+        "run_guarded_high_risk_operation",
+        lambda operation, callback, timeout_seconds=None: callback(),
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "audit_command_event",
+        lambda request, **event: audit_events.append(event),
+    )
+
+    def _sync(days: int, retries: int) -> SyncResult:
+        captured["args"] = (days, retries)
+        return SyncResult(
+            success=True,
+            attempts=1,
+            failed_sources=[],
+            source_statuses={"Withings": "ok"},
+            label="manual",
+            undelivered_alerts=[],
+        )
+
+    monkeypatch.setattr(web, "run_sync_with_retries", _sync)
+
+    payload = web.console_run_sync(
+        _Request(
+            path="/console/operations/run-sync",
+            method="POST",
+            headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+            cookies={
+                dependencies.session_cookie_name(): service.token,
+                dependencies.csrf_cookie_name(): csrf_token,
+            },
+        ),
+        payload={"confirmation": "RUN SYNC", "days": 2, "retries": 0},
+    )
+
+    assert captured["args"] == (2, 0)
+    assert payload["status"] == "completed"
+    assert payload["success"] is True
+    assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
+
+
+def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    commands: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
+    monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
+    monkeypatch.setattr(
+        dependencies,
+        "start_guarded_high_risk_process",
+        lambda operation, command, **kwargs: commands.append((operation, command)),
+    )
+    request = _Request(
+        path="/console/operations/generate-plan",
+        method="POST",
+        headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+        cookies={
+            dependencies.session_cookie_name(): service.token,
+            dependencies.csrf_cookie_name(): csrf_token,
+        },
+    )
+
+    plan_payload = web.console_generate_plan(
+        request,
+        payload={"confirmation": "GENERATE PLAN", "weeks": 4, "start_date": "2026-05-18"},
+    )
+    message_payload = web.console_resend_message(
+        request,
+        payload={"confirmation": "RESEND MESSAGE", "message_type": "trainer"},
+    )
+
+    assert plan_payload == {"status": "started", "command": "plan", "weeks": 4, "start_date": "2026-05-18"}
+    assert message_payload == {"status": "started", "command": "message_resend", "message_type": "trainer"}
+    assert commands == [
+        ("plan", ["pete", "plan", "--weeks", "4", "--start-date", "2026-05-18"]),
+        ("message_resend", ["pete", "message", "--trainer", "--send"]),
+    ]
+
+
 def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
     mounted_routes = {
         (method, route.path)
@@ -368,5 +554,6 @@ def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
     }
 
     assert ("GET", "/console/status") in mounted_routes
+    assert ("POST", "/console/operations/run-sync") in mounted_routes
     assert ("GET", "/login") in mounted_routes
     assert ("GET", f"{api.API_V1_PREFIX}/console/status") not in mounted_routes

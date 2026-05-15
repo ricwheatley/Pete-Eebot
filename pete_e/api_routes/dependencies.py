@@ -8,16 +8,18 @@ from pathlib import Path
 import subprocess
 import threading
 import time
-from typing import Callable, TypeVar
+from typing import Any, Callable, Mapping, TypeVar
 
 from fastapi import Header, HTTPException, Request
 
+from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.config import get_env, settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName, normalize_role
+from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 
@@ -552,6 +554,41 @@ def enforce_command_rate_limit(
             )
         events.append(now)
         _rate_limit_events[key] = events
+
+
+def audit_command_event(
+    request: Request,
+    *,
+    command: str,
+    outcome: str,
+    summary: Mapping[str, Any] | None = None,
+    level: str = "INFO",
+) -> None:
+    state = getattr(request, "state", None)
+    user = getattr(state, "auth_user", None)
+    auth_scheme = getattr(state, "auth_scheme", None)
+    user_summary = {}
+    if isinstance(user, AuthUser):
+        user_summary = {
+            "user_id": user.id,
+            "username": user.username,
+            "roles": list(user.roles),
+        }
+
+    log_utils.log_checkpoint(
+        checkpoint="operator_command",
+        outcome=outcome,
+        correlation={
+            "command": command,
+            "auth_scheme": auth_scheme,
+            "client": _client_identity(request),
+            "correlation_id": get_or_create_correlation_id(request),
+            **user_summary,
+        },
+        summary=summary or {},
+        level=level,
+        tag="AUDIT",
+    )
 
 
 def _operation_conflict(exc: OperationInProgress) -> HTTPException:

@@ -6,6 +6,7 @@ import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
 from pete_e.api_routes.dependencies import (
+    audit_command_event,
     configured_deploy_script_path,
     configured_webhook_secret,
     enforce_command_rate_limit,
@@ -50,9 +51,22 @@ async def github_webhook(request: Request):
     if not hmac.compare_digest(mac.hexdigest(), sig):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
-    start_guarded_high_risk_process("deploy", [str(configured_deploy_script_path())])
+    audit_command_event(request, command="deploy", outcome="started", summary={"source": "github_webhook"})
+    try:
+        start_guarded_high_risk_process("deploy", [str(configured_deploy_script_path())])
+    except Exception as exc:
+        audit_command_event(
+            request,
+            command="deploy",
+            outcome="failed",
+            summary={"status_code": getattr(exc, "status_code", 500), "error": str(getattr(exc, "detail", exc))},
+            level="ERROR",
+        )
+        raise
 
-    return {
+    response = {
         "status": "Deployment triggered",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+    audit_command_event(request, command="deploy", outcome="succeeded", summary=response)
+    return response

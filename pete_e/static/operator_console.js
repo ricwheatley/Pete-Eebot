@@ -48,6 +48,71 @@ async function signIn(form) {
   }
 }
 
+function commandPayload(form) {
+  const formData = new FormData(form);
+  const payload = {};
+  formData.forEach((value, key) => {
+    payload[key] = value;
+  });
+  return payload;
+}
+
+function setCommandResult(form, message, tone = "neutral") {
+  const result = form.querySelector("[data-command-result]");
+  if (!result) {
+    return;
+  }
+  result.textContent = message;
+  result.dataset.tone = tone;
+  result.hidden = false;
+}
+
+async function submitCommand(form) {
+  const button = form.querySelector("[data-command-submit]");
+  const csrfToken = readCookie("peteeebot_csrf");
+  const endpoint = form.dataset.endpoint;
+  if (!endpoint) {
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+  }
+  setCommandResult(form, "Running...", "neutral");
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      credentials: "same-origin",
+      body: JSON.stringify(commandPayload(form)),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = body.error?.message || body.detail?.message || body.detail || "Command failed.";
+      setCommandResult(form, String(detail), "danger");
+      return;
+    }
+    setCommandResult(form, body.summary || `${body.command || "Command"} ${body.status}.`, "ok");
+  } catch (error) {
+    setCommandResult(form, "Command request failed.", "danger");
+  } finally {
+    updateCommandButton(form);
+  }
+}
+
+function updateCommandButton(form) {
+  const input = form.querySelector("[data-confirmation-input]");
+  const button = form.querySelector("[data-command-submit]");
+  if (!input || !button) {
+    return;
+  }
+  button.disabled = input.value.trim() !== form.dataset.confirmation;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-logout]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -59,6 +124,17 @@ document.addEventListener("DOMContentLoaded", () => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       signIn(form);
+    });
+  });
+
+  document.querySelectorAll("[data-command-form]").forEach((form) => {
+    updateCommandButton(form);
+    form.addEventListener("input", () => {
+      updateCommandButton(form);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitCommand(form);
     });
   });
 });
