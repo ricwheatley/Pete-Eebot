@@ -9,8 +9,10 @@ import time
 from typing import Any, Mapping
 
 from pete_e import observability
+from pete_e.application.adapter_contracts import NotificationChannel, NotificationMessage
 from pete_e.config import get_env
-from pete_e.infrastructure import log_utils, telegram_sender
+from pete_e.infrastructure import log_utils
+from pete_e.infrastructure.di_container import get_container
 
 ALERT_STALE_INGEST = "stale_ingest"
 ALERT_AUTH_EXPIRY = "auth_expiry"
@@ -91,7 +93,20 @@ def emit_alert(event: AlertEvent) -> bool:
         return True
 
     try:
-        telegram_sender.send_alert(_format_alert_message(event))
+        delivery = _get_notification_channel().send(
+            NotificationMessage(
+                title=event.title,
+                body=_format_alert_message(event),
+                severity=event.severity,
+                dedupe_key=event.dedupe_key,
+                context={
+                    "alert_type": event.alert_type,
+                    **dict(event.context or {}),
+                },
+            )
+        )
+        if not delivery.success:
+            raise RuntimeError(delivery.error or "notification channel returned failure")
     except Exception as exc:  # pragma: no cover - notification must never break callers.
         log_utils.log_event(
             event="alert_delivery",
@@ -104,6 +119,10 @@ def emit_alert(event: AlertEvent) -> bool:
             summary={"error": str(exc)},
         )
     return True
+
+
+def _get_notification_channel() -> NotificationChannel:
+    return get_container().resolve(NotificationChannel)
 
 
 def emit_stale_ingest_if_needed(
