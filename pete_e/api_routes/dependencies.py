@@ -1,4 +1,5 @@
 import concurrent.futures
+from dataclasses import dataclass, field
 import hashlib
 import hmac
 import math
@@ -14,9 +15,9 @@ from fastapi import Header, HTTPException, Request
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.nutrition_service import NutritionService
-from pete_e.application.user_service import UserService
+from pete_e.application.user_service import UserService, normalize_login
 from pete_e.config import get_env, settings
-from pete_e.domain.auth import AuthUser, RoleName, normalize_role
+from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName, normalize_role
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 
@@ -24,10 +25,36 @@ T = TypeVar("T")
 
 DEFAULT_COMMAND_RATE_LIMIT_MAX_REQUESTS = int(get_env("PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS", 10))
 DEFAULT_COMMAND_RATE_LIMIT_WINDOW_SECONDS = float(get_env("PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS", 60.0))
+DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS = int(get_env("PETEEEBOT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS", 5))
+DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS = float(get_env("PETEEEBOT_LOGIN_RATE_LIMIT_WINDOW_SECONDS", 300.0))
+DEFAULT_LOGIN_LOCKOUT_SECONDS = float(get_env("PETEEEBOT_LOGIN_LOCKOUT_SECONDS", 900.0))
+DEFAULT_LOGIN_BACKOFF_BASE_SECONDS = float(get_env("PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS", 1.0))
 DEFAULT_SYNC_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_SYNC_TIMEOUT_SECONDS", 300.0))
 DEFAULT_PROCESS_TIMEOUT_SECONDS = float(get_env("PETEEEBOT_PROCESS_TIMEOUT_SECONDS", 900.0))
 CSRF_HEADER_NAME = "X-CSRF-Token"
 SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+MACHINE_API_KEY_EXACT_PATHS = frozenset(
+    {
+        "/metrics_overview",
+        "/daily_summary",
+        "/recent_workouts",
+        "/coach_state",
+        "/goal_state",
+        "/user_notes",
+        "/plan_context",
+        "/sse",
+        "/nutrition/daily-summary",
+        "/nutrition/log-macros",
+        "/plan_for_day",
+        "/plan_for_week",
+        "/plan_decision_trace",
+        "/run_pete_plan_async",
+        "/status",
+        "/sync",
+        "/logs",
+    }
+)
+MACHINE_API_KEY_PREFIX_PATHS = frozenset({"/nutrition/log-macros/"})
 
 _dal: PostgresDal | None = None
 _metrics_service: MetricsService | None = None
@@ -41,6 +68,17 @@ _command_executor = concurrent.futures.ThreadPoolExecutor(
 )
 _rate_limit_lock = threading.Lock()
 _rate_limit_events: dict[tuple[str, str], list[float]] = {}
+_login_attempt_lock = threading.Lock()
+
+
+@dataclass
+class _LoginAttemptState:
+    failures: list[float] = field(default_factory=list)
+    next_allowed_at: float = 0.0
+    locked_until: float = 0.0
+
+
+_login_attempts: dict[tuple[str, str], _LoginAttemptState] = {}
 
 
 def _http_exception(status_code: int, detail, headers: dict[str, str] | None = None) -> HTTPException:
@@ -261,6 +299,40 @@ def _request_method(request: Request) -> str:
     return str(getattr(request, "method", "GET") or "GET").upper()
 
 
+def _request_path(request: Request) -> str | None:
+    scope = getattr(request, "scope", None)
+    if isinstance(scope, dict) and scope.get("path"):
+        return str(scope["path"])
+
+    url = getattr(request, "url", None)
+    path = getattr(url, "path", None)
+    if path:
+        return str(path)
+
+    path = getattr(request, "path", None)
+    return str(path) if path else None
+
+
+def _normalize_api_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    candidate = str(path).strip() or "/"
+    if candidate.startswith("/api/v1/"):
+        return candidate[len("/api/v1") :]
+    if candidate == "/api/v1":
+        return "/"
+    return candidate
+
+
+def _is_machine_api_key_path(request: Request) -> bool:
+    path = _normalize_api_path(_request_path(request))
+    if path is None:
+        return True
+    if path in MACHINE_API_KEY_EXACT_PATHS:
+        return True
+    return any(path.startswith(prefix) for prefix in MACHINE_API_KEY_PREFIX_PATHS)
+
+
 def _mark_authenticated_request(request: Request, *, scheme: str, user: AuthUser | None = None) -> None:
     state = getattr(request, "state", None)
     if state is None:
@@ -313,14 +385,31 @@ def require_browser_user(request: Request, *, require_csrf: bool = False) -> Aut
 
 def require_role(request: Request, role: RoleName | str, *, require_csrf: bool = False) -> AuthUser:
     user = require_browser_user(request, require_csrf=require_csrf)
-    if not user.has_role(normalize_role(str(role))):
+    if not _user_satisfies_role(user, normalize_role(str(role))):
         raise HTTPException(status_code=403, detail="Insufficient role")
     return user
 
 
-def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> None:
+def _user_satisfies_role(user: AuthUser, role: RoleName) -> bool:
+    if role == ROLE_READ_ONLY:
+        return True
+    if role == ROLE_OPERATOR:
+        return user.can_operate
+    if role == ROLE_OWNER:
+        return user.is_owner
+    return user.has_role(role)
+
+
+def validate_api_key(
+    request: Request,
+    x_api_key: str | None = Header(None),
+    *,
+    required_session_role: RoleName | str = ROLE_READ_ONLY,
+) -> None:
     key = x_api_key
     if key:
+        if not _is_machine_api_key_path(request):
+            raise HTTPException(status_code=403, detail="API key is not accepted for this endpoint")
         if hmac.compare_digest(key, configured_api_key()):
             _mark_authenticated_request(request, scheme="api_key")
             return
@@ -330,12 +419,93 @@ def validate_api_key(request: Request, x_api_key: str | None = Header(None)) -> 
     if token:
         user = get_user_service().validate_session_token(token)
         if user is not None:
+            required_role = normalize_role(str(required_session_role))
+            if not _user_satisfies_role(user, required_role):
+                raise HTTPException(status_code=403, detail="Insufficient role")
             if _request_method(request) not in SAFE_HTTP_METHODS:
                 enforce_csrf_for_session(request, token)
             _mark_authenticated_request(request, scheme="session", user=user)
             return
 
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+def reset_login_attempts() -> None:
+    with _login_attempt_lock:
+        _login_attempts.clear()
+
+
+def _login_attempt_key(request: Request, login: str) -> tuple[str, str]:
+    return (normalize_login(login) or "<blank>", _client_identity(request))
+
+
+def _prune_login_failures(state: _LoginAttemptState, now: float, window_seconds: float) -> None:
+    state.failures = [timestamp for timestamp in state.failures if now - timestamp < window_seconds]
+    if not state.failures and state.locked_until <= now:
+        state.next_allowed_at = 0.0
+        state.locked_until = 0.0
+
+
+def _raise_login_throttle(code: str, message: str, retry_after: int) -> None:
+    raise _http_exception(
+        status_code=429,
+        detail={
+            "code": code,
+            "message": message,
+            "retry_after_seconds": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def enforce_login_attempt_allowed(request: Request, login: str) -> None:
+    now = time.monotonic()
+    window_seconds = DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    key = _login_attempt_key(request, login)
+    with _login_attempt_lock:
+        state = _login_attempts.get(key)
+        if state is None:
+            return
+        _prune_login_failures(state, now, window_seconds)
+        if state.locked_until > now:
+            retry_after = max(1, math.ceil(state.locked_until - now))
+            _raise_login_throttle("login_locked", "Login temporarily locked", retry_after)
+        if state.next_allowed_at > now:
+            retry_after = max(1, math.ceil(state.next_allowed_at - now))
+            _raise_login_throttle("login_backoff", "Login retry backoff active", retry_after)
+
+
+def record_login_failure(request: Request, login: str) -> None:
+    now = time.monotonic()
+    max_attempts = DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+    window_seconds = DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    lockout_seconds = DEFAULT_LOGIN_LOCKOUT_SECONDS
+    backoff_base_seconds = DEFAULT_LOGIN_BACKOFF_BASE_SECONDS
+    if max_attempts <= 0 or window_seconds <= 0:
+        return
+
+    key = _login_attempt_key(request, login)
+    with _login_attempt_lock:
+        state = _login_attempts.setdefault(key, _LoginAttemptState())
+        _prune_login_failures(state, now, window_seconds)
+        state.failures.append(now)
+        if len(state.failures) >= max_attempts and lockout_seconds > 0:
+            state.locked_until = now + lockout_seconds
+            state.next_allowed_at = state.locked_until
+            retry_after = max(1, math.ceil(lockout_seconds))
+            _raise_login_throttle("login_locked", "Login temporarily locked", retry_after)
+        if backoff_base_seconds > 0:
+            backoff_seconds = min(
+                lockout_seconds if lockout_seconds > 0 else backoff_base_seconds * 16,
+                backoff_base_seconds * (2 ** max(0, len(state.failures) - 1)),
+            )
+            state.next_allowed_at = now + backoff_seconds
+
+
+def record_login_success(request: Request, login: str) -> None:
+    key = _login_attempt_key(request, login)
+    with _login_attempt_lock:
+        _login_attempts.pop(key, None)
 
 
 def _client_identity(request: Request) -> str:

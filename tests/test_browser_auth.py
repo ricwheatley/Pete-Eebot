@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from pete_e.api_routes import auth, dependencies, nutrition
-from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, UserSession
+from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_READ_ONLY, UserSession
 
 
 class _Request:
@@ -16,6 +16,7 @@ class _Request:
         method: str = "GET",
         headers: dict[str, str] | None = None,
         cookies: dict[str, str] | None = None,
+        path: str | None = None,
     ) -> None:
         self.method = method
         self.headers = headers or {}
@@ -23,6 +24,8 @@ class _Request:
         self.query_params = {}
         self.client = SimpleNamespace(host="127.0.0.1")
         self.state = SimpleNamespace()
+        if path is not None:
+            self.scope = {"path": path}
 
 
 class _Response:
@@ -71,6 +74,13 @@ class _NutritionService:
         return {"id": 7, **payload}
 
 
+@pytest.fixture(autouse=True)
+def reset_login_attempts():
+    dependencies.reset_login_attempts()
+    yield
+    dependencies.reset_login_attempts()
+
+
 @pytest.fixture()
 def auth_user() -> AuthUser:
     return AuthUser(
@@ -109,6 +119,61 @@ def test_login_sets_http_only_session_cookie_and_readable_csrf_cookie(
     assert session_cookie["samesite"] == "lax"
     assert csrf_cookie["httponly"] is False
     assert csrf_cookie["value"] == payload["csrf_token"]
+
+
+def test_failed_login_imposes_retry_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    dependencies.reset_login_attempts()
+    monkeypatch.setattr(auth, "get_user_service", lambda: _UserService(auth_user))
+    monkeypatch.setattr(dependencies, "DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS", 5)
+    monkeypatch.setattr(dependencies, "DEFAULT_LOGIN_BACKOFF_BASE_SECONDS", 30.0)
+
+    with pytest.raises(auth.HTTPException) as first:
+        auth.login(
+            request=_Request(method="POST"),
+            response=_Response(),
+            payload={"login": "pete", "password": "wrong"},
+        )
+
+    assert first.value.status_code == 401
+    with pytest.raises(auth.HTTPException) as second:
+        auth.login(
+            request=_Request(method="POST"),
+            response=_Response(),
+            payload={"login": "pete", "password": "wrong"},
+        )
+
+    assert second.value.status_code == 429
+    assert second.value.detail["code"] == "login_backoff"
+
+
+def test_repeated_failed_login_locks_account_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    dependencies.reset_login_attempts()
+    monkeypatch.setattr(auth, "get_user_service", lambda: _UserService(auth_user))
+    monkeypatch.setattr(dependencies, "DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(dependencies, "DEFAULT_LOGIN_BACKOFF_BASE_SECONDS", 0.0)
+    monkeypatch.setattr(dependencies, "DEFAULT_LOGIN_LOCKOUT_SECONDS", 120.0)
+
+    with pytest.raises(auth.HTTPException):
+        auth.login(
+            request=_Request(method="POST"),
+            response=_Response(),
+            payload={"login": "pete", "password": "wrong"},
+        )
+    with pytest.raises(auth.HTTPException) as locked:
+        auth.login(
+            request=_Request(method="POST"),
+            response=_Response(),
+            payload={"login": "pete", "password": "wrong"},
+        )
+
+    assert locked.value.status_code == 429
+    assert locked.value.detail["code"] == "login_locked"
 
 
 def test_session_route_rejects_unauthenticated_browser_request() -> None:
@@ -215,3 +280,37 @@ def test_api_key_state_changing_request_does_not_require_csrf(
     )
 
     assert payload == {"id": 7, "protein_g": 40}
+
+
+def test_read_only_session_cannot_call_operator_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_only = AuthUser(
+        id=2,
+        username="reader",
+        email=None,
+        display_name=None,
+        roles=(ROLE_READ_ONLY,),
+        is_active=True,
+    )
+    service = _UserService(read_only)
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _NutritionService())
+
+    with pytest.raises(nutrition.HTTPException) as exc:
+        nutrition.log_macros(
+            request=_Request(
+                method="POST",
+                headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+                cookies={
+                    dependencies.session_cookie_name(): service.token,
+                    dependencies.csrf_cookie_name(): csrf_token,
+                },
+                path="/api/v1/nutrition/log-macros",
+            ),
+            payload={"protein_g": 40},
+            x_api_key=None,
+        )
+
+    assert exc.value.status_code == 403

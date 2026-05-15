@@ -9,6 +9,7 @@ from pete_e.api_routes.dependencies import (
     validate_api_key,
 )
 from pete_e.application.exceptions import ApplicationError
+from pete_e.domain.auth import ROLE_OPERATOR
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
 
@@ -59,7 +60,7 @@ async def run_pete_plan_async(
     x_api_key: str = Header(None),
     timeout: float = Query(DEFAULT_PROCESS_TIMEOUT_SECONDS, ge=30, le=3600),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "plan")
     start_guarded_high_risk_process(
         "plan",

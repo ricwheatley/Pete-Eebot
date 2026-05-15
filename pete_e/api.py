@@ -17,10 +17,12 @@ from pete_e.api_routes.dependencies import (
     validate_api_key,
 )
 from pete_e.api_errors import install_api_error_handlers
+from pete_e.api_security import install_security_middleware
 from pete_e.api_routes.logs_webhooks import github_webhook, logs
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.config import settings as _settings
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
+from pete_e.domain.auth import ROLE_OPERATOR
 
 settings = _settings  # Backward-compatible module export for tests/consumers.
 API_V1_PREFIX = "/api/v1"
@@ -54,6 +56,7 @@ __all__ = [
 ]
 
 app = FastAPI(title="Pete-Eebot API")
+install_security_middleware(app)
 install_api_error_handlers(app)
 
 
@@ -92,7 +95,7 @@ def sync(
     retries: int = Query(3, ge=0),
     timeout: float = Query(DEFAULT_SYNC_TIMEOUT_SECONDS, ge=1, le=900),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
     try:
         result = run_guarded_high_risk_operation(

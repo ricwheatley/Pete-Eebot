@@ -9,8 +9,11 @@ from pete_e.api_routes.dependencies import (
     clear_session_cookies,
     csrf_header_name,
     enforce_csrf_for_session,
+    enforce_login_attempt_allowed,
     generate_csrf_token,
     get_user_service,
+    record_login_failure,
+    record_login_success,
     require_browser_user,
     session_token_from_request,
     set_session_cookies,
@@ -54,10 +57,13 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
     if not login_value or not password:
         raise HTTPException(status_code=400, detail="login and password are required")
 
+    enforce_login_attempt_allowed(request, str(login_value))
     user = get_user_service().authenticate_user(str(login_value), str(password))
     if user is None:
+        record_login_failure(request, str(login_value))
         raise HTTPException(status_code=401, detail="Invalid login or password")
 
+    record_login_success(request, str(login_value))
     created = get_user_service().create_session(
         user,
         ip_address=_client_ip(request),

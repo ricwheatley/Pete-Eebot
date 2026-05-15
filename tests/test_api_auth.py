@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,18 @@ from pete_e.api_routes import dependencies, logs_webhooks, metrics, nutrition, p
 
 def _request_with_query_api_key() -> dependencies.Request:
     return dependencies.Request({"api_key": "test-key"})
+
+
+def _request_for_path(path: str):
+    return SimpleNamespace(
+        method="GET",
+        headers={},
+        cookies={},
+        query_params={},
+        client=SimpleNamespace(host="127.0.0.1"),
+        scope={"path": path},
+        state=SimpleNamespace(),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +41,21 @@ def test_validate_api_key_accepts_header_even_when_query_param_is_wrong() -> Non
     request = dependencies.Request({"api_key": "wrong-key"})
 
     dependencies.validate_api_key(request, x_api_key="test-key")
+
+
+def test_api_key_is_rejected_outside_machine_api_paths() -> None:
+    with pytest.raises(dependencies.HTTPException) as exc:
+        dependencies.validate_api_key(_request_for_path("/api/v1/auth/session"), x_api_key="test-key")
+
+    assert exc.value.status_code == 403
+
+
+def test_api_key_is_accepted_for_versioned_machine_api_paths() -> None:
+    request = _request_for_path("/api/v1/status")
+
+    dependencies.validate_api_key(request, x_api_key="test-key")
+
+    assert request.state.auth_scheme == "api_key"
 
 
 @pytest.mark.parametrize(

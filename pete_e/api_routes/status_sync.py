@@ -10,6 +10,7 @@ from pete_e.api_routes.dependencies import (
 )
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
+from pete_e.domain.auth import ROLE_OPERATOR
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
 
@@ -38,7 +39,7 @@ def sync(
     retries: int = Query(3, ge=0),
     timeout: float = Query(DEFAULT_SYNC_TIMEOUT_SECONDS, ge=1, le=900),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "sync")
     try:
         result = run_guarded_high_risk_operation(
