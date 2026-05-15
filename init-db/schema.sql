@@ -20,6 +20,12 @@ DROP MATERIALIZED VIEW IF EXISTS daily_summary;
 DROP MATERIALIZED VIEW IF EXISTS plan_muscle_volume;
 DROP MATERIALIZED VIEW IF EXISTS actual_muscle_volume;
 DROP TABLE IF EXISTS "ImportLog" CASCADE;
+DROP TABLE IF EXISTS auth_sessions CASCADE;
+DROP TABLE IF EXISTS auth_user_profiles CASCADE;
+DROP TABLE IF EXISTS user_profiles CASCADE;
+DROP TABLE IF EXISTS auth_user_roles CASCADE;
+DROP TABLE IF EXISTS auth_users CASCADE;
+DROP TABLE IF EXISTS auth_roles CASCADE;
 DROP TABLE IF EXISTS "WorkoutHeartRateRecovery" CASCADE;
 DROP TABLE IF EXISTS "WorkoutActiveEnergy" CASCADE;
 DROP TABLE IF EXISTS "WorkoutStepCount" CASCADE;
@@ -60,6 +66,102 @@ DROP FUNCTION IF EXISTS sp_upsert_body_age_range(date, date, date);
 -- =============================================================================
 -- SECTION 1: CORE DATA & CATALOG TABLES
 -- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- AUTHENTICATION, SESSIONS & RBAC
+-- -----------------------------------------------------------------------------
+CREATE TABLE auth_roles (
+    name TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    CONSTRAINT ck_auth_roles_name CHECK (name IN ('owner', 'operator', 'read_only'))
+);
+
+INSERT INTO auth_roles (name, description)
+VALUES
+    ('owner', 'Full administrative access, including user and security administration.'),
+    ('operator', 'Can run operational workflows and manage day-to-day coach actions.'),
+    ('read_only', 'Can view status, plans, logs, and summaries without making changes.');
+
+CREATE TABLE auth_users (
+    id BIGSERIAL PRIMARY KEY,
+    username TEXT NOT NULL,
+    username_normalized TEXT NOT NULL UNIQUE,
+    email TEXT,
+    email_normalized TEXT UNIQUE,
+    display_name TEXT,
+    password_hash TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_auth_users_username_not_blank CHECK (btrim(username) <> ''),
+    CONSTRAINT ck_auth_users_username_normalized_not_blank CHECK (btrim(username_normalized) <> '')
+);
+COMMENT ON TABLE auth_users IS 'Browser-facing user accounts for web UI sessions.';
+
+CREATE TABLE auth_user_roles (
+    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    role_name TEXT NOT NULL REFERENCES auth_roles(name),
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, role_name)
+);
+CREATE INDEX idx_auth_user_roles_role_name ON auth_user_roles(role_name);
+
+CREATE TABLE auth_sessions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    token_hash CHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    ip_address INET,
+    user_agent TEXT,
+    CONSTRAINT ck_auth_sessions_expires_after_created CHECK (expires_at > created_at)
+);
+CREATE INDEX idx_auth_sessions_user_id ON auth_sessions(user_id);
+CREATE INDEX idx_auth_sessions_expires_at ON auth_sessions(expires_at);
+CREATE INDEX idx_auth_sessions_active_token
+    ON auth_sessions(token_hash)
+    WHERE revoked_at IS NULL;
+COMMENT ON TABLE auth_sessions IS 'Opaque browser session tokens stored as SHA-256 hashes.';
+
+CREATE TABLE user_profiles (
+    id BIGSERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    date_of_birth DATE,
+    height_cm INTEGER,
+    goal_weight_kg NUMERIC(6,2),
+    timezone TEXT NOT NULL DEFAULT 'Europe/London',
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ck_user_profiles_slug_not_blank CHECK (btrim(slug) <> ''),
+    CONSTRAINT ck_user_profiles_slug_format CHECK (slug ~ '^[a-z0-9][a-z0-9_-]{0,63}$'),
+    CONSTRAINT ck_user_profiles_display_name_not_blank CHECK (btrim(display_name) <> ''),
+    CONSTRAINT ck_user_profiles_height_positive CHECK (height_cm IS NULL OR height_cm > 0),
+    CONSTRAINT ck_user_profiles_goal_weight_positive CHECK (goal_weight_kg IS NULL OR goal_weight_kg > 0),
+    CONSTRAINT ck_user_profiles_timezone_not_blank CHECK (btrim(timezone) <> '')
+);
+COMMENT ON TABLE user_profiles IS 'Coached-person profiles. Optional foundation for future multi-profile data scoping.';
+
+CREATE UNIQUE INDEX ux_user_profiles_single_default
+    ON user_profiles (is_default)
+    WHERE is_default = true;
+
+CREATE TABLE auth_user_profiles (
+    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    profile_id BIGINT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, profile_id)
+);
+CREATE INDEX idx_auth_user_profiles_profile_id ON auth_user_profiles(profile_id);
+
+INSERT INTO user_profiles (slug, display_name, timezone, is_default)
+VALUES ('default', 'Default profile', 'Europe/London', true);
 
 -- -----------------------------------------------------------------------------
 -- WGER EXERCISE & TRAINING CATALOG

@@ -16,6 +16,8 @@ Pete Eebot is a Python application with Postgres as its source of truth. The pra
 - the Telegram listener
 - the optional FastAPI service
 
+Supported deployment profile today: run the application natively from a Python virtual environment on Linux/Raspberry Pi, with Postgres available as a service. Docker Compose is supported only as a local Postgres helper; there is no supported Pete-Eebot application container image.
+
 ## 1. Mental Model
 
 The important operating concepts are:
@@ -40,6 +42,8 @@ Current plan generation behaviour:
 Weekly automation behaviour:
 
 For unified planner internals (context assembly, stress budget, constraint catalog, and decision trace semantics), see `docs/unified_global_planner.md`.
+
+Planner experiments are gated by feature flags. See `docs/planner_feature_flags.md` for safe defaults, override syntax, audit-log checks, and rollback steps.
 
 - the Sunday review path validates the upcoming week
 - if the active plan is at its rollover point, Pete creates the next plan block
@@ -90,7 +94,7 @@ python -m pip install --no-deps -e .
 
 For a new database, apply `init-db/schema.sql`.
 
-Docker path:
+Docker path for local Postgres only:
 
 ```bash
 docker compose up -d db
@@ -174,7 +178,11 @@ View recent logs:
 pete logs
 pete logs SYNC 100
 pete logs PLAN 100
+pete logs API 100
+pete logs JOB 100
 ```
+
+Logs are JSON lines in production. Use `docs/logging_observability.md` for the field schema and request/job triage workflow.
 
 ### 3.2 Daily Operation
 
@@ -803,9 +811,41 @@ Available endpoints include:
 - `POST /run_pete_plan_async?weeks=4&start_date=YYYY-MM-DD`
 - `POST /webhook`
 
+For the full read/command/admin classification, see `docs/api_endpoint_inventory.md`.
+
 Protected endpoints require:
 
 - `X-API-Key: <PETEEEBOT_API_KEY>`
+
+Do not send `PETEEEBOT_API_KEY` as a query parameter. API-key protected routes reject `?api_key=...`; header auth is the supported mechanism.
+
+API responses include correlation headers:
+
+- send `X-Correlation-ID` or `X-Request-ID` from clients when you have one
+- if omitted, the API generates one
+- responses include both `X-Correlation-ID` and `X-Request-ID`
+
+Error responses use this envelope:
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Rate limit exceeded for sync",
+    "correlation_id": "example-request-id",
+    "details": {
+      "operation": "sync",
+      "retry_after_seconds": 42
+    }
+  }
+}
+```
+
+Command protection defaults:
+
+- command rate limit: `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS=10` per `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS=60`
+- sync timeout: `PETEEEBOT_SYNC_TIMEOUT_SECONDS=300`, also overridable per request with `POST /sync?...&timeout=300`
+- plan/deploy subprocess timeout: `PETEEEBOT_PROCESS_TIMEOUT_SECONDS=900`, with plan overridable per request using `timeout=`
 
 Webhook requirements:
 

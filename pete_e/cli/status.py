@@ -8,6 +8,8 @@ from typing import Callable, Iterable, List, Sequence
 
 import psycopg
 
+from pete_e import observability
+from pete_e.application import alerts
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.telegram_client import TelegramClient
@@ -42,6 +44,15 @@ def _format_exception(exc: Exception) -> str:
     """Perform format exception."""
 
 
+def _record_result(name: str, ok: bool, start: float, *, kind: str) -> None:
+    observability.record_dependency_check(
+        dependency=name,
+        ok=ok,
+        duration_seconds=perf_counter() - start,
+        kind=kind,
+    )
+
+
 def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     start = perf_counter()
     try:
@@ -50,7 +61,9 @@ def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
                 cur.execute("SELECT 1")
                 cur.fetchone()
     except Exception as exc:  # pragma: no cover - handled via result
+        _record_result("DB", False, start, kind="database")
         return CheckResult(name="DB", ok=False, detail=_format_exception(exc))
+    _record_result("DB", True, start, kind="database")
     return CheckResult(name="DB", ok=True, detail=_format_duration(start))
     """Perform check database."""
 
@@ -61,9 +74,13 @@ def check_dropbox(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
         client = AppleDropboxClient(request_timeout=timeout)
         detail = client.ping()
     except Exception as exc:  # pragma: no cover - handled via result
-        return CheckResult(name="Dropbox", ok=False, detail=_format_exception(exc))
+        detail = _format_exception(exc)
+        _record_result("Dropbox", False, start, kind="external_api")
+        alerts.emit_auth_expiry_if_needed(provider="Dropbox", detail=detail)
+        return CheckResult(name="Dropbox", ok=False, detail=detail)
     if not detail:
         detail = _format_duration(start)
+    _record_result("Dropbox", True, start, kind="external_api")
     return CheckResult(name="Dropbox", ok=True, detail=detail)
     """Perform check dropbox."""
 
@@ -74,9 +91,13 @@ def check_withings(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
         client = WithingsClient(request_timeout=timeout)
         detail = client.ping()
     except Exception as exc:  # pragma: no cover - handled via result
-        return CheckResult(name="Withings", ok=False, detail=_format_exception(exc))
+        detail = _format_exception(exc)
+        _record_result("Withings", False, start, kind="external_api")
+        alerts.emit_auth_expiry_if_needed(provider="Withings", detail=detail)
+        return CheckResult(name="Withings", ok=False, detail=detail)
     if not detail:
         detail = _format_duration(start)
+    _record_result("Withings", True, start, kind="external_api")
     return CheckResult(name="Withings", ok=True, detail=detail)
     """Perform check withings."""
 
@@ -87,9 +108,11 @@ def check_telegram(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
         client = TelegramClient(request_timeout=timeout)
         detail = client.ping()
     except Exception as exc:  # pragma: no cover - handled via result
+        _record_result("Telegram", False, start, kind="external_api")
         return CheckResult(name="Telegram", ok=False, detail=_format_exception(exc))
     if not detail:
         detail = _format_duration(start)
+    _record_result("Telegram", True, start, kind="external_api")
     return CheckResult(name="Telegram", ok=True, detail=detail)
     """Perform check telegram."""
 
@@ -100,9 +123,13 @@ def check_wger(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
         client = WgerClient(timeout=timeout)
         detail = client.ping()
     except Exception as exc:  # pragma: no cover - handled via result
-        return CheckResult(name="Wger", ok=False, detail=_format_exception(exc))
+        detail = _format_exception(exc)
+        _record_result("Wger", False, start, kind="external_api")
+        alerts.emit_auth_expiry_if_needed(provider="Wger", detail=detail)
+        return CheckResult(name="Wger", ok=False, detail=detail)
     if not detail:
         detail = _format_duration(start)
+    _record_result("Wger", True, start, kind="external_api")
     return CheckResult(name="Wger", ok=True, detail=detail)
     """Perform check wger."""
 

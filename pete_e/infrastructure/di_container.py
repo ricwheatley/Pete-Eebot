@@ -14,17 +14,22 @@ from pete_e.application.composition import (
     provide_plan_service,
     provide_postgres_dal,
     provide_telegram_client,
+    provide_telegram_notification_channel,
+    provide_user_service,
     provide_validation_service,
     provide_wger_client,
     provide_wger_export_service,
     provide_withings_client,
 )
+from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
 from pete_e.config import settings as app_settings
 from pete_e.domain.configuration import DomainSettings, configure as configure_domain
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
+from pete_e.domain.planner_flags import parse_planner_feature_flags
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
@@ -43,6 +48,9 @@ configure_domain(
         baseline_days=app_settings.BASELINE_DAYS,
         cycle_days=app_settings.CYCLE_DAYS,
         phrases_path=app_settings.phrases_path,
+        planner_feature_flags=parse_planner_feature_flags(
+            getattr(app_settings, "PETEEEBOT_PLANNER_FEATURE_FLAGS", "")
+        ),
     )
 )
 
@@ -94,6 +102,10 @@ def _register_defaults(container: Container) -> None:
     container.register(WithingsClient, factory=lambda _c: provide_withings_client())
     container.register(TelegramClient, factory=lambda _c: provide_telegram_client())
     container.register(
+        NotificationChannel,
+        factory=lambda c: provide_telegram_notification_channel(client=c.resolve(TelegramClient)),
+    )
+    container.register(
         AppleHealthIngestor,
         factory=lambda c: provide_apple_health_ingestor(
             dal=c.resolve(PostgresDal),
@@ -101,6 +113,7 @@ def _register_defaults(container: Container) -> None:
         ),
     )
     container.register(PlanService, factory=lambda c: provide_plan_service(dal=c.resolve(PostgresDal)))
+    container.register(UserService, factory=lambda c: provide_user_service(dal=c.resolve(PostgresDal)))
     container.register(
         WgerExportService,
         factory=lambda c: provide_wger_export_service(

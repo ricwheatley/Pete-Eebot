@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Iterable, List, Tuple
 
 from pete_e import logging_setup
@@ -19,19 +20,28 @@ class _StubOrchestrator:
 
 def _final_summary_bundle(log_path):
     lines = log_path.read_text().strip().splitlines()
-    summary_indices = [idx for idx, line in enumerate(lines) if "Sync summary" in line]
+    messages = []
+    for line in lines:
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            messages.extend(line.splitlines())
+        else:
+            message = str(payload.get("message", line)) if isinstance(payload, dict) else line
+            messages.extend(message.splitlines())
+    summary_indices = [idx for idx, line in enumerate(messages) if "Sync summary" in line]
     assert summary_indices, "Expected a sync summary line to be logged"
     final_idx = summary_indices[-1]
-    summary_line = lines[final_idx]
+    summary_line = messages[final_idx]
 
     trailing_lines: List[str] = []
     cursor = final_idx + 1
-    while cursor < len(lines) and "Sync summary" not in lines[cursor]:
-        trailing_lines.append(lines[cursor])
+    while cursor < len(messages) and "Sync summary" not in messages[cursor]:
+        trailing_lines.append(messages[cursor])
         cursor += 1
 
-    summary_lines = [lines[i] for i in summary_indices]
-    return summary_line, trailing_lines, lines, summary_lines
+    summary_lines = [messages[i] for i in summary_indices]
+    return summary_line, trailing_lines, messages, summary_lines
     """Perform final summary bundle."""
 
 

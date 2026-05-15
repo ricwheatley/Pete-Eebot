@@ -1,0 +1,7 @@
+{% macro badge(label, tone="neutral") -%}
+<span class="status-badge status-{{ tone }}">{{ label }}</span>
+{%- endmacro %}
+
+{% macro empty_state(message) -%}
+<p class="empty-state">{{ message }}</p>
+{%- endmacro %}
