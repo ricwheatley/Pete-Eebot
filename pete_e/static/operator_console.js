@@ -126,6 +126,84 @@ function updateCommandButton(form) {
   button.disabled = input.value.trim() !== form.dataset.confirmation;
 }
 
+function initTrendChart() {
+  const canvas = document.getElementById("trend-canvas");
+  if (!canvas || !Array.isArray(window.trendsSeries) || !Array.isArray(window.trendMetrics)) {
+    return;
+  }
+  const metricA = document.getElementById("metric-a");
+  const metricB = document.getElementById("metric-b");
+  const range = document.getElementById("trend-range");
+  const startInput = document.getElementById("trend-start");
+  const endInput = document.getElementById("trend-end");
+  if (!metricA || !metricB || !range || !startInput || !endInput) return;
+
+  const metrics = window.trendMetrics;
+  metrics.forEach((m) => {
+    const optionA = new Option(m.label, m.key);
+    const optionB = new Option(m.label, m.key);
+    metricA.add(optionA);
+    metricB.add(optionB);
+  });
+  metricA.selectedIndex = 0;
+  metricB.selectedIndex = Math.min(1, metrics.length - 1);
+  const allDates = window.trendsSeries.map((d) => d.date).sort();
+  startInput.value = allDates[0] || "";
+  endInput.value = allDates[allDates.length - 1] || "";
+
+  const ctx = canvas.getContext("2d");
+  function draw() {
+    canvas.width = canvas.clientWidth || 800;
+    const days = Number(range.value);
+    const latest = new Date(endInput.value || allDates[allDates.length - 1]);
+    let start = new Date(startInput.value || allDates[0]);
+    let end = latest;
+    if (range.value !== "custom" && Number.isFinite(days)) {
+      start = new Date(latest);
+      start.setDate(start.getDate() - days + 1);
+      startInput.value = start.toISOString().slice(0, 10);
+    }
+    const rows = window.trendsSeries.filter((r) => {
+      const d = new Date(r.date);
+      return d >= start && d <= end;
+    });
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const keys = [metricA.value, metricB.value].filter(Boolean);
+    if (!rows.length || !keys.length) return;
+    const values = rows.flatMap((r) => keys.map((k) => Number(r[k])).filter((v) => !Number.isNaN(v)));
+    if (!values.length) return;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const pad = 24;
+    const w = canvas.width || canvas.clientWidth;
+    const h = canvas.height;
+    const x = (i) => pad + (i * (w - pad * 2)) / Math.max(1, rows.length - 1);
+    const y = (v) => h - pad - ((v - min) * (h - pad * 2)) / Math.max(1, max - min || 1);
+    [["#3b82f6", keys[0]], ["#ef4444", keys[1]]].forEach(([color, key]) => {
+      if (!key) return;
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      let started = false;
+      rows.forEach((r, i) => {
+        const v = Number(r[key]);
+        if (Number.isNaN(v)) return;
+        const px = x(i);
+        const py = y(v);
+        if (!started) {
+          ctx.moveTo(px, py);
+          started = true;
+        } else {
+          ctx.lineTo(px, py);
+        }
+      });
+      ctx.stroke();
+    });
+  }
+  [metricA, metricB, range, startInput, endInput].forEach((el) => el.addEventListener("change", draw));
+  draw();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-logout]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -150,4 +228,5 @@ document.addEventListener("DOMContentLoaded", () => {
       submitCommand(form);
     });
   });
+  initTrendChart();
 });
