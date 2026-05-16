@@ -145,6 +145,23 @@ def _format_minutes_for_snapshot(value: Any) -> tuple[str, str]:
     return _format_number(minutes, decimals=0), "min"
 
 
+def _metric_label(metric_key: str) -> str:
+    return metric_key.replace("_", " ").strip().title()
+
+
+def _build_metric_catalog(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    metric_names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key, value in row.items():
+            if key == "date":
+                continue
+            if isinstance(value, (int, float)):
+                metric_names.add(str(key))
+    return [{"key": key, "label": _metric_label(key)} for key in sorted(metric_names)]
+
+
 class WebConsoleReadModel:
     """Composes existing read services into UI-focused page payloads."""
 
@@ -279,12 +296,38 @@ class WebConsoleReadModel:
                 "delta_label": "run km 7d",
             },
         ]
+        trend_rows = _safe_load(
+            lambda: {
+                "rows": list(
+                    getattr(self._metrics_service, "_dal").get_historical_data(target_date - timedelta(days=365), target_date)
+                    or []
+                )
+            },
+            {"rows": []},
+        ).get("rows", [])
+        series: list[dict[str, Any]] = []
+        for row in trend_rows:
+            if not isinstance(row, dict):
+                continue
+            row_date = row.get("date")
+            if not isinstance(row_date, date):
+                continue
+            entry: dict[str, Any] = {"date": row_date.isoformat()}
+            for key, value in row.items():
+                if key == "date":
+                    continue
+                if isinstance(value, (int, float)):
+                    entry[str(key)] = value
+            series.append(entry)
+        series.sort(key=lambda item: str(item["date"]))
 
         return {
             "date": target_date.isoformat(),
             "summary": coach_state.get("summary") or {},
             "snapshots": snapshots,
             "data_quality": coach_state.get("data_quality") or daily_summary.get("data_quality") or {},
+            "series": series,
+            "metric_catalog": _build_metric_catalog([row for row in trend_rows if isinstance(row, dict)]),
         }
 
     def nutrition(self, *, target_date: date) -> dict[str, Any]:
