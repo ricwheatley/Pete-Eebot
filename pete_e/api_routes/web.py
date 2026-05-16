@@ -53,6 +53,7 @@ COMMAND_CONFIRMATIONS = {
     "apple_ingest": "RUN APPLE INGEST",
     "plan": "GENERATE PLAN",
     "message_resend": "RESEND MESSAGE",
+    "deploy": "RUN DEPLOY",
 }
 MESSAGE_TYPES = {"summary", "trainer", "plan"}
 
@@ -273,6 +274,15 @@ def _command_cards(today: date) -> list[dict[str, object]]:
                 {"value": "summary", "label": "Daily summary"},
                 {"value": "trainer", "label": "Trainer check-in"},
             ],
+        },
+
+        {
+            "key": "deploy",
+            "title": "Run Deploy Script",
+            "body": "Owner-only manual deploy trigger for webhook fallback.",
+            "endpoint": "/console/operations/run-deploy",
+            "confirmation": COMMAND_CONFIRMATIONS["deploy"],
+            "requires_owner": True,
         },
     ]
 
@@ -819,6 +829,48 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
             job_id=job_id,
             operation=command,
             command=["pete", "message", f"--{message_type}", "--send"],
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    response = {
+        "status": "queued",
+        "command": command,
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
+    _audit_command_success(request, command, response)
+    return response
+
+
+@router.post("/console/operations/run-deploy")
+def console_run_deploy(request: Request, payload: dict[str, Any] | None = None):
+    command = "deploy"
+    user = _require_operator_command_user(request, command)
+    if not user.is_owner:
+        raise HTTPException(status_code=403, detail="Deploy can only be triggered by an owner user")
+    _require_command_confirmation(request, command, payload)
+
+    summary = {"source": "web_console_owner_manual"}
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    _audit_command_start(request, command, summary)
+
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        dependencies.get_job_service().enqueue_subprocess(
+            job_id=job_id,
+            operation=command,
+            command=[str(dependencies.configured_deploy_script_path())],
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,
