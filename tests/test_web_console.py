@@ -383,6 +383,8 @@ def test_trends_page_renders_weight_sleep_hrv_and_volume_snapshots(monkeypatch: 
     assert "Volume" in html
     assert "89.2" in html
     assert "7200" in html
+    assert "6.8" in html
+    assert " h" in html
 
 
 def test_nutrition_page_renders_daily_summary(monkeypatch: pytest.MonkeyPatch) -> None:
