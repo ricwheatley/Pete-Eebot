@@ -10,12 +10,16 @@ JOB_STATUS_RUNNING = "running"
 JOB_STATUS_SUCCEEDED = "succeeded"
 JOB_STATUS_FAILED = "failed"
 JOB_STATUS_TIMEOUT = "timeout"
+JOB_STATUS_ABANDONED = "abandoned"
+JOB_STATUS_CANCELLED = "cancelled"
 
 TERMINAL_JOB_STATUSES = frozenset(
     {
         JOB_STATUS_SUCCEEDED,
         JOB_STATUS_FAILED,
         JOB_STATUS_TIMEOUT,
+        JOB_STATUS_ABANDONED,
+        JOB_STATUS_CANCELLED,
     }
 )
 
@@ -40,6 +44,13 @@ class ApplicationJob:
     stderr_summary: str | None = None
     failure_reason: str | None = None
     auth_scheme: str | None = None
+    worker_id: str | None = None
+    attempt_number: int = 1
+    lease_expires_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    ownership_token: int | None = None
+    abandon_reason: str | None = None
+    progress_summary: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -64,6 +75,13 @@ class ApplicationJob:
             "exit_code": self.exit_code,
             "result_summary": self.result_summary,
             "failure_reason": self.failure_reason,
+            "worker_id": self.worker_id,
+            "attempt_number": self.attempt_number,
+            "lease_expires_at": self.lease_expires_at.isoformat() if self.lease_expires_at else None,
+            "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+            "ownership_token": self.ownership_token,
+            "abandon_reason": self.abandon_reason,
+            "progress_summary": dict(self.progress_summary or {}),
             "request_summary": dict(self.request_summary or {}),
         }
         if include_output:

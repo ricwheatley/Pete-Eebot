@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextvars
 import concurrent.futures
 from datetime import datetime, timezone
+import os
 import re
 import subprocess
 import threading
@@ -184,10 +185,13 @@ def _log_job_event(
 class ApplicationJobService:
     def __init__(self, repository: ApplicationJobRepository) -> None:
         self.repository = repository
+        self._worker_id = "worker-local"
+        self._lease_seconds = 300.0
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=4,
             thread_name_prefix="application-job",
         )
+        self.recover_stale_operations()
 
     def _lock_lease_seconds(self, timeout_seconds: float | None) -> float:
         configured_default = 14400.0
@@ -224,6 +228,12 @@ class ApplicationJobService:
             release(job_id=job_id)
             return
         high_risk_operation_guard.release()
+
+    def recover_stale_operations(self) -> int:
+        recover = getattr(self.repository, "recover_stale_operations", None)
+        if not callable(recover):
+            return 0
+        return int(recover(stale_before=_utcnow()))
 
     def _create_job(
         self,
@@ -435,6 +445,23 @@ class ApplicationJobService:
     ) -> None:
         started = time.perf_counter()
         self.repository.mark_running(job_id, started_at=_utcnow())
+        heartbeat_stop = threading.Event()
+
+        def _heartbeat() -> None:
+            sender = getattr(self.repository, "heartbeat", None)
+            while not heartbeat_stop.wait(self._lease_seconds / 3):
+                if callable(sender):
+                    ok = sender(
+                        job_id=job_id,
+                        worker_id=self._worker_id,
+                        lease_seconds=self._lease_seconds,
+                        progress={"operation": operation, "phase": "running"},
+                    )
+                    if not ok:
+                        break
+
+        heartbeat_thread = threading.Thread(target=_heartbeat, name=f"{operation}-heartbeat-{job_id}", daemon=True)
+        heartbeat_thread.start()
         _log_job_event(operation=operation, job_id=job_id, outcome=JOB_STATUS_RUNNING, summary={"command": command[:1]})
         exit_code: int | None = None
         stdout_summary: str | None = None
@@ -477,6 +504,7 @@ class ApplicationJobService:
             failure_reason = str(exc)
             result_summary = f"{operation} failed before process completion."
         finally:
+            heartbeat_stop.set()
             duration_seconds = time.perf_counter() - started
             self.repository.complete(
                 job_id,
