@@ -76,6 +76,31 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
         )
         raise HTTPException(status_code=401, detail="Invalid login or password")
 
+    mfa_code = payload.get("mfa_code") or payload.get("totp_code") or payload.get("recovery_code")
+    user_service = get_user_service()
+    requires_mfa = getattr(user_service, "user_requires_mfa", lambda current_user: bool(getattr(current_user, "mfa_enabled", False)))
+    verify_mfa = getattr(user_service, "verify_mfa_code", lambda current_user, code: True)
+    if requires_mfa(user):
+        if not mfa_code:
+            return {
+                "authenticated": False,
+                "mfa_required": True,
+                "csrf_header": csrf_header_name(),
+            }
+        if not verify_mfa(user, str(mfa_code)):
+            record_login_failure(request, str(login_value))
+            log_utils.log_event(
+                event="auth_login",
+                message="login MFA failed",
+                tag="AUTH",
+                level="WARNING",
+                outcome="failed",
+                request_id=get_or_create_correlation_id(request),
+                client_ip=_client_ip(request),
+                login=str(login_value),
+            )
+            raise HTTPException(status_code=401, detail="Invalid MFA code")
+
     record_login_success(request, str(login_value))
     created = get_user_service().create_session(
         user,

@@ -56,6 +56,8 @@ The server-rendered operator console is mounted outside `/api/v1`. These routes 
 | GET | `/console/operations` | Read | `operator`/`owner` browser session | `pete_e/api_routes/web.py` | Renders command controls with typed confirmation phrases. |
 | POST | `/console/operations/run-sync` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `sync` job through the high-risk operation guard. Confirmation phrase: `RUN SYNC`. |
 | POST | `/console/operations/generate-plan` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `plan` job that starts `pete plan`. Confirmation phrase: `GENERATE PLAN`. |
+| POST | `/console/operations/run-sunday-review` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `sunday_review` job that starts `python -m scripts.run_sunday_review`. Confirmation phrase: `RUN SUNDAY REVIEW`. |
+| POST | `/console/operations/lets-begin` | Command | `operator`/`owner` browser session + CSRF + typed confirmation + start-date confirmation | `pete_e/api_routes/web.py` | Creates a durable `lets_begin` job that starts `pete lets-begin --start-date YYYY-MM-DD`. Requires the `start_date` field and an exact matching `start_date_confirmation`. Confirmation phrase: `BEGIN STRENGTH TEST`. |
 | POST | `/console/operations/resend-message` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `message_resend` job that starts `pete message --<type> --send`. Confirmation phrase: `RESEND MESSAGE`. |
 
 ## Error and Correlation Contract
@@ -85,6 +87,8 @@ High-risk workflows are serialized with the database-backed `application_operati
 - `POST /webhook`
 - `/console/operations/run-sync`
 - `/console/operations/generate-plan`
+- `/console/operations/run-sunday-review`
+- `/console/operations/lets-begin`
 - `/console/operations/resend-message`
 - `pete sync`
 

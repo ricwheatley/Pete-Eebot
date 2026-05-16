@@ -87,6 +87,17 @@ class NutritionService:
             raise DataAccessError("Failed to load nutrition daily summary.") from exc
         return _shape_daily_summary(summary, target_date=target_date)
 
+    def daily_logs(self, iso_date: str, *, limit: int = 25) -> list[dict[str, Any]]:
+        target_date = _parse_iso_date(iso_date)
+        loader = getattr(self._dal, "get_nutrition_logs", None)
+        if not callable(loader):
+            return []
+        try:
+            rows = list(loader(target_date, limit=limit) or [])
+        except Exception as exc:
+            raise DataAccessError("Failed to load nutrition logs.") from exc
+        return [self._shape_log_row(row, duplicate=False, warnings=()) for row in rows]
+
     @staticmethod
     def _shape_log_row(
         row: Mapping[str, Any],

@@ -37,6 +37,7 @@ class AuthUser:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     last_login_at: datetime | None = None
+    mfa_enabled: bool = False
 
     def has_role(self, role: RoleName | str) -> bool:
         return normalize_role(str(role)) in self.roles

@@ -38,7 +38,7 @@ Durable command jobs are stored in `application_jobs`; the high-risk overlap loc
 | Field | Meaning |
 | --- | --- |
 | `event` | `background_job`. |
-| `operation` | Guarded operation name, such as `sync`, `plan`, `deploy`, or `message_resend`. |
+| `operation` | Guarded operation name, such as `sync`, `plan`, `sunday_review`, `lets_begin`, `deploy`, or `message_resend`. |
 | `job_id` | Operation correlation ID. |
 | `summary.duration_ms` | Runtime for completed in-process jobs or process guards. |
 | `summary.return_code` | Subprocess return code where applicable. |

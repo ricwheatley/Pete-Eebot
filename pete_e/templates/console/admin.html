@@ -1,0 +1,102 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+  <p class="page-summary">Owner access confirmed.</p>
+</section>
+
+<section class="panel-grid" aria-label="Owner administration">
+  <article class="panel panel-wide">
+    <div class="panel-heading">
+      <h2>Users</h2>
+      {{ ui.badge("Owner", "warning") }}
+    </div>
+    {% if users %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Roles</th>
+          <th>Status</th>
+          <th>MFA</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account in users %}
+        <tr>
+          <td>
+            <strong>{{ account.username }}</strong><br>
+            <span class="muted-text">{{ account.email or account.display_name or "" }}</span>
+          </td>
+          <td>{{ account.roles | join(", ") }}</td>
+          <td>{{ "active" if account.is_active else "inactive" }}</td>
+          <td>{{ "enabled" if account.mfa_enabled else "off" }}</td>
+          <td>
+            <form class="command-form compact-form" data-command-form data-endpoint="/console/admin/users/{{ account.id }}/roles" data-requires-confirmation="false" data-refresh-on-success="true">
+              <div class="checkbox-row">
+                {% for role in ["owner", "operator", "read_only"] %}
+                <label><input name="roles" type="checkbox" value="{{ role }}" {% if role in account.roles %}checked{% endif %}> <span>{{ role }}</span></label>
+                {% endfor %}
+              </div>
+              <button class="primary-button inline-button" type="submit" data-command-submit>Update roles</button>
+              <p class="command-result" hidden data-command-result></p>
+            </form>
+            {% if account.is_active %}
+            <form class="command-form compact-form" data-command-form data-endpoint="/console/admin/users/{{ account.id }}/deactivate" data-requires-confirmation="false" data-refresh-on-success="true">
+              <button class="danger-button inline-button" type="submit" data-command-submit>Deactivate</button>
+              <p class="command-result" hidden data-command-result></p>
+            </form>
+            {% endif %}
+            {% if account.mfa_enabled %}
+            <form class="command-form compact-form" data-command-form data-endpoint="/console/admin/users/{{ account.id }}/mfa-reset" data-requires-confirmation="false" data-refresh-on-success="true">
+              <button class="danger-button inline-button" type="submit" data-command-submit>Reset MFA</button>
+              <p class="command-result" hidden data-command-result></p>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      {{ ui.empty_state("No users found.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Create User</h2>
+    <form class="command-form" data-command-form data-endpoint="/console/admin/users" data-requires-confirmation="false" data-refresh-on-success="true">
+      <div class="field-grid">
+        <label><span>Username</span><input name="username" required></label>
+        <label><span>Email</span><input name="email" type="email"></label>
+        <label><span>Display name</span><input name="display_name"></label>
+        <label><span>Password</span><input name="password" type="password" autocomplete="new-password" required></label>
+      </div>
+      <div class="checkbox-row">
+        {% for role in ["owner", "operator", "read_only"] %}
+        <label><input name="roles" type="checkbox" value="{{ role }}" {% if role == "read_only" %}checked{% endif %}> <span>{{ role }}</span></label>
+        {% endfor %}
+      </div>
+      <button class="primary-button" type="submit" data-command-submit>Create user</button>
+      <p class="command-result" hidden data-command-result></p>
+    </form>
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Break-Glass References</h2>
+    <div class="reference-grid">
+      {% for link in break_glass_links %}
+      <a class="reference-link" href="{{ link.href }}">
+        <strong>{{ link.label }}</strong>
+        <span>{{ link.summary }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

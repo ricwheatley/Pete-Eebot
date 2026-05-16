@@ -26,7 +26,8 @@
       class="command-form"
       data-command-form
       data-endpoint="{{ command.endpoint }}"
-      data-confirmation="{{ command.confirmation }}"
+      data-confirmation="{{ command.confirmation | default('', true) }}"
+      data-requires-confirmation="{{ 'true' if command.confirmation else 'false' }}"
     >
       {% if command.fields %}
         <div class="field-grid">
@@ -39,7 +40,12 @@
               value="{{ field.value }}"
               {% if field.min is defined %}min="{{ field.min }}"{% endif %}
               {% if field.max is defined %}max="{{ field.max }}"{% endif %}
+              {% if field.placeholder is defined %}placeholder="{{ field.placeholder }}"{% endif %}
+              {% if field.required %}required{% endif %}
             >
+            {% if field.help is defined %}
+            <small>{{ field.help }}</small>
+            {% endif %}
           </label>
           {% endfor %}
         </div>
@@ -56,6 +62,7 @@
         </label>
       {% endif %}
 
+      {% if command.confirmation %}
       <label>
         <span>Confirmation</span>
         <input
@@ -70,8 +77,14 @@
       <p class="confirmation-copy" id="{{ command.key }}-confirmation">
         Type <strong>{{ command.confirmation }}</strong> to enable this command.
       </p>
+      {% endif %}
 
-      <button class="danger-button" type="submit" disabled data-command-submit>
+      <button
+        class="{{ command.button_class | default('danger-button', true) }}"
+        type="submit"
+        {% if command.confirmation %}disabled{% endif %}
+        data-command-submit
+      >
         {{ command.title }}
       </button>
       <p class="command-result" hidden data-command-result></p>
@@ -79,5 +92,19 @@
   </article>
   {% endif %}
   {% endfor %}
+</section>
+
+<section class="panel-grid action-section" aria-label="Break-glass references">
+  <article class="panel panel-wide">
+    <h2>Break-Glass References</h2>
+    <div class="reference-grid">
+      {% for link in break_glass_links %}
+      <a class="reference-link" href="{{ link.href }}">
+        <strong>{{ link.label }}</strong>
+        <span>{{ link.summary }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </article>
 </section>
 {% endblock %}

@@ -336,6 +336,11 @@ The scrape includes guarded job latency/counts, job failures, retry counters, an
 
 Durable command execution uses `application_jobs` for status/history and `application_operation_locks` for the shared high-risk lock. Command audit events are also persisted to `web_console_command_history`, linking request ID, job ID, user, auth scheme, command, outcome, client identity, and a redacted safe summary. Inspect `/console/jobs` for execution state and `/console/history` or `/console/history.json?q=<request-or-job-id>` for searchable recent command audit history. Structured `AUDIT` and `JOB` log lines remain a secondary diagnostic stream for correlation and raw incident timelines.
 
+Daily operators can use `/console/operations` to preview the morning report
+without sending it or send it via Telegram after typing `SEND MORNING REPORT`.
+Both paths accept the same optional date override as `pete morning-report --date`;
+failed attempts surface request/job IDs for lookup in Jobs, History, and Logs.
+
 ---
 
 ## 7) Security Operations
@@ -371,6 +376,7 @@ create one owner:
 
 ```bash
 psql "$DATABASE_URL" -f migrations/20260515_add_auth_users_sessions_rbac.sql
+psql "$DATABASE_URL" -f migrations/20260516_add_auth_mfa_fields.sql
 pete bootstrap-owner --username ric --email ric@example.com --display-name "Ric"
 ```
 
@@ -410,6 +416,18 @@ jq -c 'select(.tag=="AUDIT" and .checkpoint=="owner_password_recovery")' \
 If the account is temporarily locked by failed login throttling, either wait
 `PETEEEBOT_LOGIN_LOCKOUT_SECONDS` or restart the API process to clear the
 in-memory throttle state after verifying the reset.
+
+Owners can manage routine browser users from `/console/admin` after signing in.
+The page lists users, creates users, assigns roles, deactivates users, and resets
+MFA for locked-out owner/operator users. These actions require an active owner
+session, a CSRF token, and write an `AUDIT` operator-command event.
+
+Owner/operator users can enroll optional MFA from `/console/security`. The flow
+returns a TOTP secret, an authenticator URI, and one-time recovery codes. After a
+valid 6-digit TOTP confirmation, future logins require either a current TOTP
+code or one unused recovery code. Store recovery codes in the same password
+manager as the browser account password. If recovery codes are lost, an owner
+can reset MFA for the affected user from `/console/admin`.
 
 ### 7.3 CORS and security headers
 

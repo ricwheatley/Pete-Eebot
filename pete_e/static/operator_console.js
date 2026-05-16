@@ -34,10 +34,24 @@ async function signIn(form) {
     body: JSON.stringify({
       login: formData.get("login"),
       password: formData.get("password"),
+      mfa_code: formData.get("mfa_code"),
     }),
   });
+  const body = await response.json().catch(() => ({}));
 
   if (response.ok) {
+    if (body.mfa_required) {
+      const mfaField = form.querySelector("[data-mfa-field]");
+      if (mfaField) {
+        mfaField.hidden = false;
+        mfaField.querySelector("input")?.focus();
+      }
+      if (error) {
+        error.textContent = "Enter your MFA code.";
+        error.hidden = false;
+      }
+      return;
+    }
     window.location.assign(form.dataset.next || "/console");
     return;
   }
@@ -52,7 +66,11 @@ function commandPayload(form) {
   const formData = new FormData(form);
   const payload = {};
   formData.forEach((value, key) => {
-    payload[key] = value;
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      payload[key] = Array.isArray(payload[key]) ? [...payload[key], value] : [payload[key], value];
+    } else {
+      payload[key] = value;
+    }
   });
   return payload;
 }
@@ -69,6 +87,22 @@ function setCommandResult(form, message, tone = "neutral") {
 
 function commandResultMessage(body) {
   const parts = [body.summary || `${body.command || "Command"} ${body.status}.`];
+  if (body.message) {
+    const label = body.message_type ? body.message_type.replace(/_/g, " ") : "message";
+    parts.push(`--- ${label} preview ---\n${body.message}`);
+  }
+  if (body.report) {
+    parts.push(`--- Morning Report ---\n${body.report}`);
+  }
+  if (body.secret) {
+    parts.push(`TOTP secret: ${body.secret}`);
+  }
+  if (body.otp_uri) {
+    parts.push(`URI: ${body.otp_uri}`);
+  }
+  if (Array.isArray(body.recovery_codes) && body.recovery_codes.length) {
+    parts.push(`Recovery codes:\n${body.recovery_codes.join("\n")}`);
+  }
   if (body.source_statuses && typeof body.source_statuses === "object") {
     const statuses = Object.entries(body.source_statuses)
       .map(([source, status]) => `${source}: ${status}`)
@@ -77,7 +111,35 @@ function commandResultMessage(body) {
       parts.push(`Sources: ${statuses}`);
     }
   }
+  const identifiers = commandIdentifiers(body);
+  if (identifiers) {
+    parts.push(identifiers);
+  }
   return parts.join("\n");
+}
+
+function commandIdentifiers(body) {
+  const details = body.error?.details || body.detail || {};
+  const requestId = body.request_id || body.correlation_id || body.error?.correlation_id || details.request_id;
+  const jobId = body.job_id || details.job_id;
+  const statusUrl = body.status_url || details.status_url;
+  const parts = [];
+  if (requestId) {
+    parts.push(`Request ID: ${requestId}`);
+  }
+  if (jobId) {
+    parts.push(`Job ID: ${jobId}`);
+  }
+  if (statusUrl) {
+    parts.push(`Job: ${statusUrl}`);
+  }
+  return parts.join("\n");
+}
+
+function commandFailureMessage(body) {
+  const detail = body.error?.message || body.detail?.message || body.detail || "Command failed.";
+  const identifiers = commandIdentifiers(body);
+  return identifiers ? `${String(detail)}\n${identifiers}` : String(detail);
 }
 
 async function submitCommand(form) {
@@ -105,11 +167,13 @@ async function submitCommand(form) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = body.error?.message || body.detail?.message || body.detail || "Command failed.";
-      setCommandResult(form, String(detail), "danger");
+      setCommandResult(form, commandFailureMessage(body), "danger");
       return;
     }
     setCommandResult(form, commandResultMessage(body), body.success === false ? "danger" : "ok");
+    if (form.dataset.refreshOnSuccess === "true") {
+      window.setTimeout(() => window.location.reload(), 700);
+    }
   } catch (error) {
     setCommandResult(form, "Command request failed.", "danger");
   } finally {
@@ -118,6 +182,13 @@ async function submitCommand(form) {
 }
 
 function updateCommandButton(form) {
+  if (form.dataset.requiresConfirmation !== "true") {
+    const unconfirmedButton = form.querySelector("[data-command-submit]");
+    if (unconfirmedButton) {
+      unconfirmedButton.disabled = false;
+    }
+    return;
+  }
   const input = form.querySelector("[data-confirmation-input]");
   const button = form.querySelector("[data-command-submit]");
   if (!input || !button) {
