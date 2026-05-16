@@ -45,4 +45,36 @@
   </article>
   {% endfor %}
 </section>
+
+<section class="panel" aria-label="Trend chart">
+  <div class="panel-heading">
+    <h2>Metric trends</h2>
+  </div>
+  <div class="controls-row">
+    <label>Metric A
+      <select id="metric-a"></select>
+    </label>
+    <label>Metric B
+      <select id="metric-b"></select>
+    </label>
+    <label>Range
+      <select id="trend-range">
+        <option value="7">7d</option>
+        <option value="28" selected>28d</option>
+        <option value="90">3m</option>
+        <option value="180">6m</option>
+        <option value="365">12m</option>
+        <option value="custom">Custom</option>
+      </select>
+    </label>
+    <label>From <input id="trend-start" type="date"></label>
+    <label>To <input id="trend-end" type="date"></label>
+  </div>
+  <canvas id="trend-canvas" height="280" aria-label="Trend line chart"></canvas>
+</section>
+
+<script>
+  window.trendsSeries = {{ trends_view.series | tojson }};
+  window.trendMetrics = {{ trends_view.metric_catalog | tojson }};
+</script>
 {% endblock %}
