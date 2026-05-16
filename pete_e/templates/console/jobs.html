@@ -22,6 +22,10 @@
     <div><dt>Created</dt><dd>{{ selected_job.created_at or "pending" }}</dd></div>
     <div><dt>Started</dt><dd>{{ selected_job.started_at or "pending" }}</dd></div>
     <div><dt>Completed</dt><dd>{{ selected_job.completed_at or "pending" }}</dd></div>
+    <div><dt>Worker</dt><dd>{{ selected_job.worker_id or "-" }}</dd></div>
+    <div><dt>Lease expires</dt><dd>{{ selected_job.lease_expires_at or "-" }}</dd></div>
+    <div><dt>Last heartbeat</dt><dd>{{ selected_job.last_heartbeat_at or "-" }}</dd></div>
+    <div><dt>Attempt</dt><dd>{{ selected_job.attempt_number or 1 }}</dd></div>
     <div><dt>Exit code</dt><dd>{{ selected_job.exit_code if selected_job.exit_code is not none else "pending" }}</dd></div>
     <div><dt>Summary</dt><dd>{{ selected_job.result_summary or "No result yet." }}</dd></div>
     {% if selected_job.failure_reason %}

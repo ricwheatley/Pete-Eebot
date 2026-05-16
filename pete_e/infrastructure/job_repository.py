@@ -9,7 +9,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from pete_e.domain.jobs import ApplicationJob, ApplicationOperationLock, CommandHistoryEntry, JOB_STATUS_QUEUED
+from pete_e.domain.jobs import ApplicationJob, ApplicationOperationLock, CommandHistoryEntry, JOB_STATUS_QUEUED, JOB_STATUS_ABANDONED
 from pete_e.infrastructure.postgres_dal import get_pool
 
 
@@ -38,6 +38,13 @@ class PostgresApplicationJobRepository:
             stdout_summary=row.get("stdout_summary"),
             stderr_summary=row.get("stderr_summary"),
             failure_reason=row.get("failure_reason"),
+            worker_id=row.get("worker_id"),
+            attempt_number=int(row.get("attempt_number") or 1),
+            lease_expires_at=row.get("lease_expires_at"),
+            last_heartbeat_at=row.get("last_heartbeat_at"),
+            ownership_token=int(row["ownership_token"]) if row.get("ownership_token") is not None else None,
+            abandon_reason=row.get("abandon_reason"),
+            progress_summary=dict(row.get("progress_summary") or {}),
         )
 
     @staticmethod
@@ -120,11 +127,55 @@ class PostgresApplicationJobRepository:
                     UPDATE application_jobs
                     SET status = 'running',
                         started_at = %s,
+                        worker_id = COALESCE(worker_id, %s),
+                        last_heartbeat_at = %s,
+                        lease_expires_at = %s,
+                        ownership_token = COALESCE(ownership_token, 0) + 1,
                         updated_at = now()
                     WHERE id = %s
                     """,
-                    (started_at, job_id),
+                    (started_at, "worker-local", started_at, started_at + timedelta(minutes=5), job_id),
                 )
+
+    def heartbeat(self, *, job_id: str, worker_id: str, lease_seconds: float, progress: dict[str, Any] | None = None) -> bool:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE application_jobs
+                    SET last_heartbeat_at = now(),
+                        lease_expires_at = now() + (%s || ' seconds')::interval,
+                        progress_summary = COALESCE(%s::jsonb, progress_summary),
+                        updated_at = now()
+                    WHERE id = %s
+                      AND status = 'running'
+                      AND worker_id = %s
+                    """,
+                    (float(lease_seconds), Json(progress) if progress is not None else None, job_id, worker_id),
+                )
+                return cur.rowcount > 0
+
+    def recover_stale_operations(self, *, stale_before: datetime) -> int:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE application_jobs
+                    SET status = %s,
+                        completed_at = now(),
+                        abandon_reason = 'lease_expired',
+                        failure_reason = COALESCE(failure_reason, 'lease_expired'),
+                        result_summary = COALESCE(result_summary, 'Operation abandoned after missed heartbeat.'),
+                        updated_at = now()
+                    WHERE status IN ('queued', 'running')
+                      AND lease_expires_at IS NOT NULL
+                      AND lease_expires_at < %s
+                    """,
+                    (JOB_STATUS_ABANDONED, stale_before),
+                )
+                recovered = cur.rowcount
+                cur.execute("DELETE FROM application_operation_locks WHERE expires_at < now()")
+                return recovered
 
     def complete(
         self,
