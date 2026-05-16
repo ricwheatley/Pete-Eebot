@@ -41,9 +41,10 @@ class _Response:
 
 
 class _UserService:
-    def __init__(self, user: AuthUser, *, token: str = "session-token") -> None:
+    def __init__(self, user: AuthUser, *, token: str = "session-token", mfa_code: str | None = None) -> None:
         self.user = user
         self.token = token
+        self.mfa_code = mfa_code
         self.revoked: str | None = None
 
     def authenticate_user(self, login: str, password: str):
@@ -67,6 +68,12 @@ class _UserService:
 
     def revoke_session_token(self, token: str) -> None:
         self.revoked = token
+
+    def user_requires_mfa(self, user) -> bool:
+        return bool(self.mfa_code)
+
+    def verify_mfa_code(self, user, code: str) -> bool:
+        return code == self.mfa_code
 
 
 class _NutritionService:
@@ -147,6 +154,61 @@ def test_failed_login_imposes_retry_backoff(
 
     assert second.value.status_code == 429
     assert second.value.detail["code"] == "login_backoff"
+
+
+def test_login_returns_mfa_challenge_without_creating_session(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    service = _UserService(auth_user, mfa_code="123456")
+    monkeypatch.setattr(auth, "get_user_service", lambda: service)
+    response = _Response()
+
+    payload = auth.login(
+        request=_Request(method="POST"),
+        response=response,
+        payload={"login": "pete", "password": "password123"},
+    )
+
+    assert payload["authenticated"] is False
+    assert payload["mfa_required"] is True
+    assert response.cookies == {}
+
+
+def test_login_accepts_valid_mfa_code(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    service = _UserService(auth_user, mfa_code="123456")
+    monkeypatch.setattr(auth, "get_user_service", lambda: service)
+    response = _Response()
+
+    payload = auth.login(
+        request=_Request(method="POST"),
+        response=response,
+        payload={"login": "pete", "password": "password123", "mfa_code": "123456"},
+    )
+
+    assert payload["authenticated"] is True
+    assert response.cookies[dependencies.session_cookie_name()]["value"] == service.token
+
+
+def test_login_rejects_invalid_mfa_code(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    service = _UserService(auth_user, mfa_code="123456")
+    monkeypatch.setattr(auth, "get_user_service", lambda: service)
+
+    with pytest.raises(auth.HTTPException) as exc:
+        auth.login(
+            request=_Request(method="POST"),
+            response=_Response(),
+            payload={"login": "pete", "password": "password123", "mfa_code": "999999"},
+        )
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid MFA code"
 
 
 def test_repeated_failed_login_locks_account_identity(

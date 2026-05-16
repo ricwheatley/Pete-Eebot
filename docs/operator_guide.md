@@ -184,7 +184,7 @@ pete logs JOB 100
 
 Logs are JSON lines in production. Use `docs/logging_observability.md` for the field schema and request/job triage workflow.
 
-Current and recent command jobs are visible in the browser console at `/console/jobs`. Use it after running sync, plan generation, message resend, or deploy-triggered workflows to confirm status, requester, auth scheme, timestamps, exit code, and redacted output summaries. Search `/console/history` when you need the durable audit trail for request ID, job ID, user, auth scheme, command, outcome, and safe summary; structured `AUDIT` logs remain a secondary timeline.
+Current and recent command jobs are visible in the browser console at `/console/jobs`. Use it after running sync, plan generation, weekly review, strength-test start, message resend, or deploy-triggered workflows to confirm status, requester, auth scheme, timestamps, exit code, and redacted output summaries. Search `/console/history` when you need the durable audit trail for request ID, job ID, user, auth scheme, command, outcome, and safe summary; structured `AUDIT` logs remain a secondary timeline.
 
 ### 3.2 Daily Operation
 
@@ -215,6 +215,14 @@ pete morning-report
 pete morning-report --send
 pete morning-report --date 2026-03-31
 ```
+
+The browser console exposes the same daily workflow under `/console/operations`.
+Use **Preview Morning Report** to generate the current report without sending, or
+set **Date override** for the same `YYYY-MM-DD` override as
+`pete morning-report --date`. Use **Send Morning Report** only after typing
+`SEND MORNING REPORT`.
+Failures show request and job IDs; use those IDs in `/console/jobs`,
+`/console/history`, or `/console/logs` when triaging.
 
 Build and optionally send the daily narrative:
 
@@ -250,6 +258,20 @@ Run the weekly review automation:
 ```bash
 python -m scripts.run_sunday_review
 ```
+
+The browser console exposes the weekly/cycle workflows under
+`/console/operations`.
+
+- **Run Sunday Review** starts `python -m scripts.run_sunday_review` only after
+  an operator types `RUN SUNDAY REVIEW`.
+- **Start Strength Test Week** starts `pete lets-begin --start-date
+  YYYY-MM-DD` only after an operator enters a `YYYY-MM-DD` start date, types the
+  same date again in **Confirm start date**, and types `BEGIN STRENGTH TEST`.
+
+Both web commands require an `operator` or `owner` browser session plus a valid
+CSRF token. They create durable job rows, write command audit history, and use
+the shared job-service overlap lock, so they cannot run at the same time as
+sync, plan generation, message resend, deploy, or another high-risk command.
 
 Build and optionally send the weekly plan message:
 

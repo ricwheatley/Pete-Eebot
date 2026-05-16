@@ -94,6 +94,9 @@ CREATE TABLE auth_users (
     display_name TEXT,
     password_hash TEXT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
+    mfa_secret TEXT,
+    mfa_enabled BOOLEAN NOT NULL DEFAULT false,
+    mfa_recovery_code_hashes JSONB NOT NULL DEFAULT '[]'::jsonb,
     password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -102,6 +105,9 @@ CREATE TABLE auth_users (
     CONSTRAINT ck_auth_users_username_normalized_not_blank CHECK (btrim(username_normalized) <> '')
 );
 COMMENT ON TABLE auth_users IS 'Browser-facing user accounts for web UI sessions.';
+CREATE INDEX idx_auth_users_mfa_enabled
+    ON auth_users(mfa_enabled)
+    WHERE mfa_enabled = true;
 
 CREATE TABLE auth_user_roles (
     user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,

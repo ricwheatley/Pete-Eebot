@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+import sys
 from typing import Any, Callable
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,6 +15,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pete_e.api_routes import dependencies
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user, require_role
+from pete_e.application.exceptions import ApplicationError, BadRequestError
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.web_console import WebConsoleReadModel
@@ -53,9 +55,17 @@ COMMAND_CONFIRMATIONS = {
     "apple_ingest": "RUN APPLE INGEST",
     "plan": "GENERATE PLAN",
     "message_resend": "RESEND MESSAGE",
+    "morning_report_send": "SEND MORNING REPORT",
+    "sunday_review": "RUN SUNDAY REVIEW",
+    "lets_begin": "BEGIN STRENGTH TEST",
     "deploy": "RUN DEPLOY",
 }
 MESSAGE_TYPES = {"summary", "trainer", "plan"}
+MESSAGE_TYPE_LABELS = {
+    "summary": "Daily summary",
+    "trainer": "Trainer check-in",
+    "plan": "Weekly plan",
+}
 
 _templates = Environment(
     loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -71,15 +81,46 @@ class NavItem:
     min_role: RoleName
 
 
+@dataclass(frozen=True)
+class MorningReportResult:
+    report: str
+    target_date: str | None
+    sent: bool
+    success: bool = True
+
+    def summary_line(self) -> str:
+        if not self.report.strip():
+            return "No morning report is available yet. Give the sync a minute."
+        action = "sent" if self.sent else "generated"
+        date_fragment = f" for {self.target_date}" if self.target_date else ""
+        return f"Morning report {action}{date_fragment}."
+
+
+@dataclass(frozen=True)
+class ConsoleMessagePreviewResult:
+    message_type: str
+    message: str
+    success: bool = True
+
+    def summary_line(self) -> str:
+        label = MESSAGE_TYPE_LABELS.get(self.message_type, self.message_type)
+        if not self.message.strip():
+            return f"No {label.lower()} message is available."
+        return f"{label} preview generated."
+
+
 NAV_ITEMS: tuple[NavItem, ...] = (
     NavItem("status", "Status", "/console/status", ROLE_READ_ONLY),
     NavItem("plan", "Plan", "/console/plan", ROLE_READ_ONLY),
     NavItem("trends", "Trends", "/console/trends", ROLE_READ_ONLY),
     NavItem("nutrition", "Nutrition", "/console/nutrition", ROLE_READ_ONLY),
     NavItem("logs", "Logs", "/console/logs", ROLE_READ_ONLY),
+    NavItem("alerts", "Alerts", "/console/alerts", ROLE_OPERATOR),
+    NavItem("scheduler", "Scheduler", "/console/scheduler", ROLE_OPERATOR),
     NavItem("jobs", "Jobs", "/console/jobs", ROLE_OPERATOR),
     NavItem("history", "History", "/console/history", ROLE_OPERATOR),
     NavItem("operations", "Operations", "/console/operations", ROLE_OPERATOR),
+    NavItem("security", "Security", "/console/security", ROLE_OPERATOR),
     NavItem("admin", "Admin", "/console/admin", ROLE_OWNER),
 )
 
@@ -146,6 +187,23 @@ PAGE_CONTENT: dict[str, dict[str, object]] = {
             {"title": "Recent Jobs", "body": "No jobs have been recorded."},
         ],
     },
+    "alerts": {
+        "title": "Alerts",
+        "eyebrow": "Operations",
+        "summary": "Active and recent operational alerts.",
+        "panels": [
+            {"title": "Active Alerts", "body": "No active alerts observed."},
+            {"title": "Recent Alerts", "body": "No alert history observed."},
+        ],
+    },
+    "scheduler": {
+        "title": "Scheduler Status",
+        "eyebrow": "Operations",
+        "summary": "Expected cron schedule and repair references.",
+        "panels": [
+            {"title": "Cron", "body": "No schedule loaded."},
+        ],
+    },
     "history": {
         "title": "Command History",
         "eyebrow": "Audit",
@@ -166,10 +224,18 @@ PAGE_CONTENT: dict[str, dict[str, object]] = {
     "admin": {
         "title": "Admin",
         "eyebrow": "Owner",
-        "summary": "User, role, and deployment-sensitive administration.",
+        "summary": "Owner-managed users and browser roles.",
         "panels": [
-            {"title": "Users", "body": "Owner access confirmed."},
+            {"title": "Users", "body": "No users loaded."},
             {"title": "Security", "body": "No security event selected."},
+        ],
+    },
+    "security": {
+        "title": "Security",
+        "eyebrow": "MFA",
+        "summary": "Browser MFA enrollment for owner/operator users.",
+        "panels": [
+            {"title": "MFA", "body": "No MFA state loaded."},
         ],
     },
 }
@@ -221,6 +287,39 @@ def _console_read_model() -> WebConsoleReadModel:
     )
 
 
+BREAK_GLASS_LINKS = (
+    {
+        "label": "OAuth recovery",
+        "href": "/docs/runtime_deploy_runbook.md#withings-oauth-and-token-recovery",
+        "summary": "Provider reauthorization and token refresh steps.",
+    },
+    {
+        "label": "Backup and restore",
+        "href": "/docs/runtime_deploy_runbook.md#52-backup-and-restore",
+        "summary": "Database backup and restore procedure.",
+    },
+    {
+        "label": "Migrations",
+        "href": "/docs/runtime_deploy_runbook.md#14-db-migration-path",
+        "summary": "Manual schema and migration application flow.",
+    },
+    {
+        "label": "Cron repair",
+        "href": "/docs/runtime_deploy_runbook.md#33-cron-renderinstall",
+        "summary": "Regenerate and activate the expected crontab.",
+    },
+    {
+        "label": "Service restart",
+        "href": "/docs/runtime_deploy_runbook.md#34-heartbeat-service-check-ad-hoc",
+        "summary": "Systemd service health and restart checks.",
+    },
+)
+
+
+def _operator_reference_links(user: AuthUser) -> tuple[dict[str, str], ...]:
+    return BREAK_GLASS_LINKS if user.can_operate else ()
+
+
 def _command_cards(today: date) -> list[dict[str, object]]:
     return [
         {
@@ -264,6 +363,50 @@ def _command_cards(today: date) -> list[dict[str, object]]:
             ],
         },
         {
+            "key": "sunday_review",
+            "title": "Run Sunday Review",
+            "body": "Run the weekly review automation.",
+            "endpoint": "/console/operations/run-sunday-review",
+            "confirmation": COMMAND_CONFIRMATIONS["sunday_review"],
+        },
+        {
+            "key": "lets_begin",
+            "title": "Start Strength Test Week",
+            "body": "Create and export the one-week strength-test plan.",
+            "endpoint": "/console/operations/lets-begin",
+            "confirmation": COMMAND_CONFIRMATIONS["lets_begin"],
+            "fields": [
+                {
+                    "name": "start_date",
+                    "label": "Start date",
+                    "type": "date",
+                    "value": today.isoformat(),
+                    "required": True,
+                },
+                {
+                    "name": "start_date_confirmation",
+                    "label": "Confirm start date",
+                    "type": "text",
+                    "value": "",
+                    "placeholder": today.isoformat(),
+                    "required": True,
+                    "help": "Type the same YYYY-MM-DD date before starting the strength-test week.",
+                },
+            ],
+        },
+        {
+            "key": "message_preview",
+            "title": "Preview Message",
+            "body": "Generate a Telegram message preview without sending it.",
+            "endpoint": "/console/operations/preview-message",
+            "button_class": "primary-button",
+            "message_types": [
+                {"value": "plan", "label": "Weekly plan"},
+                {"value": "summary", "label": "Daily summary"},
+                {"value": "trainer", "label": "Trainer check-in"},
+            ],
+        },
+        {
             "key": "message_resend",
             "title": "Resend Message",
             "body": "Send a selected Telegram message again.",
@@ -273,6 +416,36 @@ def _command_cards(today: date) -> list[dict[str, object]]:
                 {"value": "plan", "label": "Weekly plan"},
                 {"value": "summary", "label": "Daily summary"},
                 {"value": "trainer", "label": "Trainer check-in"},
+            ],
+        },
+        {
+            "key": "morning_report_preview",
+            "title": "Preview Morning Report",
+            "body": "Generate the current morning report without sending it.",
+            "endpoint": "/console/operations/morning-report-preview",
+            "button_class": "primary-button",
+            "fields": [
+                {
+                    "name": "target_date",
+                    "label": "Date override",
+                    "type": "date",
+                    "value": "",
+                },
+            ],
+        },
+        {
+            "key": "morning_report_send",
+            "title": "Send Morning Report",
+            "body": "Generate and send the morning report via Telegram.",
+            "endpoint": "/console/operations/morning-report-send",
+            "confirmation": COMMAND_CONFIRMATIONS["morning_report_send"],
+            "fields": [
+                {
+                    "name": "target_date",
+                    "label": "Date override",
+                    "type": "date",
+                    "value": "",
+                },
             ],
         },
 
@@ -310,6 +483,80 @@ def _payload_int(payload: dict[str, Any] | None, key: str, default: int, *, min_
     if value < min_value or value > max_value:
         raise HTTPException(status_code=400, detail=f"{key} must be between {min_value} and {max_value}")
     return value
+
+
+def _clean_form_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    cleaned: dict[str, Any] = {}
+    for key, value in (payload or {}).items():
+        if value == "":
+            continue
+        cleaned[str(key)] = value
+    return cleaned
+
+
+def _selected_roles(payload: dict[str, Any] | None) -> tuple[str, ...]:
+    raw = _payload_value(payload, "roles", ())
+    if isinstance(raw, str):
+        roles = tuple(part.strip() for part in raw.split(",") if part.strip())
+    elif isinstance(raw, (list, tuple, set)):
+        roles = tuple(str(part).strip() for part in raw if str(part).strip())
+    else:
+        roles = ()
+    return roles or (ROLE_READ_ONLY,)
+
+
+def _payload_optional_date(payload: dict[str, Any] | None, key: str) -> date | None:
+    raw_value = str(_payload_value(payload, key, "") or "").strip()
+    if not raw_value:
+        return None
+    return _parse_payload_date(raw_value, key)
+
+
+def _payload_required_date(
+    payload: dict[str, Any] | None,
+    key: str,
+    *,
+    job_id: str | None = None,
+    request_id: str | None = None,
+) -> date:
+    raw_value = str(_payload_value(payload, key, "") or "").strip()
+    if raw_value:
+        return _parse_payload_date(raw_value, key, job_id=job_id, request_id=request_id)
+    detail: dict[str, Any] = {
+        "code": "invalid_date",
+        "message": f"{key} must use YYYY-MM-DD",
+        "field": key,
+    }
+    if job_id:
+        detail["job_id"] = job_id
+    if request_id:
+        detail["request_id"] = request_id
+    raise HTTPException(status_code=400, detail=detail)
+
+
+def _parse_payload_date(
+    raw_value: str,
+    key: str,
+    *,
+    job_id: str | None = None,
+    request_id: str | None = None,
+) -> date:
+    try:
+        return date.fromisoformat(raw_value)
+    except ValueError as exc:
+        detail: dict[str, Any] = {
+            "code": "invalid_date",
+            "message": f"{key} must use YYYY-MM-DD",
+            "field": key,
+        }
+        if job_id:
+            detail["job_id"] = job_id
+        if request_id:
+            detail["request_id"] = request_id
+        raise HTTPException(
+            status_code=400,
+            detail=detail,
+        ) from exc
 
 
 def _query_value(request: Request, key: str, default: str = "") -> str:
@@ -364,6 +611,40 @@ def _require_command_confirmation(request: Request, command: str, payload: dict[
     )
 
 
+def _require_start_date_confirmation(
+    request: Request,
+    command: str,
+    payload: dict[str, Any] | None,
+    start_date: date,
+    *,
+    job_id: str | None = None,
+    request_id: str | None = None,
+) -> None:
+    expected = start_date.isoformat()
+    actual = str(_payload_value(payload, "start_date_confirmation", "")).strip()
+    if actual == expected:
+        return
+
+    dependencies.audit_command_event(
+        request,
+        command=command,
+        outcome="confirmation_failed",
+        summary={"field": "start_date_confirmation", "expected_start_date": expected, "provided": bool(actual)},
+        level="WARNING",
+    )
+    detail: dict[str, Any] = {
+        "code": "start_date_confirmation_required",
+        "message": f"Type {expected} in Confirm start date before starting this command.",
+        "expected_start_date": expected,
+        "field": "start_date_confirmation",
+    }
+    if job_id:
+        detail["job_id"] = job_id
+    if request_id:
+        detail["request_id"] = request_id
+    raise HTTPException(status_code=400, detail=detail)
+
+
 def _audit_command_start(request: Request, command: str, summary: dict[str, Any]) -> None:
     dependencies.audit_command_event(request, command=command, outcome="started", summary=summary)
 
@@ -380,6 +661,104 @@ def _audit_command_failure(request: Request, command: str, exc: Exception) -> No
         outcome="failed",
         summary={"status_code": status_code, "error": str(getattr(exc, "detail", exc))},
         level="ERROR",
+    )
+
+
+def _build_morning_report_orchestrator():
+    from pete_e.application.orchestrator import Orchestrator
+
+    return Orchestrator()
+
+
+def _morning_report_result_summary(result: MorningReportResult) -> str:
+    return result.summary_line()
+
+
+def _generate_morning_report_result(*, target_date: date | None, send: bool) -> MorningReportResult:
+    orchestrator = _build_morning_report_orchestrator()
+    report_value = orchestrator.get_daily_summary(target_date=target_date)
+    report = "" if report_value is None else str(report_value)
+
+    if send and report.strip():
+        if not orchestrator.send_telegram_message(report):
+            raise RuntimeError("Telegram send for morning report failed.")
+        return MorningReportResult(
+            report=report,
+            target_date=target_date.isoformat() if target_date else None,
+            sent=True,
+        )
+
+    return MorningReportResult(
+        report=report,
+        target_date=target_date.isoformat() if target_date else None,
+        sent=False,
+    )
+
+
+def _build_console_message_orchestrator():
+    from pete_e.application.orchestrator import Orchestrator
+
+    return Orchestrator()
+
+
+def _build_console_message_text(message_type: str, *, orchestrator=None) -> str:
+    from pete_e.cli.messenger import build_daily_summary, build_trainer_summary, build_weekly_plan_overview
+
+    orch = orchestrator or _build_console_message_orchestrator()
+    if message_type == "summary":
+        value = build_daily_summary(orchestrator=orch)
+    elif message_type == "trainer":
+        value = build_trainer_summary(orchestrator=orch)
+    elif message_type == "plan":
+        value = build_weekly_plan_overview(orchestrator=orch)
+    else:
+        raise HTTPException(status_code=400, detail="message_type must be summary, trainer, or plan")
+    return "" if value is None else str(value)
+
+
+def _generate_console_message_preview(message_type: str) -> ConsoleMessagePreviewResult:
+    orchestrator = _build_console_message_orchestrator()
+    return ConsoleMessagePreviewResult(
+        message_type=message_type,
+        message=_build_console_message_text(message_type, orchestrator=orchestrator),
+    )
+
+
+def _console_message_preview_summary(result: ConsoleMessagePreviewResult) -> str:
+    return result.summary_line()
+
+
+def _morning_report_failure(
+    *,
+    exc: Exception,
+    job_id: str,
+    request_id: str,
+    default_code: str,
+    default_message: str,
+) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        status_code = exc.status_code
+        detail = exc.detail
+        if isinstance(detail, dict):
+            enriched = {**detail, "job_id": job_id, "request_id": request_id}
+        else:
+            enriched = {
+                "code": default_code,
+                "message": str(detail or default_message),
+                "job_id": job_id,
+                "request_id": request_id,
+            }
+        return HTTPException(status_code=status_code, detail=enriched)
+
+    message = str(exc).strip() or default_message
+    return HTTPException(
+        status_code=500,
+        detail={
+            "code": default_code,
+            "message": message,
+            "job_id": job_id,
+            "request_id": request_id,
+        },
     )
 
 
@@ -457,6 +836,7 @@ def _render_console(
         request_path=_request_path(request),
         user=user,
         user_display_name=_display_name(user),
+        break_glass_links=_operator_reference_links(user),
         **context,
     )
 
@@ -512,6 +892,71 @@ def console_nutrition(request: Request):
         "nutrition",
         template_name="console/nutrition.html",
         context_loader=lambda: {"nutrition_view": _console_read_model().nutrition(target_date=_operator_today())},
+    )
+
+
+@router.post("/console/nutrition/logs")
+def console_create_nutrition_log(request: Request, payload: dict[str, Any] | None = None):
+    command = "nutrition_log_create"
+    user = _require_operator_command_user(request, command)
+    cleaned = _clean_form_payload(payload)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        log = dependencies.get_nutrition_service().log_macros(cleaned)
+        local_date = str(log.get("local_date") or _operator_today().isoformat())[:10]
+        summary = dependencies.get_nutrition_service().daily_summary(local_date)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    response = {"success": True, "command": command, "summary": "Nutrition log saved.", "log": log, "daily_summary": summary}
+    _audit_command_success(request, command, {"log_id": log.get("id"), "local_date": log.get("local_date"), "user_id": user.id})
+    return response
+
+
+@router.post("/console/nutrition/logs/{log_id}")
+def console_update_nutrition_log(log_id: int, request: Request, payload: dict[str, Any] | None = None):
+    command = "nutrition_log_update"
+    user = _require_operator_command_user(request, command)
+    cleaned = _clean_form_payload(payload)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        log = dependencies.get_nutrition_service().update_log(log_id, cleaned)
+        local_date = str(log.get("local_date") or _operator_today().isoformat())[:10]
+        summary = dependencies.get_nutrition_service().daily_summary(local_date)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    response = {"success": True, "command": command, "summary": "Nutrition log updated.", "log": log, "daily_summary": summary}
+    _audit_command_success(request, command, {"log_id": log.get("id"), "local_date": log.get("local_date"), "user_id": user.id})
+    return response
+
+
+@router.get("/console/alerts")
+def console_alerts(request: Request):
+    severity = _query_value(request, "severity").strip()
+    alert_type = _query_value(request, "type").strip()
+    return _render_console(
+        request,
+        "alerts",
+        min_role=ROLE_OPERATOR,
+        template_name="console/alerts.html",
+        context_loader=lambda: {
+            "alerts_view": _console_read_model().alerts(
+                severity=severity or None,
+                alert_type=alert_type or None,
+            )
+        },
+    )
+
+
+@router.get("/console/scheduler")
+def console_scheduler(request: Request):
+    return _render_console(
+        request,
+        "scheduler",
+        min_role=ROLE_OPERATOR,
+        template_name="console/scheduler.html",
+        context_loader=lambda: {"scheduler_view": _console_read_model().scheduler()},
     )
 
 
@@ -810,6 +1255,192 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
     return response
 
 
+@router.post("/console/operations/run-sunday-review")
+def console_run_sunday_review(request: Request, payload: dict[str, Any] | None = None):
+    command = "sunday_review"
+    user = _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+
+    summary = {"workflow": "scripts.run_sunday_review"}
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    _audit_command_start(request, command, summary)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        dependencies.get_job_service().enqueue_subprocess(
+            job_id=job_id,
+            operation=command,
+            command=[sys.executable, "-m", "scripts.run_sunday_review"],
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    response = {
+        "status": "queued",
+        "command": command,
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
+    _audit_command_success(request, command, response)
+    return response
+
+
+@router.post("/console/operations/lets-begin")
+def console_lets_begin(request: Request, payload: dict[str, Any] | None = None):
+    command = "lets_begin"
+    user = _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+
+    try:
+        start_date = _payload_required_date(payload, "start_date", job_id=job_id, request_id=correlation_id)
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+    _require_start_date_confirmation(
+        request,
+        command,
+        payload,
+        start_date,
+        job_id=job_id,
+        request_id=correlation_id,
+    )
+
+    start_date_text = start_date.isoformat()
+    summary = {"workflow": "pete lets-begin", "start_date": start_date_text}
+    _audit_command_start(request, command, summary)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        dependencies.get_job_service().enqueue_subprocess(
+            job_id=job_id,
+            operation=command,
+            command=["pete", "lets-begin", "--start-date", start_date_text],
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    response = {
+        "status": "queued",
+        "command": command,
+        "job_id": job_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
+    _audit_command_success(request, command, response)
+    return response
+
+
+@router.get("/console/security")
+def console_security(request: Request):
+    return _render_console(
+        request,
+        "security",
+        min_role=ROLE_OPERATOR,
+        template_name="console/security.html",
+    )
+
+
+@router.post("/console/security/mfa/start")
+def console_mfa_start(request: Request, payload: dict[str, Any] | None = None):
+    command = "mfa_start"
+    user = _require_operator_command_user(request, command)
+    try:
+        result = dependencies.get_user_service().start_mfa_enrollment(user)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(request, command, {"target_user_id": user.id})
+    return {
+        "success": True,
+        "command": command,
+        "summary": "MFA enrollment started. Add the secret to an authenticator app, then confirm a 6-digit code.",
+        "secret": result["secret"],
+        "otp_uri": result["otp_uri"],
+        "recovery_codes": result["recovery_codes"],
+    }
+
+
+@router.post("/console/security/mfa/confirm")
+def console_mfa_confirm(request: Request, payload: dict[str, Any] | None = None):
+    command = "mfa_confirm"
+    user = _require_operator_command_user(request, command)
+    code = str(_payload_value(payload, "code", "") or "").strip()
+    try:
+        updated = dependencies.get_user_service().confirm_mfa_enrollment(user, code)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(request, command, {"target_user_id": updated.id})
+    return {"success": True, "command": command, "summary": "MFA enabled.", "mfa_enabled": updated.mfa_enabled}
+
+
+@router.post("/console/operations/preview-message")
+def console_preview_message(request: Request, payload: dict[str, Any] | None = None):
+    command = "message_preview"
+    user = _require_operator_command_user(request, command)
+    message_type = str(_payload_value(payload, "message_type", "plan")).strip()
+    if message_type not in MESSAGE_TYPES:
+        raise HTTPException(status_code=400, detail="message_type must be summary, trainer, or plan")
+
+    summary = {"message_type": message_type, "send": False}
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    _audit_command_start(request, command, summary)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        result = dependencies.get_job_service().run_callback(
+            job_id=job_id,
+            operation=command,
+            callback=lambda: _generate_console_message_preview(message_type),
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=_console_message_preview_summary,
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    response = {
+        "status": "completed",
+        "command": command,
+        "success": result.success,
+        "summary": result.summary_line(),
+        "message_type": result.message_type,
+        "message": result.message,
+        "job_id": job_id,
+        "request_id": correlation_id,
+        "status_url": f"/console/jobs/{job_id}",
+    }
+    _audit_command_success(
+        request,
+        command,
+        {**response, "message": None, "message_length": len(result.message)},
+    )
+    return response
+
+
 @router.post("/console/operations/resend-message")
 def console_resend_message(request: Request, payload: dict[str, Any] | None = None):
     command = "message_resend"
@@ -847,6 +1478,107 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
         "status_url": f"/console/jobs/{job_id}",
         "status_api_url": f"/console/jobs/{job_id}/status",
         **summary,
+    }
+    _audit_command_success(request, command, response)
+    return response
+
+
+@router.post("/console/operations/morning-report-preview")
+def console_preview_morning_report(request: Request, payload: dict[str, Any] | None = None):
+    command = "morning_report_preview"
+    user = _require_operator_command_user(request, command)
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+
+    try:
+        target_date = _payload_optional_date(payload, "target_date")
+        summary = {"target_date": target_date.isoformat() if target_date else None, "send": False}
+        _audit_command_start(request, command, summary)
+        dependencies.enforce_command_rate_limit(request, command)
+        result = dependencies.get_job_service().run_callback(
+            job_id=job_id,
+            operation=command,
+            callback=lambda: _generate_morning_report_result(target_date=target_date, send=False),
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=_morning_report_result_summary,
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise _morning_report_failure(
+            exc=exc,
+            job_id=job_id,
+            request_id=correlation_id,
+            default_code="morning_report_preview_failed",
+            default_message="Morning report preview failed.",
+        ) from exc
+
+    response = {
+        "status": "completed",
+        "command": command,
+        "success": result.success,
+        "summary": result.summary_line(),
+        "report": result.report,
+        "sent": result.sent,
+        "target_date": result.target_date,
+        "job_id": job_id,
+        "request_id": correlation_id,
+        "status_url": f"/console/jobs/{job_id}",
+    }
+    _audit_command_success(request, command, response)
+    return response
+
+
+@router.post("/console/operations/morning-report-send")
+def console_send_morning_report(request: Request, payload: dict[str, Any] | None = None):
+    command = "morning_report_send"
+    user = _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+
+    try:
+        target_date = _payload_optional_date(payload, "target_date")
+        summary = {"target_date": target_date.isoformat() if target_date else None, "send": True}
+        _audit_command_start(request, command, summary)
+        dependencies.enforce_command_rate_limit(request, command)
+        result = dependencies.get_job_service().run_callback(
+            job_id=job_id,
+            operation=command,
+            callback=lambda: _generate_morning_report_result(target_date=target_date, send=True),
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=_morning_report_result_summary,
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise _morning_report_failure(
+            exc=exc,
+            job_id=job_id,
+            request_id=correlation_id,
+            default_code="morning_report_send_failed",
+            default_message="Morning report send failed.",
+        ) from exc
+
+    response = {
+        "status": "completed",
+        "command": command,
+        "success": result.success,
+        "summary": result.summary_line(),
+        "report": result.report,
+        "sent": result.sent,
+        "target_date": result.target_date,
+        "job_id": job_id,
+        "request_id": correlation_id,
+        "status_url": f"/console/jobs/{job_id}",
     }
     _audit_command_success(request, command, response)
     return response
@@ -896,7 +1628,123 @@ def console_run_deploy(request: Request, payload: dict[str, Any] | None = None):
 
 @router.get("/console/admin")
 def console_admin(request: Request):
-    return _render_console(request, "admin", min_role=ROLE_OWNER)
+    return _render_console(
+        request,
+        "admin",
+        min_role=ROLE_OWNER,
+        template_name="console/admin.html",
+        context_loader=lambda: {"users": _admin_users()},
+    )
+
+
+def _admin_users() -> list[AuthUser]:
+    service = dependencies.get_user_service()
+    loader = getattr(service, "list_users", None)
+    if callable(loader):
+        return list(loader())
+    current = getattr(service, "user", None)
+    return [current] if isinstance(current, AuthUser) else []
+
+
+def _require_owner_command_user(request: Request, command: str) -> AuthUser:
+    try:
+        return require_role(request, ROLE_OWNER, require_csrf=True)
+    except HTTPException as exc:
+        dependencies.audit_command_event(
+            request,
+            command=command,
+            outcome="authorization_denied",
+            summary={"status_code": exc.status_code},
+            level="WARNING",
+        )
+        raise
+
+
+@router.post("/console/admin/users")
+def console_admin_create_user(request: Request, payload: dict[str, Any] | None = None):
+    command = "admin_create_user"
+    owner = _require_owner_command_user(request, command)
+    cleaned = _clean_form_payload(payload)
+    try:
+        user = dependencies.get_user_service().create_user(
+            username=str(cleaned.get("username") or ""),
+            email=str(cleaned.get("email")) if cleaned.get("email") else None,
+            display_name=str(cleaned.get("display_name")) if cleaned.get("display_name") else None,
+            password=str(cleaned.get("password") or ""),
+            roles=_selected_roles(cleaned),
+        )
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(
+        request,
+        command,
+        {"target_user_id": user.id, "target_username": user.username, "roles": list(user.roles), "owner_user_id": owner.id},
+    )
+    return {"success": True, "command": command, "summary": "User created.", "user": _auth_user_payload(user)}
+
+
+@router.post("/console/admin/users/{user_id}/roles")
+def console_admin_update_roles(user_id: int, request: Request, payload: dict[str, Any] | None = None):
+    command = "admin_update_roles"
+    owner = _require_owner_command_user(request, command)
+    try:
+        user = dependencies.get_user_service().set_user_roles(user_id=user_id, roles=_selected_roles(payload))
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(
+        request,
+        command,
+        {"target_user_id": user.id, "target_username": user.username, "roles": list(user.roles), "owner_user_id": owner.id},
+    )
+    return {"success": True, "command": command, "summary": "Roles updated.", "user": _auth_user_payload(user)}
+
+
+@router.post("/console/admin/users/{user_id}/deactivate")
+def console_admin_deactivate_user(user_id: int, request: Request, payload: dict[str, Any] | None = None):
+    command = "admin_deactivate_user"
+    owner = _require_owner_command_user(request, command)
+    try:
+        user = dependencies.get_user_service().deactivate_user(user_id=user_id)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(
+        request,
+        command,
+        {"target_user_id": user.id, "target_username": user.username, "owner_user_id": owner.id},
+    )
+    return {"success": True, "command": command, "summary": "User deactivated.", "user": _auth_user_payload(user)}
+
+
+@router.post("/console/admin/users/{user_id}/mfa-reset")
+def console_admin_reset_mfa(user_id: int, request: Request, payload: dict[str, Any] | None = None):
+    command = "admin_reset_mfa"
+    owner = _require_owner_command_user(request, command)
+    try:
+        user = dependencies.get_user_service().disable_mfa(user_id=user_id)
+    except ApplicationError as exc:
+        _audit_command_failure(request, command, exc)
+        raise HTTPException(status_code=exc.http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    _audit_command_success(
+        request,
+        command,
+        {"target_user_id": user.id, "target_username": user.username, "owner_user_id": owner.id},
+    )
+    return {"success": True, "command": command, "summary": "MFA reset for user.", "user": _auth_user_payload(user)}
+
+
+def _auth_user_payload(user: AuthUser) -> dict[str, Any]:
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "display_name": user.display_name,
+        "roles": list(user.roles),
+        "is_active": user.is_active,
+        "mfa_enabled": user.mfa_enabled,
+    }
 
 
 def _require_job(job_id: str):

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
 from pete_e.domain.auth import AuthUser, RoleName, StoredUser, UserSession, normalize_roles
@@ -32,6 +33,7 @@ class PostgresUserRepository:
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
             last_login_at=row.get("last_login_at"),
+            mfa_enabled=bool(row.get("mfa_enabled", False)),
         )
 
     @staticmethod
@@ -136,6 +138,7 @@ class PostgresUserRepository:
                         created_at,
                         updated_at,
                         last_login_at
+                        , COALESCE(mfa_enabled, false) AS mfa_enabled
                     FROM auth_users
                     WHERE username_normalized = %s OR email_normalized = %s
                     LIMIT 1
@@ -164,6 +167,7 @@ class PostgresUserRepository:
                         created_at,
                         updated_at,
                         last_login_at
+                        , COALESCE(mfa_enabled, false) AS mfa_enabled
                     FROM auth_users
                     WHERE id = %s
                     LIMIT 1
@@ -176,6 +180,32 @@ class PostgresUserRepository:
                 roles = self._fetch_roles(cur, user_id)
 
         return self._user_from_row(row, roles)
+
+    def list_users(self) -> list[AuthUser]:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        username,
+                        email,
+                        display_name,
+                        is_active,
+                        created_at,
+                        updated_at,
+                        last_login_at,
+                        COALESCE(mfa_enabled, false) AS mfa_enabled
+                    FROM auth_users
+                    ORDER BY username_normalized ASC
+                    """
+                )
+                rows = cur.fetchall()
+                users: list[AuthUser] = []
+                for row in rows:
+                    roles = self._fetch_roles(cur, int(row["id"]))
+                    users.append(self._user_from_row(row, roles))
+                return users
 
     def has_user_with_role(self, role: RoleName) -> bool:
         with self.pool.connection() as conn:
@@ -192,6 +222,93 @@ class PostgresUserRepository:
                     (role,),
                 )
                 return cur.fetchone() is not None
+
+    def active_owner_count_excluding(self, user_id: int | None = None) -> int:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)::int
+                    FROM auth_user_roles ur
+                    JOIN auth_users u ON u.id = ur.user_id
+                    WHERE ur.role_name = 'owner'
+                      AND u.is_active = true
+                      AND (%s IS NULL OR u.id <> %s)
+                    """,
+                    (user_id, user_id),
+                )
+                row = cur.fetchone()
+                return int(row[0] if row else 0)
+
+    def set_user_roles(self, user_id: int, roles: tuple[RoleName, ...]) -> AuthUser:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                try:
+                    conn.autocommit = False
+                    cur.execute("SELECT id FROM auth_users WHERE id = %s FOR UPDATE", (user_id,))
+                    if cur.fetchone() is None:
+                        raise KeyError(user_id)
+                    cur.execute("DELETE FROM auth_user_roles WHERE user_id = %s", (user_id,))
+                    cur.executemany(
+                        """
+                        INSERT INTO auth_user_roles (user_id, role_name)
+                        VALUES (%s, %s)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [(user_id, role) for role in roles],
+                    )
+                    cur.execute(
+                        """
+                        UPDATE auth_users
+                        SET updated_at = now()
+                        WHERE id = %s
+                        RETURNING
+                            id,
+                            username,
+                            email,
+                            display_name,
+                            is_active,
+                            created_at,
+                            updated_at,
+                            last_login_at,
+                            COALESCE(mfa_enabled, false) AS mfa_enabled
+                        """,
+                        (user_id,),
+                    )
+                    row = cur.fetchone()
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+        return self._user_from_row(row, roles)
+
+    def deactivate_user(self, user_id: int, when: datetime) -> AuthUser:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE auth_users
+                    SET is_active = false,
+                        updated_at = %s
+                    WHERE id = %s
+                    RETURNING
+                        id,
+                        username,
+                        email,
+                        display_name,
+                        is_active,
+                        created_at,
+                        updated_at,
+                        last_login_at,
+                        COALESCE(mfa_enabled, false) AS mfa_enabled
+                    """,
+                    (when, user_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise KeyError(user_id)
+                roles = self._fetch_roles(cur, user_id)
+        return self._user_from_row(row, roles)
 
     def update_user_password(self, user_id: int, password_hash: str, when: datetime) -> None:
         with self.pool.connection() as conn:
@@ -278,6 +395,7 @@ class PostgresUserRepository:
                         u.created_at,
                         u.updated_at,
                         u.last_login_at
+                        , COALESCE(u.mfa_enabled, false) AS mfa_enabled
                     FROM auth_sessions s
                     JOIN auth_users u ON u.id = s.user_id
                     WHERE s.token_hash = %s
@@ -293,6 +411,80 @@ class PostgresUserRepository:
                     return None
                 roles = self._fetch_roles(cur, int(row["id"]))
         return self._user_from_row(row, roles)
+
+    def set_user_mfa_state(
+        self,
+        user_id: int,
+        *,
+        secret: str | None,
+        enabled: bool,
+        recovery_code_hashes: list[str],
+        when: datetime,
+    ) -> AuthUser:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE auth_users
+                    SET mfa_secret = %s,
+                        mfa_enabled = %s,
+                        mfa_recovery_code_hashes = %s::jsonb,
+                        updated_at = %s
+                    WHERE id = %s
+                    RETURNING
+                        id,
+                        username,
+                        email,
+                        display_name,
+                        is_active,
+                        created_at,
+                        updated_at,
+                        last_login_at,
+                        COALESCE(mfa_enabled, false) AS mfa_enabled
+                    """,
+                    (secret, enabled, Json(list(recovery_code_hashes)), when, user_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise KeyError(user_id)
+                roles = self._fetch_roles(cur, user_id)
+        return self._user_from_row(row, roles)
+
+    def get_user_mfa(self, user_id: int) -> dict[str, Any] | None:
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        mfa_secret,
+                        COALESCE(mfa_enabled, false) AS mfa_enabled,
+                        COALESCE(mfa_recovery_code_hashes, '[]'::jsonb) AS mfa_recovery_code_hashes
+                    FROM auth_users
+                    WHERE id = %s
+                    """,
+                    (user_id,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "secret": row.get("mfa_secret"),
+            "enabled": bool(row.get("mfa_enabled")),
+            "recovery_code_hashes": list(row.get("mfa_recovery_code_hashes") or []),
+        }
+
+    def replace_recovery_code_hashes(self, user_id: int, hashes: list[str], when: datetime) -> None:
+        with self.pool.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE auth_users
+                    SET mfa_recovery_code_hashes = %s::jsonb,
+                        updated_at = %s
+                    WHERE id = %s
+                    """,
+                    (Json(list(hashes)), when, user_id),
+                )
 
     def touch_session(self, token_hash: str, when: datetime) -> None:
         with self.pool.connection() as conn:

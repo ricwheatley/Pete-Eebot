@@ -1,0 +1,32 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="MFA controls">
+  <article class="panel panel-wide">
+    <div class="panel-heading">
+      <h2>Authenticator App</h2>
+      {{ ui.badge("Enabled" if user.mfa_enabled else "Optional", "ok" if user.mfa_enabled else "neutral") }}
+    </div>
+    {% if not user.mfa_enabled %}
+    <form class="command-form" data-command-form data-endpoint="/console/security/mfa/start" data-requires-confirmation="false">
+      <button class="primary-button" type="submit" data-command-submit>Start MFA enrollment</button>
+      <p class="command-result" hidden data-command-result></p>
+    </form>
+    <form class="command-form" data-command-form data-endpoint="/console/security/mfa/confirm" data-requires-confirmation="false" data-refresh-on-success="true">
+      <label><span>6-digit code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+      <button class="primary-button" type="submit" data-command-submit>Confirm MFA</button>
+      <p class="command-result" hidden data-command-result></p>
+    </form>
+    {% else %}
+      <p>MFA is enabled for this account.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

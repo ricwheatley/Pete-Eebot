@@ -9,6 +9,7 @@ from pete_e.application.exceptions import BadRequestError, ConflictError, NotFou
 from pete_e.application.user_service import UserService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, StoredUser, UserSession
 from pete_e.infrastructure.passwords import hash_password, hash_session_token, verify_password
+from pete_e.infrastructure.passwords import totp_code
 
 
 class FakeUserRepository:
@@ -22,6 +23,7 @@ class FakeUserRepository:
         self.touched_token_hash: str | None = None
         self.revoked_token_hash: str | None = None
         self.revoked_user_id: int | None = None
+        self.mfa_records: dict[int, dict] = {}
 
     def create_user(
         self,
@@ -65,6 +67,28 @@ class FakeUserRepository:
     def has_user_with_role(self, role):
         return any(role in stored.user.roles and stored.user.is_active for stored in self.users.values())
 
+    def list_users(self):
+        return [stored.user for stored in self.users.values()]
+
+    def active_owner_count_excluding(self, user_id=None):
+        return sum(
+            1
+            for stored in self.users.values()
+            if stored.user.is_active and ROLE_OWNER in stored.user.roles and stored.user.id != user_id
+        )
+
+    def set_user_roles(self, user_id, roles):
+        stored = self.users[user_id]
+        user = replace(stored.user, roles=roles)
+        self.users[user_id] = StoredUser(user=user, password_hash=stored.password_hash)
+        return user
+
+    def deactivate_user(self, user_id, when):
+        stored = self.users[user_id]
+        user = replace(stored.user, is_active=False, updated_at=when)
+        self.users[user_id] = StoredUser(user=user, password_hash=stored.password_hash)
+        return user
+
     def update_user_password(self, user_id, password_hash, when):
         stored = self.users[user_id]
         self.users[user_id] = StoredUser(user=stored.user, password_hash=password_hash)
@@ -105,6 +129,26 @@ class FakeUserRepository:
 
     def revoke_session(self, token_hash, when):
         self.revoked_token_hash = token_hash
+
+    def set_user_mfa_state(self, user_id, *, secret, enabled, recovery_code_hashes, when):
+        self.mfa_records[user_id] = {
+            "secret": secret,
+            "enabled": enabled,
+            "recovery_code_hashes": list(recovery_code_hashes),
+        }
+        stored = self.users[user_id]
+        user = replace(stored.user, mfa_enabled=enabled, updated_at=when)
+        self.users[user_id] = StoredUser(user=user, password_hash=stored.password_hash)
+        return user
+
+    def get_user_mfa(self, user_id):
+        record = self.mfa_records.get(user_id)
+        if record is None:
+            return None
+        return dict(record)
+
+    def replace_recovery_code_hashes(self, user_id, hashes, when):
+        self.mfa_records[user_id]["recovery_code_hashes"] = list(hashes)
 
 
 def test_password_hash_round_trip_and_wrong_password_rejection() -> None:
@@ -248,3 +292,59 @@ def test_session_token_is_returned_once_and_stored_as_hash() -> None:
 
     service.revoke_session_token(created.token)
     assert repo.revoked_token_hash == token_hash
+
+
+def test_owner_can_manage_users_roles_and_deactivation() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    owner = service.create_user(username="owner", password="password123", roles=[ROLE_OWNER])
+    operator = service.create_user(username="operator", password="password123", roles=[ROLE_READ_ONLY])
+
+    updated = service.set_user_roles(user_id=operator.id, roles=[ROLE_OPERATOR])
+    deactivated = service.deactivate_user(user_id=operator.id)
+
+    assert owner in service.list_users()
+    assert updated.roles == (ROLE_OPERATOR,)
+    assert deactivated.is_active is False
+    assert repo.revoked_user_id == operator.id
+
+
+def test_cannot_remove_or_deactivate_last_owner() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    owner = service.create_user(username="owner", password="password123", roles=[ROLE_OWNER])
+
+    with pytest.raises(BadRequestError):
+        service.set_user_roles(user_id=owner.id, roles=[ROLE_READ_ONLY])
+    with pytest.raises(BadRequestError):
+        service.deactivate_user(user_id=owner.id)
+
+
+def test_mfa_enrollment_confirmation_and_recovery_code() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    user = service.create_user(username="operator", password="password123", roles=[ROLE_OPERATOR])
+
+    enrollment = service.start_mfa_enrollment(user)
+    enabled = service.confirm_mfa_enrollment(user, totp_code(enrollment["secret"]))
+
+    assert enabled.mfa_enabled is True
+    assert service.verify_mfa_code(enabled, totp_code(enrollment["secret"]))
+    assert service.verify_mfa_code(enabled, enrollment["recovery_codes"][0])
+    assert not service.verify_mfa_code(enabled, enrollment["recovery_codes"][0])
+
+
+def test_mfa_rejects_read_only_enrollment_and_owner_can_reset() -> None:
+    repo = FakeUserRepository()
+    service = UserService(repo)
+    viewer = service.create_user(username="viewer", password="password123", roles=[ROLE_READ_ONLY])
+
+    with pytest.raises(BadRequestError):
+        service.start_mfa_enrollment(viewer)
+
+    operator = service.create_user(username="operator", password="password123", roles=[ROLE_OPERATOR])
+    enrollment = service.start_mfa_enrollment(operator)
+    enabled = service.confirm_mfa_enrollment(operator, totp_code(enrollment["secret"]))
+    reset = service.disable_mfa(user_id=enabled.id)
+
+    assert reset.mfa_enabled is False

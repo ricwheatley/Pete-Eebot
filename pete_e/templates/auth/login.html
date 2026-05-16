@@ -25,6 +25,10 @@
           <span>Password</span>
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
+        <label data-mfa-field hidden>
+          <span>MFA code or recovery code</span>
+          <input name="mfa_code" autocomplete="one-time-code">
+        </label>
         <p class="form-error" data-form-error hidden></p>
         <button class="primary-button" type="submit">Sign in</button>
       </form>

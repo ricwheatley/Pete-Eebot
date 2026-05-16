@@ -1,0 +1,50 @@
+{% extends "console/base.html" %}
+{% import "console/components.html" as ui %}
+
+{% block content %}
+<section class="page-header" aria-labelledby="page-title">
+  <p class="eyebrow">{{ page.eyebrow }}</p>
+  <h1 id="page-title">{{ page.title }}</h1>
+  <p class="page-summary">{{ page.summary }}</p>
+</section>
+
+<section class="panel-grid" aria-label="Scheduler status">
+  <article class="panel panel-wide">
+    <div class="panel-heading">
+      <h2>Expected Cron Entries</h2>
+      {{ ui.badge(scheduler_view.status, "ok" if scheduler_view.status == "observed" else "danger") }}
+    </div>
+    {% if scheduler_view.error %}
+      {{ ui.empty_state(scheduler_view.error) }}
+    {% elif scheduler_view.rows %}
+    <table class="data-table">
+      <thead><tr><th>Name</th><th>Schedule</th><th>Status</th><th>Command</th></tr></thead>
+      <tbody>
+      {% for job in scheduler_view.rows %}
+        <tr>
+          <td>{{ job.name }}</td>
+          <td class="nowrap">{{ job.schedule }}</td>
+          <td>{{ ui.badge(job.status, job.tone) }}</td>
+          <td class="mono-cell">{{ job.command }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      {{ ui.empty_state("No cron entries loaded.") }}
+    {% endif %}
+  </article>
+
+  <article class="panel panel-wide">
+    <h2>Break-Glass References</h2>
+    <div class="reference-grid">
+      {% for link in break_glass_links %}
+      <a class="reference-link" href="{{ link.href }}">
+        <strong>{{ link.label }}</strong>
+        <span>{{ link.summary }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

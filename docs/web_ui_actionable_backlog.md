@@ -1,6 +1,6 @@
 # Web UI Actionable Backlog
 
-Date: 2026-05-15
+Date: 2026-05-16
 
 Source review: `docs/web_ui_e2e_review.md`.
 
@@ -87,23 +87,29 @@ Acceptance criteria:
 
 Estimate: 1-2 days
 
+Status: Implemented on 2026-05-16 with `/console/operations/morning-report-preview`
+and `/console/operations/morning-report-send`.
+
 Acceptance criteria:
 
-- Console can generate the current morning report without sending it.
-- Operator can send the generated report with confirmation.
-- Optional date override is supported.
-- Failures include a request/job ID visible to the operator.
+- [x] Console can generate the current morning report without sending it.
+- [x] Operator can send the generated report with confirmation.
+- [x] Optional date override is supported.
+- [x] Failures include a request/job ID visible to the operator.
 
 ### WEB-P1-005 - Add weekly review and strength-test lifecycle controls
 
 Estimate: 3-5 days
 
+Status: Implemented on 2026-05-16 with confirmed `/console/operations/run-sunday-review`
+and `/console/operations/lets-begin` commands.
+
 Acceptance criteria:
 
-- Console can run Sunday review through a confirmed operator command.
-- Console can start the strength-test week (`lets-begin`) with explicit start date confirmation.
-- Both commands are guarded against overlap with sync/plan/deploy-sensitive work.
-- Tests cover authorization, confirmation, invalid date handling, and audit outcomes.
+- [x] Console can run Sunday review through a confirmed operator command.
+- [x] Console can start the strength-test week (`lets-begin`) with explicit start date confirmation.
+- [x] Both commands are guarded against overlap with sync/plan/deploy-sensitive work.
+- [x] Tests cover authorization, confirmation, invalid date handling, and audit outcomes.
 
 ### WEB-P1-006 - Add durable audit/job history
 
@@ -132,61 +138,83 @@ Acceptance criteria:
 
 Estimate: 2-4 days
 
+Status: Implemented on 2026-05-16 with operator/owner create/edit forms on
+`/console/nutrition`, CSRF-protected console endpoints, existing nutrition
+service validation, and page refresh after successful writes.
+
 Acceptance criteria:
 
-- Operator/owner users can add and edit nutrition logs from `/console/nutrition`.
-- Read-only users cannot see mutation controls.
-- Forms use CSRF and existing nutrition service validation.
-- Summary refreshes after successful changes.
+- [x] Operator/owner users can add and edit nutrition logs from `/console/nutrition`.
+- [x] Read-only users cannot see mutation controls.
+- [x] Forms use CSRF and existing nutrition service validation.
+- [x] Summary refreshes after successful changes.
 
 ### WEB-P2-002 - Build admin user and role management
 
 Estimate: 3-6 days
 
+Status: Implemented on 2026-05-16 with `/console/admin`, owner-only user
+listing, user creation, role assignment, deactivation, MFA reset, and command
+audit events.
+
 Acceptance criteria:
 
-- `/console/admin` lists users and roles for owners.
-- Owner can create, deactivate, and assign roles.
-- Non-owner users receive `403`.
-- All changes are audit logged.
+- [x] `/console/admin` lists users and roles for owners.
+- [x] Owner can create, deactivate, and assign roles.
+- [x] Non-owner users receive `403`.
+- [x] All changes are audit logged.
 
 ### WEB-P2-003 - Add optional MFA/TOTP
 
 Estimate: 3-5 days
 
+Status: Implemented on 2026-05-16 with TOTP enrollment for owner/operator
+users, login challenge when MFA is enabled, recovery codes, and owner reset.
+
 Acceptance criteria:
 
-- Owner/operator users can enroll TOTP.
-- Login requires TOTP when enrolled.
-- Recovery codes or owner reset path exists.
-- Tests cover enabled and disabled MFA paths.
+- [x] Owner/operator users can enroll TOTP.
+- [x] Login requires TOTP when enrolled.
+- [x] Recovery codes or owner reset path exists.
+- [x] Tests cover enabled and disabled MFA paths.
 
 ### WEB-P2-004 - Add alert history view
 
 Estimate: 2-4 days
 
+Status: Implemented on 2026-05-16 with `/console/alerts`, operator/owner RBAC,
+severity/type filters, and active/recent rows derived from structured alert logs.
+
 Acceptance criteria:
 
-- Console shows active/recent alerts with severity, type, timestamp, and summary.
-- Alerts can be filtered by severity/type.
-- View links to relevant status/log/job details where available.
+- [x] Console shows active/recent alerts with severity, type, timestamp, and summary.
+- [x] Alerts can be filtered by severity/type.
+- [x] View links to relevant status/log/job details where available.
 
 ### WEB-P2-005 - Add scheduler status view
 
 Estimate: 2-3 days
 
+Status: Implemented on 2026-05-16 with `/console/scheduler`, expected cron
+entries from `pete_e/resources/pete_crontab.csv`, missing module-target
+highlighting, and runbook repair links.
+
 Acceptance criteria:
 
-- Console shows expected cron entries or scheduler configuration summary.
-- It highlights stale/missing recent scheduled runs when data is available.
-- It links to runbook break-glass scheduler repair steps.
+- [x] Console shows expected cron entries or scheduler configuration summary.
+- [x] It highlights stale/missing recent scheduled runs when data is available.
+- [x] It links to runbook break-glass scheduler repair steps.
 
 ### WEB-P2-006 - Add break-glass reference links in console
 
 Estimate: 1 day
 
+Status: Implemented on 2026-05-16 with role-gated reference links on
+Operations/Admin/Scheduler. The browser does not execute shell commands for
+these flows.
+
 Acceptance criteria:
 
-- Operations/Admin pages link to relevant runbook sections for OAuth recovery, backup/restore, migrations, cron repair, and service restart.
-- Links are visible only to operator/owner roles.
-- No dangerous shell commands are executed by the browser for these flows.
+- [x] Operations/Admin pages link to relevant runbook sections for OAuth recovery, backup/restore, migrations, cron repair, and service restart.
+- [x] Links are visible only to operator/owner roles.
+- [x] No dangerous shell commands are executed by the browser for these flows.

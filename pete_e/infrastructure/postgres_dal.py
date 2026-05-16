@@ -877,6 +877,19 @@ class PostgresDal(PlanRepository):
             row = cur.fetchone() or {}
         return dict(row)
 
+    def get_nutrition_logs(self, target_date: date, *, limit: int = 25) -> List[Dict[str, Any]]:
+        safe_limit = max(1, min(int(limit or 25), 100))
+        sql_text = """
+            SELECT *
+            FROM nutrition_log
+            WHERE local_date = %s
+            ORDER BY eaten_at DESC, id DESC
+            LIMIT %s
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql_text, (target_date, safe_limit))
+            return [dict(row) for row in cur.fetchall()]
+
     def get_nutrition_daily_summaries(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
         """Return one nutrition aggregate row per local date in the requested range."""
 

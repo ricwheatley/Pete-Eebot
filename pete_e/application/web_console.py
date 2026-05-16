@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import re
+import csv
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import HTTPException
 
 from pete_e.api_routes.logs_webhooks import read_recent_log_lines
+from pete_e.infrastructure.cron_manager import CRON_CSV
 
 
 def current_week_start(target_date: date) -> date:
@@ -331,7 +334,7 @@ class WebConsoleReadModel:
         }
 
     def nutrition(self, *, target_date: date) -> dict[str, Any]:
-        return _safe_load(
+        summary = _safe_load(
             lambda: self._nutrition_service.daily_summary(target_date.isoformat()),
             {
                 "date": target_date.isoformat(),
@@ -341,6 +344,76 @@ class WebConsoleReadModel:
                 "data_quality": {"status": "unavailable"},
             },
         )
+        logs = _safe_load(
+            lambda: {"rows": self._nutrition_service.daily_logs(target_date.isoformat(), limit=25)},
+            {"rows": []},
+        ).get("rows", [])
+        summary["logs"] = logs
+        return summary
+
+    def alerts(self, *, lines: int = 500, severity: str | None = None, alert_type: str | None = None) -> dict[str, Any]:
+        log_view = self.logs(lines=lines, tag="ALERT", outcome=None)
+        rows: list[dict[str, Any]] = []
+        active_keys: set[tuple[str, str]] = set()
+        for row in log_view.get("rows", []):
+            raw = row.get("raw")
+            if not raw:
+                continue
+            try:
+                payload = json.loads(str(raw))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict) or payload.get("event") != "alert_event":
+                continue
+            alert = _alert_from_log_payload(payload)
+            if not _matches_filter(alert.get("severity"), severity) or not _matches_filter(alert.get("type"), alert_type):
+                continue
+            rows.append(alert)
+            if alert.get("outcome") == "emitted":
+                active_keys.add((str(alert.get("type")), str(alert.get("severity"))))
+        return {
+            "status": log_view.get("status", "observed"),
+            "filters": {"severity": severity or "", "type": alert_type or ""},
+            "rows": rows,
+            "active_rows": [row for row in rows if (str(row.get("type")), str(row.get("severity"))) in active_keys],
+        }
+
+    def scheduler(self) -> dict[str, Any]:
+        rows: list[dict[str, Any]] = []
+        path = Path(CRON_CSV)
+        try:
+            with path.open(encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    name = (row.get("name") or "").strip()
+                    if not name or name.startswith("#"):
+                        continue
+                    enabled = (row.get("enabled") or "").strip().lower() == "true"
+                    command = row.get("command") or ""
+                    status = "enabled" if enabled else "disabled"
+                    tone = "ok" if enabled else "neutral"
+                    if enabled and _cron_command_target_missing(command):
+                        status = "missing target"
+                        tone = "danger"
+                    rows.append(
+                        {
+                            "name": name,
+                            "schedule": row.get("schedule") or "",
+                            "command": command,
+                            "enabled": enabled,
+                            "status": status,
+                            "tone": tone,
+                        }
+                    )
+        except Exception as exc:
+            return {"status": "unavailable", "error": str(exc), "rows": [], "path": str(path)}
+
+        return {
+            "status": "observed",
+            "path": str(path),
+            "rows": rows,
+            "enabled_count": sum(1 for row in rows if row["enabled"]),
+            "missing_count": sum(1 for row in rows if row["tone"] == "danger"),
+        }
 
     def logs(self, *, lines: int, tag: str | None = None, outcome: str | None = None) -> dict[str, Any]:
         try:
@@ -395,3 +468,27 @@ class WebConsoleReadModel:
         if callable(loader):
             return loader()
         return {"status": "missing", "source_statuses": {}, "failed_sources": []}
+
+
+def _alert_from_log_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    return {
+        "timestamp": payload.get("timestamp"),
+        "severity": payload.get("severity") or "-",
+        "type": payload.get("alert_type") or "-",
+        "title": payload.get("title") or payload.get("message") or "-",
+        "summary": summary.get("message") or payload.get("message") or "-",
+        "outcome": payload.get("outcome") or "-",
+        "dedupe_key": payload.get("dedupe_key"),
+        "job_id": summary.get("job_id") or payload.get("job_id"),
+        "request_id": summary.get("request_id") or payload.get("request_id"),
+    }
+
+
+def _cron_command_target_missing(command: str) -> bool:
+    module_names = re.findall(r"-m\s+([A-Za-z0-9_\.]+)", command or "")
+    repo_root = Path(__file__).resolve().parents[2]
+    for module_name in module_names:
+        if not (repo_root / f"{module_name.replace('.', '/')}.py").exists():
+            return True
+    return False
