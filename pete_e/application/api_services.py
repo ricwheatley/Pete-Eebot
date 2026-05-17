@@ -595,6 +595,9 @@ class StatusService:
 
         log_path = settings.log_path
         if not log_path.exists():
+            job_fallback = self._last_sync_outcome_from_jobs()
+            if job_fallback:
+                return job_fallback
             return {
                 "status": "missing",
                 "source_statuses": {},
