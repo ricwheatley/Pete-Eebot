@@ -227,17 +227,30 @@ function initTrendChart() {
   if (metricB.value && metricB.value === metricA.value) {
     metricB.value = metrics.find((metric) => metric.key !== metricA.value)?.key || "";
   }
-  const allDates = window.trendsSeries.map((d) => d.date).sort();
+  const allDates = window.trendsSeries
+    .map((row) => row?.date)
+    .filter((value) => typeof value === "string" && !Number.isNaN(Date.parse(value)))
+    .sort();
   startInput.value = allDates[0] || "";
   endInput.value = allDates[allDates.length - 1] || "";
 
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return;
+  }
   function draw() {
     canvas.width = canvas.clientWidth || 800;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!allDates.length) {
+      return;
+    }
     const days = Number(range.value);
     const latest = new Date(endInput.value || allDates[allDates.length - 1]);
     let start = new Date(startInput.value || allDates[0]);
     let end = latest;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return;
+    }
     if (range.value !== "custom" && Number.isFinite(days)) {
       start = new Date(latest);
       start.setDate(start.getDate() - days + 1);
@@ -247,10 +260,9 @@ function initTrendChart() {
       const d = new Date(r.date);
       return d >= start && d <= end;
     });
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     const keys = [metricA.value, metricB.value].filter(Boolean);
     if (!rows.length || !keys.length) return;
-    const values = rows.flatMap((r) => keys.map((k) => Number(r[k])).filter((v) => !Number.isNaN(v)));
+    const values = rows.flatMap((r) => keys.map((k) => Number(r[k])).filter((v) => Number.isFinite(v)));
     if (!values.length) return;
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -267,7 +279,7 @@ function initTrendChart() {
       let started = false;
       rows.forEach((r, i) => {
         const v = Number(r[key]);
-        if (Number.isNaN(v)) return;
+        if (!Number.isFinite(v)) return;
         const px = x(i);
         const py = y(v);
         if (!started) {
@@ -285,6 +297,9 @@ function initTrendChart() {
 }
 
 function metricCatalogFromSeries(series) {
+  if (!Array.isArray(series)) {
+    return [];
+  }
   const keys = new Set();
   series.forEach((row) => {
     if (!row || typeof row !== "object") {
@@ -340,5 +355,9 @@ document.addEventListener("DOMContentLoaded", () => {
       submitCommand(form);
     });
   });
-  initTrendChart();
+  try {
+    initTrendChart();
+  } catch (error) {
+    console.error("Trend chart failed to initialize.", error);
+  }
 });
