@@ -18,6 +18,7 @@ ENV_FILE="${ENV_FILE:-${SHARED_ROOT}/.env}"
 PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
 SERVICE_NAME="${SERVICE_NAME:-peteeebot.service}"
 LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
+LOCKFILE="${LOCKFILE:-/var/lock/pete_eebot-deploy.lock}"
 SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-0}"
 export ENV_FILE PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE}}"
 
@@ -67,7 +68,17 @@ on_error() {
 
 trap on_error ERR
 
-log "---- Deploy run at $(date -Is) ----"
+DEPLOY_PID="$$"
+DEPLOY_START_AT="$(date -Is)"
+log "---- Deploy run at ${DEPLOY_START_AT} ----"
+log "Deploy metadata: pid=${DEPLOY_PID} delivery=${WEBHOOK_DELIVERY_ID:-unknown} sha=${GITHUB_COMMIT_SHA:-unknown} event=${GITHUB_EVENT_NAME:-unknown} ref=${GITHUB_REF:-unknown}"
+mkdir -p "$(dirname "${LOCKFILE}")"
+exec 9>"${LOCKFILE}"
+if ! flock -n 9; then
+    log "Deploy already in progress; ignoring duplicate trigger. lock=${LOCKFILE} pid=${DEPLOY_PID} delivery=${WEBHOOK_DELIVERY_ID:-unknown} sha=${GITHUB_COMMIT_SHA:-unknown}"
+    exit 0
+fi
+log "Deploy lock acquired. lock=${LOCKFILE} pid=${DEPLOY_PID}"
 
 [[ -d "${APP_ROOT}/.git" ]] || fail "Git repository not found at ${APP_ROOT}"
 [[ -x "${PYTHON_BIN}" ]] || fail "Python venv not found at ${PYTHON_BIN}"
@@ -107,4 +118,5 @@ notify_telegram "Deploy installed on $(hostname): ${COMMIT_INFO}. Restarting ${S
 log "Restarting ${SERVICE_NAME}..."
 restart_service
 
-log "Deploy completed successfully at $(date -Is)"
+DEPLOY_END_AT="$(date -Is)"
+log "Deploy completed successfully at ${DEPLOY_END_AT} (pid=${DEPLOY_PID}, delivery=${WEBHOOK_DELIVERY_ID:-unknown}, sha=${GITHUB_COMMIT_SHA:-unknown})"
