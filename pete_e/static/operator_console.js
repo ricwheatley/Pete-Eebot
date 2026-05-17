@@ -209,15 +209,24 @@ function initTrendChart() {
   const endInput = document.getElementById("trend-end");
   if (!metricA || !metricB || !range || !startInput || !endInput) return;
 
-  const metrics = window.trendMetrics;
+  const catalog = window.trendMetrics.length ? window.trendMetrics : metricCatalogFromSeries(window.trendsSeries);
+  const metrics = catalog.filter((metric) => metric && metric.key);
+  const blankOptionA = new Option("", "");
+  const blankOptionB = new Option("", "");
+  metricA.add(blankOptionA);
+  metricB.add(blankOptionB);
   metrics.forEach((m) => {
-    const optionA = new Option(m.label, m.key);
-    const optionB = new Option(m.label, m.key);
+    const label = m.label || metricLabel(m.key);
+    const optionA = new Option(label, m.key);
+    const optionB = new Option(label, m.key);
     metricA.add(optionA);
     metricB.add(optionB);
   });
-  metricA.selectedIndex = 0;
-  metricB.selectedIndex = Math.min(1, metrics.length - 1);
+  metricA.value = defaultMetricKey(metrics, ["weight_kg", "weight_avg_7d_kg"]) || "";
+  metricB.value = defaultMetricKey(metrics, ["sleep_asleep_minutes", "sleep_avg_7d_minutes", "hrv_sdnn_ms"]) || "";
+  if (metricB.value && metricB.value === metricA.value) {
+    metricB.value = metrics.find((metric) => metric.key !== metricA.value)?.key || "";
+  }
   const allDates = window.trendsSeries.map((d) => d.date).sort();
   startInput.value = allDates[0] || "";
   endInput.value = allDates[allDates.length - 1] || "";
@@ -273,6 +282,38 @@ function initTrendChart() {
   }
   [metricA, metricB, range, startInput, endInput].forEach((el) => el.addEventListener("change", draw));
   draw();
+}
+
+function metricCatalogFromSeries(series) {
+  const keys = new Set();
+  series.forEach((row) => {
+    if (!row || typeof row !== "object") {
+      return;
+    }
+    Object.entries(row).forEach(([key, value]) => {
+      if (key !== "date" && Number.isFinite(Number(value))) {
+        keys.add(key);
+      }
+    });
+  });
+  return Array.from(keys)
+    .sort()
+    .map((key) => ({ key, label: metricLabel(key) }));
+}
+
+function metricLabel(key) {
+  return String(key)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function defaultMetricKey(metrics, preferredKeys) {
+  for (const key of preferredKeys) {
+    if (metrics.some((metric) => metric.key === key)) {
+      return key;
+    }
+  }
+  return metrics[0]?.key || "";
 }
 
 document.addEventListener("DOMContentLoaded", () => {

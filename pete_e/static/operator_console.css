@@ -528,6 +528,10 @@ h2 {
   gap: 12px;
 }
 
+.metric-select {
+  min-width: 180px;
+}
+
 .metric-card {
   display: grid;
   align-content: start;

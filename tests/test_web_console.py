@@ -503,6 +503,10 @@ def test_trends_page_renders_weight_sleep_hrv_and_volume_snapshots(monkeypatch: 
     assert "7200" in html
     assert "6.8" in html
     assert " h" in html
+    assert '<select id="metric-a" class="metric-select" aria-label="Metric A"></select>' in html
+    assert '<select id="metric-b" class="metric-select" aria-label="Metric B"></select>' in html
+    assert "<label>Metric A" not in html
+    assert "<label>Metric B" not in html
 
 
 def test_nutrition_page_renders_daily_summary(monkeypatch: pytest.MonkeyPatch) -> None:
