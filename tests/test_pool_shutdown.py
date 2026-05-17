@@ -3,7 +3,17 @@ from unittest.mock import MagicMock
 # Import the modules we need to test and mock
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.sync import run_sync_with_retries
+from pete_e.infrastructure import postgres_dal
+from pete_e.infrastructure.postgres_dal import PostgresDal
 from tests.di_utils import build_stub_container
+
+
+class _FakePool:
+    def __init__(self, *, closed: bool = False) -> None:
+        self.closed = closed
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_orchestrator_close_method_closes_dal(monkeypatch):
@@ -36,10 +46,10 @@ def test_orchestrator_close_method_closes_dal(monkeypatch):
     mock_dal.close.assert_called_once()
 
 
-def test_run_sync_with_retries_closes_orchestrator_and_pool(monkeypatch):
+def test_run_sync_with_retries_closes_orchestrator(monkeypatch):
     """
-    Tests that the main sync function properly closes the orchestrator's resources
-    (and thus the connection pool) after execution, both on success and failure.
+    Tests that the main sync function closes the orchestrator after execution,
+    both on success and failure.
     """
     close_calls = []
 
@@ -86,3 +96,23 @@ def test_run_sync_with_retries_closes_orchestrator_and_pool(monkeypatch):
     assert result.success is False
     # Verify that close was called even after the failure
     assert close_calls == ["closed"]
+
+
+def test_default_dal_close_does_not_close_shared_global_pool(monkeypatch):
+    shared_pool = _FakePool()
+    monkeypatch.setattr(postgres_dal, "_pool", shared_pool)
+
+    dal = PostgresDal()
+    dal.close()
+
+    assert shared_pool.closed is False
+
+
+def test_get_pool_recreates_closed_global_pool(monkeypatch):
+    closed_pool = _FakePool(closed=True)
+    replacement_pool = _FakePool()
+    monkeypatch.setattr(postgres_dal, "_pool", closed_pool)
+    monkeypatch.setattr(postgres_dal, "_create_pool", lambda: replacement_pool)
+
+    assert postgres_dal.get_pool() is replacement_pool
+    assert postgres_dal.get_pool() is replacement_pool

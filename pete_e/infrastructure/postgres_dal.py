@@ -7,6 +7,7 @@ reads, writes, and catalog management.
 from __future__ import annotations
 import json
 import hashlib
+import threading
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,7 +26,12 @@ from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
 
 # --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
+_pool_lock = threading.Lock()
 _PLAN_GENERATION_LOCK_KEY = 7041917001
+
+
+def _is_pool_closed(pool: ConnectionPool | None) -> bool:
+    return getattr(pool, "closed", False) is True
 
 def _create_pool() -> ConnectionPool:
     db_url = get_database_url()
@@ -34,8 +40,10 @@ def _create_pool() -> ConnectionPool:
 
 def get_pool() -> ConnectionPool:
     global _pool
-    if _pool is None:
-        _pool = _create_pool()
+    if _pool is None or _is_pool_closed(_pool):
+        with _pool_lock:
+            if _pool is None or _is_pool_closed(_pool):
+                _pool = _create_pool()
     return _pool
     """Perform get pool."""
 
@@ -44,8 +52,20 @@ class PostgresDal(PlanRepository):
     """PostgreSQL implementation of the Data Access Layer."""
 
     def __init__(self, pool: Optional[ConnectionPool] = None):
-        self.pool = pool or get_pool()
+        self._uses_shared_pool = pool is None
+        self._pool = pool or get_pool()
         """Initialize this object."""
+
+    @property
+    def pool(self) -> ConnectionPool:
+        if self._uses_shared_pool and _is_pool_closed(self._pool):
+            self._pool = get_pool()
+        return self._pool
+
+    @pool.setter
+    def pool(self, value: ConnectionPool) -> None:
+        self._pool = value
+        self._uses_shared_pool = False
 
     @contextmanager
     def _get_cursor(self, use_dict_row: bool = True):
@@ -63,7 +83,9 @@ class PostgresDal(PlanRepository):
         return self.pool.connection()
     
     def close(self) -> None:
-        if self.pool and not self.pool.closed:
+        if self._uses_shared_pool:
+            return
+        if self.pool and not _is_pool_closed(self.pool):
             self.pool.close()
             log_utils.info("Database connection pool closed.")
         """Perform close."""
