@@ -12,7 +12,7 @@ with `docs/production_readiness_signoff_template.md`.
 
 Supported today:
 
-- **Production/reference:** native Python virtual environment on a Linux/Raspberry Pi host, with cron/systemd orchestration and Postgres reachable from the host.
+- **Production/reference:** native Python virtual environment on an Ubuntu host, with cron/systemd orchestration and Postgres reachable from the host.
 - **Local development database:** `docker compose up -d db` for Postgres only.
 
 Not supported today:
@@ -73,8 +73,8 @@ Not supported today:
 1. Create and activate venv.
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv /opt/myapp/shared/venv
+source /opt/myapp/shared/venv/bin/activate
 ```
 
 2. Install dependencies and package.
@@ -119,16 +119,16 @@ pete message --summary
 
 Assumed host layout used by deploy scripts:
 
-- `/home/ricwheatley/pete-eebot/.env`
-- `/home/ricwheatley/pete-eebot/venv`
-- `/home/ricwheatley/pete-eebot/app` (git checkout)
+- `/opt/myapp/shared/.env`
+- `/opt/myapp/shared/venv`
+- `/opt/myapp/current` (git checkout)
 
 ### 3.1 API service (manual start command)
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
-/home/ricwheatley/pete-eebot/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
+/opt/myapp/shared/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
 ```
 
 The production default is loopback-only Uvicorn. Use the same host/port in the
@@ -176,17 +176,17 @@ operator workflow really needs them:
 ### 3.3 Cron schedule install/refresh
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
-/home/ricwheatley/pete-eebot/venv/bin/python3 -m pete_e.infrastructure.cron_manager --write --activate --summary
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
+/opt/myapp/shared/venv/bin/python3 -m pete_e.infrastructure.cron_manager --write --activate --summary
 ```
 
 ### 3.4 Heartbeat service check (ad hoc)
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
-/home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.heartbeat_check
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
+/opt/myapp/shared/venv/bin/python3 -m scripts.heartbeat_check
 ```
 
 ---
@@ -197,7 +197,7 @@ Current deploy chain in repo:
 
 1. Webhook hits `POST /webhook` and verifies `X-Hub-Signature-256` HMAC.
 2. API process launches external deploy script at `DEPLOY_SCRIPT_PATH`.
-3. Stable wrapper script (`/home/ricwheatley/pete-eebot/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
+3. Stable wrapper script (`/opt/myapp/scripts/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
    - `git fetch --all --prune`
    - `git reset --hard origin/main`
    - `git clean -fdx`
@@ -216,20 +216,20 @@ Current deploy chain in repo:
 ### 5.1 Backup now
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
-/home/ricwheatley/pete-eebot/app/scripts/backup_db.sh
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
+/opt/myapp/current/scripts/backup_db.sh
 ```
 
 ### 5.2 Restore latest local dump
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
 export PGPASSWORD="$POSTGRES_PASSWORD"
 pg_restore -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
   -d "$POSTGRES_DB" --clean --if-exists --no-owner \
-  /home/ricwheatley/pete-eebot/backups/postgres/latest.dump
+  /opt/myapp/backups/postgres/latest.dump
 ```
 
 ### 5.3 Decrypt cloud backup artifact before restore (if encrypted upload used)
@@ -249,13 +249,13 @@ Run in order. These checks deliberately exercise both the local app port and
 the public HTTPS proxy path.
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
-set -a && . /home/ricwheatley/pete-eebot/.env && set +a
+cd /opt/myapp/current
+set -a && . /opt/myapp/shared/.env && set +a
 PUBLIC_BASE_URL="https://ops.example.com"
 ```
 
 ```bash
-/home/ricwheatley/pete-eebot/venv/bin/pete status
+/opt/myapp/shared/venv/bin/pete status
 ```
 
 ```bash
@@ -263,11 +263,11 @@ PUBLIC_BASE_URL="https://ops.example.com"
 ```
 
 ```bash
-/home/ricwheatley/pete-eebot/venv/bin/pete sync --days 1 --retries 1
+/opt/myapp/shared/venv/bin/pete sync --days 1 --retries 1
 ```
 
 ```bash
-/home/ricwheatley/pete-eebot/venv/bin/pete telegram --listen-once --limit 1 --timeout 10
+/opt/myapp/shared/venv/bin/pete telegram --listen-once --limit 1 --timeout 10
 ```
 
 ```bash
@@ -459,7 +459,7 @@ print(secrets.token_urlsafe(48))
 PY
 ```
 
-2. Update `PETEEEBOT_API_KEY` in `/home/ricwheatley/pete-eebot/.env`. Do not commit the value.
+2. Update `PETEEEBOT_API_KEY` in `/opt/myapp/shared/.env`. Do not commit the value.
 3. Update every machine client that sends `X-API-Key`, including private GPT action configuration, Postman/local smoke-check environments, and trusted automation.
 4. Restart the API service so the new environment is loaded:
 

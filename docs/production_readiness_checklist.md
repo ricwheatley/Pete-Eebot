@@ -26,7 +26,7 @@ Severity guidance:
 | Check | Severity | Evidence |
 | --- | --- | --- |
 | [ ] Target commit, branch, and release identifier are recorded. | Blocker | Git SHA, branch, deploy time. |
-| [ ] Supported runtime profile is confirmed: native Python virtual environment on Linux/Raspberry Pi with Postgres reachable from the host. | Blocker | Host name, OS, Python version, Postgres version. |
+| [ ] Supported runtime profile is confirmed: native Python virtual environment on Ubuntu with Postgres reachable from the host. | Blocker | Host name, OS, Python version, Postgres version. |
 | [ ] Application container image is not used as the production runtime unless a new supported Dockerfile/runbook has been created and reviewed. | Blocker | Deployment profile note. |
 | [ ] Production layout matches the runbook: `.env`, `venv`, `deploy.sh`, `app`, and backup directories live outside the Git cleanup boundary where expected. | Blocker | Path listing or operator confirmation. |
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
@@ -129,10 +129,10 @@ Severity guidance:
 Adapt paths and service names to the host:
 
 ```bash
-cd /home/ricwheatley/pete-eebot/app
+cd /opt/myapp/current
 git fetch --all --prune
 git reset --hard <previous-known-good-sha>
-/home/ricwheatley/pete-eebot/venv/bin/python -m pip install --no-deps -e .
+/opt/myapp/shared/venv/bin/python -m pip install --no-deps -e .
 sudo systemctl restart peteeebot.service
 ```
 

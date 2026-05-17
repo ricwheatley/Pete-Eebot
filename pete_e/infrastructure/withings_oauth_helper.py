@@ -1,5 +1,5 @@
-# (Functional) OAuth helper for Withings – builds auth URL and exchanges authorization code for tokens. Saves tokens to
-# `~/.config/pete_eebot/.withings_tokens.json` for reuse.
+# OAuth helper for Withings. Runtime OAuth tokens use WITHINGS_TOKEN_FILE when configured.
+
 
 import os
 import requests
@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import SecretStr
 from urllib.parse import urlencode
 
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 from pete_e.infrastructure.log_utils import log_message
 def _unwrap_secret(value):
     if isinstance(value, SecretStr):
@@ -17,7 +17,17 @@ def _unwrap_secret(value):
     return value
     """Perform unwrap secret."""
 
-TOKEN_FILE = Path.home() / ".config" / "pete_eebot" / ".withings_tokens.json"
+DEFAULT_TOKEN_FILE = Path.home() / ".config" / "pete_eebot" / ".withings_tokens.json"
+
+
+def configured_withings_token_file() -> Path:
+    raw_path = get_env("WITHINGS_TOKEN_FILE", None)
+    if raw_path:
+        return Path(str(raw_path)).expanduser()
+    return DEFAULT_TOKEN_FILE
+
+
+TOKEN_FILE = configured_withings_token_file()
 
 AUTH_URL = "https://account.withings.com/oauth2_user/authorize2"
 TOKEN_URL = "https://wbsapi.withings.net/v2/oauth2"

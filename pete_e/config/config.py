@@ -17,10 +17,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CONFIG_FILE = Path(__file__).resolve()
 
 
+def _explicit_env_file() -> Path | None:
+    """Return an explicitly configured env file path when one is provided."""
+
+    raw_path = os.getenv("PETEEEBOT_ENV_FILE")
+    if not raw_path:
+        return None
+    return Path(raw_path).expanduser()
+
+
 def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
     """Return a project root and env file path without assuming ``.env`` exists."""
 
+    explicit_env_file = _explicit_env_file()
     parents = list(config_file.parents)
+
+    if explicit_env_file is not None:
+        for marker in ("pyproject.toml", ".git", "requirements.txt"):
+            for parent in parents:
+                if (parent / marker).exists():
+                    return parent, explicit_env_file
+        fallback_root = parents[1] if len(parents) > 1 else parents[0]
+        return fallback_root, explicit_env_file
 
     for parent in parents:
         env_file = parent / ".env"
@@ -65,6 +83,7 @@ class Settings(BaseSettings):
 
     # --- CORE APP SETTINGS ---
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
+    PETEEEBOT_ENV_FILE: Path | None = None
     ENVIRONMENT: str = "development"
     DATABASE_URL: Optional[str] = Field(None, validate_default=True)
 
@@ -83,6 +102,7 @@ class Settings(BaseSettings):
     WITHINGS_CLIENT_SECRET: SecretStr
     WITHINGS_REDIRECT_URI: str
     WITHINGS_REFRESH_TOKEN: SecretStr
+    WITHINGS_TOKEN_FILE: Path | None = None
     WGER_API_KEY: SecretStr
     WGER_BASE_URL: str = "https://wger.de/api/v2"
     WGER_USERNAME: str | None = None
@@ -133,6 +153,7 @@ class Settings(BaseSettings):
     PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS: float = 1.0
     GITHUB_WEBHOOK_SECRET: SecretStr | None = None
     DEPLOY_SCRIPT_PATH: Path | None = None
+    PETEEEBOT_CLI_BIN: Path | str | None = None
     PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS: int = 10
     PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS: float = 60.0
     PETEEEBOT_SYNC_TIMEOUT_SECONDS: float = 300.0

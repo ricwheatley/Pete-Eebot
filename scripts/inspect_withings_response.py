@@ -17,7 +17,11 @@ from typing import Any
 
 import requests
 
-from pete_e.infrastructure.withings_client import WithingsClient, WithingsReauthRequired
+from pete_e.infrastructure.withings_client import (
+    WithingsClient,
+    WithingsReauthRequired,
+    configured_withings_token_file,
+)
 from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 
 
@@ -40,7 +44,7 @@ class _EnvRefreshTokenBootstrapStorage:
     """Ignore stale persisted tokens once, but save fresh tokens normally."""
 
     def __init__(self) -> None:
-        self._writer = JsonFileTokenStorage(WithingsClient.TOKEN_FILE)
+        self._writer = JsonFileTokenStorage(configured_withings_token_file())
         """Initialize this object."""
 
     def read_tokens(self) -> None:
@@ -211,8 +215,9 @@ def main() -> int:
         "--ignore-token-file",
         action="store_true",
         help=(
-            "Ignore ~/.config/pete_eebot/.withings_tokens.json for this run and "
-            "bootstrap from WITHINGS_REFRESH_TOKEN in .env instead. Fresh tokens are still saved."
+            "Ignore the configured Withings token file for this run and "
+            "bootstrap from WITHINGS_REFRESH_TOKEN in .env instead. Fresh tokens are still saved to "
+            "WITHINGS_TOKEN_FILE when configured."
         ),
     )
     args = parser.parse_args()

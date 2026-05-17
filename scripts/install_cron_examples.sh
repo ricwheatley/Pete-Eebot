@@ -2,14 +2,28 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+APP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -z "${PROJECT_ROOT:-}" ]]; then
+    if [[ "$(basename "${APP_ROOT}")" == "current" ]]; then
+        PROJECT_ROOT="$(cd "${APP_ROOT}/.." && pwd)"
+    else
+        PROJECT_ROOT="${APP_ROOT}"
+    fi
+fi
+
+if [[ -z "${ENV_FILE:-}" && -f "${PROJECT_ROOT}/shared/.env" ]]; then
+    ENV_FILE="${PROJECT_ROOT}/shared/.env"
+fi
+export ENV_FILE="${ENV_FILE:-}" PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE:-}}"
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
     CANDIDATE_PYTHON_BINS=("${PYTHON_BIN}")
 else
     CANDIDATE_PYTHON_BINS=(
+        "${PROJECT_ROOT}/shared/venv/bin/python3"
         "${PROJECT_ROOT}/venv/bin/python3"
-        "${PROJECT_ROOT}/.venv/bin/python3"
+        "${APP_ROOT}/venv/bin/python3"
+        "${APP_ROOT}/.venv/bin/python3"
         "${FALLBACK_PYTHON_BIN:-python3}"
     )
 fi
@@ -22,7 +36,7 @@ for candidate in "${CANDIDATE_PYTHON_BINS[@]}"; do
     fi
 done
 
-cd "${PROJECT_ROOT}"
+cd "${APP_ROOT}"
 
 if [[ $# -eq 0 ]]; then
     set -- --write --activate --summary

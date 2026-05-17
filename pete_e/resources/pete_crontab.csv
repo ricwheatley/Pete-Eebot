@@ -1,20 +1,20 @@
 name,schedule,command,enabled
-daily sync,40 5 * * 1-5,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1 && /home/ricwheatley/pete-eebot/venv/bin/pete morning-report --send >> /var/log/pete_eebot/pete_history.log 2>&1",true
-sunday review,25 16 * * 0,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.run_sunday_review >> /var/log/pete_eebot/pete_history.log 2>&1",true
-weekly plan message,30 20 * * 0,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete message --plan --send >> /var/log/pete_eebot/pete_history.log 2>&1",true
-telegram listener,* * * * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete telegram --listen-once --limit 5 --timeout 25 >> /var/log/pete_eebot/pete_history.log 2>&1",true
-duck dns,*/5 * * * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && curl -s https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=",true
-log rotate,0 0 * * 0,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.log_rotate >> /var/log/pete_eebot/pete_history.log 2>&1",false
-backup,30 2 * * 0,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/app/scripts/backup_db.sh >> /var/log/pete_eebot/pete_history.log 2>&1",true
-check for updates,0 3 * * 1,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.check_for_updates >> /var/log/pete_eebot/pete_history.log 2>&1",false
-weekly restart,0 4 * * 0,sudo /sbin/reboot,true
-monthly full backup,0 3 1 * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.full_backup >> /var/log/pete_eebot/pete_history.log 2>&1",false
-cleanup old backups,30 3 1 * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.cleanup_old_backups >> /var/log/pete_eebot/pete_history.log 2>&1",false
+daily sync,40 5 * * 1-5,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1 && /opt/myapp/shared/venv/bin/pete morning-report --send >> /var/log/pete_eebot/pete_history.log 2>&1",true
+sunday review,25 16 * * 0,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.run_sunday_review >> /var/log/pete_eebot/pete_history.log 2>&1",true
+weekly plan message,30 20 * * 0,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete message --plan --send >> /var/log/pete_eebot/pete_history.log 2>&1",true
+telegram listener,* * * * *,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete telegram --listen-once --limit 5 --timeout 25 >> /var/log/pete_eebot/pete_history.log 2>&1",true
+duck dns,*/5 * * * *,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && curl -s https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=",true
+log rotate,0 0 * * 0,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.log_rotate >> /var/log/pete_eebot/pete_history.log 2>&1",false
+backup,30 2 * * 0,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && ENV_FILE=/opt/myapp/shared/.env PROJECT_ROOT=/opt/myapp APP_ROOT=/opt/myapp/current VENV_ROOT=/opt/myapp/shared/venv /opt/myapp/current/scripts/backup_db.sh >> /var/log/pete_eebot/pete_history.log 2>&1",true
+check for updates,0 3 * * 1,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.check_for_updates >> /var/log/pete_eebot/pete_history.log 2>&1",false
+weekly restart,0 4 * * 0,sudo /sbin/reboot,false
+monthly full backup,0 3 1 * *,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.full_backup >> /var/log/pete_eebot/pete_history.log 2>&1",false
+cleanup old backups,30 3 1 * *,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.cleanup_old_backups >> /var/log/pete_eebot/pete_history.log 2>&1",false
 check disk space,*/15 * * * *,df -h >> /var/log/pete_eebot/disk_usage.log 2>&1,true
 check memory usage,*/15 * * * *,free -h >> /var/log/pete_eebot/memory_usage.log 2>&1,true
 check cpu load,*/15 * * * *,"top -b -n1 | head -n 10 >> /var/log/pete_eebot/cpu_load.log 2>&1",true
-clear temp files,0 1 * * *,rm -rf /tmp/* >> /var/log/pete_eebot/clear_temp.log 2>&1,true
-heartbeat check,*/5 * * * *,"cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/python3 -m scripts.heartbeat_check >> /var/log/pete_eebot/pete_history.log 2>&1",true
+clear temp files,0 1 * * *,rm -rf /tmp/* >> /var/log/pete_eebot/clear_temp.log 2>&1,false
+heartbeat check,*/5 * * * *,"cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.heartbeat_check >> /var/log/pete_eebot/pete_history.log 2>&1",true
 cleanup old logs,30 2 1 * *,find /var/log/pete_eebot/ -type f -name "*.log" -mtime +30 -exec rm {} \; >> /var/log/pete_eebot/log_cleanup.log 2>&1,true
-sync at startup,@reboot,"sleep 300 && cd /home/ricwheatley/pete-eebot/app && set -a && . /home/ricwheatley/pete-eebot/.env && set +a && /home/ricwheatley/pete-eebot/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1",true
+sync at startup,@reboot,"sleep 300 && cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete sync --days 3 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1",true
 # End of file

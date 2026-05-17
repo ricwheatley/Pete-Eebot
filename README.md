@@ -192,16 +192,24 @@ The recommended production topology is:
 Example layout:
 
 ```text
-/opt/pete-eebot/
-  .env
-  venv/
-  app/              # Git checkout
+/opt/myapp/
+  current -> releases/<active-release>
+  releases/
+  shared/
+    .env
+    .backup_key
+    venv/
+    runtime/
+      withings/.withings_tokens.json
+  scripts/
+    deploy.sh       # Stable wrapper outside the checkout
   backups/
-  deploy.sh         # Stable wrapper outside the checkout
-  deploy.log
+    postgres/
+    secrets/
+    cloud-staging/
 ```
 
-The repository includes deploy scripts in `pete_e/resources/deploy-wrapper.sh` and `pete_e/resources/deploy.sh`. Their default historical path is `/home/ricwheatley/pete-eebot`; override `PROJECT_ROOT`, `APP_ROOT`, and `VENV_ROOT` for a different Ubuntu layout.
+The repository includes deploy scripts in `pete_e/resources/deploy-wrapper.sh` and `pete_e/resources/deploy.sh`. Their production defaults target `/opt/myapp`; override `PROJECT_ROOT`, `APP_ROOT`, `SHARED_ROOT`, `ENV_FILE`, and `VENV_ROOT` for a different Ubuntu layout.
 
 ### Application service
 
@@ -215,11 +223,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pete
-Group=pete
-WorkingDirectory=/opt/pete-eebot/app
-EnvironmentFile=/opt/pete-eebot/.env
-ExecStart=/opt/pete-eebot/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/myapp/current
+EnvironmentFile=/opt/myapp/shared/.env
+ExecStart=/opt/myapp/shared/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=10
 
@@ -242,9 +250,9 @@ Do not bind Uvicorn to a public interface in production. Public access should go
 If the browser console is enabled, create the first owner account from the host shell after applying the auth migrations:
 
 ```bash
-cd /opt/pete-eebot/app
+cd /opt/myapp/current
 set -a
-. /opt/pete-eebot/.env
+. /opt/myapp/shared/.env
 set +a
 psql "$DATABASE_URL" -f migrations/20260515_add_auth_users_sessions_rbac.sql
 psql "$DATABASE_URL" -f migrations/20260516_add_auth_mfa_fields.sql
@@ -301,22 +309,22 @@ Required deploy environment:
 
 ```bash
 export GITHUB_WEBHOOK_SECRET="replace-with-shared-webhook-secret"
-export DEPLOY_SCRIPT_PATH="/opt/pete-eebot/deploy.sh"
+export DEPLOY_SCRIPT_PATH="/opt/myapp/scripts/deploy.sh"
 ```
 
 Copy the wrapper outside the checkout:
 
 ```bash
-cp /opt/pete-eebot/app/pete_e/resources/deploy-wrapper.sh /opt/pete-eebot/deploy.sh
-chmod 700 /opt/pete-eebot/deploy.sh
+cp /opt/myapp/current/pete_e/resources/deploy-wrapper.sh /opt/myapp/scripts/deploy.sh
+chmod 700 /opt/myapp/scripts/deploy.sh
 ```
 
-If using `/opt/pete-eebot`, set path overrides in the wrapper environment or edit the wrapper copy deliberately:
+If using `/opt/myapp`, set path overrides in the wrapper environment or edit the wrapper copy deliberately:
 
 ```bash
-PROJECT_ROOT=/opt/pete-eebot
-APP_ROOT=/opt/pete-eebot/app
-VENV_ROOT=/opt/pete-eebot/venv
+PROJECT_ROOT=/opt/myapp
+APP_ROOT=/opt/myapp/current
+VENV_ROOT=/opt/myapp/shared/venv
 ```
 
 ## Operational Workflows
@@ -356,11 +364,11 @@ Supported bot commands include `/summary`, `/sync`, and `/lets-begin`.
 The cron source of truth is `pete_e/resources/pete_crontab.csv`. Render and activate it for the current user:
 
 ```bash
-cd /opt/pete-eebot/app
+cd /opt/myapp/current
 set -a
-. /opt/pete-eebot/.env
+. /opt/myapp/shared/.env
 set +a
-/opt/pete-eebot/venv/bin/python -m pete_e.infrastructure.cron_manager --write --activate --summary
+/opt/myapp/shared/venv/bin/python -m pete_e.infrastructure.cron_manager --write --activate --summary
 ```
 
 Active jobs include daily sync and morning report, Sunday review, weekly plan message, Telegram polling, weekly backup, heartbeat check, and basic host resource logging. Disabled rows in the CSV reference historical scripts that are not present and should remain disabled until replaced.
@@ -425,11 +433,11 @@ See `docs/logging_observability.md` for request IDs, job IDs, audit events, and 
 Run a backup:
 
 ```bash
-cd /opt/pete-eebot/app
+cd /opt/myapp/current
 set -a
-. /opt/pete-eebot/.env
+. /opt/myapp/shared/.env
 set +a
-PROJECT_ROOT=/opt/pete-eebot ./scripts/backup_db.sh
+PROJECT_ROOT=/opt/myapp ./scripts/backup_db.sh
 ```
 
 The backup script creates:
@@ -447,7 +455,7 @@ Optional encrypted Dropbox upload:
 ```bash
 BACKUP_CLOUD_UPLOAD=1
 DROPBOX_BACKUP_DIR=/Pete-Eebot Backups
-BACKUP_ENCRYPTION_KEY_FILE=/opt/pete-eebot/.backup_key
+BACKUP_ENCRYPTION_KEY_FILE=/opt/myapp/shared/.backup_key
 ```
 
 Decrypt a cloud backup:
@@ -456,19 +464,19 @@ Decrypt a cloud backup:
 openssl enc -d -aes-256-cbc -pbkdf2 \
   -in postgres_latest.enc \
   -out latest.dump \
-  -pass file:/opt/pete-eebot/.backup_key
+  -pass file:/opt/myapp/shared/.backup_key
 ```
 
 Restore a dump:
 
 ```bash
 set -a
-. /opt/pete-eebot/.env
+. /opt/myapp/shared/.env
 set +a
 export PGPASSWORD="$POSTGRES_PASSWORD"
 pg_restore -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
   -d "$POSTGRES_DB" --clean --if-exists --no-owner \
-  /opt/pete-eebot/backups/postgres/latest.dump
+  /opt/myapp/backups/postgres/latest.dump
 ```
 
 Keep backup encryption keys outside the Git checkout and in a password manager. A cloud backup is not restorable without the key or passphrase used to encrypt it.
@@ -482,6 +490,7 @@ Use `.env.sample` as the starting point.
 | Variable | Purpose |
 | --- | --- |
 | `ENVIRONMENT` | Runtime environment label. |
+| `PETEEEBOT_ENV_FILE` | Explicit env file path, for example `/opt/myapp/shared/.env`. |
 | `USER_DATE_OF_BIRTH`, `USER_HEIGHT_CM`, `USER_GOAL_WEIGHT_KG`, `USER_TIMEZONE` | Default coached-person profile facts. |
 | `RUNNING_TARGET_RACE`, `RUNNING_RACE_DATE`, `RUNNING_TARGET_TIME`, `RUNNING_WEIGHT_LOSS_TARGET_KG` | Running goal context for planning. |
 | `PETEEEBOT_DEFAULT_PROFILE_SLUG`, `PETEEEBOT_DEFAULT_PROFILE_NAME` | Optional default profile metadata. |
@@ -508,6 +517,7 @@ Use `.env.sample` as the starting point.
 | --- | --- |
 | `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REDIRECT_URI` | Withings OAuth app settings. |
 | `WITHINGS_REFRESH_TOKEN` | Initial refresh token; runtime tokens are persisted by the Withings client. |
+| `WITHINGS_TOKEN_FILE` | Explicit runtime Withings token file, for example `/opt/myapp/shared/runtime/withings/.withings_tokens.json`. |
 | `WITHINGS_ALERT_REAUTH` | Enables reauthorization alerts when token checks fail. |
 
 ### wger
@@ -536,7 +546,7 @@ Use `.env.sample` as the starting point.
 | `PETEEEBOT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`, `PETEEEBOT_LOGIN_RATE_LIMIT_WINDOW_SECONDS`, `PETEEEBOT_LOGIN_LOCKOUT_SECONDS`, `PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS` | Login throttling controls. |
 | `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS`, `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS` | Command endpoint rate limits. |
 | `PETEEEBOT_SYNC_TIMEOUT_SECONDS`, `PETEEEBOT_PROCESS_TIMEOUT_SECONDS` | Long-running command timeouts. |
-| `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH` | GitHub webhook deploy configuration. |
+| `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, `PETEEEBOT_CLI_BIN` | GitHub webhook deploy configuration and absolute `pete` CLI path for subprocess jobs. |
 
 ### Logging, alerting, and monitoring
 
@@ -576,18 +586,9 @@ Use `.env.sample` as the starting point.
 - Rotate API and webhook secrets after suspected exposure or client changes.
 - Complete `docs/production_readiness_checklist.md` before exposing the service to the internet.
 
-## Raspberry Pi Historical Deployment
+## Historical Deployment
 
-Earlier production operation used a Raspberry Pi-style layout such as:
-
-```text
-/home/ricwheatley/pete-eebot/.env
-/home/ricwheatley/pete-eebot/venv
-/home/ricwheatley/pete-eebot/deploy.sh
-/home/ricwheatley/pete-eebot/app
-```
-
-That layout remains reflected in some default script values and cron templates. Treat it as historical compatibility, not the preferred new production baseline. For Ubuntu deployments, use explicit path overrides and keep the same separation: secrets, virtualenv, backups, and deploy wrapper outside the Git checkout.
+Earlier Raspberry Pi production operation kept secrets, the virtualenv, deploy scripts, and the checkout under a home-directory tree. The supported production baseline is now the `/opt/myapp` layout above; production scripts and cron entries should not depend on a home-directory checkout or an in-repo virtualenv.
 
 ## Developer Notes
 

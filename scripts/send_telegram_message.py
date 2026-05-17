@@ -12,6 +12,10 @@ from dotenv import load_dotenv
 
 def find_env_path() -> Path:
     """Find the nearest .env beside this script or one of its parents."""
+    explicit_path = os.environ.get("ENV_FILE") or os.environ.get("PETEEEBOT_ENV_FILE")
+    if explicit_path:
+        return Path(explicit_path).expanduser()
+
     script_path = Path(__file__).resolve()
     for directory in (script_path.parent, *script_path.parents):
         env_path = directory / ".env"
@@ -20,13 +24,22 @@ def find_env_path() -> Path:
     raise FileNotFoundError("No .env file found beside the script or its parent directories.")
 
 
+def load_env_if_available() -> None:
+    try:
+        env_path = find_env_path()
+    except FileNotFoundError:
+        return
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Send a Telegram notification.")
     parser.add_argument("message", type=str, help="The message content to send.")
     args = parser.parse_args()
 
     try:
-        load_dotenv(dotenv_path=find_env_path())
+        load_env_if_available()
     except Exception as exc:
         print(f"ERROR: Could not load environment: {exc}", file=sys.stderr)
         return 1

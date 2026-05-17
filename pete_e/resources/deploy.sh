@@ -4,19 +4,22 @@ set -Eeuo pipefail
 # Pete-Eebot deployment script.
 #
 # Expected production layout:
-#   /home/ricwheatley/pete-eebot
-#     .env
-#     deploy.log
-#     venv/
-#     app/        # git checkout for this repository
+#   /opt/myapp/current          # active git checkout or release symlink
+#   /opt/myapp/shared/.env
+#   /opt/myapp/shared/venv/
+#   /opt/myapp/scripts/deploy.sh
+#   /var/log/pete_eebot/
 
-PROJECT_ROOT="${PROJECT_ROOT:-/home/ricwheatley/pete-eebot}"
-APP_ROOT="${APP_ROOT:-${PROJECT_ROOT}/app}"
-VENV_ROOT="${VENV_ROOT:-${PROJECT_ROOT}/venv}"
+PROJECT_ROOT="${PROJECT_ROOT:-/opt/myapp}"
+APP_ROOT="${APP_ROOT:-${PROJECT_ROOT}/current}"
+SHARED_ROOT="${SHARED_ROOT:-${PROJECT_ROOT}/shared}"
+VENV_ROOT="${VENV_ROOT:-${SHARED_ROOT}/venv}"
+ENV_FILE="${ENV_FILE:-${SHARED_ROOT}/.env}"
 PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
 SERVICE_NAME="${SERVICE_NAME:-peteeebot.service}"
-LOGFILE="${LOGFILE:-${PROJECT_ROOT}/deploy.log}"
+LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
 SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-0}"
+export ENV_FILE PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE}}"
 
 mkdir -p "$(dirname "${LOGFILE}")"
 if [[ "${DEPLOY_LOG_ATTACHED:-0}" != "1" ]]; then
@@ -69,7 +72,12 @@ log "---- Deploy run at $(date -Is) ----"
 [[ -d "${APP_ROOT}/.git" ]] || fail "Git repository not found at ${APP_ROOT}"
 [[ -x "${PYTHON_BIN}" ]] || fail "Python venv not found at ${PYTHON_BIN}"
 [[ -f "${VENV_ROOT}/bin/activate" ]] || fail "Virtual environment activation script not found at ${VENV_ROOT}/bin/activate"
-[[ -f "${PROJECT_ROOT}/.env" ]] || fail ".env not found at ${PROJECT_ROOT}/.env"
+[[ -f "${ENV_FILE}" ]] || fail ".env not found at ${ENV_FILE}"
+
+set -a
+# shellcheck source=/dev/null
+source "${ENV_FILE}"
+set +a
 
 cd "${APP_ROOT}"
 if [[ "${SKIP_GIT_UPDATE}" == "1" ]]; then

@@ -20,7 +20,7 @@ from pete_e.infrastructure.telegram_notification_channel import TelegramNotifica
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 from pete_e.infrastructure.wger_client import WgerClient
-from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.infrastructure.withings_client import WithingsClient, configured_withings_token_file
 
 
 def provide_postgres_dal() -> PostgresDal:
@@ -36,7 +36,7 @@ def provide_apple_dropbox_client() -> AppleDropboxClient:
 
 
 def provide_withings_client() -> WithingsClient:
-    return WithingsClient(token_storage=JsonFileTokenStorage(WithingsClient.TOKEN_FILE))
+    return WithingsClient(token_storage=JsonFileTokenStorage(configured_withings_token_file()))
 
 
 def provide_telegram_client() -> TelegramClient:

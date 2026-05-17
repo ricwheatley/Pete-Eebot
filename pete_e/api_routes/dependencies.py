@@ -267,6 +267,17 @@ def configured_deploy_script_path() -> Path:
     return deploy_path
 
 
+def configured_cli_bin() -> str:
+    raw_path = get_env("PETEEEBOT_CLI_BIN", None)
+    if raw_path:
+        return str(Path(str(raw_path)).expanduser())
+    return "pete"
+
+
+def pete_cli_command(*args: str) -> list[str]:
+    return [configured_cli_bin(), *args]
+
+
 def get_dal() -> PostgresDal:
     global _dal
     if _dal is None:

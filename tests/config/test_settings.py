@@ -2,7 +2,7 @@ from datetime import date
 import pytest
 from psycopg.conninfo import make_conninfo
 
-from pete_e.config.config import Settings
+from pete_e.config.config import CONFIG_FILE, Settings, _discover_project_root
 
 
 @pytest.fixture()
@@ -66,6 +66,20 @@ def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settin
     """Perform test database url uses override."""
 
 
+def test_explicit_env_file_does_not_replace_code_root(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    env_file = tmp_path / "shared" / ".env"
+    env_file.parent.mkdir()
+    env_file.write_text("ENVIRONMENT=production\n", encoding="utf-8")
+
+    monkeypatch.setenv("PETEEEBOT_ENV_FILE", str(env_file))
+    project_root, discovered_env_file = _discover_project_root(CONFIG_FILE)
+
+    assert discovered_env_file == env_file
+    assert (project_root / "pete_e").exists()
+    assert project_root != env_file.parent
+    """Perform test explicit env file does not replace code root."""
+
+
 def test_log_path_fallback_notice_is_consumed_once(
     monkeypatch: pytest.MonkeyPatch,
     base_settings_data: dict,
@@ -93,7 +107,10 @@ def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: d
         DUCKDNS_TOKEN="duckdns-token",
         BACKUP_CLOUD_UPLOAD=True,
         DROPBOX_BACKUP_DIR="/Pete-Eebot Backups",
-        BACKUP_ENCRYPTION_KEY_FILE="/home/pi/.backup_key",
+        BACKUP_ENCRYPTION_KEY_FILE="/opt/myapp/shared/.backup_key",
+        PETEEEBOT_ENV_FILE="/opt/myapp/shared/.env",
+        WITHINGS_TOKEN_FILE="/opt/myapp/shared/runtime/withings/.withings_tokens.json",
+        PETEEEBOT_CLI_BIN="/opt/myapp/shared/venv/bin/pete",
         PETEEEBOT_RESTART_TIMEOUT_SECONDS=30,
     )
 
@@ -105,7 +122,10 @@ def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: d
     assert settings.BACKUP_CLOUD_UPLOAD is True
     assert settings.DROPBOX_BACKUP_DIR == "/Pete-Eebot Backups"
     assert settings.BACKUP_ENCRYPTION_KEY_FILE is not None
-    assert str(settings.BACKUP_ENCRYPTION_KEY_FILE) == "/home/pi/.backup_key"
+    assert str(settings.BACKUP_ENCRYPTION_KEY_FILE) == "/opt/myapp/shared/.backup_key"
+    assert str(settings.PETEEEBOT_ENV_FILE) == "/opt/myapp/shared/.env"
+    assert str(settings.WITHINGS_TOKEN_FILE) == "/opt/myapp/shared/runtime/withings/.withings_tokens.json"
+    assert str(settings.PETEEEBOT_CLI_BIN) == "/opt/myapp/shared/venv/bin/pete"
     assert settings.PETEEEBOT_RESTART_TIMEOUT_SECONDS == 30
     assert settings.PETEEEBOT_PLANNER_FEATURE_FLAGS == ""
     """Perform test operational cron and backup settings are accepted."""
