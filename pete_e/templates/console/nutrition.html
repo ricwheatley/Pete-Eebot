@@ -32,7 +32,7 @@
         </div>
         <div>
           <dt>Last logged</dt>
-          <dd>{{ nutrition_view.data_quality.last_logged_at or "Unknown" }}</dd>
+          <dd>{{ nutrition_view.data_quality.last_logged_at | display_datetime("Unknown") }}</dd>
         </div>
       </dl>
     {% else %}
@@ -142,7 +142,7 @@
       <tbody>
         {% for log in nutrition_view.logs %}
         <tr>
-          <td class="nowrap">{{ log.eaten_at }}</td>
+          <td class="nowrap">{{ log.eaten_at | display_datetime("-") }}</td>
           <td>{{ log.meal_label or "Unlabelled" }}</td>
           <td>{{ log.protein_g }}p / {{ log.carbs_g }}c / {{ log.fat_g }}f</td>
           <td>{{ log.confidence or "medium" }}</td>

@@ -465,7 +465,8 @@ def test_status_page_renders_health_checks_and_source_level_sync_failures(
     assert "token expired" in html
     assert "Last Sync Outcome" in html
     assert "Attempted" in html
-    assert "2026-05-15T08:00:00.000Z" in html
+    assert "15/05/2026 08:00:00" in html
+    assert "2026-05-15T08:00:00.000Z" not in html
     assert "AppleDropbox" in html
     assert "Withings" in html
     assert "failed" in html
@@ -518,6 +519,8 @@ def test_nutrition_page_renders_daily_summary(monkeypatch: pytest.MonkeyPatch) -
     assert "120" in html
     assert "1870 kcal" in html
     assert "photo_estimate" in html
+    assert "15/05/2026 19:30:00" in html
+    assert "2026-05-15T19:30:00" not in html
     assert "Save nutrition log" not in html
 
 
@@ -649,6 +652,8 @@ def test_logs_page_renders_recent_log_fields_for_read_only_user(
     html = _body(response)
     assert response.status_code == 200
     assert "Recent Lines" in html
+    assert "15/05/2026 08:00:00" in html
+    assert "2026-05-15T08:00:00.000Z" not in html
     assert "req-123" in html
     assert "sync-abc" in html
     assert "AUDIT" in html
@@ -729,6 +734,8 @@ def test_alerts_page_renders_filtered_alert_history(tmp_path, monkeypatch: pytes
     assert response.status_code == 200
     assert "Active Alerts" in html
     assert "auth_expiry" in html
+    assert "15/05/2026 08:00:00" in html
+    assert "2026-05-15T08:00:00+00:00" not in html
     assert "Withings authorization needs attention" in html
     assert "sync-1" in html
 
@@ -950,6 +957,8 @@ def test_jobs_page_renders_recent_jobs_for_operator(monkeypatch: pytest.MonkeyPa
     assert "Recent Jobs" in html
     assert "plan-job-1" in html
     assert "succeeded" in html
+    assert "15/05/2026 09:00:00" in html
+    assert "2026-05-15 09:00:00+00:00" not in html
 
 
 def test_command_history_page_renders_searchable_audit_rows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -973,6 +982,8 @@ def test_command_history_page_renders_searchable_audit_rows(monkeypatch: pytest.
     assert "req-123" in html
     assert "session" in html
     assert "start_date" in html
+    assert "15/05/2026 09:02:00" in html
+    assert "2026-05-15 09:02:00+00:00" not in html
 
 
 def test_command_history_api_returns_recent_entries(monkeypatch: pytest.MonkeyPatch) -> None:

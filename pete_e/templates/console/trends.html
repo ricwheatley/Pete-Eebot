@@ -25,7 +25,7 @@
       </div>
       <div>
         <dt>Last data date</dt>
-        <dd>{{ trends_view.data_quality.last_sync_at or "Missing" }}</dd>
+        <dd>{{ trends_view.data_quality.last_sync_at | display_datetime("Missing") }}</dd>
       </div>
     </dl>
   </article>
