@@ -402,6 +402,8 @@ class MetricsService(_DateParserMixin):
         start = converters.to_date(plan.get("start_date"))
         weeks = int(plan.get("weeks") or 0)
         current_week = ((target_date - start).days // 7) + 1 if start else None
+        if isinstance(current_week, int) and current_week < 1:
+            current_week = 1
         deload_due = bool(current_week and current_week % 4 == 0)
         return {
             "date": target_date.isoformat(),

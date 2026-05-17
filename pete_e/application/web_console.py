@@ -210,18 +210,33 @@ class WebConsoleReadModel:
             "last_sync": sync_outcome,
         }
 
-    def plan(self, *, target_date: date) -> dict[str, Any]:
+    def plan(self, *, target_date: date, week_view: str = "current") -> dict[str, Any]:
         week_start = current_week_start(target_date)
+        selected_view = "next" if str(week_view).strip().lower() == "next" else "current"
+        if selected_view == "next":
+            week_start = week_start + timedelta(days=7)
         context = _safe_load(
-            lambda: self._metrics_service.plan_context(target_date.isoformat()),
+            lambda: self._metrics_service.plan_context(week_start.isoformat()),
             {"active_plan": None, "data_quality": "unavailable"},
         )
+
+        active_plan = context.get("active_plan") if isinstance(context.get("active_plan"), dict) else {}
+        active_plan_start = None
+        if active_plan:
+            raw_start = active_plan.get("start_date")
+            if hasattr(raw_start, "isoformat"):
+                active_plan_start = raw_start
+            elif isinstance(raw_start, str):
+                try:
+                    active_plan_start = date.fromisoformat(raw_start)
+                except ValueError:
+                    active_plan_start = None
+
         week_plan = _safe_load(
             lambda: self._plan_service.for_week(week_start.isoformat()),
             {"columns": [], "rows": [], "status": "unavailable"},
         )
 
-        active_plan = context.get("active_plan") if isinstance(context.get("active_plan"), dict) else {}
         plan_id = active_plan.get("id") if active_plan else None
         week_number = context.get("current_week_number")
         if plan_id and week_number:
@@ -243,6 +258,8 @@ class WebConsoleReadModel:
         return {
             "date": target_date.isoformat(),
             "week_start": week_start.isoformat(),
+            "week_view": selected_view,
+            "is_next_week_available": bool(active_plan_start and week_start < active_plan_start),
             "context": context,
             "week_plan": week_plan,
             "decision_trace": trace,
