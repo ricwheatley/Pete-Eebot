@@ -7,6 +7,7 @@ from pete_e.api_routes.dependencies import (
     enforce_command_rate_limit,
     get_job_service,
     get_plan_service,
+    pete_cli_command,
     prepare_job_context,
     validate_api_key,
 )
@@ -74,7 +75,7 @@ async def run_pete_plan_async(
         get_job_service().enqueue_subprocess(
             job_id=job_id,
             operation="plan",
-            command=["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            command=pete_cli_command("plan", "--weeks", str(weeks), "--start-date", start_date),
             requester=requester,
             request_id=correlation_id,
             correlation_id=correlation_id,

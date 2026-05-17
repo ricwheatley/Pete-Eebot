@@ -20,7 +20,17 @@ from pete_e.config import get_env
 
 
 TOKEN_FILE_NAME = ".withings_tokens.json"
-TOKEN_FILE_PATH = Path.home() / ".config" / "pete_eebot" / TOKEN_FILE_NAME
+DEFAULT_TOKEN_FILE_PATH = Path.home() / ".config" / "pete_eebot" / TOKEN_FILE_NAME
+
+
+def configured_withings_token_file() -> Path:
+    raw_path = get_env("WITHINGS_TOKEN_FILE", None)
+    if raw_path:
+        return Path(str(raw_path)).expanduser()
+    return DEFAULT_TOKEN_FILE_PATH
+
+
+TOKEN_FILE_PATH = configured_withings_token_file()
 
 
 @dataclass(frozen=True)

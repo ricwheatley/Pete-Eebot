@@ -29,7 +29,7 @@ Copy these from your local `.env`:
 - `WITHINGS_REDIRECT_URI` -> `withings_redirect_uri`
 
 If you already have a token file, copy these from
-`~/.config/pete_eebot/.withings_tokens.json`:
+`/opt/myapp/shared/runtime/withings/.withings_tokens.json` when `WITHINGS_TOKEN_FILE` is configured:
 
 - `access_token` -> `withings_access_token`
 - `refresh_token` -> `withings_refresh_token`
@@ -55,7 +55,7 @@ look in the browser address bar for `?code=...` and copy just that value.
 Withings rotates refresh tokens. If you send `OAuth / 3. Refresh Access Token`,
 copy the new `withings_refresh_token` back to either:
 
-- `~/.config/pete_eebot/.withings_tokens.json`
+- `/opt/myapp/shared/runtime/withings/.withings_tokens.json`
 - `.env` as `WITHINGS_REFRESH_TOKEN`
 
 Otherwise the app may keep using an old refresh token.

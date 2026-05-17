@@ -9,7 +9,7 @@ Pete-Eebot already has strong fundamentals for incremental evolution into a remo
 - clean-ish layered architecture (`domain` / `application` / `infrastructure` / API routes)
 - production-oriented CLI workflows and operational scripts
 - Postgres as stable source of truth
-- explicit deployment/ops conventions for Raspberry Pi and cron/systemd
+- explicit deployment/ops conventions for Ubuntu and cron/systemd
 - practical security controls (API key gate, webhook signature validation, encrypted cloud backups)
 
 The best path is **evolution, not rewrite**:
@@ -43,7 +43,7 @@ This is a solid basis for extension.
 ### 2) Runtime + deployment model inferred from code/docs
 
 - Primary operating model is CLI + cron/systemd-driven automation.
-- Production reference deployment is Raspberry Pi with mutable runtime assets outside git checkout (`.env`, venv, backups).
+- Production reference deployment is Ubuntu under `/opt/myapp`, with mutable runtime assets outside the git checkout (`.env`, venv, tokens, backups).
 - Deploy webhook model exists; webhook triggers shell deploy script that updates git checkout, reinstalls app, refreshes cron, restarts service.
 - Docker Compose is mainly DB-focused and appears secondary to Pi native deployment.
 
@@ -60,7 +60,7 @@ Auth/security today for API:
 ### 4) Data and state model
 
 - Postgres is central source of truth for training plans, metrics, nutrition logs, export history.
-- Withings OAuth tokens are persisted locally (`~/.config/pete_eebot/.withings_tokens.json`) with permission hardening flows.
+- Withings OAuth tokens are persisted to `WITHINGS_TOKEN_FILE`, for production `/opt/myapp/shared/runtime/withings/.withings_tokens.json`, with permission hardening flows.
 - Backups include DB dumps and secret snapshots; optional encrypted Dropbox upload.
 
 ### 5) Design philosophy inferred

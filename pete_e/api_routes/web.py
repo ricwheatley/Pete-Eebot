@@ -1231,7 +1231,7 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
         dependencies.get_job_service().enqueue_subprocess(
             job_id=job_id,
             operation=command,
-            command=["pete", "plan", "--weeks", str(weeks), "--start-date", start_date],
+            command=dependencies.pete_cli_command("plan", "--weeks", str(weeks), "--start-date", start_date),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,
@@ -1324,7 +1324,7 @@ def console_lets_begin(request: Request, payload: dict[str, Any] | None = None):
         dependencies.get_job_service().enqueue_subprocess(
             job_id=job_id,
             operation=command,
-            command=["pete", "lets-begin", "--start-date", start_date_text],
+            command=dependencies.pete_cli_command("lets-begin", "--start-date", start_date_text),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,
@@ -1459,7 +1459,7 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
         dependencies.get_job_service().enqueue_subprocess(
             job_id=job_id,
             operation=command,
-            command=["pete", "message", f"--{message_type}", "--send"],
+            command=dependencies.pete_cli_command("message", f"--{message_type}", "--send"),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,

@@ -1,14 +1,14 @@
 # Pete Eebot Virtual Environment Deployment
 
-These steps provision a lightweight Python virtual environment that runs Pete Eebot natively on a Raspberry Pi (or any Linux host). The pinned dependencies live in `requirements.txt`, so recreating the same environment later is reproducible.
+These steps provision the native Python virtual environment used by the Ubuntu production layout. The pinned dependencies live in `requirements.txt`, so recreating the same environment later is reproducible.
 
-> **Recommended path:** The virtual environment install keeps the idle footprint below 100 MB on a Raspberry Pi 4 and is the supported application runtime profile. Docker Compose is only used as an optional local Postgres helper.
+> **Production path:** keep the virtual environment outside the Git checkout at `/opt/myapp/shared/venv`. Docker is used for PostgreSQL only.
 
 ---
 
 ## 1. Prerequisites
 
-* **Python 3.11.** Raspberry Pi OS (Bookworm, 64-bit) ships 3.11 by default. If you are on Bullseye, install `python3.11` from `pipx` or the `deadsnakes` PPA first.
+* **Python 3.11.** Install the Ubuntu package or your standard server Python build.
 * **python3-venv.** Ensure the venv module is available:
   ```bash
   sudo apt update
@@ -18,28 +18,25 @@ These steps provision a lightweight Python virtual environment that runs Pete Ee
 
 ---
 
-## 2. Clone the repository
+## 2. Prepare the production directories
 
 ```bash
-cd /home/pi
-git clone https://github.com/your-org/Pete-Eebot.git
-cd Pete-Eebot
+sudo mkdir -p /opt/myapp/releases /opt/myapp/shared /opt/myapp/scripts /opt/myapp/backups/{postgres,secrets,cloud-staging}
+sudo chown -R deploy:deploy /opt/myapp
 ```
 
-Replace `/home/pi` with the directory you want to deploy into. All subsequent commands assume the repository root.
+Deploy the repository into `/opt/myapp/releases/<release-id>` and point `/opt/myapp/current` at the active release.
 
 ---
 
 ## 3. Create and activate the virtual environment
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv /opt/myapp/shared/venv
+source /opt/myapp/shared/venv/bin/activate
 ```
 
-The prompt should now show `(.venv)` as a prefix. To exit later, run `deactivate`.
-
-If you prefer a system-wide location (for example, `/opt/pete-eebot`), adjust the path in the `python3 -m venv` command.
+The prompt should now show the active environment. To exit later, run `deactivate`.
 
 ---
 
@@ -73,11 +70,11 @@ The `--no-deps` flag keeps the previously pinned versions intact. Use `pip insta
 Copy the sample environment file and fill in your integration secrets:
 
 ```bash
-cp .env.sample .env
-nano .env  # or use your editor of choice
+cp /opt/myapp/current/.env.sample /opt/myapp/shared/.env
+nano /opt/myapp/shared/.env  # or use your editor of choice
 ```
 
-At a minimum provide Dropbox, Withings, Telegram, and Postgres credentials. The Typer commands automatically load the `.env` file when it resides in the project root.
+At a minimum provide Dropbox, Withings, Telegram, and Postgres credentials. Set `PETEEEBOT_ENV_FILE=/opt/myapp/shared/.env`, `PETEEEBOT_CLI_BIN=/opt/myapp/shared/venv/bin/pete`, and `WITHINGS_TOKEN_FILE=/opt/myapp/shared/runtime/withings/.withings_tokens.json`.
 
 ---
 
@@ -95,7 +92,7 @@ You should see a summary reporting on Postgres, Dropbox, Withings, Telegram, and
 
 ## 8. Common operational commands
 
-After activation (`source .venv/bin/activate`):
+After activation (`source /opt/myapp/shared/venv/bin/activate`):
 
 ```bash
 # Run the daily ingest plus summary
@@ -110,13 +107,13 @@ pete plan --weeks 4
 
 Add the commands to cron as documented in the main README once you are satisfied with the manual runs.
 
-On the Pi, install the scheduler from the repository manifest rather than editing the crontab manually:
+Install the scheduler from the repository manifest rather than editing the crontab manually:
 
 ```bash
-./scripts/install_cron_examples.sh --activate --summary
+/opt/myapp/current/scripts/install_cron_examples.sh --activate --summary
 ```
 
-Use `./scripts/install_cron_examples.sh --print` first if you want to inspect the generated crontab before it is applied.
+Use `/opt/myapp/current/scripts/install_cron_examples.sh --print` first if you want to inspect the generated crontab before it is applied.
 
 ---
 
@@ -125,7 +122,7 @@ Use `./scripts/install_cron_examples.sh --print` first if you want to inspect th
 When new versions of Pete Eebot ship, pull the latest commits and reinstall the editable package. If the dependencies change, update `requirements.txt` (or download the latest copy) and reinstall:
 
 ```bash
-git pull
+cd /opt/myapp/current
 python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
 ```
@@ -136,7 +133,7 @@ python -m pip install --no-deps -e .
 
 ```bash
 deactivate  # leave the virtual environment session
-rm -rf .venv  # delete the environment entirely
+rm -rf /opt/myapp/shared/venv  # delete the environment entirely
 ```
 
-This approach leaves your system Python untouched and keeps the deployment footprint minimal, ideal for memory-constrained devices such as the Raspberry Pi.
+This approach leaves your system Python untouched and keeps the deployment footprint isolated from the release checkout.

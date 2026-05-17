@@ -16,7 +16,7 @@ Pete Eebot is a Python application with Postgres as its source of truth. The pra
 - the Telegram listener
 - the optional FastAPI service
 
-Supported deployment profile today: run the application natively from a Python virtual environment on Linux/Raspberry Pi, with Postgres available as a service. Docker Compose is supported only as a local Postgres helper; there is no supported Pete-Eebot application container image.
+Supported deployment profile today: run the application natively from `/opt/myapp/shared/venv` on Ubuntu, with Postgres reachable from the host. Docker Compose is supported only for Postgres; there is no supported Pete-Eebot application container image.
 
 ## 1. Mental Model
 
@@ -81,11 +81,11 @@ python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
 ```
 
-Linux / Raspberry Pi:
+Ubuntu production:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv /opt/myapp/shared/venv
+source /opt/myapp/shared/venv/bin/activate
 python -m pip install -r requirements.txt
 python -m pip install --no-deps -e .
 ```
@@ -315,11 +315,11 @@ pete metrics 2026-03-24 2026-03-31
 A practical cron layout is:
 
 ```cron
-5 7 * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete sync --days 1 --retries 3 >> logs/cron.log 2>&1
-10 7 * * * cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete morning-report --send >> logs/cron.log 2>&1
-25 16 * * 0  cd /home/pi/Pete-Eebot && python3 -m scripts.run_sunday_review >> logs/cron.log 2>&1
-30 20 * * 0  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete message --plan --send >> logs/cron.log 2>&1
-* * * * *  cd /home/pi/Pete-Eebot && /home/pi/.local/bin/pete telegram --listen-once --limit 5 --timeout 25 >> logs/cron.log 2>&1
+5 7 * * *  cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete sync --days 1 --retries 3 >> /var/log/pete_eebot/pete_history.log 2>&1
+10 7 * * * cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete morning-report --send >> /var/log/pete_eebot/pete_history.log 2>&1
+25 16 * * 0  cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/python3 -m scripts.run_sunday_review >> /var/log/pete_eebot/pete_history.log 2>&1
+30 20 * * 0  cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete message --plan --send >> /var/log/pete_eebot/pete_history.log 2>&1
+* * * * *  cd /opt/myapp/current && set -a && . /opt/myapp/shared/.env && set +a && /opt/myapp/shared/venv/bin/pete telegram --listen-once --limit 5 --timeout 25 >> /var/log/pete_eebot/pete_history.log 2>&1
 ```
 
 ## 5. How the Plan Generator Works

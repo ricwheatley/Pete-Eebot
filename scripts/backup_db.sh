@@ -8,14 +8,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="${APP_ROOT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
-    if [[ "$(basename "${APP_ROOT}")" == "app" ]]; then
+    if [[ "$(basename "${APP_ROOT}")" == "app" || "$(basename "${APP_ROOT}")" == "current" ]]; then
         PROJECT_ROOT="$(cd "${APP_ROOT}/.." && pwd)"
     else
         PROJECT_ROOT="${APP_ROOT}"
     fi
 fi
 
-ENV_FILE="${ENV_FILE:-${PROJECT_ROOT}/.env}"
+if [[ -z "${ENV_FILE:-}" ]]; then
+    if [[ -f "${PROJECT_ROOT}/shared/.env" ]]; then
+        ENV_FILE="${PROJECT_ROOT}/shared/.env"
+    else
+        ENV_FILE="${PROJECT_ROOT}/.env"
+    fi
+fi
 
 if [[ ! -f "${ENV_FILE}" ]]; then
     printf 'ERROR: Environment file not found at %s.\n' "${ENV_FILE}" >&2
@@ -35,6 +41,7 @@ ENV_OVERRIDE_NAMES=(
     LOG_FILE
     RETENTION_WEEKS
     TOKENS_FILE
+    WITHINGS_TOKEN_FILE
     BACKUP_CLOUD_UPLOAD
     DROPBOX_BACKUP_DIR
     DROPBOX_BACKUP_TIMEOUT
@@ -58,7 +65,13 @@ for name in "${!ENV_OVERRIDES[@]}"; do
     export "${name}"
 done
 
-VENV_ROOT="${VENV_ROOT:-${PROJECT_ROOT}/venv}"
+if [[ -z "${VENV_ROOT:-}" ]]; then
+    if [[ -d "${PROJECT_ROOT}/shared/venv" ]]; then
+        VENV_ROOT="${PROJECT_ROOT}/shared/venv"
+    else
+        VENV_ROOT="${PROJECT_ROOT}/venv"
+    fi
+fi
 PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
 
 BACKUP_ROOT="${BACKUP_ROOT:-${PROJECT_ROOT}/backups}"
@@ -69,7 +82,7 @@ LOG_DIR="${LOG_DIR:-${PROJECT_ROOT}/logs}"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/backup_db.log}"
 RETENTION_WEEKS="${RETENTION_WEEKS:-8}"
 
-TOKENS_FILE="${TOKENS_FILE:-${HOME}/.config/pete_eebot/.withings_tokens.json}"
+TOKENS_FILE="${TOKENS_FILE:-${WITHINGS_TOKEN_FILE:-${HOME}/.config/pete_eebot/.withings_tokens.json}}"
 
 BACKUP_CLOUD_UPLOAD="${BACKUP_CLOUD_UPLOAD:-0}"
 DROPBOX_BACKUP_DIR="${DROPBOX_BACKUP_DIR:-/Pete-Eebot Backups}"

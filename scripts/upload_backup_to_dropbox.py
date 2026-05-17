@@ -19,12 +19,25 @@ SMALL_UPLOAD_LIMIT = 150 * 1024 * 1024
 
 
 def find_env_path() -> Path:
+    explicit_path = os.environ.get("ENV_FILE") or os.environ.get("PETEEEBOT_ENV_FILE")
+    if explicit_path:
+        return Path(explicit_path).expanduser()
+
     script_path = Path(__file__).resolve()
     for directory in (script_path.parent, *script_path.parents):
         env_path = directory / ".env"
         if env_path.exists():
             return env_path
     raise FileNotFoundError("No .env file found beside the script or its parent directories.")
+
+
+def load_env_if_available() -> None:
+    try:
+        env_path = find_env_path()
+    except FileNotFoundError:
+        return
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
 
 
 def dropbox_join(base_dir: str, filename: str) -> str:
@@ -86,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("files", nargs="+", type=Path, help="Local encrypted files to upload.")
     args = parser.parse_args(argv)
 
-    load_dotenv(dotenv_path=find_env_path())
+    load_env_if_available()
 
     required = ["DROPBOX_APP_KEY", "DROPBOX_APP_SECRET", "DROPBOX_REFRESH_TOKEN"]
     missing = [name for name in required if not os.environ.get(name)]

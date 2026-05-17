@@ -2,13 +2,16 @@
 set -Eeuo pipefail
 
 # Stable webhook entrypoint kept outside the Git checkout.
-# Copy this file to /home/ricwheatley/pete-eebot/deploy.sh.
+# Copy this file to /opt/myapp/scripts/deploy.sh.
 
-PROJECT_ROOT="${PROJECT_ROOT:-/home/ricwheatley/pete-eebot}"
-APP_ROOT="${APP_ROOT:-${PROJECT_ROOT}/app}"
-VENV_ROOT="${VENV_ROOT:-${PROJECT_ROOT}/venv}"
-LOGFILE="${LOGFILE:-${PROJECT_ROOT}/deploy.log}"
+PROJECT_ROOT="${PROJECT_ROOT:-/opt/myapp}"
+APP_ROOT="${APP_ROOT:-${PROJECT_ROOT}/current}"
+SHARED_ROOT="${SHARED_ROOT:-${PROJECT_ROOT}/shared}"
+VENV_ROOT="${VENV_ROOT:-${SHARED_ROOT}/venv}"
+ENV_FILE="${ENV_FILE:-${SHARED_ROOT}/.env}"
+LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
 TRACKED_DEPLOY="${TRACKED_DEPLOY:-${APP_ROOT}/pete_e/resources/deploy.sh}"
+export ENV_FILE PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE}}"
 
 mkdir -p "$(dirname "${LOGFILE}")"
 exec > >(tee -a "${LOGFILE}") 2>&1
@@ -34,7 +37,10 @@ fi
 exec env \
     PROJECT_ROOT="${PROJECT_ROOT}" \
     APP_ROOT="${APP_ROOT}" \
+    SHARED_ROOT="${SHARED_ROOT}" \
     VENV_ROOT="${VENV_ROOT}" \
+    ENV_FILE="${ENV_FILE}" \
+    PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE}" \
     LOGFILE="${LOGFILE}" \
     DEPLOY_LOG_ATTACHED=1 \
     SKIP_GIT_UPDATE=1 \

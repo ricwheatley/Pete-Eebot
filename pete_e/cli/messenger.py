@@ -97,7 +97,7 @@ from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e.infrastructure import withings_oauth_helper
 from pete_e.infrastructure.apple_health_ingestor import AppleIngestError
-from pete_e.infrastructure.withings_client import WithingsClient
+from pete_e.infrastructure.withings_client import WithingsClient, configured_withings_token_file
 from pete_e.cli.telegram import telegram as telegram_command
 from pete_e.config import settings
 
@@ -1061,7 +1061,7 @@ def withings_auth_url() -> None:
 def withings_exchange_code(code: str) -> None:
     """
     Exchange an authorization code (from Withings redirect) for tokens.
-    Saves tokens to ~/.config/pete_eebot/.withings_tokens.json for future use.
+    Saves tokens to the configured Withings token file for future use.
     """
     try:
         tokens = withings_oauth_helper.exchange_code_for_tokens(code)
@@ -1071,7 +1071,7 @@ def withings_exchange_code(code: str) -> None:
         typer.echo("[OK] Successfully exchanged code for tokens.")
         typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
         typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
-        typer.echo("\nTokens have been saved to ~/.config/pete_eebot/.withings_tokens.json")
+        typer.echo(f"\nTokens have been saved to {configured_withings_token_file()}")
     except Exception as e:
         log_utils.log_message(f"Failed to exchange code: {e}", "ERROR")
         raise typer.Exit(code=1)

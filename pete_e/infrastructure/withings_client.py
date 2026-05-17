@@ -1,4 +1,4 @@
-﻿# (Functional) Withings API client â€“ interacts with Withings REST API for weight/bodyfat data. Manages OAuth tokens (refreshes and saves to `~/.config/pete_eebot/.withings_tokens.json`)
+# Withings API client. Runtime OAuth tokens use WITHINGS_TOKEN_FILE when configured.
 
 """Withings API client for Pete-E."""
 
@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import SecretStr
 
-from pete_e.config import settings
+from pete_e.config import get_env, settings
 from pete_e.infrastructure.log_utils import log_message
 from pete_e.domain.token_storage import TokenStorage
 from pete_e.infrastructure.token_storage import JsonFileTokenStorage
@@ -46,11 +46,21 @@ class WithingsReauthRequired(RuntimeError):
         self.http_status = http_status
 
 
+def configured_withings_token_file() -> Path:
+    """Return the runtime Withings token path, preferring explicit configuration."""
+
+    raw_path = get_env("WITHINGS_TOKEN_FILE", None)
+    if raw_path:
+        return Path(str(raw_path)).expanduser()
+    return WithingsClient.DEFAULT_TOKEN_FILE
+
+
 class WithingsClient:
     """A client to interact with the Withings API."""
 
     CONFIG_DIR = Path.home() / ".config" / "pete_eebot"
-    TOKEN_FILE = CONFIG_DIR / ".withings_tokens.json"
+    DEFAULT_TOKEN_FILE = CONFIG_DIR / ".withings_tokens.json"
+    TOKEN_FILE = DEFAULT_TOKEN_FILE
 
     def __init__(self, request_timeout: float = 30.0, *, token_storage: Optional[TokenStorage] = None):
         """Initializes the client with credentials from settings or token file."""
@@ -59,7 +69,7 @@ class WithingsClient:
         self.redirect_uri = settings.WITHINGS_REDIRECT_URI
         self._request_timeout = request_timeout
 
-        self._token_storage: TokenStorage = token_storage or JsonFileTokenStorage(self.TOKEN_FILE)
+        self._token_storage: TokenStorage = token_storage or JsonFileTokenStorage(configured_withings_token_file())
         self._cached_tokens: Dict[str, Any] = {}
 
         # Try to load existing tokens from configured storage
@@ -346,7 +356,6 @@ class WithingsClient:
         if "refresh token" in reason_lower and ("expired" in reason_lower or "revoked" in reason_lower):
             return True
         return False
-
 
     def _fetch_measures(self, start: datetime, end: datetime) -> dict:
         """Fetches Withings measures for a given time window."""
