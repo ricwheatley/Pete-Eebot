@@ -58,6 +58,30 @@ def _metric_value(payload: dict[str, Any], key: str) -> Any:
     return entry.get("value")
 
 
+def _coerce_iso_date(value: Any) -> date | None:
+    if hasattr(value, "isoformat") and isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        try:
+            return date.fromisoformat(candidate)
+        except ValueError:
+            return None
+    return None
+
+
+def _format_date_ddmmyyyy(value: Any) -> str:
+    parsed = _coerce_iso_date(value)
+    return parsed.strftime("%d/%m/%Y") if parsed else str(value or "-")
+
+
+def _format_day_name(value: Any) -> str:
+    parsed = _coerce_iso_date(value)
+    return parsed.strftime("%A") if parsed else str(value or "-")
+
+
 _TEXT_LOG_RE = re.compile(r"^\[(?P<timestamp>[^\]]+)\]\s+\[(?P<level>[^\]]+)\]\s+\[(?P<tag>[^\]]+)\]\s+(?P<message>.*)$")
 
 
@@ -257,11 +281,22 @@ class WebConsoleReadModel:
 
         return {
             "date": target_date.isoformat(),
-            "week_start": week_start.isoformat(),
+            "week_start": _format_date_ddmmyyyy(week_start),
             "week_view": selected_view,
             "is_next_week_available": bool(active_plan_start and week_start < active_plan_start),
             "context": context,
-            "week_plan": week_plan,
+            "week_plan": {
+                **week_plan,
+                "rows": [
+                    {
+                        **row,
+                        "workout_date": _format_day_name(row.get("workout_date") or row.get("date")),
+                    }
+                    if isinstance(row, dict)
+                    else row
+                    for row in (week_plan.get("rows") or [])
+                ],
+            },
             "decision_trace": trace,
         }
 
