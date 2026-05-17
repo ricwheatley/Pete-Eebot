@@ -25,7 +25,7 @@
         <tr>
           <td>{{ alert.severity }}</td>
           <td>{{ alert.type }}</td>
-          <td class="nowrap">{{ alert.timestamp or "Unknown" }}</td>
+          <td class="nowrap">{{ alert.timestamp | display_datetime("Unknown") }}</td>
           <td>{{ alert.summary }}</td>
         </tr>
       {% endfor %}
@@ -46,7 +46,7 @@
         <tr>
           <td>{{ alert.severity }}</td>
           <td>{{ alert.type }}</td>
-          <td class="nowrap">{{ alert.timestamp or "Unknown" }}</td>
+          <td class="nowrap">{{ alert.timestamp | display_datetime("Unknown") }}</td>
           <td>{{ alert.summary }}</td>
           <td class="mono-cell">{{ alert.job_id or alert.request_id or alert.dedupe_key or "-" }}</td>
         </tr>

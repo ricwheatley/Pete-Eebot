@@ -49,7 +49,7 @@
         <tbody>
           {% for row in logs_view.rows %}
           <tr>
-            <td class="nowrap">{{ row.timestamp or "-" }}</td>
+            <td class="nowrap">{{ row.timestamp | display_datetime("-") }}</td>
             <td class="mono-cell">{{ row.request_id or "-" }}</td>
             <td class="mono-cell">{{ row.job_id or "-" }}</td>
             <td>{{ row.level }}</td>

@@ -19,12 +19,12 @@
     <div><dt>Auth</dt><dd>{{ selected_job.auth_scheme or "-" }}</dd></div>
     <div><dt>Request ID</dt><dd>{{ selected_job.request_id }}</dd></div>
     <div><dt>Correlation ID</dt><dd>{{ selected_job.correlation_id }}</dd></div>
-    <div><dt>Created</dt><dd>{{ selected_job.created_at or "pending" }}</dd></div>
-    <div><dt>Started</dt><dd>{{ selected_job.started_at or "pending" }}</dd></div>
-    <div><dt>Completed</dt><dd>{{ selected_job.completed_at or "pending" }}</dd></div>
+    <div><dt>Created</dt><dd>{{ selected_job.created_at | display_datetime("pending") }}</dd></div>
+    <div><dt>Started</dt><dd>{{ selected_job.started_at | display_datetime("pending") }}</dd></div>
+    <div><dt>Completed</dt><dd>{{ selected_job.completed_at | display_datetime("pending") }}</dd></div>
     <div><dt>Worker</dt><dd>{{ selected_job.worker_id or "-" }}</dd></div>
-    <div><dt>Lease expires</dt><dd>{{ selected_job.lease_expires_at or "-" }}</dd></div>
-    <div><dt>Last heartbeat</dt><dd>{{ selected_job.last_heartbeat_at or "-" }}</dd></div>
+    <div><dt>Lease expires</dt><dd>{{ selected_job.lease_expires_at | display_datetime("-") }}</dd></div>
+    <div><dt>Last heartbeat</dt><dd>{{ selected_job.last_heartbeat_at | display_datetime("-") }}</dd></div>
     <div><dt>Attempt</dt><dd>{{ selected_job.attempt_number or 1 }}</dd></div>
     <div><dt>Exit code</dt><dd>{{ selected_job.exit_code if selected_job.exit_code is not none else "pending" }}</dd></div>
     <div><dt>Summary</dt><dd>{{ selected_job.result_summary or "No result yet." }}</dd></div>
@@ -68,7 +68,7 @@
           <td>{{ job.status }}</td>
           <td>{{ job.requester_username or "system" }}</td>
           <td>{{ job.auth_scheme or "-" }}</td>
-          <td>{{ job.started_at or job.created_at or "pending" }}</td>
+          <td>{{ (job.started_at or job.created_at) | display_datetime("pending") }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -105,7 +105,7 @@
           <td>{{ job.status }}</td>
           <td>{{ job.requester_username or "system" }}</td>
           <td>{{ job.auth_scheme or "-" }}</td>
-          <td>{{ job.created_at or "pending" }}</td>
+          <td>{{ job.created_at | display_datetime("pending") }}</td>
           <td>{{ job.exit_code if job.exit_code is not none else "" }}</td>
         </tr>
         {% endfor %}

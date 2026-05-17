@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+import re
 import sys
 from typing import Any, Callable
 from urllib.parse import quote
@@ -66,11 +67,38 @@ MESSAGE_TYPE_LABELS = {
     "trainer": "Trainer check-in",
     "plan": "Weekly plan",
 }
+_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _display_datetime(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    if isinstance(value, datetime):
+        return value.strftime("%d/%m/%Y %H:%M:%S")
+    if isinstance(value, date):
+        return value.strftime("%d/%m/%Y")
+
+    text = str(value).strip()
+    if not text:
+        return default
+    if _DATE_ONLY_RE.fullmatch(text):
+        try:
+            return date.fromisoformat(text).strftime("%d/%m/%Y")
+        except ValueError:
+            return text
+
+    candidate = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return text
+    return parsed.strftime("%d/%m/%Y %H:%M:%S")
 
 _templates = Environment(
     loader=FileSystemLoader(str(TEMPLATE_DIR)),
     autoescape=select_autoescape(("html", "xml")),
 )
+_templates.filters["display_datetime"] = _display_datetime
 
 
 @dataclass(frozen=True)

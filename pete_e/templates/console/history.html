@@ -52,7 +52,7 @@
       <tbody>
         {% for entry in history_entries %}
         <tr>
-          <td class="nowrap">{{ entry.created_at or "-" }}</td>
+          <td class="nowrap">{{ entry.created_at | display_datetime("-") }}</td>
           <td>{{ entry.command }}</td>
           <td>{{ entry.outcome }}</td>
           <td>{{ entry.requester_username or "system" }}</td>
