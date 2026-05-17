@@ -290,7 +290,7 @@ class WebConsoleReadModel:
                 "rows": [
                     {
                         **row,
-                        "workout_date": _format_day_name(row.get("workout_date") or row.get("date")),
+                        "workout_date": _format_date_ddmmyyyy(row.get("workout_date") or row.get("date")),
                     }
                     if isinstance(row, dict)
                     else row
