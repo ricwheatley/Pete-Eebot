@@ -6,6 +6,11 @@
   <p class="eyebrow">{{ page.eyebrow }}</p>
   <h1 id="page-title">{{ page.title }}</h1>
   <p class="page-summary">{{ page.summary }}</p>
+  <p>
+    <a href="/console/plan?week=current" {% if plan_view.week_view != "next" %}aria-current="page"{% endif %}>This week</a>
+    ·
+    <a href="/console/plan?week=next" {% if plan_view.week_view == "next" %}aria-current="page"{% endif %}>Next week</a>
+  </p>
 </section>
 
 <section class="panel-grid" aria-label="Current plan sections">
@@ -38,7 +43,7 @@
   </article>
 
   <article class="panel panel-wide">
-    <h2>Current Week Plan</h2>
+    <h2>{% if plan_view.week_view == "next" %}Next Week Plan{% else %}Current Week Plan{% endif %}</h2>
     {% if plan_view.week_plan.error %}
       {{ ui.empty_state(plan_view.week_plan.error) }}
     {% elif plan_view.week_plan.rows %}
