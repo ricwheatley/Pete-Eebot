@@ -147,4 +147,16 @@ config_submodule = types.ModuleType("pete_e.config.config")
 config_submodule.Settings = Settings
 config_submodule.settings = config_module.settings
 config_submodule.get_env = get_env
+
+
+# Keep compatibility with tests that import concrete config symbols.
+config_submodule.CONFIG_FILE = Path(__file__).resolve()
+
+def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
+    project_root = Path(__file__).resolve().parents[1]
+    explicit_env = os.getenv("PETEEEBOT_ENV_FILE")
+    env_file = Path(explicit_env).expanduser().resolve() if explicit_env else project_root / ".env"
+    return project_root, env_file
+
+config_submodule._discover_project_root = _discover_project_root
 sys.modules["pete_e.config.config"] = config_submodule
