@@ -482,6 +482,9 @@ def test_plan_page_renders_current_week_plan_and_decision_trace(monkeypatch: pyt
     assert response.status_code == 200
     assert "Current Week Plan" in html
     assert "Bench Press" in html
+    assert "12/05/2026" in html
+    assert "Monday" in html
+    assert "2026-05-12" not in html
     assert "constraint_heavy_strength_run_quality" in html
 
 
