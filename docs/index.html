@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Withings OAuth Callback</title>
+</head>
+<body>
+  <h1>Withings OAuth Complete</h1>
+
+  <p>Copy the <code>code</code> parameter from the URL and paste it into the terminal.</p>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+
+    if (code) {
+      document.body.innerHTML += `
+        <pre style="word-break: break-all; font-size: 18px;">
+${code}
+        </pre>
+      `;
+    } else {
+      document.body.innerHTML += "<p>No OAuth code found.</p>";
+    }
+  </script>
+</body>
+</html>
