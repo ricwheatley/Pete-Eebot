@@ -133,6 +133,7 @@ class _StatusService:
     def last_sync_outcome(self):
         return {
             "status": "observed",
+            "ran_at": "2026-05-15T08:00:00.000Z",
             "label": "daily",
             "days": 1,
             "attempts": 2,
@@ -463,6 +464,8 @@ def test_status_page_renders_health_checks_and_source_level_sync_failures(
     assert "Health Checks" in html
     assert "token expired" in html
     assert "Last Sync Outcome" in html
+    assert "Attempted" in html
+    assert "2026-05-15T08:00:00.000Z" in html
     assert "AppleDropbox" in html
     assert "Withings" in html
     assert "failed" in html
@@ -767,6 +770,38 @@ def test_status_service_reads_latest_sync_outcome_from_log(tmp_path, monkeypatch
     assert payload["success"] is False
     assert payload["failed_sources"] == ["Withings"]
     assert payload["source_statuses"]["AppleDropbox"] == "ok"
+
+
+def test_status_service_parses_json_sync_summary_without_json_tail(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "pete_history.log"
+    log_path.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-05-15T08:00:00.000Z",
+                "level": "ERROR",
+                "tag": "SYNC",
+                "message": (
+                    "Sync summary: run=daily | days=7 | attempts=3 | result=failed | "
+                    "Apple Health=failed, Database=failed, Withings=ok\n"
+                    "Withings data unavailable across last 7 days"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("pete_e.application.api_services.settings", SimpleNamespace(log_path=log_path))
+
+    payload = StatusService(dal=None).last_sync_outcome()
+
+    assert payload["ran_at"] == "2026-05-15T08:00:00.000Z"
+    assert payload["source_statuses"] == {
+        "Apple Health": "failed",
+        "Database": "failed",
+        "Withings": "ok",
+    }
 
 
 def test_operator_nav_shows_operator_page_but_hides_owner_admin(monkeypatch: pytest.MonkeyPatch) -> None:

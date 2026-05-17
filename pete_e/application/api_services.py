@@ -632,7 +632,12 @@ _LOG_TIMESTAMP_RE = re.compile(r"^\[(?P<timestamp>[^\]]+)\]")
 
 
 def _parse_sync_summary_line(line: str) -> Dict[str, Any] | None:
-    match = _SYNC_SUMMARY_RE.search(line)
+    summary_text, timestamp = _sync_summary_text_and_timestamp(line)
+    if not summary_text:
+        return None
+
+    summary_line = summary_text.splitlines()[0]
+    match = _SYNC_SUMMARY_RE.search(summary_line)
     if not match:
         return None
 
@@ -642,18 +647,9 @@ def _parse_sync_summary_line(line: str) -> Dict[str, Any] | None:
         for token in sources_fragment.split(","):
             source, separator, status = token.strip().partition("=")
             if separator and source:
-                source_statuses[source] = status.strip()
+                source_statuses[source.strip()] = _clean_sync_source_status(status)
 
     result = match.group("result").strip().lower()
-    timestamp_match = _LOG_TIMESTAMP_RE.search(line)
-    timestamp = timestamp_match.group("timestamp") if timestamp_match else None
-    if timestamp is None:
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            payload = {}
-        if isinstance(payload, dict):
-            timestamp = payload.get("timestamp")
     failed_sources = sorted(
         source for source, status in source_statuses.items() if str(status).lower() == "failed"
     )
@@ -667,5 +663,30 @@ def _parse_sync_summary_line(line: str) -> Dict[str, Any] | None:
         "result": result,
         "source_statuses": source_statuses,
         "failed_sources": failed_sources,
-        "summary": line.strip(),
+        "summary": summary_text.strip(),
     }
+
+
+def _sync_summary_text_and_timestamp(line: str) -> tuple[str | None, str | None]:
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        message = payload.get("message")
+        if message is None:
+            return None, str(payload.get("timestamp") or "") or None
+        return str(message), str(payload.get("timestamp") or "") or None
+
+    timestamp_match = _LOG_TIMESTAMP_RE.search(line)
+    timestamp = timestamp_match.group("timestamp") if timestamp_match else None
+    return line, timestamp
+
+
+def _clean_sync_source_status(status: str) -> str:
+    text = str(status or "unknown").strip()
+    text = text.splitlines()[0].strip()
+    text = text.replace("\\n", "\n").splitlines()[0].strip()
+    text = text.rstrip('"} ]')
+    return text or "unknown"
