@@ -375,6 +375,7 @@ class PostgresApplicationJobRepository:
         expires_at = now + timedelta(seconds=max(60.0, float(lease_seconds)))
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
+                self._prune_orphaned_high_risk_lock(cur)
                 cur.execute(
                     """
                     DELETE FROM application_operation_locks
@@ -401,6 +402,22 @@ class PostgresApplicationJobRepository:
                 row = cur.fetchone()
         return self._lock_from_row(row) if row else None
 
+    @staticmethod
+    def _prune_orphaned_high_risk_lock(cur) -> None:
+        cur.execute(
+            """
+            DELETE FROM application_operation_locks l
+            WHERE l.lock_name = 'high_risk_operation'
+              AND l.job_id IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM application_jobs j
+                  WHERE j.id = l.job_id
+                    AND j.status NOT IN ('queued', 'running')
+              )
+            """
+        )
+
     def release_high_risk_operation_lock(self, *, job_id: str) -> None:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
@@ -416,6 +433,7 @@ class PostgresApplicationJobRepository:
     def get_active_high_risk_operation_lock(self) -> ApplicationOperationLock | None:
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
+                self._prune_orphaned_high_risk_lock(cur)
                 cur.execute(
                     """
                     SELECT *
