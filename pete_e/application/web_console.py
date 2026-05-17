@@ -35,7 +35,7 @@ def _safe_load(loader: Callable[[], dict[str, Any]], fallback: dict[str, Any]) -
 def _source_rows(source_statuses: dict[str, Any] | None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for name, raw_status in sorted((source_statuses or {}).items()):
-        status = str(raw_status or "unknown")
+        status = _display_sync_source_status(raw_status)
         rows.append(
             {
                 "name": str(name),
@@ -44,6 +44,13 @@ def _source_rows(source_statuses: dict[str, Any] | None) -> list[dict[str, Any]]
             }
         )
     return rows
+
+
+def _display_sync_source_status(raw_status: Any) -> str:
+    status = str(raw_status or "unknown").strip()
+    status = status.replace("\\n", "\n").splitlines()[0].strip()
+    status = status.rstrip('"} ]')
+    return status or "unknown"
 
 
 def _metric_value(payload: dict[str, Any], key: str) -> Any:

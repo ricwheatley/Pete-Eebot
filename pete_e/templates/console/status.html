@@ -76,6 +76,10 @@
     {% else %}
       <dl class="stat-list">
         <div>
+          <dt>Attempted</dt>
+          <dd>{{ status_view.last_sync.ran_at or "Unknown" }}</dd>
+        </div>
+        <div>
           <dt>Run</dt>
           <dd>{{ status_view.last_sync.label or "Unknown" }}</dd>
         </div>
