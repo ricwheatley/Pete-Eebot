@@ -895,11 +895,14 @@ def console_status(request: Request):
 
 @router.get("/console/plan")
 def console_plan(request: Request):
+    week_view = _query_value(request, "week", "current").strip().lower()
+    if week_view not in {"current", "next"}:
+        week_view = "current"
     return _render_console(
         request,
         "plan",
         template_name="console/plan.html",
-        context_loader=lambda: {"plan_view": _console_read_model().plan(target_date=_operator_today())},
+        context_loader=lambda: {"plan_view": _console_read_model().plan(target_date=_operator_today(), week_view=week_view)},
     )
 
 

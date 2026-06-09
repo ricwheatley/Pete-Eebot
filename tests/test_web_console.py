@@ -482,6 +482,8 @@ def test_plan_page_renders_current_week_plan_and_decision_trace(monkeypatch: pyt
     assert response.status_code == 200
     assert "Current Week Plan" in html
     assert "Bench Press" in html
+    assert "Monday" in html
+    assert "2026-05-12" not in html
     assert "constraint_heavy_strength_run_quality" in html
 
 
@@ -813,6 +815,32 @@ def test_status_service_parses_json_sync_summary_without_json_tail(
         "Database": "failed",
         "Withings": "ok",
     }
+
+
+def test_status_service_falls_back_to_latest_sync_job_summary_when_log_missing(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log_path = tmp_path / "missing.log"
+    monkeypatch.setattr("pete_e.application.api_services.settings", SimpleNamespace(log_path=log_path))
+
+    class _Job:
+        operation = "sync"
+        result_summary = (
+            "Sync summary: run=daily | days=2 | attempts=1 | result=success | "
+            "AppleDropbox=ok, Withings=ok"
+        )
+
+    class _Dal:
+        @staticmethod
+        def list_recent_jobs(limit: int = 25):
+            return [_Job()]
+
+    payload = StatusService(dal=_Dal()).last_sync_outcome()
+
+    assert payload["status"] == "observed"
+    assert payload["success"] is True
+    assert payload["source_statuses"] == {"AppleDropbox": "ok", "Withings": "ok"}
 
 
 def test_operator_nav_shows_operator_page_but_hides_owner_admin(monkeypatch: pytest.MonkeyPatch) -> None:
