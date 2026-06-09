@@ -63,6 +63,20 @@ def test_ollama_client_posts_chat_payload_and_returns_content() -> None:
     assert payload["options"]["temperature"] <= 0.2
 
 
+def test_ollama_client_ping_uses_configured_model() -> None:
+    http = _Http(_Response({"message": {"content": "ok"}}))
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434",
+        model="gemma3",
+        timeout_seconds=2.5,
+        http_client=http,
+    )
+
+    assert client.ping() == "gemma3 reachable"
+    assert http.calls[0]["json"]["model"] == "gemma3"
+    assert http.calls[0]["json"]["messages"][1]["content"] == "health check"
+
+
 @pytest.mark.parametrize(
     "payload",
     [

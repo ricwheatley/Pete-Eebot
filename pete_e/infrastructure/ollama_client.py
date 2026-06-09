@@ -70,3 +70,14 @@ class OllamaChatClient:
             raise OllamaClientError("Ollama chat response content was empty.")
 
         return rewritten
+
+    def ping(self) -> str:
+        """Confirm the configured Ollama model can answer a chat request."""
+
+        self.chat(
+            [
+                {"role": "system", "content": "Reply with a short health check acknowledgement."},
+                {"role": "user", "content": "health check"},
+            ]
+        )
+        return f"{self.model} reachable"
