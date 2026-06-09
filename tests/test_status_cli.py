@@ -2,6 +2,7 @@
 import pete_e.cli.messenger as messenger
 from pete_e.cli.messenger import app
 from pete_e.cli.status import CheckResult
+from pete_e.infrastructure.ollama_client import OllamaModelMissingError
 from typer.testing import CliRunner
 
 
@@ -17,7 +18,7 @@ def test_status_cli_all_ok(monkeypatch):
             CheckResult("Withings", True, "scale reachable"),
             CheckResult("Telegram", True, "@peteeebot chat configured"),
             CheckResult("Wger", True, "wger.de (api-key)"),
-            CheckResult("LLM", True, "gemma3 reachable"),
+            CheckResult("LLM", True, "qwen2.5:1.5b OK"),
         ]
 
     monkeypatch.setattr(status, "run_status_checks", stub)
@@ -78,7 +79,7 @@ def test_llm_status_enabled_pings_ollama(monkeypatch):
     calls = {}
     monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_ENABLED", True, raising=False)
     monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_BASE_URL", "http://ollama.test:11434", raising=False)
-    monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_MODEL", "gemma3", raising=False)
+    monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b", raising=False)
 
     class _FakeOllamaClient:
         def __init__(self, *, base_url: str, model: str, timeout_seconds: float) -> None:
@@ -87,16 +88,16 @@ def test_llm_status_enabled_pings_ollama(monkeypatch):
             calls["timeout_seconds"] = timeout_seconds
 
         def ping(self) -> str:
-            return "gemma3 reachable"
+            return "qwen2.5:1.5b OK"
 
     monkeypatch.setattr(status, "OllamaChatClient", _FakeOllamaClient)
 
     result = status.check_llm(timeout=2.5)
 
-    assert result == CheckResult("LLM", True, "gemma3 reachable")
+    assert result == CheckResult("LLM", True, "qwen2.5:1.5b OK")
     assert calls == {
         "base_url": "http://ollama.test:11434",
-        "model": "gemma3",
+        "model": "qwen2.5:1.5b",
         "timeout_seconds": 2.5,
     }
 
@@ -116,3 +117,26 @@ def test_llm_status_enabled_failure_returns_failed_result(monkeypatch):
     result = status.check_llm(timeout=2.5)
 
     assert result == CheckResult("LLM", False, "ollama unavailable")
+
+
+def test_llm_status_missing_model_reports_clear_failure(monkeypatch):
+    monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_ENABLED", True, raising=False)
+
+    class _MissingModelOllamaClient:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def ping(self) -> str:
+            raise OllamaModelMissingError(
+                "configured model missing: qwen2.5:1.5b (available: llama3.2)"
+            )
+
+    monkeypatch.setattr(status, "OllamaChatClient", _MissingModelOllamaClient)
+
+    result = status.check_llm(timeout=2.5)
+
+    assert result == CheckResult(
+        "LLM",
+        False,
+        "configured model missing: qwen2.5:1.5b (available: llama3.2)",
+    )

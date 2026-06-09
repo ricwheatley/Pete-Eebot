@@ -98,8 +98,8 @@ def provide_coach_voice_service() -> CoachVoiceService:
     if enabled:
         client = OllamaChatClient(
             base_url=str(getattr(settings, "PETEEEBOT_LLM_BASE_URL", "http://127.0.0.1:11434")),
-            model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "gemma3")),
-            timeout_seconds=float(getattr(settings, "PETEEEBOT_LLM_TIMEOUT_SECONDS", 20.0)),
+            model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b")),
+            timeout_seconds=float(getattr(settings, "PETEEEBOT_LLM_TIMEOUT_SECONDS", 30.0)),
         )
     return CoachVoiceService(enabled=enabled, client=client)
 

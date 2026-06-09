@@ -6,9 +6,31 @@ from typing import Any, Mapping, Sequence
 
 import requests
 
+DEFAULT_CHAT_OPTIONS = {
+    "temperature": 0.4,
+    "num_predict": 220,
+}
+
+HEALTH_CHAT_OPTIONS = {
+    "temperature": 0.0,
+    "num_predict": 8,
+}
+
 
 class OllamaClientError(RuntimeError):
     """Raised when Ollama cannot provide a usable chat response."""
+
+
+class OllamaConnectionError(OllamaClientError):
+    """Raised when the Ollama daemon cannot be reached or queried."""
+
+
+class OllamaModelMissingError(OllamaClientError):
+    """Raised when the configured model is not installed in Ollama."""
+
+
+class OllamaHealthCheckError(OllamaClientError):
+    """Raised when the configured model is present but cannot complete a tiny chat."""
 
 
 class OllamaChatClient:
@@ -21,22 +43,25 @@ class OllamaChatClient:
         model: str,
         timeout_seconds: float,
         http_client: Any | None = None,
+        options: Mapping[str, Any] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self._http = http_client or requests
+        self._options = dict(options or DEFAULT_CHAT_OPTIONS)
 
-    def chat(self, messages: Sequence[Mapping[str, str]]) -> str:
+    def chat(
+        self,
+        messages: Sequence[Mapping[str, str]],
+        *,
+        options: Mapping[str, Any] | None = None,
+    ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": list(messages),
             "stream": False,
-            "options": {
-                "temperature": 0.2,
-                "top_p": 0.8,
-                "repeat_penalty": 1.05,
-            },
+            "options": dict(options or self._options),
         }
 
         try:
@@ -71,13 +96,58 @@ class OllamaChatClient:
 
         return rewritten
 
-    def ping(self) -> str:
-        """Confirm the configured Ollama model can answer a chat request."""
+    def available_models(self) -> list[str]:
+        """Return model names reported by Ollama's lightweight tags endpoint."""
 
-        self.chat(
-            [
-                {"role": "system", "content": "Reply with a short health check acknowledgement."},
-                {"role": "user", "content": "health check"},
-            ]
-        )
-        return f"{self.model} reachable"
+        try:
+            response = self._http.get(
+                f"{self.base_url}/api/tags",
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as exc:
+            raise OllamaConnectionError(f"Ollama unreachable: {exc}") from exc
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise OllamaConnectionError("Ollama unreachable: /api/tags returned invalid JSON.") from exc
+
+        if not isinstance(data, dict):
+            raise OllamaConnectionError("Ollama unreachable: /api/tags response was not a JSON object.")
+
+        models = data.get("models")
+        if not isinstance(models, list):
+            raise OllamaConnectionError("Ollama unreachable: /api/tags response missing models list.")
+
+        names: list[str] = []
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            name = model.get("name") or model.get("model")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return names
+
+    def ping(self) -> str:
+        """Confirm Ollama is reachable and the configured model can answer a tiny chat."""
+
+        models = self.available_models()
+        if self.model not in models:
+            available = ", ".join(models) if models else "none"
+            raise OllamaModelMissingError(
+                f"configured model missing: {self.model} (available: {available})"
+            )
+
+        try:
+            self.chat(
+                [
+                    {"role": "system", "content": "Reply OK."},
+                    {"role": "user", "content": "OK?"},
+                ],
+                options=HEALTH_CHAT_OPTIONS,
+            )
+        except OllamaClientError as exc:
+            raise OllamaHealthCheckError(f"model present but tiny chat failed: {exc}") from exc
+
+        return f"{self.model} OK"

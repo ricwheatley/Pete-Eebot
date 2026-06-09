@@ -145,7 +145,7 @@ def check_llm(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     try:
         client = OllamaChatClient(
             base_url=str(getattr(settings, "PETEEEBOT_LLM_BASE_URL", "http://127.0.0.1:11434")),
-            model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "gemma3")),
+            model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b")),
             timeout_seconds=timeout,
         )
         detail = client.ping()

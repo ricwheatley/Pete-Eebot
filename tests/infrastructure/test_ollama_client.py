@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 import requests
 
-from pete_e.infrastructure.ollama_client import OllamaChatClient, OllamaClientError
+from pete_e.infrastructure.ollama_client import (
+    OllamaChatClient,
+    OllamaClientError,
+    OllamaHealthCheckError,
+    OllamaModelMissingError,
+)
 
 
 class _Response:
@@ -33,21 +38,26 @@ class _Response:
 
 
 class _Http:
-    def __init__(self, response: _Response) -> None:
-        self.response = response
+    def __init__(self, response: _Response | None = None, *, get_response: _Response | None = None) -> None:
+        self.response = response or _Response()
+        self.get_response = get_response or _Response()
         self.calls: list[dict] = []
 
     def post(self, url: str, **kwargs):
-        self.calls.append({"url": url, **kwargs})
+        self.calls.append({"method": "POST", "url": url, **kwargs})
         return self.response
+
+    def get(self, url: str, **kwargs):
+        self.calls.append({"method": "GET", "url": url, **kwargs})
+        return self.get_response
 
 
 def test_ollama_client_posts_chat_payload_and_returns_content() -> None:
     http = _Http(_Response({"message": {"content": " rewritten \n"}}))
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434/",
-        model="gemma3",
-        timeout_seconds=20.0,
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
         http_client=http,
     )
 
@@ -55,26 +65,75 @@ def test_ollama_client_posts_chat_payload_and_returns_content() -> None:
 
     assert result == "rewritten"
     assert http.calls[0]["url"] == "http://127.0.0.1:11434/api/chat"
-    assert http.calls[0]["timeout"] == 20.0
+    assert http.calls[0]["timeout"] == 30.0
     payload = http.calls[0]["json"]
-    assert payload["model"] == "gemma3"
+    assert payload["model"] == "qwen2.5:1.5b"
     assert payload["stream"] is False
     assert payload["messages"] == [{"role": "user", "content": "draft"}]
-    assert payload["options"]["temperature"] <= 0.2
+    assert payload["options"]["temperature"] == 0.4
+    assert payload["options"]["num_predict"] == 220
 
 
-def test_ollama_client_ping_uses_configured_model() -> None:
-    http = _Http(_Response({"message": {"content": "ok"}}))
+def test_ollama_client_chat_options_can_be_overridden() -> None:
+    http = _Http(_Response({"message": {"content": "custom"}}))
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434",
-        model="gemma3",
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
+        http_client=http,
+        options={"temperature": 0.1, "num_predict": 42},
+    )
+
+    assert client.chat([{"role": "user", "content": "draft"}]) == "custom"
+    assert http.calls[0]["json"]["options"] == {"temperature": 0.1, "num_predict": 42}
+
+
+def test_ollama_client_ping_uses_tags_then_tiny_chat() -> None:
+    http = _Http(
+        _Response({"message": {"content": "ok"}}),
+        get_response=_Response({"models": [{"name": "qwen2.5:1.5b"}]}),
+    )
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434",
+        model="qwen2.5:1.5b",
         timeout_seconds=2.5,
         http_client=http,
     )
 
-    assert client.ping() == "gemma3 reachable"
-    assert http.calls[0]["json"]["model"] == "gemma3"
-    assert http.calls[0]["json"]["messages"][1]["content"] == "health check"
+    assert client.ping() == "qwen2.5:1.5b OK"
+    assert http.calls[0]["method"] == "GET"
+    assert http.calls[0]["url"] == "http://127.0.0.1:11434/api/tags"
+    assert http.calls[1]["method"] == "POST"
+    assert http.calls[1]["json"]["model"] == "qwen2.5:1.5b"
+    assert http.calls[1]["json"]["messages"][1]["content"] == "OK?"
+    assert http.calls[1]["json"]["options"]["num_predict"] <= 16
+
+
+def test_ollama_client_ping_reports_missing_model_clearly() -> None:
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434",
+        model="qwen2.5:1.5b",
+        timeout_seconds=2.5,
+        http_client=_Http(get_response=_Response({"models": [{"name": "llama3.2"}]})),
+    )
+
+    with pytest.raises(OllamaModelMissingError, match="configured model missing: qwen2.5:1.5b"):
+        client.ping()
+
+
+def test_ollama_client_ping_reports_tiny_chat_failure() -> None:
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434",
+        model="qwen2.5:1.5b",
+        timeout_seconds=2.5,
+        http_client=_Http(
+            _Response(http_error=requests.exceptions.HTTPError("HTTP 500")),
+            get_response=_Response({"models": [{"name": "qwen2.5:1.5b"}]}),
+        ),
+    )
+
+    with pytest.raises(OllamaHealthCheckError, match="model present but tiny chat failed"):
+        client.ping()
 
 
 @pytest.mark.parametrize(
@@ -89,8 +148,8 @@ def test_ollama_client_ping_uses_configured_model() -> None:
 def test_ollama_client_rejects_bad_response_shape(payload) -> None:
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434",
-        model="gemma3",
-        timeout_seconds=20.0,
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
         http_client=_Http(_Response(payload)),
     )
 
@@ -101,8 +160,8 @@ def test_ollama_client_rejects_bad_response_shape(payload) -> None:
 def test_ollama_client_wraps_http_failure() -> None:
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434",
-        model="gemma3",
-        timeout_seconds=20.0,
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
         http_client=_Http(_Response(http_error=requests.exceptions.HTTPError("HTTP 500"))),
     )
 
@@ -113,8 +172,8 @@ def test_ollama_client_wraps_http_failure() -> None:
 def test_ollama_client_rejects_invalid_json() -> None:
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434",
-        model="gemma3",
-        timeout_seconds=20.0,
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
         http_client=_Http(_Response(json_error=ValueError("bad json"))),
     )
 
