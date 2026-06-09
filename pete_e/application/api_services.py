@@ -402,6 +402,8 @@ class MetricsService(_DateParserMixin):
         start = converters.to_date(plan.get("start_date"))
         weeks = int(plan.get("weeks") or 0)
         current_week = ((target_date - start).days // 7) + 1 if start else None
+        if isinstance(current_week, int) and current_week < 1:
+            current_week = 1
         deload_due = bool(current_week and current_week % 4 == 0)
         return {
             "date": target_date.isoformat(),
@@ -589,10 +591,13 @@ class StatusService:
         """Perform run checks."""
 
     def last_sync_outcome(self, lines: int = 500) -> Dict[str, Any]:
-        """Return the latest persisted sync summary from the application log."""
+        """Return the latest persisted sync summary from logs or durable sync jobs."""
 
         log_path = settings.log_path
         if not log_path.exists():
+            job_fallback = self._last_sync_outcome_from_jobs()
+            if job_fallback:
+                return job_fallback
             return {
                 "status": "missing",
                 "source_statuses": {},
@@ -616,12 +621,37 @@ class StatusService:
             if parsed:
                 return parsed
 
+        job_fallback = self._last_sync_outcome_from_jobs()
+        if job_fallback:
+            return job_fallback
+
         return {
             "status": "missing",
             "source_statuses": {},
             "failed_sources": [],
             "message": "No sync summary found in recent logs.",
         }
+
+    def _last_sync_outcome_from_jobs(self) -> Dict[str, Any] | None:
+        """Fallback to the latest completed sync job summary when logs rotate."""
+        list_recent = getattr(self._dal, "list_recent_jobs", None)
+        if not callable(list_recent):
+            return None
+        try:
+            jobs = list_recent(limit=100)
+        except Exception:
+            return None
+        for job in jobs or []:
+            if str(getattr(job, "operation", "")).strip().lower() != "sync":
+                continue
+            summary_text = str(getattr(job, "result_summary", "") or "").strip()
+            if not summary_text:
+                continue
+            parsed = _parse_sync_summary_line(summary_text)
+            if parsed:
+                parsed.setdefault("message", "Recovered from durable sync job record.")
+                return parsed
+        return None
 
 
 _SYNC_SUMMARY_RE = re.compile(
