@@ -17,10 +17,12 @@ from pete_e.application.exceptions import (
     ValidationError,
 )
 from pete_e.application.composition import (
+    provide_coach_voice_service,
     provide_cycle_service,
     provide_narrative_builder,
     provide_validation_service,
 )
+from pete_e.application.coach_voice import CoachVoiceService
 from pete_e.application.collaborator_contracts import (
     CycleContract,
     DataAccessContract,
@@ -97,6 +99,7 @@ class Orchestrator:
         plan_service: PlanGenerationContract | None = None,
         export_service: ExportContract | None = None,
         daily_sync_service: SyncContract | None = None,
+        voice_service: CoachVoiceService | None = None,
     ):
         """Initialize orchestrator dependencies."""
         container = container or get_container()
@@ -120,6 +123,7 @@ class Orchestrator:
                 )
 
         self.narrative_builder = narrative_builder or provide_narrative_builder()
+        self.voice_service = voice_service or provide_coach_voice_service()
 
         self.weekly_calibration_workflow = WeeklyCalibrationWorkflow(self.validation_service)
         self.cycle_rollover_workflow = CycleRolloverWorkflow(
@@ -378,10 +382,10 @@ class Orchestrator:
             combined = f"{report.rstrip()}\n\n{guidance}"
             if nutrition_line:
                 combined = f"{combined}\n\n{nutrition_line}"
-            return combined
+            return self.voice_service.rewrite(combined)
         if nutrition_line:
-            return f"{report.rstrip()}\n\n{nutrition_line}"
-        return report
+            return self.voice_service.rewrite(f"{report.rstrip()}\n\n{nutrition_line}")
+        return self.voice_service.rewrite(report)
 
 
     def _build_nutrition_summary_line(self, target_date: date) -> str | None:

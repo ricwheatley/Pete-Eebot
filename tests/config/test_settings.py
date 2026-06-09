@@ -63,6 +63,10 @@ def test_database_url_uses_override(monkeypatch: pytest.MonkeyPatch, base_settin
 
     assert settings.DATABASE_URL == expected
     assert settings.WGER_EXPAND_STRETCH_ROUTINES is False
+    assert settings.PETEEEBOT_LLM_ENABLED is False
+    assert settings.PETEEEBOT_LLM_BASE_URL == "http://127.0.0.1:11434"
+    assert settings.PETEEEBOT_LLM_MODEL == "gemma3"
+    assert settings.PETEEEBOT_LLM_TIMEOUT_SECONDS == 20.0
     """Perform test database url uses override."""
 
 

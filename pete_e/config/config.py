@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     PETE_LOG_LEVEL: str = "INFO"
     PETE_LOG_FORMAT: str = "json"
     PETE_LOG_TO_CONSOLE: bool = True
+    PETEEEBOT_LLM_ENABLED: bool = False
+    PETEEEBOT_LLM_BASE_URL: str = "http://127.0.0.1:11434"
+    PETEEEBOT_LLM_MODEL: str = "gemma3"
+    PETEEEBOT_LLM_TIMEOUT_SECONDS: float = 20.0
 
     # --- SANITY CHECK ALERTS ---
     APPLE_MAX_STALE_DAYS: int = 3

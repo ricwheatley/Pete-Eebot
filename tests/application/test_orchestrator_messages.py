@@ -142,6 +142,16 @@ class _NarrativeBuilder:
     """Represent NarrativeBuilder."""
 
 
+class _VoiceService:
+    def __init__(self, response: str | None = None):
+        self.response = response
+        self.calls: list[str] = []
+
+    def rewrite(self, draft_message: str) -> str:
+        self.calls.append(draft_message)
+        return self.response or draft_message
+
+
 class _StubTelegram(TelegramClient):
     def __init__(self):
         self.messages: list[str] = []
@@ -160,6 +170,7 @@ def _orchestrator_for(
     narrative_builder: _NarrativeBuilder | None = None,
     telegram_client: TelegramClient | None = None,
     export_service=None,
+    voice_service=None,
 ):
     container = build_stub_container(
         dal=dal,
@@ -171,6 +182,7 @@ def _orchestrator_for(
     return Orchestrator(
         container=container,
         narrative_builder=narrative_builder,
+        voice_service=voice_service,
     )
     """Perform orchestrator for."""
 
@@ -194,6 +206,20 @@ def test_get_daily_summary_uses_builder():
     assert dal.overview_requests == [date(2024, 5, 2)]
     assert builder.calls and "metrics" in builder.calls[0]
     """Perform test get daily summary uses builder."""
+
+
+def test_get_daily_summary_with_disabled_voice_layer_returns_original_message():
+    dal = _SummaryDal([{"metric_name": "weight", "yesterday_value": 82.0}])
+    builder = _NarrativeBuilder()
+    voice_service = _VoiceService()
+
+    orch = _orchestrator_for(dal, narrative_builder=builder, voice_service=voice_service)
+
+    result = orch.get_daily_summary(target_date=date(2024, 5, 2))
+
+    assert result == "rendered-narrative"
+    assert voice_service.calls == ["rendered-narrative"]
+    """Perform test get daily summary with disabled voice layer returns original message."""
 
 
 class _StrengthOnlyRunGuidanceDal(_RunGuidanceDal):
