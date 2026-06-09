@@ -69,6 +69,10 @@ class Settings:
             "PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS": 60.0,
             "PETEEEBOT_SYNC_TIMEOUT_SECONDS": 300.0,
             "PETEEEBOT_PROCESS_TIMEOUT_SECONDS": 900.0,
+            "PETEEEBOT_LLM_ENABLED": False,
+            "PETEEEBOT_LLM_BASE_URL": "http://127.0.0.1:11434",
+            "PETEEEBOT_LLM_MODEL": "gemma3",
+            "PETEEEBOT_LLM_TIMEOUT_SECONDS": 20.0,
             "WGER_EXPAND_STRETCH_ROUTINES": False,
             "PETEEEBOT_PLANNER_FEATURE_FLAGS": "",
         }
