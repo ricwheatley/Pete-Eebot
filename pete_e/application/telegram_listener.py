@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
+import time
 from typing import Any, Callable, Dict, Optional, cast
 
 from typing_extensions import Protocol
@@ -53,6 +55,8 @@ class _LazyModuleProxy:
 
 messenger = cast(Any, _LazyModuleProxy("pete_e.cli.messenger"))
 
+_LISTEN_LOCK_STALE_SECONDS = 15 * 60
+
 
 class _OrchestratorProtocol(Protocol):
     def run_end_to_end_day(self, *, days: int = 1):
@@ -79,6 +83,7 @@ class TelegramCommandListener:
     ) -> None:
         self._offset_path = Path(offset_path) if offset_path else self._default_offset_path()
         self._offset_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock_path = self._offset_path.with_name(f"{self._offset_path.name}.lock")
         self._orchestrator_factory = orchestrator_factory
         self._poll_limit = max(1, int(poll_limit))
         self._poll_timeout = max(0, int(poll_timeout))
@@ -115,12 +120,50 @@ class TelegramCommandListener:
         """Perform load offset."""
 
     def _persist_offset(self, update_id: int) -> None:
+        current = self._load_offset()
+        if current is not None and current >= update_id:
+            return
+
         payload = {"last_update_id": int(update_id)}
-        self._offset_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        temp_path = self._offset_path.with_name(f"{self._offset_path.name}.tmp")
+        temp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        temp_path.replace(self._offset_path)
         """Perform persist offset."""
+
+    def _acquire_listen_lock(self) -> int | None:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        try:
+            fd = os.open(str(self._lock_path), flags)
+        except FileExistsError:
+            try:
+                age_seconds = time.time() - self._lock_path.stat().st_mtime
+            except FileNotFoundError:
+                return self._acquire_listen_lock()
+            if age_seconds > _LISTEN_LOCK_STALE_SECONDS:
+                try:
+                    self._lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    log_utils.log_message(f"Failed to remove stale Telegram listener lock: {exc}", "WARN")
+                    return None
+                return self._acquire_listen_lock()
+            return None
+
+        os.write(fd, f"{os.getpid()} {int(time.time())}\n".encode("ascii"))
+        return fd
+
+    def _release_listen_lock(self, fd: int) -> None:
+        try:
+            os.close(fd)
+        finally:
+            try:
+                self._lock_path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                log_utils.log_message(f"Failed to remove Telegram listener lock: {exc}", "WARN")
+        """Perform release listen lock."""
 
     def _next_offset(self) -> Optional[int]:
         last = self._load_offset()
@@ -209,6 +252,17 @@ class TelegramCommandListener:
     def listen_once(self) -> int:
         """Fetch a batch of updates, handle commands, and persist the offset."""
 
+        lock_fd = self._acquire_listen_lock()
+        if lock_fd is None:
+            log_utils.log_message("Telegram listener already running; skipping this poll.", "INFO")
+            return 0
+
+        try:
+            return self._listen_once_locked()
+        finally:
+            self._release_listen_lock(lock_fd)
+
+    def _listen_once_locked(self) -> int:
         next_offset = self._next_offset()
         updates = self._telegram_client.get_updates(
             offset=next_offset,
@@ -236,6 +290,11 @@ class TelegramCommandListener:
                 if max_update_id is None or update_id > max_update_id:
                     max_update_id = update_id
 
+        if max_update_id is not None:
+            self._persist_offset(max_update_id)
+
+        for update in updates:
+            update_id = update.get("update_id") if isinstance(update, dict) else None
             message = update.get("message") if isinstance(update, dict) else None
             text = None
             if isinstance(message, dict):
@@ -249,7 +308,7 @@ class TelegramCommandListener:
             chat_id = chat.get("id") if isinstance(chat, dict) else None
             if authorized_chat_id is not None and str(chat_id) != str(authorized_chat_id):
                 log_utils.log_message(
-                    "Skipping Telegram command from unauthorised chat.",
+                    f"Skipping Telegram update_id={update_id} from unauthorised chat.",
                     "WARN",
                 )
                 continue
@@ -258,6 +317,10 @@ class TelegramCommandListener:
             if command not in handlers:
                 continue
 
+            log_utils.log_message(
+                f"Handling Telegram command update_id={update_id} command={command}",
+                "INFO",
+            )
             try:
                 response_text = handlers[command]()
             except Exception as exc:  # pragma: no cover - defensive guardrail
@@ -272,10 +335,11 @@ class TelegramCommandListener:
                     f"Telegram listener failed to reply to {command}.",
                     "ERROR",
                 )
+            log_utils.log_message(
+                f"Handled Telegram command update_id={update_id} command={command}",
+                "INFO",
+            )
             handled += 1
-
-        if max_update_id is not None:
-            self._persist_offset(max_update_id)
 
         return handled
 
