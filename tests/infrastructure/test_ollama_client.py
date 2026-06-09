@@ -6,7 +6,7 @@ import requests
 from pete_e.infrastructure.ollama_client import (
     OllamaChatClient,
     OllamaClientError,
-    OllamaHealthCheckError,
+    OllamaConnectionError,
     OllamaModelMissingError,
 )
 
@@ -88,9 +88,8 @@ def test_ollama_client_chat_options_can_be_overridden() -> None:
     assert http.calls[0]["json"]["options"] == {"temperature": 0.1, "num_predict": 42}
 
 
-def test_ollama_client_ping_uses_tags_then_tiny_chat() -> None:
+def test_ollama_client_ping_uses_tags_without_chat() -> None:
     http = _Http(
-        _Response({"message": {"content": "ok"}}),
         get_response=_Response({"models": [{"name": "qwen2.5:1.5b"}]}),
     )
     client = OllamaChatClient(
@@ -101,12 +100,13 @@ def test_ollama_client_ping_uses_tags_then_tiny_chat() -> None:
     )
 
     assert client.ping() == "qwen2.5:1.5b OK"
-    assert http.calls[0]["method"] == "GET"
-    assert http.calls[0]["url"] == "http://127.0.0.1:11434/api/tags"
-    assert http.calls[1]["method"] == "POST"
-    assert http.calls[1]["json"]["model"] == "qwen2.5:1.5b"
-    assert http.calls[1]["json"]["messages"][1]["content"] == "OK?"
-    assert http.calls[1]["json"]["options"]["num_predict"] <= 16
+    assert http.calls == [
+        {
+            "method": "GET",
+            "url": "http://127.0.0.1:11434/api/tags",
+            "timeout": 2.5,
+        }
+    ]
 
 
 def test_ollama_client_ping_reports_missing_model_clearly() -> None:
@@ -121,18 +121,17 @@ def test_ollama_client_ping_reports_missing_model_clearly() -> None:
         client.ping()
 
 
-def test_ollama_client_ping_reports_tiny_chat_failure() -> None:
+def test_ollama_client_ping_reports_unreachable_ollama() -> None:
     client = OllamaChatClient(
         base_url="http://127.0.0.1:11434",
         model="qwen2.5:1.5b",
         timeout_seconds=2.5,
         http_client=_Http(
-            _Response(http_error=requests.exceptions.HTTPError("HTTP 500")),
-            get_response=_Response({"models": [{"name": "qwen2.5:1.5b"}]}),
+            get_response=_Response(http_error=requests.exceptions.HTTPError("HTTP 500")),
         ),
     )
 
-    with pytest.raises(OllamaHealthCheckError, match="model present but tiny chat failed"):
+    with pytest.raises(OllamaConnectionError, match="Ollama unreachable"):
         client.ping()
 
 
