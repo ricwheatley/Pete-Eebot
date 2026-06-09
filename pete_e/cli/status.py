@@ -10,8 +10,10 @@ import psycopg
 
 from pete_e import observability
 from pete_e.application import alerts
+from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
+from pete_e.infrastructure.ollama_client import OllamaChatClient
 from pete_e.infrastructure.telegram_client import TelegramClient
 from pete_e.infrastructure.withings_client import WithingsClient
 from pete_e.infrastructure.wger_client import WgerClient
@@ -134,6 +136,30 @@ def check_wger(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     """Perform check wger."""
 
 
+def check_llm(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
+    start = perf_counter()
+    if not bool(getattr(settings, "PETEEEBOT_LLM_ENABLED", False)):
+        _record_result("LLM", True, start, kind="external_api")
+        return CheckResult(name="LLM", ok=True, detail="disabled")
+
+    try:
+        client = OllamaChatClient(
+            base_url=str(getattr(settings, "PETEEEBOT_LLM_BASE_URL", "http://127.0.0.1:11434")),
+            model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "gemma3")),
+            timeout_seconds=timeout,
+        )
+        detail = client.ping()
+    except Exception as exc:  # pragma: no cover - handled via result
+        detail = _format_exception(exc)
+        _record_result("LLM", False, start, kind="external_api")
+        return CheckResult(name="LLM", ok=False, detail=detail)
+    if not detail:
+        detail = _format_duration(start)
+    _record_result("LLM", True, start, kind="external_api")
+    return CheckResult(name="LLM", ok=True, detail=detail)
+    """Perform check llm."""
+
+
 def run_status_checks(
     *,
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -148,6 +174,7 @@ def run_status_checks(
             lambda: check_withings(timeout),
             lambda: check_telegram(timeout),
             lambda: check_wger(timeout),
+            lambda: check_llm(timeout),
         )
 
     return [check() for check in checks]
