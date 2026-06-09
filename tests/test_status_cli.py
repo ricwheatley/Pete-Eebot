@@ -2,7 +2,7 @@
 import pete_e.cli.messenger as messenger
 from pete_e.cli.messenger import app
 from pete_e.cli.status import CheckResult
-from pete_e.infrastructure.ollama_client import OllamaModelMissingError
+from pete_e.infrastructure.ollama_client import OllamaConnectionError, OllamaModelMissingError
 from typer.testing import CliRunner
 
 
@@ -102,7 +102,7 @@ def test_llm_status_enabled_pings_ollama(monkeypatch):
     }
 
 
-def test_llm_status_enabled_failure_returns_failed_result(monkeypatch):
+def test_llm_status_unreachable_returns_failed_result(monkeypatch):
     monkeypatch.setattr(status.settings, "PETEEEBOT_LLM_ENABLED", True, raising=False)
 
     class _FailingOllamaClient:
@@ -110,13 +110,13 @@ def test_llm_status_enabled_failure_returns_failed_result(monkeypatch):
             pass
 
         def ping(self) -> str:
-            raise RuntimeError("ollama unavailable")
+            raise OllamaConnectionError("Ollama unreachable: HTTP 500")
 
     monkeypatch.setattr(status, "OllamaChatClient", _FailingOllamaClient)
 
     result = status.check_llm(timeout=2.5)
 
-    assert result == CheckResult("LLM", False, "ollama unavailable")
+    assert result == CheckResult("LLM", False, "Ollama unreachable: HTTP 500")
 
 
 def test_llm_status_missing_model_reports_clear_failure(monkeypatch):

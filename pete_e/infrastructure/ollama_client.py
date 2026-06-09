@@ -11,11 +11,6 @@ DEFAULT_CHAT_OPTIONS = {
     "num_predict": 220,
 }
 
-HEALTH_CHAT_OPTIONS = {
-    "temperature": 0.0,
-    "num_predict": 8,
-}
-
 
 class OllamaClientError(RuntimeError):
     """Raised when Ollama cannot provide a usable chat response."""
@@ -27,10 +22,6 @@ class OllamaConnectionError(OllamaClientError):
 
 class OllamaModelMissingError(OllamaClientError):
     """Raised when the configured model is not installed in Ollama."""
-
-
-class OllamaHealthCheckError(OllamaClientError):
-    """Raised when the configured model is present but cannot complete a tiny chat."""
 
 
 class OllamaChatClient:
@@ -130,7 +121,7 @@ class OllamaChatClient:
         return names
 
     def ping(self) -> str:
-        """Confirm Ollama is reachable and the configured model can answer a tiny chat."""
+        """Confirm Ollama is reachable and the configured model is installed."""
 
         models = self.available_models()
         if self.model not in models:
@@ -138,16 +129,5 @@ class OllamaChatClient:
             raise OllamaModelMissingError(
                 f"configured model missing: {self.model} (available: {available})"
             )
-
-        try:
-            self.chat(
-                [
-                    {"role": "system", "content": "Reply OK."},
-                    {"role": "user", "content": "OK?"},
-                ],
-                options=HEALTH_CHAT_OPTIONS,
-            )
-        except OllamaClientError as exc:
-            raise OllamaHealthCheckError(f"model present but tiny chat failed: {exc}") from exc
 
         return f"{self.model} OK"
