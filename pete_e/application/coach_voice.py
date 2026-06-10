@@ -25,8 +25,10 @@ SYSTEM_PROMPT = (
     "meals, workouts, medical claims, race goals, personal history, or missing "
     "subjective inputs. If data quality is low or a fact is missing, acknowledge "
     "uncertainty instead of filling gaps. Keep advice informational, not medical. "
-    "Return only the final message text. No labels, JSON, explanations, options, "
-    "or follow-up questions."
+    "Write like a trainer texting a client, not a report. Do not use markdown "
+    "headings, tables, field-label dumps, raw IDs, UUIDs, JSON keys, or database "
+    "identifiers. Return only the final message text. No labels, JSON, "
+    "explanations, options, or follow-up questions."
 )
 
 LEGACY_REWRITE_SYSTEM_PROMPT = (
@@ -41,6 +43,7 @@ DEFAULT_MUST_NOT_INVENT = (
     "Do not invent workouts, symptoms, pain, meals, races, injuries, or medical advice.",
     "Do not change prescribed loads, RIR, set reductions, Wger status, dates, or targets.",
     "Do not use wearable calories as exact calorie targets.",
+    "Do not include raw IDs, UUIDs, database identifiers, JSON keys, or markdown report headings.",
 )
 
 PROMPT_COACH_STATE_KEYS = (
@@ -55,6 +58,15 @@ PROMPT_COACH_STATE_KEYS = (
 PROMPT_MAX_MAPPING_ITEMS = 80
 PROMPT_MAX_LIST_ITEMS = 20
 PROMPT_MAX_STRING_CHARS = 1200
+PROMPT_OMIT_KEY_PATTERN = re.compile(r"(^id$|_id$|uuid|token|secret|password|raw_payload)", re.IGNORECASE)
+UUID_TEXT_PATTERN = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+REPORT_HEADING_PATTERN = re.compile(r"(?m)^\s{0,3}#{1,6}\s+\S")
+FIELD_DUMP_PATTERN = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?(?:workout|exercise|plan|user|request)\s+id(?:\*\*)?\s*:"
+)
 
 
 class CoachVoiceClient(Protocol):
@@ -253,6 +265,12 @@ class CoachVoiceService:
         lowered = text.lower().lstrip()
         if lowered.startswith(("{", "[", "```", "here is", "here's", "sure,", "certainly,")):
             raise ValueError("voice compose returned a preamble or non-message content")
+        if UUID_TEXT_PATTERN.search(text):
+            raise ValueError("voice compose leaked a raw UUID/internal identifier")
+        if REPORT_HEADING_PATTERN.search(text):
+            raise ValueError("voice compose returned markdown report headings")
+        if FIELD_DUMP_PATTERN.search(text):
+            raise ValueError("voice compose returned internal field labels")
 
         style = request_payload.get("style") if isinstance(request_payload, Mapping) else {}
         if isinstance(style, Mapping):
@@ -363,6 +381,8 @@ def _compact_prompt_value(value: Any, *, depth: int = 0) -> Any:
     if depth > 8:
         return _json_safe(value)
     if isinstance(value, str):
+        if UUID_TEXT_PATTERN.fullmatch(value.strip()):
+            return "<redacted_internal_id>"
         if len(value) <= PROMPT_MAX_STRING_CHARS:
             return value
         return f"{value[:PROMPT_MAX_STRING_CHARS].rstrip()}..."
@@ -372,7 +392,10 @@ def _compact_prompt_value(value: Any, *, depth: int = 0) -> Any:
             if idx >= PROMPT_MAX_MAPPING_ITEMS:
                 compact["_truncated_items"] = len(value) - PROMPT_MAX_MAPPING_ITEMS
                 break
-            compact[str(key)] = _compact_prompt_value(item, depth=depth + 1)
+            key_text = str(key)
+            if PROMPT_OMIT_KEY_PATTERN.search(key_text):
+                continue
+            compact[key_text] = _compact_prompt_value(item, depth=depth + 1)
         return compact
     if isinstance(value, (list, tuple, set)):
         items = list(value)
