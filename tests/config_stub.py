@@ -73,6 +73,7 @@ class Settings:
             "PETEEEBOT_LLM_BASE_URL": "http://127.0.0.1:11434",
             "PETEEEBOT_LLM_MODEL": "qwen2.5:1.5b",
             "PETEEEBOT_LLM_TIMEOUT_SECONDS": 30.0,
+            "PETEEEBOT_LLM_KEEP_ALIVE": "30m",
             "WGER_EXPAND_STRETCH_ROUTINES": False,
             "PETEEEBOT_PLANNER_FEATURE_FLAGS": "",
         }
