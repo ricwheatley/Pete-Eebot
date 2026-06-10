@@ -96,7 +96,7 @@ def test_compose_accepts_uuid_values_in_structured_payload() -> None:
 
     assert result == "Ric, readiness is clear enough to keep today's message simple."
     assert client.messages is not None
-    assert str(request_id) in client.messages[1]["content"]
+    assert str(request_id) not in client.messages[1]["content"]
     assert records[0]["request_payload"]["recent_context"]["request_id"] == str(request_id)
     assert records[0]["status"] == "succeeded"
 
@@ -145,6 +145,43 @@ def test_compose_uses_compact_prompt_payload_but_persists_full_request() -> None
     assert prompt_payload["recent_context"]["recent_workouts"]["running"][0]["distance_km"] == 5.0
 
 
+def test_compose_strips_internal_ids_from_prompt_payload() -> None:
+    records: list[dict] = []
+    workout_id = "3b3c6ca6-9e07-4cae-b4e1-c86e82476e46"
+    client = _FakeClient(response="Ric, yesterday's run was a big aerobic load, so keep today controlled.")
+    service = CoachVoiceService(enabled=True, client=client, payload_recorder=lambda **row: records.append(row))
+
+    result = service.compose(
+        {
+            "message_type": "daily_summary",
+            "intent": "morning check-in",
+            "recent_context": {
+                "recent_workouts": {
+                    "running": [
+                        {
+                            "workout_id": workout_id,
+                            "exercise_id": 530,
+                            "distance_km": 10.089,
+                        }
+                    ]
+                }
+            },
+        },
+        fallback_message="fallback message",
+    )
+
+    assert result == "Ric, yesterday's run was a big aerobic load, so keep today controlled."
+    assert records[0]["request_payload"]["recent_context"]["recent_workouts"]["running"][0]["workout_id"] == workout_id
+    assert client.messages is not None
+    prompt_json = client.messages[1]["content"].split("Structured context JSON:\n", 1)[1]
+    prompt_payload = json.loads(prompt_json)
+    prompted_workout = prompt_payload["recent_context"]["recent_workouts"]["running"][0]
+    assert "workout_id" not in prompted_workout
+    assert "exercise_id" not in prompted_workout
+    assert prompted_workout["distance_km"] == 10.089
+    assert workout_id not in client.messages[1]["content"]
+
+
 def test_compose_validation_failure_returns_fallback(monkeypatch) -> None:
     warnings: list[str] = []
     records: list[dict] = []
@@ -166,6 +203,28 @@ def test_compose_validation_failure_returns_fallback(monkeypatch) -> None:
     assert service.compose(request, fallback_message="fallback message") == "fallback message"
     assert records[0]["status"] == "failed"
     assert "omitted required fact protein" in records[0]["error"]
+    assert warnings[0].startswith("Pete voice compose failed; using deterministic fallback:")
+
+
+def test_compose_rejects_report_style_output_with_raw_ids(monkeypatch) -> None:
+    warnings: list[str] = []
+    records: list[dict] = []
+    monkeypatch.setattr("pete_e.application.coach_voice.log_utils.warn", warnings.append)
+    service = CoachVoiceService(
+        enabled=True,
+        client=_FakeClient(
+            response=(
+                "### Current Workout Summary\n\n"
+                "- **Workout ID:** `3b3c6ca6-9e07-4cae-b4e1-c86e82476e46`\n"
+                "- **Distance:** 10.089 km"
+            )
+        ),
+        payload_recorder=lambda **row: records.append(row),
+    )
+
+    assert service.compose({"message_type": "daily_summary", "intent": "morning check-in"}, fallback_message="fallback") == "fallback"
+    assert records[0]["status"] == "failed"
+    assert "raw UUID" in records[0]["error"] or "markdown report headings" in records[0]["error"]
     assert warnings[0].startswith("Pete voice compose failed; using deterministic fallback:")
 
 
