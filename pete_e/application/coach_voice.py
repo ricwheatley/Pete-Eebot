@@ -43,6 +43,19 @@ DEFAULT_MUST_NOT_INVENT = (
     "Do not use wearable calories as exact calorie targets.",
 )
 
+PROMPT_COACH_STATE_KEYS = (
+    "date",
+    "summary",
+    "derived",
+    "baselines",
+    "data_quality",
+    "missing_subjective_inputs",
+    "coaching_notes",
+)
+PROMPT_MAX_MAPPING_ITEMS = 80
+PROMPT_MAX_LIST_ITEMS = 20
+PROMPT_MAX_STRING_CHARS = 1200
+
 
 class CoachVoiceClient(Protocol):
     def chat(self, messages: Sequence[Mapping[str, str]]) -> str: ...
@@ -165,7 +178,8 @@ class CoachVoiceService:
             return fallback
 
         try:
-            payload_json = json.dumps(request_payload, sort_keys=True, ensure_ascii=False)
+            prompt_payload = _to_prompt_payload(request_payload)
+            payload_json = json.dumps(prompt_payload, sort_keys=True, ensure_ascii=False)
             prompt_messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
@@ -320,6 +334,53 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(item) for item in value]
     return str(value)
+
+
+def _to_prompt_payload(request_payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a compact prompt payload while leaving the persisted request intact."""
+
+    payload = dict(request_payload or {})
+    coach_state = payload.get("coach_state")
+    if isinstance(coach_state, Mapping):
+        compact_coach_state = {
+            key: coach_state[key]
+            for key in PROMPT_COACH_STATE_KEYS
+            if key in coach_state
+        }
+        profile = coach_state.get("profile")
+        if isinstance(profile, Mapping):
+            compact_coach_state["profile"] = {
+                key: profile[key]
+                for key in ("display_name", "timezone", "goal_weight_kg", "height_cm")
+                if key in profile
+            }
+        payload["coach_state"] = compact_coach_state
+
+    return _compact_prompt_value(payload)
+
+
+def _compact_prompt_value(value: Any, *, depth: int = 0) -> Any:
+    if depth > 8:
+        return _json_safe(value)
+    if isinstance(value, str):
+        if len(value) <= PROMPT_MAX_STRING_CHARS:
+            return value
+        return f"{value[:PROMPT_MAX_STRING_CHARS].rstrip()}..."
+    if isinstance(value, Mapping):
+        compact: dict[str, Any] = {}
+        for idx, (key, item) in enumerate(value.items()):
+            if idx >= PROMPT_MAX_MAPPING_ITEMS:
+                compact["_truncated_items"] = len(value) - PROMPT_MAX_MAPPING_ITEMS
+                break
+            compact[str(key)] = _compact_prompt_value(item, depth=depth + 1)
+        return compact
+    if isinstance(value, (list, tuple, set)):
+        items = list(value)
+        compact_list = [_compact_prompt_value(item, depth=depth + 1) for item in items[:PROMPT_MAX_LIST_ITEMS]]
+        if len(items) > PROMPT_MAX_LIST_ITEMS:
+            compact_list.append({"_truncated_items": len(items) - PROMPT_MAX_LIST_ITEMS})
+        return compact_list
+    return _json_safe(value)
 
 
 def _to_int(value: Any) -> int | None:
