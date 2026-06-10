@@ -172,7 +172,7 @@ CREATE TABLE web_console_command_history (
     id BIGSERIAL PRIMARY KEY,
     request_id TEXT NOT NULL,
     correlation_id TEXT NOT NULL,
-    job_id TEXT REFERENCES application_jobs(id) ON DELETE SET NULL,
+    job_id TEXT,
     requester_user_id BIGINT REFERENCES auth_users(id) ON DELETE SET NULL,
     requester_username TEXT,
     auth_scheme TEXT,
