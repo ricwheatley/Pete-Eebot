@@ -33,12 +33,14 @@ class OllamaChatClient:
         base_url: str,
         model: str,
         timeout_seconds: float,
+        keep_alive: str | None = None,
         http_client: Any | None = None,
         options: Mapping[str, Any] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.keep_alive = str(keep_alive).strip() if keep_alive is not None else ""
         self._http = http_client or requests
         self._options = dict(options or DEFAULT_CHAT_OPTIONS)
 
@@ -54,6 +56,8 @@ class OllamaChatClient:
             "stream": False,
             "options": dict(options or self._options),
         }
+        if self.keep_alive:
+            payload["keep_alive"] = self.keep_alive
 
         try:
             response = self._http.post(

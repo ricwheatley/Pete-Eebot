@@ -100,6 +100,7 @@ def provide_coach_voice_service(*, payload_recorder=None) -> CoachVoiceService:
             base_url=str(getattr(settings, "PETEEEBOT_LLM_BASE_URL", "http://127.0.0.1:11434")),
             model=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b")),
             timeout_seconds=float(getattr(settings, "PETEEEBOT_LLM_TIMEOUT_SECONDS", 30.0)),
+            keep_alive=str(getattr(settings, "PETEEEBOT_LLM_KEEP_ALIVE", "30m")),
         )
     return CoachVoiceService(
         enabled=enabled,

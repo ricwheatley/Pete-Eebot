@@ -74,6 +74,34 @@ def test_ollama_client_posts_chat_payload_and_returns_content() -> None:
     assert payload["options"]["num_predict"] == 220
 
 
+def test_ollama_client_sends_keep_alive_when_configured() -> None:
+    http = _Http(_Response({"message": {"content": "kept warm"}}))
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434/",
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
+        keep_alive="30m",
+        http_client=http,
+    )
+
+    assert client.chat([{"role": "user", "content": "draft"}]) == "kept warm"
+    assert http.calls[0]["json"]["keep_alive"] == "30m"
+
+
+def test_ollama_client_omits_keep_alive_when_blank() -> None:
+    http = _Http(_Response({"message": {"content": "no keep alive"}}))
+    client = OllamaChatClient(
+        base_url="http://127.0.0.1:11434/",
+        model="qwen2.5:1.5b",
+        timeout_seconds=30.0,
+        keep_alive=" ",
+        http_client=http,
+    )
+
+    assert client.chat([{"role": "user", "content": "draft"}]) == "no keep alive"
+    assert "keep_alive" not in http.calls[0]["json"]
+
+
 def test_ollama_client_chat_options_can_be_overridden() -> None:
     http = _Http(_Response({"message": {"content": "custom"}}))
     client = OllamaChatClient(
