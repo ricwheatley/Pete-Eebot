@@ -92,7 +92,7 @@ def provide_narrative_builder() -> NarrativeBuilder:
     return NarrativeBuilder()
 
 
-def provide_coach_voice_service() -> CoachVoiceService:
+def provide_coach_voice_service(*, payload_recorder=None) -> CoachVoiceService:
     enabled = bool(getattr(settings, "PETEEEBOT_LLM_ENABLED", False))
     client = None
     if enabled:
@@ -105,6 +105,7 @@ def provide_coach_voice_service() -> CoachVoiceService:
         enabled=enabled,
         client=client,
         model_name=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b")),
+        payload_recorder=payload_recorder,
     )
 
 

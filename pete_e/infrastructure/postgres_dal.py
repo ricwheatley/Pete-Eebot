@@ -1307,6 +1307,56 @@ class PostgresDal(PlanRepository):
     def get_metrics_overview(self, target_date: date) -> Tuple[List[str], List[Tuple[Any, ...]]]:
         return self._call_function("sp_metrics_overview", target_date)
         """Perform get metrics overview."""
+
+    def record_coach_voice_payload(
+        self,
+        *,
+        message_type: str,
+        schema_version: str,
+        request_payload: Dict[str, Any],
+        prompt_messages: List[Dict[str, str]],
+        response_text: str | None,
+        fallback_text: str,
+        final_text: str,
+        model: str | None,
+        status: str,
+        duration_ms: int | None,
+        error: str | None,
+    ) -> None:
+        sql_text = """
+            INSERT INTO coach_voice_payloads (
+                message_type,
+                schema_version,
+                model,
+                status,
+                duration_ms,
+                request_payload,
+                prompt_messages,
+                response_text,
+                fallback_text,
+                final_text,
+                error
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        with self._get_cursor() as cur:
+            cur.execute(
+                sql_text,
+                (
+                    message_type,
+                    schema_version,
+                    model,
+                    status,
+                    duration_ms,
+                    Json(request_payload or {}),
+                    Json(prompt_messages or []),
+                    response_text,
+                    fallback_text,
+                    final_text,
+                    error,
+                ),
+            )
+        """Perform record coach voice payload."""
     
     def refresh_daily_summary(self, days: int = 7) -> None:
         start_date = date.today() - timedelta(days=days)

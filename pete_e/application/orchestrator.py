@@ -22,7 +22,7 @@ from pete_e.application.composition import (
     provide_narrative_builder,
     provide_validation_service,
 )
-from pete_e.application.coach_voice import CoachVoiceService
+from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest, CoachVoiceService
 from pete_e.application.collaborator_contracts import (
     CycleContract,
     DataAccessContract,
@@ -45,6 +45,7 @@ from pete_e.application.workflows import (
 from pete_e.application.workflows.cycle_rollover import CycleRolloverResult
 from pete_e.application.workflows.daily_sync import DailyAutomationResult
 from pete_e.application.workflows.weekly_calibration import WeeklyCalibrationResult
+from pete_e.domain import body_age, narrative_builder
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.morning_coach import build_morning_training_adjustment
@@ -64,6 +65,17 @@ class WeeklyAutomationResult:
     rollover: CycleRolloverResult | None
     rollover_triggered: bool
     """Represent WeeklyAutomationResult."""
+
+
+@dataclass(frozen=True)
+class _DailySummaryDraft:
+    target: date
+    action_date: date
+    fallback_message: str
+    metrics_payload: Dict[str, Any]
+    guidance: str | None = None
+    nutrition_line: str | None = None
+    supplemental_lines: tuple[str, ...] = ()
 
 
 def _build_metrics_overview_payload(
@@ -123,7 +135,10 @@ class Orchestrator:
                 )
 
         self.narrative_builder = narrative_builder or provide_narrative_builder()
-        self.voice_service = voice_service or provide_coach_voice_service()
+        payload_recorder = getattr(self.dal, "record_coach_voice_payload", None)
+        self.voice_service = voice_service or provide_coach_voice_service(
+            payload_recorder=payload_recorder if callable(payload_recorder) else None
+        )
 
         self.weekly_calibration_workflow = WeeklyCalibrationWorkflow(self.validation_service)
         self.cycle_rollover_workflow = CycleRolloverWorkflow(
@@ -342,7 +357,22 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def get_daily_summary(self, target_date: date | None = None) -> str:
-        """Return the conversational morning narrative for the chosen day."""
+        """Return the deterministic morning narrative fallback for the chosen day."""
+
+        return self._build_daily_summary_draft(target_date=target_date).fallback_message
+
+    def build_daily_summary_message(self, target_date: date | None = None) -> str:
+        """Return the Telegram-ready daily summary, using Ollama when enabled."""
+
+        draft = self._build_daily_summary_draft(target_date=target_date)
+        request = self._build_daily_voice_request(draft)
+        composer = getattr(self.voice_service, "compose", None)
+        if callable(composer):
+            return composer(request, fallback_message=draft.fallback_message)
+        return self.voice_service.rewrite(draft.fallback_message)
+
+    def _build_daily_summary_draft(self, target_date: date | None = None) -> _DailySummaryDraft:
+        """Build deterministic daily summary content and structured context."""
 
         target = target_date or (date.today() - timedelta(days=1))
 
@@ -378,14 +408,113 @@ class Orchestrator:
             action_date=action_date,
         )
         nutrition_line = self._build_nutrition_summary_line(target)
+        supplemental_lines = tuple(self._build_daily_supplemental_lines(target))
+
+        combined = report.rstrip()
         if guidance:
-            combined = f"{report.rstrip()}\n\n{guidance}"
-            if nutrition_line:
-                combined = f"{combined}\n\n{nutrition_line}"
-            return self.voice_service.rewrite(combined)
+            combined = f"{combined}\n\n{guidance}"
         if nutrition_line:
-            return self.voice_service.rewrite(f"{report.rstrip()}\n\n{nutrition_line}")
-        return self.voice_service.rewrite(report)
+            combined = f"{combined}\n\n{nutrition_line}"
+        for line in supplemental_lines:
+            combined = self._append_line(combined, line)
+
+        return _DailySummaryDraft(
+            target=target,
+            action_date=action_date,
+            fallback_message=combined,
+            metrics_payload=metrics_payload,
+            guidance=guidance,
+            nutrition_line=nutrition_line,
+            supplemental_lines=supplemental_lines,
+        )
+
+    def _build_daily_voice_request(self, draft: _DailySummaryDraft) -> CoachVoiceRequest:
+        coach_state = self._load_coach_state_context(draft.target)
+        profile = coach_state.get("profile") if isinstance(coach_state, dict) else {}
+        if not isinstance(profile, dict):
+            profile = {}
+
+        facts: list[CoachVoiceFact] = []
+        if draft.guidance:
+            facts.append(
+                CoachVoiceFact(
+                    id="training_guidance",
+                    text=draft.guidance,
+                    source="morning_training_adjustment",
+                    required=True,
+                )
+            )
+        if draft.nutrition_line:
+            facts.append(
+                CoachVoiceFact(
+                    id="nutrition_summary",
+                    text=draft.nutrition_line,
+                    source="nutrition_log",
+                    confidence="estimated",
+                    required=False,
+                )
+            )
+        for idx, line in enumerate(draft.supplemental_lines, start=1):
+            facts.append(
+                CoachVoiceFact(
+                    id=f"supplemental_context_{idx}",
+                    text=line,
+                    source="daily_summary_context",
+                    required=False,
+                )
+            )
+
+        return CoachVoiceRequest(
+            message_type="daily_summary",
+            intent="morning coaching check-in",
+            audience={
+                "name": profile.get("display_name") or "Ric",
+                "timezone": profile.get("timezone") or "Europe/London",
+            },
+            dates={
+                "report_date": draft.target.isoformat(),
+                "action_date": draft.action_date.isoformat(),
+            },
+            metrics_report=draft.metrics_payload,
+            coach_state=coach_state,
+            goals=coach_state.get("goal_state", {}) if isinstance(coach_state, dict) else {},
+            recent_context={
+                "plan_context": coach_state.get("plan_context", {}) if isinstance(coach_state, dict) else {},
+                "recent_workouts": coach_state.get("recent_workouts", {}) if isinstance(coach_state, dict) else {},
+                "nutrition": coach_state.get("nutrition", {}) if isinstance(coach_state, dict) else {},
+                "supplemental_lines": list(draft.supplemental_lines),
+            },
+            deterministic_decisions={
+                "readiness_state": (
+                    coach_state.get("summary", {}).get("readiness_state")
+                    if isinstance(coach_state.get("summary"), dict)
+                    else None
+                )
+                if isinstance(coach_state, dict)
+                else None,
+                "morning_training_guidance": draft.guidance,
+            },
+            constraints_and_warnings=list(
+                coach_state.get("coaching_notes", []) if isinstance(coach_state, dict) else []
+            ),
+            must_include_facts=facts,
+            style={
+                "channel": "telegram",
+                "voice": "Pete",
+                "tone": "personal, direct, natural, encouraging",
+                "max_words": 180,
+                "format": "short text message with compact paragraphs or bullets",
+            },
+        )
+
+    def _load_coach_state_context(self, target: date) -> Dict[str, Any]:
+        try:
+            from pete_e.application.api_services import MetricsService
+
+            return MetricsService(self.dal).coach_state(target.isoformat())
+        except Exception as exc:  # pragma: no cover - context should not block fallback
+            log_utils.warn(f"Failed to load structured coach state for voice context: {exc}")
+            return {}
 
 
     def _build_nutrition_summary_line(self, target_date: date) -> str | None:
@@ -417,9 +546,237 @@ class Orchestrator:
             f"{carbs:.0f}g carbs, and {fat:.0f}g fat."
         )
 
+    def _build_daily_supplemental_lines(self, target: date) -> List[str]:
+        lines: list[str] = []
+        body_age_line = self._format_body_age_line(target)
+        if body_age_line:
+            lines.append(body_age_line)
+        body_comp_line = self._format_body_comp_line(target)
+        if body_comp_line:
+            lines.append(body_comp_line)
+        hrv_line = self._format_hrv_line(target)
+        if hrv_line:
+            lines.append(hrv_line)
+        trend_line = self._build_trend_paragraph(target)
+        if trend_line:
+            lines.append(trend_line)
+        return lines
+
+    def _format_body_age_line(self, target: date) -> str | None:
+        try:
+            trend = body_age.get_body_age_trend(getattr(self, "dal", None), target_date=target)
+        except Exception as exc:  # pragma: no cover - defensive context only
+            log_utils.warn(f"Failed to load body age trend for voice context: {exc}")
+            return None
+        if trend is None:
+            return None
+        value = getattr(trend, "value", None)
+        delta = getattr(trend, "delta", None)
+        if value is None:
+            return None
+        line = f"Body Age: {value:.1f}y"
+        if delta is None:
+            return f"{line} (7d delta n/a)"
+        return f"{line} (7d delta {delta:+.1f}y)"
+
+    def _format_body_comp_line(self, target: date) -> str | None:
+        dal = getattr(self, "dal", None)
+        loader = getattr(dal, "get_historical_metrics", None) if dal is not None else None
+        if not callable(loader):
+            return None
+        try:
+            rows = loader(14)
+        except Exception as exc:  # pragma: no cover - defensive context only
+            log_utils.warn(f"Failed to load body composition history for voice context: {exc}")
+            return None
+
+        window_start = target - timedelta(days=13)
+        current_start = target - timedelta(days=6)
+        samples: list[tuple[date, float]] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            row_date = self._coerce_date(row.get("date"))
+            if row_date is None or row_date > target or row_date < window_start:
+                continue
+            muscle_pct = coerce_decimal_to_float(row.get("muscle_pct"))
+            if muscle_pct is not None:
+                samples.append((row_date, muscle_pct))
+
+        if not samples:
+            return None
+        samples.sort(key=lambda item: item[0])
+        current_values = [value for sample_date, value in samples if current_start <= sample_date <= target]
+        previous_values = [value for sample_date, value in samples if window_start <= sample_date < current_start]
+        if len(current_values) < 3:
+            return None
+        avg_current = round(sum(current_values) / len(current_values), 1)
+        if len(previous_values) >= 3:
+            avg_previous = round(sum(previous_values) / len(previous_values), 1)
+            diff = round(avg_current - avg_previous, 1)
+            if abs(diff) >= 0.5:
+                direction = "up" if diff > 0 else "down"
+                return f"Muscle trend: {avg_current:.1f}% avg this week ({direction} {abs(diff):.1f}% vs prior)."
+            return f"Muscle trend: {avg_current:.1f}% avg this week (steady vs prior)."
+        return f"Muscle trend: {avg_current:.1f}% avg this week."
+
+    def _format_hrv_line(self, target: date) -> str | None:
+        dal = getattr(self, "dal", None)
+        loader = getattr(dal, "get_historical_metrics", None) if dal is not None else None
+        if not callable(loader):
+            return None
+        try:
+            rows = loader(14)
+        except Exception as exc:  # pragma: no cover - defensive context only
+            log_utils.warn(f"Failed to load HRV history for voice context: {exc}")
+            return None
+
+        window_start = target - timedelta(days=6)
+        samples: list[tuple[date, float]] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            row_date = self._coerce_date(row.get("date"))
+            if row_date is None or row_date < window_start or row_date > target:
+                continue
+            hrv_value = None
+            for key in ("hrv_sdnn_ms", "hrv_rmssd_ms", "hrv_daily_ms", "hrv"):
+                hrv_value = coerce_decimal_to_float(row.get(key))
+                if hrv_value is not None:
+                    break
+            if hrv_value is not None and hrv_value > 0:
+                samples.append((row_date, hrv_value))
+
+        if not samples:
+            return None
+        samples.sort(key=lambda item: item[0])
+        current_date = target
+        current_value = next((value for sample_date, value in samples if sample_date == target), None)
+        if current_value is None:
+            current_date, current_value = samples[-1]
+        previous_values = [value for sample_date, value in samples if sample_date < current_date]
+        avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
+        direction = "steady"
+        if avg_previous is not None:
+            delta = current_value - avg_previous
+            if delta >= 2.0:
+                direction = "up"
+            elif delta <= -2.0:
+                direction = "down"
+        line = f"HRV: {current_value:.0f} ms ({direction})"
+        if avg_previous is not None:
+            line += f" vs 7d avg {avg_previous:.0f} ms"
+        return line
+
+    def _build_trend_paragraph(self, target: date) -> str | None:
+        samples = self._collect_trend_samples(target)
+        if not samples:
+            return None
+        lines = narrative_builder.compute_trend_lines(samples, as_of=target, limit=2)
+        if not lines:
+            return None
+        sentences = ["Trend check: " + lines[0]] + lines[1:]
+        return " ".join(sentences)
+
+    def _collect_trend_samples(self, target: date) -> list[tuple[date, dict]]:
+        dal = getattr(self, "dal", None)
+        loader = getattr(dal, "get_historical_data", None) if dal is not None else None
+        if not callable(loader):
+            return []
+        start = target - timedelta(days=89)
+        try:
+            rows = loader(start, target)
+        except Exception as exc:  # pragma: no cover - defensive context only
+            log_utils.warn(f"Failed to load trend history for voice context: {exc}")
+            return []
+        samples: list[tuple[date, dict]] = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            row_date = self._coerce_date(row.get("date"))
+            if row_date is None or row_date > target:
+                continue
+            samples.append((row_date, row))
+        samples.sort(key=lambda item: item[0])
+        return samples
+
+    @staticmethod
+    def _append_line(base: str | None, addition: str) -> str:
+        base_text = "" if base is None else str(base)
+        if not addition:
+            return base_text
+        if not base_text:
+            return addition
+        if not base_text.endswith("\n"):
+            base_text = f"{base_text}\n"
+        return f"{base_text}{addition}"
+
     def build_trainer_message(self, message_date: date | None = None) -> str:
         """Compose Pierre's trainer check-in for the supplied date."""
-        return self.trainer_message_workflow.run(message_date)
+        trainer_context = self.trainer_message_workflow.build_message_context(message_date)
+        coach_state = self._load_coach_state_context(trainer_context.target)
+        profile = coach_state.get("profile") if isinstance(coach_state, dict) else {}
+        if not isinstance(profile, dict):
+            profile = {}
+        session_type = trainer_context.context.get("today_session_type")
+        facts: list[CoachVoiceFact] = []
+        if session_type:
+            facts.append(
+                CoachVoiceFact(
+                    id="today_session",
+                    text=f"Today's session context: {session_type}",
+                    source="training_plan",
+                    required=True,
+                )
+            )
+
+        request = CoachVoiceRequest(
+            message_type="trainer_summary",
+            intent="trainer-style daily check-in",
+            audience={
+                "name": profile.get("display_name") or trainer_context.context.get("user_name") or "Ric",
+                "timezone": profile.get("timezone") or "Europe/London",
+            },
+            dates={
+                "message_date": trainer_context.target.isoformat(),
+            },
+            metrics_report={
+                "reference_date": trainer_context.target.isoformat(),
+                "metrics": trainer_context.metrics,
+            },
+            coach_state=coach_state,
+            goals=coach_state.get("goal_state", {}) if isinstance(coach_state, dict) else {},
+            recent_context={
+                "trainer_context": trainer_context.context,
+                "plan_context": coach_state.get("plan_context", {}) if isinstance(coach_state, dict) else {},
+                "recent_workouts": coach_state.get("recent_workouts", {}) if isinstance(coach_state, dict) else {},
+            },
+            deterministic_decisions={
+                "session_context": session_type,
+                "readiness_state": (
+                    coach_state.get("summary", {}).get("readiness_state")
+                    if isinstance(coach_state.get("summary"), dict)
+                    else None
+                )
+                if isinstance(coach_state, dict)
+                else None,
+            },
+            constraints_and_warnings=list(
+                coach_state.get("coaching_notes", []) if isinstance(coach_state, dict) else []
+            ),
+            must_include_facts=facts,
+            style={
+                "channel": "telegram",
+                "voice": "Pierre",
+                "tone": "direct trainer, light franglais, natural, personal",
+                "max_words": 180,
+                "format": "short text message with compact paragraphs",
+            },
+        )
+        composer = getattr(self.voice_service, "compose", None)
+        if callable(composer):
+            return composer(request, fallback_message=trainer_context.fallback_message)
+        return self.voice_service.rewrite(trainer_context.fallback_message)
 
     def send_telegram_message(self, message: str) -> bool:
         """Proxy to the Telegram client while providing defensive logging."""

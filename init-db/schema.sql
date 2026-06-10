@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS "ImportLog" CASCADE;
 DROP TABLE IF EXISTS application_operation_locks CASCADE;
 DROP TABLE IF EXISTS web_console_command_history CASCADE;
 DROP TABLE IF EXISTS application_jobs CASCADE;
+DROP TABLE IF EXISTS coach_voice_payloads CASCADE;
 DROP TABLE IF EXISTS auth_sessions CASCADE;
 DROP TABLE IF EXISTS auth_user_profiles CASCADE;
 DROP TABLE IF EXISTS user_profiles CASCADE;
@@ -202,6 +203,28 @@ CREATE TABLE application_operation_locks (
     CONSTRAINT ck_application_operation_locks_operation_not_blank CHECK (btrim(operation) <> '')
 );
 CREATE INDEX idx_application_operation_locks_job_id ON application_operation_locks(job_id);
+
+CREATE TABLE coach_voice_payloads (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    message_type TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    model TEXT,
+    status TEXT NOT NULL,
+    duration_ms INTEGER,
+    request_payload JSONB NOT NULL,
+    prompt_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+    response_text TEXT,
+    fallback_text TEXT NOT NULL,
+    final_text TEXT NOT NULL,
+    error TEXT,
+    CONSTRAINT ck_coach_voice_payloads_message_type_not_blank CHECK (btrim(message_type) <> ''),
+    CONSTRAINT ck_coach_voice_payloads_schema_version_not_blank CHECK (btrim(schema_version) <> ''),
+    CONSTRAINT ck_coach_voice_payloads_status_not_blank CHECK (btrim(status) <> '')
+);
+CREATE INDEX idx_coach_voice_payloads_created_at ON coach_voice_payloads(created_at DESC);
+CREATE INDEX idx_coach_voice_payloads_message_type_created_at ON coach_voice_payloads(message_type, created_at DESC);
+CREATE INDEX idx_coach_voice_payloads_status_created_at ON coach_voice_payloads(status, created_at DESC);
 
 CREATE TABLE user_profiles (
     id BIGSERIAL PRIMARY KEY,
