@@ -704,7 +704,9 @@ def _morning_report_result_summary(result: MorningReportResult) -> str:
 
 def _generate_morning_report_result(*, target_date: date | None, send: bool) -> MorningReportResult:
     orchestrator = _build_morning_report_orchestrator()
-    report_value = orchestrator.get_daily_summary(target_date=target_date)
+    from pete_e.cli.messenger import build_daily_summary
+
+    report_value = build_daily_summary(orchestrator=orchestrator, target_date=target_date)
     report = "" if report_value is None else str(report_value)
 
     if send and report.strip():

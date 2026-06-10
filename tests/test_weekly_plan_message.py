@@ -57,6 +57,16 @@ class StubOrchestrator:
         return True
 
 
+class RecordingVoice:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.calls = []
+
+    def compose(self, request, *, fallback_message: str) -> str:
+        self.calls.append({"request": request, "fallback": fallback_message})
+        return self.response
+
+
 class FixedDate(real_date):
     @classmethod
     def today(cls) -> "FixedDate":
@@ -115,6 +125,21 @@ def test_weekly_plan_cli_send_uses_formatted_overview(monkeypatch):
 
     assert result.exit_code == 0
     assert orch.sent_message == expected
+
+
+def test_weekly_plan_uses_structured_voice_when_available(monkeypatch):
+    orch = _setup(monkeypatch)
+    voice = RecordingVoice("Voice-written weekly plan")
+    orch.voice_service = voice
+
+    message = messenger.build_weekly_plan_overview(orchestrator=orch, target_date=FixedDate.today())
+
+    assert message == "Voice-written weekly plan"
+    assert voice.calls
+    request = voice.calls[0]["request"]
+    assert request.message_type == "weekly_plan"
+    assert request.recent_context["plan_week_rows"][0]["exercise_name"] == "Squat"
+    assert voice.calls[0]["fallback"].startswith("Cycle week: 1")
 
 
 def test_weekly_plan_overview_targets_next_week_when_run_on_sunday(monkeypatch):

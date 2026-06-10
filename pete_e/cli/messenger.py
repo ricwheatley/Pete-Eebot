@@ -89,6 +89,7 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.domain import body_age, narrative_builder
@@ -450,24 +451,33 @@ def build_daily_summary(
 ) -> str:
     """Generate the daily summary narrative for the requested date."""
     orch = orchestrator or _build_orchestrator()
+    message_builder = getattr(orch, "build_daily_summary_message", None)
+    if callable(message_builder):
+        value = message_builder(target_date=target_date)
+        return "" if value is None else str(value)
+
     summary_value = orch.get_daily_summary(target_date=target_date)
     summary_text = "" if summary_value is None else str(summary_value)
 
     target = target_date or (date.today() - timedelta(days=1))
-    trend = body_age.get_body_age_trend(getattr(orch, "dal", None), target_date=target)
+    dal = getattr(orch, "dal", None)
+    if dal is None:
+        return summary_text
+
+    trend = body_age.get_body_age_trend(dal, target_date=target)
     body_age_line = _format_body_age_line(trend)
     if body_age_line:
         summary_text = _append_line(summary_text, body_age_line)
 
-    comp_line = _format_body_comp_line(getattr(orch, "dal", None), target)
+    comp_line = _format_body_comp_line(dal, target)
     if comp_line:
         summary_text = _append_line(summary_text, comp_line)
 
-    hrv_line = _format_hrv_line(getattr(orch, "dal", None), target)
+    hrv_line = _format_hrv_line(dal, target)
     if hrv_line:
         summary_text = _append_line(summary_text, hrv_line)
 
-    trend_paragraph = _build_trend_paragraph(getattr(orch, 'dal', None), target)
+    trend_paragraph = _build_trend_paragraph(dal, target)
     if trend_paragraph:
         summary_text = _append_line(summary_text, trend_paragraph)
 
@@ -614,11 +624,117 @@ def build_weekly_plan_overview(
 
         builder = NarrativeBuilder()
 
-    return builder.build_weekly_plan(
+    fallback = builder.build_weekly_plan(
         plan_week_rows,
         week_number,
         week_start=week_start,
     )
+    return _compose_weekly_plan_voice(
+        orch=orch,
+        fallback=fallback,
+        target=target,
+        week_start=week_start,
+        week_number=week_number,
+        active_plan=active_plan,
+        plan_week_rows=list(plan_week_rows),
+    )
+
+
+def _compose_weekly_plan_voice(
+    *,
+    orch: "OrchestratorType",
+    fallback: str,
+    target: date,
+    week_start: date,
+    week_number: int,
+    active_plan: dict[str, Any],
+    plan_week_rows: list[dict[str, Any]],
+) -> str:
+    voice_service = getattr(orch, "voice_service", None)
+    composer = getattr(voice_service, "compose", None)
+    if not callable(composer):
+        return fallback
+
+    coach_state = _load_voice_coach_state(getattr(orch, "dal", None), target)
+    profile = coach_state.get("profile") if isinstance(coach_state, dict) else {}
+    if not isinstance(profile, dict):
+        profile = {}
+
+    required_terms = [str(week_number)]
+    required_terms.extend(_weekly_plan_required_terms(plan_week_rows))
+    facts = [
+        CoachVoiceFact(
+            id="weekly_plan_schedule",
+            text=fallback,
+            source="training_plan",
+            required=True,
+            required_terms=tuple(required_terms),
+        )
+    ]
+    request = CoachVoiceRequest(
+        message_type="weekly_plan",
+        intent="weekly training plan overview",
+        audience={
+            "name": profile.get("display_name") or "Ric",
+            "timezone": profile.get("timezone") or "Europe/London",
+        },
+        dates={
+            "target_date": target.isoformat(),
+            "week_start": week_start.isoformat(),
+            "week_end": (week_start + timedelta(days=6)).isoformat(),
+        },
+        metrics_report={},
+        coach_state=coach_state,
+        goals=coach_state.get("goal_state", {}) if isinstance(coach_state, dict) else {},
+        recent_context={
+            "active_plan": active_plan,
+            "plan_week_rows": plan_week_rows,
+            "plan_context": coach_state.get("plan_context", {}) if isinstance(coach_state, dict) else {},
+            "recent_workouts": coach_state.get("recent_workouts", {}) if isinstance(coach_state, dict) else {},
+        },
+        deterministic_decisions={
+            "week_number": week_number,
+            "week_start": week_start.isoformat(),
+            "exact_schedule_must_be_preserved": True,
+        },
+        constraints_and_warnings=list(
+            coach_state.get("coaching_notes", []) if isinstance(coach_state, dict) else []
+        ),
+        must_include_facts=facts,
+        style={
+            "channel": "telegram",
+            "voice": "Pete",
+            "tone": "clear, personal, trainer-like, practical",
+            "max_words": 260,
+            "format": "compact weekly schedule with exact sessions preserved",
+        },
+    )
+    return composer(request, fallback_message=fallback)
+
+
+def _load_voice_coach_state(dal: Any, target: date) -> dict[str, Any]:
+    if dal is None:
+        return {}
+    try:
+        from pete_e.application.api_services import MetricsService
+
+        return MetricsService(dal).coach_state(target.isoformat())
+    except Exception as exc:
+        log_utils.log_message(f"Failed to load structured coach state for weekly voice context: {exc}", "WARN")
+        return {}
+
+
+def _weekly_plan_required_terms(rows: list[dict[str, Any]]) -> list[str]:
+    terms: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("exercise_name") or "").strip()
+        if name and name not in terms:
+            terms.append(name)
+        if len(terms) >= 10:
+            break
+    return terms
 
 # Create the Typer application object
 app = typer.Typer(
@@ -1015,7 +1131,7 @@ def morning_report(
             )
             raise typer.Exit(code=1)
 
-    report = orchestrator.get_daily_summary(target_date=resolved_date)
+    report = build_daily_summary(orchestrator=orchestrator, target_date=resolved_date)
     if not report.strip():
         typer.echo("No morning report is available yet. Give the sync a minute.")
         raise typer.Exit(code=0)
