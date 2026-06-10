@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Mapping, Sequence
 
@@ -98,6 +99,50 @@ def test_compose_accepts_uuid_values_in_structured_payload() -> None:
     assert str(request_id) in client.messages[1]["content"]
     assert records[0]["request_payload"]["recent_context"]["request_id"] == str(request_id)
     assert records[0]["status"] == "succeeded"
+
+
+def test_compose_uses_compact_prompt_payload_but_persists_full_request() -> None:
+    records: list[dict] = []
+    client = _FakeClient(response="Ric, recovery is steady enough to keep the message tight.")
+    service = CoachVoiceService(enabled=True, client=client, payload_recorder=lambda **row: records.append(row))
+    duplicate_workouts = {
+        "running": [
+            {
+                "workout_date": "2026-06-09",
+                "internal_blob": "duplicate coach_state workout detail that should not be prompted",
+            }
+        ]
+    }
+
+    result = service.compose(
+        {
+            "message_type": "daily_summary",
+            "intent": "morning check-in",
+            "coach_state": {
+                "date": "2026-06-09",
+                "summary": {"readiness_state": "steady"},
+                "derived": {"run_load_7d_km": 12.0},
+                "recent_workouts": duplicate_workouts,
+                "plan_context": {"large_duplicate": "not needed from coach_state"},
+                "nutrition": {"large_duplicate": "not needed from coach_state"},
+            },
+            "recent_context": {
+                "recent_workouts": {"running": [{"workout_date": "2026-06-09", "distance_km": 5.0}]}
+            },
+        },
+        fallback_message="fallback message",
+    )
+
+    assert result == "Ric, recovery is steady enough to keep the message tight."
+    assert records[0]["request_payload"]["coach_state"]["recent_workouts"] == duplicate_workouts
+    assert client.messages is not None
+    prompt_json = client.messages[1]["content"].split("Structured context JSON:\n", 1)[1]
+    prompt_payload = json.loads(prompt_json)
+    assert "recent_workouts" not in prompt_payload["coach_state"]
+    assert "plan_context" not in prompt_payload["coach_state"]
+    assert "nutrition" not in prompt_payload["coach_state"]
+    assert prompt_payload["coach_state"]["summary"]["readiness_state"] == "steady"
+    assert prompt_payload["recent_context"]["recent_workouts"]["running"][0]["distance_km"] == 5.0
 
 
 def test_compose_validation_failure_returns_fallback(monkeypatch) -> None:
