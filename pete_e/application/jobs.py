@@ -270,6 +270,7 @@ class ApplicationJobService:
         timeout_seconds: float | None,
         auth_scheme: str | None = None,
         result_summary_builder=None,
+        result_output_builder=None,
     ):
         job = self._create_job(
             job_id=job_id,
@@ -306,6 +307,7 @@ class ApplicationJobService:
             operation,
             callback,
             result_summary_builder,
+            result_output_builder,
         )
         if timeout_seconds is None or timeout_seconds <= 0:
             return future.result()
@@ -330,13 +332,75 @@ class ApplicationJobService:
                 },
             ) from exc
 
-    def _run_callback_job(self, job_id: str, operation: str, callback, result_summary_builder=None) -> Any:
+    def enqueue_callback(
+        self,
+        *,
+        job_id: str,
+        operation: str,
+        callback,
+        requester: AuthUser | None,
+        request_id: str,
+        correlation_id: str,
+        request_summary: dict[str, Any],
+        timeout_seconds: float | None,
+        auth_scheme: str | None = None,
+        result_summary_builder=None,
+        result_output_builder=None,
+    ) -> ApplicationJob:
+        job = self._create_job(
+            job_id=job_id,
+            operation=operation,
+            requester=requester,
+            auth_scheme=auth_scheme,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            request_summary=request_summary,
+        )
+
+        try:
+            self._acquire_operation_lock(operation, job_id, timeout_seconds)
+        except OperationInProgress as exc:
+            self.repository.complete(
+                job_id,
+                status=JOB_STATUS_FAILED,
+                completed_at=_utcnow(),
+                exit_code=None,
+                result_summary="Job rejected because another high-risk operation is active.",
+                stdout_summary=None,
+                stderr_summary=None,
+                failure_reason=str(exc),
+            )
+            raise _operation_conflict(exc) from exc
+
+        parent_token = bind_log_context(job_id=job_id, component="job")
+        worker_context = contextvars.copy_context()
+        reset_log_context(parent_token)
+        self._executor.submit(
+            worker_context.run,
+            self._run_callback_job,
+            job_id,
+            operation,
+            callback,
+            result_summary_builder,
+            result_output_builder,
+        )
+        return job
+
+    def _run_callback_job(
+        self,
+        job_id: str,
+        operation: str,
+        callback,
+        result_summary_builder=None,
+        result_output_builder=None,
+    ) -> Any:
         started = time.perf_counter()
         self.repository.mark_running(job_id, started_at=_utcnow())
         _log_job_event(operation=operation, job_id=job_id, outcome=JOB_STATUS_RUNNING)
         status = JOB_STATUS_FAILED
         failure_reason: str | None = None
         result_summary = f"{operation} failed."
+        stdout_summary: str | None = None
         result: Any = None
         try:
             result = callback()
@@ -345,6 +409,8 @@ class ApplicationJobService:
                 result_summary = str(result_summary_builder(result))
             else:
                 result_summary = _result_summary(operation, result, status=status)
+            if callable(result_output_builder):
+                stdout_summary = _safe_output_summary(str(result_output_builder(result)))
             return result
         except Exception as exc:
             failure_reason = str(exc)
@@ -358,7 +424,7 @@ class ApplicationJobService:
                 completed_at=_utcnow(),
                 exit_code=None,
                 result_summary=result_summary,
-                stdout_summary=None,
+                stdout_summary=stdout_summary,
                 stderr_summary=None,
                 failure_reason=failure_reason,
             )

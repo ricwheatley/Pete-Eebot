@@ -118,6 +118,57 @@ function commandResultMessage(body) {
   return parts.join("\n");
 }
 
+function jobStatusResultMessage(job, originalBody = {}) {
+  const parts = [job.result_summary || `${job.operation || "Job"} ${job.status}.`];
+  if (job.stdout_summary) {
+    const label = originalBody.message_type ? originalBody.message_type.replace(/_/g, " ") : "message";
+    if (originalBody.command === "message_preview") {
+      parts.push(`--- ${label} preview ---\n${job.stdout_summary}`);
+    } else {
+      parts.push(job.stdout_summary);
+    }
+  }
+  if (job.failure_reason) {
+    parts.push(job.failure_reason);
+  }
+  const identifiers = commandIdentifiers({
+    request_id: job.request_id,
+    job_id: job.id,
+    status_url: originalBody.status_url,
+  });
+  if (identifiers) {
+    parts.push(identifiers);
+  }
+  return parts.join("\n");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollCommandJob(form, statusApiUrl, originalBody) {
+  const terminalStatuses = new Set(["succeeded", "failed", "timeout", "abandoned", "cancelled"]);
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    await sleep(attempt < 5 ? 1000 : 3000);
+    const response = await fetch(statusApiUrl, {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.job) {
+      setCommandResult(form, commandFailureMessage(body), "danger");
+      return;
+    }
+    const job = body.job;
+    if (terminalStatuses.has(job.status)) {
+      setCommandResult(form, jobStatusResultMessage(job, originalBody), job.status === "succeeded" ? "ok" : "danger");
+      return;
+    }
+    setCommandResult(form, job.result_summary || `${job.operation || "Job"} ${job.status}.`, "neutral");
+  }
+  setCommandResult(form, "Command is still running. Check the job status page.", "neutral");
+}
+
 function commandIdentifiers(body) {
   const details = body.error?.details || body.detail || {};
   const requestId = body.request_id || body.correlation_id || body.error?.correlation_id || details.request_id;
@@ -171,6 +222,9 @@ async function submitCommand(form) {
       return;
     }
     setCommandResult(form, commandResultMessage(body), body.success === false ? "danger" : "ok");
+    if (body.status_api_url && ["queued", "running"].includes(body.status)) {
+      await pollCommandJob(form, body.status_api_url, body);
+    }
     if (form.dataset.refreshOnSuccess === "true") {
       window.setTimeout(() => window.location.reload(), 700);
     }
