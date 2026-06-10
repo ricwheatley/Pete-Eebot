@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import uuid
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -169,6 +170,27 @@ def test_application_job_service_records_sanitized_command_history() -> None:
     assert event["command"] == "sync"
     assert event["outcome"] == "started"
     assert event["safe_summary"] == {"days": 3, "api_key": "<redacted>", "nested": {"token": "<redacted>"}}
+
+
+def test_application_job_service_stringifies_uuid_command_history_values() -> None:
+    repo = _Repo()
+    service = jobs.ApplicationJobService(repo)
+    preview_request_id = uuid.uuid4()
+
+    service.record_command_event(
+        request_id="req-history",
+        correlation_id="req-history",
+        job_id="message-preview",
+        requester=None,
+        auth_scheme="session",
+        command="preview-message",
+        outcome="started",
+        summary={"preview_request_id": preview_request_id},
+        client_identity="127.0.0.1",
+    )
+
+    event = repo.command_events[0]
+    assert event["safe_summary"] == {"preview_request_id": str(preview_request_id)}
 
 
 def test_application_job_service_records_nonzero_exit(monkeypatch) -> None:

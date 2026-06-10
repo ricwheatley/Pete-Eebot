@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Mapping, Sequence
 
 from pete_e.application.coach_voice import CoachVoiceService, LEGACY_REWRITE_SYSTEM_PROMPT, SYSTEM_PROMPT
@@ -75,6 +76,28 @@ def test_compose_enabled_fake_client_success_uses_structured_prompt(monkeypatch)
     assert "fallback message" not in logs[0]
     assert records[0]["status"] == "succeeded"
     assert records[0]["final_text"] == "Ric, 180g protein is banked. Keep today's work tidy."
+
+
+def test_compose_accepts_uuid_values_in_structured_payload() -> None:
+    records: list[dict] = []
+    request_id = uuid.uuid4()
+    client = _FakeClient(response="Ric, readiness is clear enough to keep today's message simple.")
+    service = CoachVoiceService(enabled=True, client=client, payload_recorder=lambda **row: records.append(row))
+
+    result = service.compose(
+        {
+            "message_type": "preview_message",
+            "intent": "operator preview",
+            "recent_context": {"request_id": request_id},
+        },
+        fallback_message="fallback message",
+    )
+
+    assert result == "Ric, readiness is clear enough to keep today's message simple."
+    assert client.messages is not None
+    assert str(request_id) in client.messages[1]["content"]
+    assert records[0]["request_payload"]["recent_context"]["request_id"] == str(request_id)
+    assert records[0]["status"] == "succeeded"
 
 
 def test_compose_validation_failure_returns_fallback(monkeypatch) -> None:
