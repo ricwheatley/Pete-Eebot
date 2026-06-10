@@ -30,6 +30,10 @@ _pool_lock = threading.Lock()
 _PLAN_GENERATION_LOCK_KEY = 7041917001
 
 
+def _json_dumps_safe(value: Any) -> str:
+    return json.dumps(value, default=str)
+
+
 def _is_pool_closed(pool: ConnectionPool | None) -> bool:
     return getattr(pool, "closed", False) is True
 
@@ -1348,8 +1352,8 @@ class PostgresDal(PlanRepository):
                     model,
                     status,
                     duration_ms,
-                    Json(request_payload or {}),
-                    Json(prompt_messages or []),
+                    Json(request_payload or {}, dumps=_json_dumps_safe),
+                    Json(prompt_messages or [], dumps=_json_dumps_safe),
                     response_text,
                     fallback_text,
                     final_text,

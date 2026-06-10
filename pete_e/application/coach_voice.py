@@ -9,6 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from time import perf_counter
 from typing import Any, Callable, Mapping, Protocol, Sequence
+from uuid import UUID
 
 from pete_e.infrastructure import log_utils
 
@@ -306,15 +307,19 @@ def _fact_to_dict(item: CoachVoiceFact | Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
     if isinstance(value, Decimal):
         return float(value)
+    if isinstance(value, UUID):
+        return str(value)
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, Mapping):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(item) for item in value]
-    return value
+    return str(value)
 
 
 def _to_int(value: Any) -> int | None:
@@ -346,4 +351,3 @@ def _numbers_in_text(text: str) -> list[str]:
 
 def _normalize_number_text(text: str) -> str:
     return re.sub(r"(?<=\d),(?=\d{3}\b)", "", text.lower())
-
