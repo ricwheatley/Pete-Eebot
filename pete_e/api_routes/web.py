@@ -1439,7 +1439,7 @@ def console_preview_message(request: Request, payload: dict[str, Any] | None = N
     _audit_command_start(request, command, summary)
     try:
         dependencies.enforce_command_rate_limit(request, command)
-        result = dependencies.get_job_service().run_callback(
+        dependencies.get_job_service().enqueue_callback(
             job_id=job_id,
             operation=command,
             callback=lambda: _generate_console_message_preview(message_type),
@@ -1450,27 +1450,24 @@ def console_preview_message(request: Request, payload: dict[str, Any] | None = N
             timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
             auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
             result_summary_builder=_console_message_preview_summary,
+            result_output_builder=lambda result: result.message,
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)
         raise
 
     response = {
-        "status": "completed",
+        "status": "queued",
         "command": command,
-        "success": result.success,
-        "summary": result.summary_line(),
-        "message_type": result.message_type,
-        "message": result.message,
+        "success": True,
+        "summary": "Message preview queued.",
+        "message_type": message_type,
         "job_id": job_id,
         "request_id": correlation_id,
         "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
     }
-    _audit_command_success(
-        request,
-        command,
-        {**response, "message": None, "message_length": len(result.message)},
-    )
+    _audit_command_success(request, command, response)
     return response
 
 

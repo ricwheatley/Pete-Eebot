@@ -340,6 +340,19 @@ class _JobService:
         self.enqueued.append(kwargs)
         return kwargs["callback"]()
 
+    def enqueue_callback(self, **kwargs):
+        self.enqueued.append(kwargs)
+        return ApplicationJob(
+            id=kwargs["job_id"],
+            operation=kwargs["operation"],
+            requester_user_id=kwargs["requester"].id,
+            requester_username=kwargs["requester"].username,
+            status="queued",
+            request_id=kwargs["request_id"],
+            correlation_id=kwargs["correlation_id"],
+            request_summary=kwargs["request_summary"],
+        )
+
     def list_recent_jobs(self, *, limit: int = 25):
         return self.jobs[:limit]
 
@@ -1602,19 +1615,22 @@ def test_console_message_preview_generates_without_confirmation(
         payload={"message_type": message_type},
     )
 
-    assert captured["message_type"] == message_type
-    assert captured["orchestrator"] is not None
-    assert payload["status"] == "completed"
+    assert captured == {}
+    assert payload["status"] == "queued"
     assert payload["command"] == "message_preview"
     assert payload["message_type"] == message_type
-    assert payload["message"] == expected_text
     assert payload["job_id"] == f"{message_type}-preview-job"
     assert payload["request_id"] == f"req-{message_type}-preview"
+    assert payload["status_api_url"] == f"/console/jobs/{message_type}-preview-job/status"
     assert job_service.enqueued[0]["operation"] == "message_preview"
     assert job_service.enqueued[0]["request_summary"] == {"message_type": message_type, "send": False}
+    result = job_service.enqueued[0]["callback"]()
+    assert captured["message_type"] == message_type
+    assert captured["orchestrator"] is not None
+    assert job_service.enqueued[0]["result_summary_builder"](result) == result.summary_line()
+    assert job_service.enqueued[0]["result_output_builder"](result) == expected_text
     assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
-    assert audit_events[-1]["summary"]["message"] is None
-    assert audit_events[-1]["summary"]["message_length"] == len(expected_text)
+    assert audit_events[-1]["summary"]["status"] == "queued"
 
 
 def test_console_message_preview_requires_operator_csrf(monkeypatch: pytest.MonkeyPatch) -> None:
