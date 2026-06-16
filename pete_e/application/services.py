@@ -121,7 +121,16 @@ class PlanService:
         """Creates and persists a new 1-week strength test plan."""
         log_utils.info(f"Creating new strength test week starting {start_date.isoformat()}...")
         tms = self.dal.get_latest_training_maxes()
-        plan_dict = self.factory.create_strength_test_plan(start_date, tms)
+        health_metrics = self._load_recent_health_metrics()
+        recent_runs = self._load_recent_running_workouts(end_date=start_date - timedelta(days=1))
+        running_goal = self._running_goal_from_settings()
+        plan_dict = self.factory.create_strength_test_plan(
+            start_date,
+            tms,
+            running_goal=running_goal,
+            health_metrics=health_metrics,
+            recent_runs=recent_runs,
+        )
         plan_entity = self.plan_mapper.from_dict(plan_dict)
         payload = self.plan_mapper.to_persistence_payload(plan_entity)
         plan_id = self.dal.save_full_plan(payload)

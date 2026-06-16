@@ -19,6 +19,24 @@ async function signOut() {
   }
 }
 
+function scrubCredentialQuery() {
+  if (!window.location.pathname.endsWith("/login") || !window.location.search) {
+    return;
+  }
+  const url = new URL(window.location.href);
+  const credentialKeys = ["email", "login", "mfa_code", "password", "recovery_code", "totp_code", "username"];
+  let changed = false;
+  credentialKeys.forEach((key) => {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  });
+  if (changed) {
+    window.history.replaceState({}, document.title, `${url.pathname}${url.search}${url.hash}`);
+  }
+}
+
 async function signIn(form) {
   const error = form.querySelector("[data-form-error]");
   if (error) {
@@ -265,17 +283,8 @@ function initTrendChart() {
 
   const catalog = window.trendMetrics.length ? window.trendMetrics : metricCatalogFromSeries(window.trendsSeries);
   const metrics = catalog.filter((metric) => metric && metric.key);
-  const blankOptionA = new Option("", "");
-  const blankOptionB = new Option("", "");
-  metricA.add(blankOptionA);
-  metricB.add(blankOptionB);
-  metrics.forEach((m) => {
-    const label = m.label || metricLabel(m.key);
-    const optionA = new Option(label, m.key);
-    const optionB = new Option(label, m.key);
-    metricA.add(optionA);
-    metricB.add(optionB);
-  });
+  populateMetricSelect(metricA, metrics, "Metric A");
+  populateMetricSelect(metricB, metrics, "Metric B");
   metricA.value = defaultMetricKey(metrics, ["weight_kg", "weight_avg_7d_kg"]) || "";
   metricB.value = defaultMetricKey(metrics, ["sleep_asleep_minutes", "sleep_avg_7d_minutes", "hrv_sdnn_ms"]) || "";
   if (metricB.value && metricB.value === metricA.value) {
@@ -350,6 +359,14 @@ function initTrendChart() {
   draw();
 }
 
+function populateMetricSelect(select, metrics, blankLabel) {
+  select.replaceChildren(new Option(blankLabel, ""));
+  metrics.forEach((m) => {
+    const label = m.label || metricLabel(m.key);
+    select.add(new Option(label, m.key));
+  });
+}
+
 function metricCatalogFromSeries(series) {
   if (!Array.isArray(series)) {
     return [];
@@ -386,6 +403,8 @@ function defaultMetricKey(metrics, preferredKeys) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  scrubCredentialQuery();
+
   document.querySelectorAll("[data-logout]").forEach((button) => {
     button.addEventListener("click", () => {
       signOut();

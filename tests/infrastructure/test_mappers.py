@@ -97,6 +97,7 @@ def test_scheduled_time_wins_over_semantic_slot_for_persistence() -> None:
             "plan_weeks": [
                 {
                     "week_number": 1,
+                    "is_test": True,
                     "workouts": [
                         {
                             "day_of_week": 1,
@@ -119,4 +120,5 @@ def test_scheduled_time_wins_over_semantic_slot_for_persistence() -> None:
 
     assert workout["slot"] == "07:05:00"
     assert workout["scheduled_time"] == "07:05:00"
+    assert payload["plan_weeks"][0]["is_test"] is True
     """Perform test scheduled time wins over semantic slot for persistence."""

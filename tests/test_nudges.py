@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from pete_e.domain import schedule_rules
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.repositories import PlanRepository
 
@@ -31,7 +32,11 @@ def test_strength_test_plan_contains_all_main_lifts():
 
     assert plan["weeks"] == 1
     week = plan["plan_weeks"][0]
-    lift_ids = {entry["exercise_id"] for entry in week["workouts"] if not entry["is_cardio"]}
+    lift_ids = {
+        entry["exercise_id"]
+        for entry in week["workouts"]
+        if entry.get("exercise_id") in schedule_rules.MAIN_LIFT_IDS
+    }
     # Strength test should schedule four main lifts
     assert len(lift_ids) == 4
     """Perform test strength test plan contains all main lifts."""

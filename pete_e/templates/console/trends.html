@@ -51,8 +51,18 @@
     <h2>Metric trends</h2>
   </div>
   <div class="controls-row">
-    <select id="metric-a" class="metric-select" aria-label="Metric A"></select>
-    <select id="metric-b" class="metric-select" aria-label="Metric B"></select>
+    <select id="metric-a" class="metric-select" aria-label="Metric A">
+      <option value="">Metric A</option>
+      {% for metric in trends_view.metric_catalog %}
+      <option value="{{ metric.key }}">{{ metric.label }}</option>
+      {% endfor %}
+    </select>
+    <select id="metric-b" class="metric-select" aria-label="Metric B">
+      <option value="">Metric B</option>
+      {% for metric in trends_view.metric_catalog %}
+      <option value="{{ metric.key }}">{{ metric.label }}</option>
+      {% endfor %}
+    </select>
     <label>Range
       <select id="trend-range">
         <option value="7">7d</option>

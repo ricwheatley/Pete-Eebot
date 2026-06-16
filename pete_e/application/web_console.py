@@ -155,10 +155,20 @@ def _matches_filter(value: Any, expected: str | None) -> bool:
 
 
 def _to_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _display_number(value: float | int | None) -> float | int | None:
+    if value is None:
+        return None
+    rounded = round(float(value), 1)
+    return int(rounded) if rounded.is_integer() else rounded
+    """Perform display number."""
 
 
 def _format_number(value: Any, *, decimals: int = 1) -> str:
@@ -191,9 +201,75 @@ def _build_metric_catalog(rows: list[dict[str, Any]]) -> list[dict[str, str]]:
         for key, value in row.items():
             if key == "date":
                 continue
-            if isinstance(value, (int, float)):
+            if _to_float(value) is not None:
                 metric_names.add(str(key))
     return [{"key": key, "label": _metric_label(key)} for key in sorted(metric_names)]
+
+
+def _aggregate_plan_preview_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    grouped: dict[tuple[Any, Any, str], dict[str, Any]] = {}
+    order: list[tuple[Any, Any, str]] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        exercise_name = str(row.get("exercise_name") or row.get("name") or "Planned session").strip()
+        key = (row.get("workout_date") or row.get("date"), row.get("day_of_week"), exercise_name)
+        if key not in grouped:
+            grouped[key] = {
+                **row,
+                "exercise_name": exercise_name,
+                "_sets_total": 0.0,
+                "_reps_total": 0.0,
+                "_volume_total": 0.0,
+                "_has_sets": False,
+                "_has_reps": False,
+                "_has_weight": False,
+                "_row_count": 0,
+            }
+            order.append(key)
+
+        target = grouped[key]
+        target["_row_count"] += 1
+        sets = _to_float(row.get("sets"))
+        reps = _to_float(row.get("reps"))
+        weight = _to_float(row.get("target_weight_kg"))
+
+        if sets is not None and sets > 0:
+            target["_sets_total"] += sets
+            target["_has_sets"] = True
+        if reps is not None and reps > 0:
+            target["_has_reps"] = True
+            target["_reps_total"] += (sets if sets is not None and sets > 0 else 1.0) * reps
+        if weight is not None:
+            target["_has_weight"] = True
+            current_max = _to_float(target.get("max_target_weight_kg"))
+            target["max_target_weight_kg"] = weight if current_max is None else max(current_max, weight)
+            if sets is not None and sets > 0 and reps is not None and reps > 0:
+                target["_volume_total"] += sets * reps * weight
+
+    preview_rows: list[dict[str, Any]] = []
+    for key in order:
+        row = grouped[key]
+        row["sets"] = _display_number(row["_sets_total"]) if row["_has_sets"] else None
+        row["reps"] = _display_number(row["_reps_total"]) if row["_has_reps"] else None
+        row["target_weight_kg"] = _display_number(row.get("max_target_weight_kg")) if row["_has_weight"] else None
+        row["max_target_weight_kg"] = row["target_weight_kg"]
+        row["target_volume_kg"] = _display_number(row["_volume_total"]) if row["_volume_total"] > 0 else None
+        row["source_row_count"] = row["_row_count"]
+        for temp_key in (
+            "_sets_total",
+            "_reps_total",
+            "_volume_total",
+            "_has_sets",
+            "_has_reps",
+            "_has_weight",
+            "_row_count",
+        ):
+            row.pop(temp_key, None)
+        preview_rows.append(row)
+
+    return preview_rows
 
 
 class WebConsoleReadModel:
@@ -279,6 +355,8 @@ class WebConsoleReadModel:
                 "status": "missing_plan",
             }
 
+        preview_rows = _aggregate_plan_preview_rows(list(week_plan.get("rows") or []))
+
         return {
             "date": target_date.isoformat(),
             "week_start": _format_date_ddmmyyyy(week_start),
@@ -294,7 +372,7 @@ class WebConsoleReadModel:
                     }
                     if isinstance(row, dict)
                     else row
-                    for row in (week_plan.get("rows") or [])
+                    for row in preview_rows
                 ],
             },
             "decision_trace": trace,
@@ -378,8 +456,9 @@ class WebConsoleReadModel:
             for key, value in row.items():
                 if key == "date":
                     continue
-                if isinstance(value, (int, float)):
-                    entry[str(key)] = value
+                numeric_value = _to_float(value)
+                if numeric_value is not None:
+                    entry[str(key)] = numeric_value
             series.append(entry)
         series.sort(key=lambda item: str(item["date"]))
 

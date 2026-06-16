@@ -68,6 +68,15 @@ MESSAGE_TYPE_LABELS = {
     "plan": "Weekly plan",
 }
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_LOGIN_CREDENTIAL_QUERY_KEYS = {
+    "email",
+    "login",
+    "mfa_code",
+    "password",
+    "recovery_code",
+    "totp_code",
+    "username",
+}
 
 
 def _display_datetime(value: Any, default: str = "") -> str:
@@ -93,6 +102,14 @@ def _display_datetime(value: Any, default: str = "") -> str:
     except ValueError:
         return text
     return parsed.strftime("%d/%m/%Y %H:%M:%S")
+
+
+def _safe_next_path(value: Any) -> str:
+    text = str(value or "/console").strip() or "/console"
+    if not text.startswith("/") or text.startswith("//"):
+        return "/console"
+    return text
+    """Perform safe next path."""
 
 _templates = Environment(
     loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -875,7 +892,11 @@ def _render_console(
 def login_page(request: Request):
     if current_user_from_session(request) is not None:
         return RedirectResponse("/console", status_code=303)
-    return _render("auth/login.html", next_path=getattr(request, "query_params", {}).get("next", "/console"))
+    query_params = getattr(request, "query_params", {}) or {}
+    next_path = _safe_next_path(query_params.get("next", "/console"))
+    if any(key in query_params for key in _LOGIN_CREDENTIAL_QUERY_KEYS):
+        return RedirectResponse(f"/login?next={quote(next_path, safe='/')}", status_code=303)
+    return _render("auth/login.html", next_path=next_path)
 
 
 @router.get("/console")

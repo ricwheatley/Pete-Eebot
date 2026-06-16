@@ -56,6 +56,7 @@ class PlanMapper:
                 {
                     "week_number": week.week_number,
                     "start_date": week.start_date,
+                    "is_test": week.is_test,
                     "workouts": workouts_payload,
                 }
             )
@@ -92,7 +93,12 @@ class PlanMapper:
                     continue
                 workouts.append(self._build_workout(item))
 
-        return Week(week_number=week_number, start_date=start_date, workouts=workouts)
+        return Week(
+            week_number=week_number,
+            start_date=start_date,
+            is_test=bool(data.get("is_test", False)),
+            workouts=workouts,
+        )
         """Perform build week."""
 
     def _build_workout(self, data: Dict[str, Any]) -> Workout:

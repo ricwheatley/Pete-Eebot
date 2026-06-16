@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -144,6 +145,22 @@ class _StatusService:
 
 
 class _MetricsService:
+    def __init__(self) -> None:
+        self._dal = SimpleNamespace(
+            get_historical_data=lambda start_date, end_date: [
+                {
+                    "date": date(2026, 5, 14),
+                    "weight_kg": Decimal("89.4"),
+                    "sleep_asleep_minutes": Decimal("398"),
+                },
+                {
+                    "date": date(2026, 5, 15),
+                    "weight_kg": Decimal("89.2"),
+                    "sleep_asleep_minutes": Decimal("405"),
+                },
+            ]
+        )
+
     def coach_state(self, iso_date: str):
         return {
             "summary": {
@@ -204,10 +221,24 @@ class _PlanService:
                 {
                     "workout_date": iso_start_date,
                     "exercise_name": "Bench Press",
-                    "sets": 5,
+                    "sets": 1,
+                    "reps": 5,
+                    "target_weight_kg": 50,
+                },
+                {
+                    "workout_date": iso_start_date,
+                    "exercise_name": "Bench Press",
+                    "sets": 1,
+                    "reps": 5,
+                    "target_weight_kg": 60,
+                },
+                {
+                    "workout_date": iso_start_date,
+                    "exercise_name": "Bench Press",
+                    "sets": 1,
                     "reps": 5,
                     "target_weight_kg": 82.5,
-                }
+                },
             ],
         }
 
@@ -444,6 +475,29 @@ def test_console_route_redirects_unauthenticated_browser_request() -> None:
     assert _location(response) == "/login?next=/console/status"
 
 
+def test_login_page_does_not_allow_credential_query_leakage() -> None:
+    response = web.login_page(
+        _Request(
+            path="/login",
+            query_params={"login": "pete", "password": "secret", "next": "/console/plan"},
+        )
+    )
+
+    assert response.status_code == 303
+    assert _location(response) == "/login?next=/console/plan"
+    assert "password" not in (_location(response) or "")
+    assert "pete" not in (_location(response) or "")
+
+
+def test_login_form_posts_instead_of_getting_credentials() -> None:
+    response = web.login_page(_Request(path="/login"))
+
+    html = _body(response)
+    assert response.status_code == 200
+    assert 'method="post"' in html
+    assert 'action="/auth/login"' in html
+
+
 def test_console_page_renders_authenticated_layout_with_read_only_nav(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _UserService(_user(ROLE_READ_ONLY))
     _install_console_services(monkeypatch, service)
@@ -495,7 +549,11 @@ def test_plan_page_renders_current_week_plan_and_decision_trace(monkeypatch: pyt
     assert response.status_code == 200
     assert "Current Week Plan" in html
     assert "Bench Press" in html
+    assert html.count("Bench Press") == 1
     assert "Monday" in html
+    assert "15" in html
+    assert "82.5" in html
+    assert "962.5" in html
     assert "2026-05-12" not in html
     assert "constraint_heavy_strength_run_quality" in html
 
@@ -518,8 +576,8 @@ def test_trends_page_renders_weight_sleep_hrv_and_volume_snapshots(monkeypatch: 
     assert "7200" in html
     assert "6.8" in html
     assert " h" in html
-    assert '<select id="metric-a" class="metric-select" aria-label="Metric A"></select>' in html
-    assert '<select id="metric-b" class="metric-select" aria-label="Metric B"></select>' in html
+    assert '<option value="weight_kg">Weight Kg</option>' in html
+    assert '<option value="sleep_asleep_minutes">Sleep Asleep Minutes</option>' in html
     assert "<label>Metric A" not in html
     assert "<label>Metric B" not in html
 

@@ -27,6 +27,8 @@ body {
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.5;
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {
@@ -45,6 +47,9 @@ select {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -372,6 +377,21 @@ h2 {
   text-transform: uppercase;
 }
 
+.plan-preview-table {
+  table-layout: fixed;
+}
+
+.plan-preview-table th:nth-child(1) {
+  width: 16%;
+}
+
+.plan-preview-table th:nth-child(3),
+.plan-preview-table th:nth-child(4),
+.plan-preview-table th:nth-child(5),
+.plan-preview-table th:nth-child(6) {
+  width: 14%;
+}
+
 .compact-table th,
 .compact-table td {
   padding: 8px 0;
@@ -532,6 +552,38 @@ h2 {
   min-width: 180px;
 }
 
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.controls-row label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.controls-row select,
+.controls-row input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+}
+
+#trend-canvas {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
 .metric-card {
   display: grid;
   align-content: start;
@@ -626,9 +678,18 @@ h2 {
 }
 
 @media (max-width: 760px) {
+  .app-shell {
+    min-height: 100dvh;
+  }
+
   .topbar {
     min-height: 64px;
-    padding: 10px 16px;
+    padding: max(10px, env(safe-area-inset-top)) 14px 10px;
+  }
+
+  .brand-copy span,
+  .account-name {
+    display: none;
   }
 
   .account-role {
@@ -637,20 +698,64 @@ h2 {
 
   .workspace {
     grid-template-columns: 1fr;
+    min-height: calc(100dvh - 64px);
   }
 
   .sidebar {
-    padding: 10px 16px;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 30;
+    padding: 8px max(10px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
+    border-top: 1px solid color-mix(in srgb, #ffffff, transparent 82%);
+    box-shadow: 0 -8px 24px rgb(16 24 32 / 18%);
   }
 
   .nav-list {
     grid-auto-flow: column;
-    grid-auto-columns: max-content;
+    grid-auto-columns: minmax(72px, 1fr);
+    gap: 6px;
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .nav-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-link {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    text-align: center;
+    font-size: 0.82rem;
+    line-height: 1.15;
   }
 
   .content {
-    padding: 24px 16px;
+    width: 100%;
+    padding: 18px 12px calc(88px + env(safe-area-inset-bottom));
+  }
+
+  .page-header {
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-size: 1.85rem;
+  }
+
+  .panel-grid,
+  .command-grid {
+    gap: 12px;
+  }
+
+  .panel {
+    min-height: 0;
+    padding: 14px;
   }
 
   .panel-wide {
@@ -665,8 +770,65 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .controls-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .controls-row label,
+  .controls-row select,
+  .controls-row input,
+  .metric-select {
+    min-width: 0;
+    width: 100%;
+  }
+
   .data-table {
     display: block;
     overflow-x: auto;
+  }
+
+  .plan-preview-table,
+  .plan-preview-table tbody,
+  .plan-preview-table tr,
+  .plan-preview-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .plan-preview-table {
+    overflow: visible;
+  }
+
+  .plan-preview-table thead {
+    display: none;
+  }
+
+  .plan-preview-table tr {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+  }
+
+  .plan-preview-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+
+  .plan-preview-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .plan-preview-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 800;
+    text-align: left;
   }
 }

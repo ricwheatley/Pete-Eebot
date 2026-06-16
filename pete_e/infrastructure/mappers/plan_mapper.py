@@ -47,7 +47,12 @@ class PlanMapper:
             week = weeks.get(week_number)
             if week is None:
                 week_start_date = self._to_date(row.get("week_start_date"))
-                week = Week(week_number=week_number, start_date=week_start_date, workouts=[])
+                week = Week(
+                    week_number=week_number,
+                    start_date=week_start_date,
+                    is_test=bool(row.get("is_test", False)),
+                    workouts=[],
+                )
                 weeks[week_number] = week
 
             week.workouts.append(self._build_workout(row))
@@ -94,6 +99,7 @@ class PlanMapper:
                 {
                     "week_number": week.week_number,
                     "start_date": week.start_date,
+                    "is_test": week.is_test,
                     "workouts": workouts_payload,
                 }
             )
@@ -117,7 +123,12 @@ class PlanMapper:
 
         workouts = [self._build_workout(item) for item in workouts_payload]
 
-        return Week(week_number=week_number, start_date=start_date, workouts=workouts)
+        return Week(
+            week_number=week_number,
+            start_date=start_date,
+            is_test=bool(payload.get("is_test", False)),
+            workouts=workouts,
+        )
         """Perform build week."""
 
     def _build_workout(self, data: Mapping[str, Any]) -> Workout:

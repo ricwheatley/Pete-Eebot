@@ -174,6 +174,7 @@ class Week:
 
     week_number: int
     start_date: date | None = None
+    is_test: bool = False
     workouts: list[Workout] = field(default_factory=list)
 
     def weights_workouts(self) -> Iterable[Workout]:

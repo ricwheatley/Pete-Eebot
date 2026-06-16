@@ -47,24 +47,26 @@
     {% if plan_view.week_plan.error %}
       {{ ui.empty_state(plan_view.week_plan.error) }}
     {% elif plan_view.week_plan.rows %}
-      <table class="data-table">
+      <table class="data-table plan-preview-table">
         <thead>
           <tr>
             <th scope="col">Day</th>
             <th scope="col">Exercise</th>
             <th scope="col">Sets</th>
-            <th scope="col">Reps</th>
-            <th scope="col">Target</th>
+            <th scope="col">Total reps</th>
+            <th scope="col">Max kg</th>
+            <th scope="col">Target volume kg</th>
           </tr>
         </thead>
         <tbody>
           {% for row in plan_view.week_plan.rows %}
           <tr>
-            <td>{{ row.workout_date or row.date or "-" }}</td>
-            <td>{{ row.exercise_name or row.name or "Planned session" }}</td>
-            <td>{{ row.sets if row.sets is not none else "-" }}</td>
-            <td>{{ row.reps if row.reps is not none else "-" }}</td>
-            <td>{{ row.target_weight_kg if row.target_weight_kg is not none else "-" }}</td>
+            <td data-label="Day">{{ row.workout_date or row.date or "-" }}</td>
+            <td data-label="Exercise">{{ row.exercise_name or row.name or "Planned session" }}</td>
+            <td data-label="Sets">{{ row.sets if row.sets is not none else "-" }}</td>
+            <td data-label="Total reps">{{ row.reps if row.reps is not none else "-" }}</td>
+            <td data-label="Max kg">{{ row.max_target_weight_kg if row.max_target_weight_kg is not none else "-" }}</td>
+            <td data-label="Target volume kg">{{ row.target_volume_kg if row.target_volume_kg is not none else "-" }}</td>
           </tr>
           {% endfor %}
         </tbody>

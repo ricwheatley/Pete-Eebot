@@ -183,24 +183,7 @@ class PlanFactory:
             week_workouts = [w for w in week_workouts if not self._is_strength_workout_filtered(w, finalized)]
             week_workouts.extend(self._workout_from_candidate(candidate) for candidate in finalized if candidate.get("source") == "run")
 
-            for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):
-                stretch_details = schedule_rules.stretch_routine_for_day(dow)
-                if not stretch_details:
-                    continue
-                week_workouts.append(
-                    {
-                        "day_of_week": dow,
-                        "exercise_id": None,
-                        "exercise_name": stretch_details["display_name"],
-                        "sets": 0,
-                        "reps": 0,
-                        "is_cardio": False,
-                        "type": schedule_rules.MOBILITY_WORKOUT_TYPE,
-                        "comment": stretch_details["display_name"],
-                        "recovery_focused": True,
-                        "details": stretch_details,
-                    }
-                )
+            self._add_stretch_routines(week_workouts)
 
             week_workouts.sort(key=self._workout_sort_key)
 
@@ -288,7 +271,36 @@ class PlanFactory:
                     })
         return effects
 
-    def create_strength_test_plan(self, start_date: date, training_maxes: Dict[str, float]) -> Dict[str, Any]:
+    def _add_stretch_routines(self, week_workouts: List[Dict[str, Any]]) -> None:
+        for dow in sorted(schedule_rules.TRAINING_DAY_STRETCH_ROUTINE_BY_DOW):
+            stretch_details = schedule_rules.stretch_routine_for_day(dow)
+            if not stretch_details:
+                continue
+            week_workouts.append(
+                {
+                    "day_of_week": dow,
+                    "exercise_id": None,
+                    "exercise_name": stretch_details["display_name"],
+                    "sets": 0,
+                    "reps": 0,
+                    "is_cardio": False,
+                    "type": schedule_rules.MOBILITY_WORKOUT_TYPE,
+                    "comment": stretch_details["display_name"],
+                    "recovery_focused": True,
+                    "details": stretch_details,
+                }
+            )
+        """Perform add stretch routines."""
+
+    def create_strength_test_plan(
+        self,
+        start_date: date,
+        training_maxes: Dict[str, float],
+        *,
+        running_goal: RunningGoal | None = None,
+        health_metrics: List[Dict[str, Any]] | None = None,
+        recent_runs: List[Dict[str, Any]] | None = None,
+    ) -> Dict[str, Any]:
         """Builds a 1-week AMRAP strength test plan. Returns a structured dictionary."""
         week_workouts: List[Dict[str, Any]] = []
 
@@ -309,6 +321,18 @@ class PlanFactory:
                 "scheduled_time": schedule_rules.weight_slot_for_day(dow).strftime("%H:%M:%S"),
                 "comment": "AMRAP Test"
             })
+
+        week_workouts.extend(
+            self.running_planner.build_week_sessions(
+                week_number=1,
+                goal=running_goal,
+                health_metrics=health_metrics,
+                recent_runs=recent_runs,
+                plan_start_date=start_date,
+            )
+        )
+        self._add_stretch_routines(week_workouts)
+        week_workouts.sort(key=self._workout_sort_key)
         
         plan_week = {"week_number": 1, "workouts": week_workouts, "is_test": True}
         return {"start_date": start_date, "weeks": 1, "plan_weeks": [plan_week]}
