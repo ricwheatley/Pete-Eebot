@@ -197,6 +197,27 @@ class TestPostgresDal(unittest.TestCase):
         )
         """Perform test refresh daily summary refreshes inputs before body age."""
 
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_assistance_pool_filters_by_configured_difficulty(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = [(201,), (202,)]
+
+        dal = PostgresDal()
+        result = dal.get_assistance_pool_for(615)
+
+        self.assertEqual(result, [201, 202])
+        sql_text, params = mock_cur.execute.call_args.args
+        self.assertIn("difficulty BETWEEN 1 AND %s", sql_text)
+        self.assertEqual(params, (615, 5))
+        """Perform test get assistance pool filters by configured difficulty."""
+
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
         mock_pool = MagicMock()

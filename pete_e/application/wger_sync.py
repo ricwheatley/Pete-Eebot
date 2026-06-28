@@ -13,18 +13,42 @@ from pete_e.infrastructure.wger_seeder import WgerSeeder
 from pete_e.infrastructure.wger_writer import WgerWriter
 
 from pete_e.infrastructure import log_utils
+from pete_e.domain import schedule_rules
 
 # British English comments and docstrings.
 
+STANDARD_EQUIPMENT_NAMES = {
+    "barbell",
+    "bench",
+    "body weight",
+    "bodyweight",
+    "dumbbell",
+    "gym mat",
+    "mat",
+    "none",
+    "pull-up bar",
+}
+
+
+def _equipment_name_map(equipment: List[Dict[str, Any]]) -> Dict[int, str]:
+    return {int(item["id"]): str(item.get("name") or "").strip().lower() for item in equipment if item.get("id") is not None}
+
+
+def _has_only_standard_equipment(exercise: Dict[str, Any], equipment_names: Dict[int, str]) -> bool:
+    exercise_equipment = exercise.get("equipment") or []
+    if not exercise_equipment:
+        return True
+    names = [equipment_names.get(int(eq["id"]), "") for eq in exercise_equipment if eq.get("id") is not None]
+    return bool(names) and all(name in STANDARD_EQUIPMENT_NAMES for name in names)
+
 
 def _pick_english_translation(translations: List[Dict[str, Any]]) -> Dict[str, str]:
-    """Prefers English (language ID 2); falls back to any available translation."""
+    """Return the English translation only; exercises without one are excluded."""
     if not isinstance(translations, list):
         return {"name": "", "description": ""}
 
-    english_translation = next((t for t in translations if t.get("language") == 2 and t.get("name")), None)
-    chosen = english_translation or next((t for t in translations if t.get("name")), None)
-    
+    chosen = next((t for t in translations if t.get("language") == 2 and t.get("name")), None)
+
     if chosen:
         return {
             "name": chosen.get("name") or "",
@@ -60,9 +84,16 @@ def run_wger_catalog_refresh():
             # 2. Fetch, process, and upsert exercises
             exercises_raw = wger_client.get_all_pages("/exerciseinfo/", params={"limit": 200})
 
+            equipment_names = _equipment_name_map(equipment)
+            protected_ids = set(schedule_rules.MAIN_LIFT_IDS) | {schedule_rules.BLAZE_ID, schedule_rules.TREADMILL_RUN_ID, schedule_rules.OUTDOOR_RUN_ID}
             processed_exercises: List[Dict[str, Any]] = []
             for ex in exercises_raw:
                 eng = _pick_english_translation(ex.get("translations") or [])
+                exercise_id = ex.get("id")
+                if not eng["name"] and exercise_id not in protected_ids:
+                    continue
+                if exercise_id not in protected_ids and not _has_only_standard_equipment(ex, equipment_names):
+                    continue
                 processed_exercises.append({
                     "id": ex.get("id"),
                     "uuid": ex.get("uuid"),

@@ -10,6 +10,35 @@ from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.wger_client import WgerClient
 
 
+
+STANDARD_EQUIPMENT_NAMES = {
+    "barbell",
+    "bench",
+    "body weight",
+    "bodyweight",
+    "dumbbell",
+    "gym mat",
+    "mat",
+    "none",
+    "pull-up bar",
+}
+
+
+def _equipment_name_map(equipment: list[dict]) -> dict[int, str]:
+    return {
+        int(item["id"]): str(item.get("name") or "").strip().lower()
+        for item in equipment
+        if item.get("id") is not None
+    }
+
+
+def _has_only_standard_equipment(exercise: dict, equipment_names: dict[int, str]) -> bool:
+    exercise_equipment = exercise.get("equipment") or []
+    if not exercise_equipment:
+        return True
+    names = [equipment_names.get(int(eq["id"]), "") for eq in exercise_equipment if eq.get("id") is not None]
+    return bool(names) and all(name in STANDARD_EQUIPMENT_NAMES for name in names)
+
 class CatalogSyncService:
     """Refreshes the local wger catalog and seeds assistance metadata."""
 
@@ -34,10 +63,18 @@ class CatalogSyncService:
             muscles = client.get_all_pages("/muscle/")
             exercises_raw = client.get_all_pages("/exerciseinfo/")
 
+            equipment_names = _equipment_name_map(equipment)
+            protected_ids = set(schedule_rules.MAIN_LIFT_IDS) | {schedule_rules.BLAZE_ID, schedule_rules.TREADMILL_RUN_ID, schedule_rules.OUTDOOR_RUN_ID}
             processed_exercises = []
             for exercise in exercises_raw:
                 translations = exercise.get("translations") or []
-                en_translation = next((t for t in translations if t.get("language") == 2), None) or {}
+                en_translation = next((t for t in translations if t.get("language") == 2 and t.get("name")), None)
+                exercise_id = exercise.get("id")
+                if not en_translation and exercise_id not in protected_ids:
+                    continue
+                if exercise_id not in protected_ids and not _has_only_standard_equipment(exercise, equipment_names):
+                    continue
+                en_translation = en_translation or {}
                 processed_exercises.append(
                     {
                         "id": exercise.get("id"),

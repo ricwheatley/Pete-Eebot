@@ -300,10 +300,17 @@ class PostgresDal(PlanRepository):
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
         sql = (
-            "SELECT assistance_exercise_id FROM assistance_pool WHERE main_exercise_id = %s ORDER BY assistance_exercise_id"
+            """
+            SELECT assistance_exercise_id
+            FROM assistance_pool
+            WHERE main_exercise_id = %s
+              AND difficulty BETWEEN 1 AND %s
+            ORDER BY difficulty, assistance_exercise_id
+            """
         )
+        max_difficulty = max(1, min(10, int(settings.ASSISTANCE_MAX_DIFFICULTY)))
         with self._get_cursor(use_dict_row=False) as cur:
-            cur.execute(sql, (main_lift_id,))
+            cur.execute(sql, (main_lift_id, max_difficulty))
             rows = cur.fetchall()
             return [row[0] for row in rows]
         """Perform get assistance pool for."""
@@ -1044,12 +1051,24 @@ class PostgresDal(PlanRepository):
             )
         """Perform upsert wger exercises and relations."""
 
-    def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[int]]]):
+    def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[Any]]]):
         with self._get_cursor() as cur:
             cur.execute('UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)', (main_lift_ids,))
-            assistance_values = [(main, assist) for main, assists in assistance_pool_data for assist in assists]
+            assistance_values = []
+            for main, assists in assistance_pool_data:
+                for assist in assists:
+                    if isinstance(assist, tuple):
+                        assist_id, difficulty = assist
+                    else:
+                        assist_id, difficulty = assist, 5
+                    assistance_values.append((main, assist_id, difficulty))
             if assistance_values:
-                stmt = sql.SQL("INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id) VALUES (%s, %s) ON CONFLICT DO NOTHING")
+                stmt = sql.SQL("""
+                    INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id, difficulty)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (main_exercise_id, assistance_exercise_id)
+                    DO UPDATE SET difficulty = EXCLUDED.difficulty
+                """)
                 cur.executemany(stmt, assistance_values)
         log_utils.info("Seeding of main lifts and assistance pools complete.")
         """Perform seed main lifts and assistance."""

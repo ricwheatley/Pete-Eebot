@@ -487,50 +487,61 @@ def build_export_comment(
 # ------------------------------------------------------------------------------
 # Assistance & core pools
 # ------------------------------------------------------------------------------
-ASSISTANCE_POOL_DATA: List[tuple[int, List[int]]] = [
+# Assistance pools are deliberately conservative.  Each entry is
+# (exercise_id, difficulty), where 0 means excluded and 1-10 is an ascending
+# difficulty rating used by the planner query.  Only English-named exercises
+# that use standard free-weight/bodyweight equipment should be rated above 0.
+ASSISTANCE_POOL_DATA: List[tuple[int, List[tuple[int, int]]]] = [
     (
         BENCH_ID,
         [
-            81,   # Bent Over Dumbbell Rows
-            76,   # Bench Press Narrow Grip
-            194,  # Dips
-            512,  # Seated Row (narrow grip)
-            137,  # Butterfly Narrow Grip
+            (81, 4),   # Bent Over Dumbbell Rows
+            (76, 5),   # Bench Press Narrow Grip
+            (194, 7),  # Dips
+            (512, 0),  # Seated Row (narrow grip) - cable/machine
+            (137, 0),  # Butterfly Narrow Grip - machine
         ],
     ),
     (
         SQUAT_ID,
         [
-            43,    # Barbell Hack Squats
-            46,    # Barbell Lunges Standing
-            373,   # Leg Press narrow
-            988,   # Bulgarian split squat (left)
-            1366,  # Dumbbell Split Squat
+            (43, 7),    # Barbell Hack Squats
+            (46, 5),    # Barbell Lunges Standing
+            (373, 0),   # Leg Press narrow - machine
+            (988, 6),   # Bulgarian split squat (left)
+            (1366, 4),  # Dumbbell Split Squat
         ],
     ),
     (
         OHP_ID,
         [
-            20,   # Arnold Shoulder Press
-            82,   # Bent-over Lateral Raises
-            394,  # Low Row (long pulley)
-            448,  # Pendlay Rows
-            512,  # Seated Row, narrow grip
+            (20, 4),   # Arnold Shoulder Press
+            (82, 3),   # Bent-over Lateral Raises
+            (394, 0),  # Low Row (long pulley) - cable/machine
+            (448, 6),  # Pendlay Rows
+            (512, 0),  # Seated Row, narrow grip - cable/machine
         ],
     ),
     (
         DEADLIFT_ID,
         [
-            507,  # Romanian Deadlift
-            268,  # Good Mornings
-            265,  # Glute Bridge
-            294,  # Hip Thrust
-            1348, # Lower Back Extensions
+            (507, 5),  # Romanian Deadlift
+            (268, 6),  # Good Mornings
+            (265, 3),  # Glute Bridge
+            (294, 4),  # Hip Thrust
+            (1348, 0), # Lower Back Extensions - specialised bench/machine
         ],
     ),
 ]
 
-_ASSISTANCE_FALLBACK: Dict[int, List[int]] = {main: assists for main, assists in ASSISTANCE_POOL_DATA}
+
+def _included_assistance_ids(assists: List[tuple[int, int]]) -> List[int]:
+    return [exercise_id for exercise_id, difficulty in assists if difficulty > 0]
+
+
+_ASSISTANCE_FALLBACK: Dict[int, List[int]] = {
+    main: _included_assistance_ids(assists) for main, assists in ASSISTANCE_POOL_DATA
+}
 
 DEFAULT_CORE_POOL_IDS: List[int] = [458, 500, 580, 1001, 1410]
 
