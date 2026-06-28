@@ -219,6 +219,53 @@ class TestPostgresDal(unittest.TestCase):
         """Perform test get assistance pool filters by configured difficulty."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_wger_reference_upserts_use_bulk_upsert(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_get_pool.return_value = mock_pool
+
+        dal = PostgresDal()
+        dal._bulk_upsert = MagicMock()
+
+        dal.upsert_wger_categories(
+            [
+                {"id": 10, "name": "Strength"},
+                {"id": None, "name": "Ignored"},
+            ]
+        )
+        dal.upsert_wger_equipment(
+            [
+                {"id": 8, "name": "Dumbbell"},
+                {"id": 9, "name": ""},
+            ]
+        )
+        dal.upsert_wger_muscles(
+            [
+                {"id": 1, "name": "Biceps brachii", "name_en": "Biceps", "is_front": True},
+                {"id": 2, "name": None},
+            ]
+        )
+
+        self.assertEqual(dal._bulk_upsert.call_args_list[0].args, (
+            "wger_category",
+            [{"id": 10, "name": "Strength"}],
+            ["id"],
+            ["name"],
+        ))
+        self.assertEqual(dal._bulk_upsert.call_args_list[1].args, (
+            "wger_equipment",
+            [{"id": 8, "name": "Dumbbell"}],
+            ["id"],
+            ["name"],
+        ))
+        self.assertEqual(dal._bulk_upsert.call_args_list[2].args, (
+            "wger_muscle",
+            [{"id": 1, "name": "Biceps brachii", "name_en": "Biceps", "is_front": True}],
+            ["id"],
+            ["name", "name_en", "is_front"],
+        ))
+        """Perform test wger reference upserts use bulk upsert."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()

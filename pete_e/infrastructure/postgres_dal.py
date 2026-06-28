@@ -989,6 +989,40 @@ class PostgresDal(PlanRepository):
     # ----------------------------------------------
     # --- Wger Catalog & Seeding ---
     # ----------------------------------------------
+    def upsert_wger_categories(self, categories: List[Dict[str, Any]]) -> None:
+        rows = [
+            {"id": item["id"], "name": item.get("name") or ""}
+            for item in categories
+            if item.get("id") is not None and item.get("name")
+        ]
+        self._bulk_upsert("wger_category", rows, ["id"], ["name"])
+        """Perform upsert wger categories."""
+
+    def upsert_wger_equipment(self, equipment: List[Dict[str, Any]]) -> None:
+        rows = [
+            {"id": item["id"], "name": item.get("name") or ""}
+            for item in equipment
+            if item.get("id") is not None and item.get("name")
+        ]
+        self._bulk_upsert("wger_equipment", rows, ["id"], ["name"])
+        """Perform upsert wger equipment."""
+
+    def upsert_wger_muscles(self, muscles: List[Dict[str, Any]]) -> None:
+        rows = []
+        for item in muscles:
+            if item.get("id") is None or not item.get("name"):
+                continue
+            rows.append(
+                {
+                    "id": item["id"],
+                    "name": item.get("name") or "",
+                    "name_en": item.get("name_en"),
+                    "is_front": bool(item.get("is_front", False)),
+                }
+            )
+        self._bulk_upsert("wger_muscle", rows, ["id"], ["name", "name_en", "is_front"])
+        """Perform upsert wger muscles."""
+
     def _bulk_upsert(self, table_name: str, data: List[Dict[str, Any]], conflict_keys: List[str], update_keys: List[str]):
         if not data:
             return
