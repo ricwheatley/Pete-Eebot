@@ -93,9 +93,17 @@ class CatalogSyncService:
             dal.upsert_wger_muscles(muscles)
             dal.upsert_wger_exercises_and_relations(processed_exercises)
 
-            dal.seed_main_lifts_and_assistance(
-                main_lift_ids=schedule_rules.MAIN_LIFT_IDS,
+            dal.seed_main_lifts(schedule_rules.MAIN_LIFT_IDS)
+            dal.seed_default_exercise_programming_metadata(
                 assistance_pool_data=schedule_rules.ASSISTANCE_POOL_DATA,
+                core_pool_data=schedule_rules.DEFAULT_CORE_POOL_DATA,
+            )
+            dal.seed_exercise_programming_metadata(
+                [
+                    int(exercise["id"])
+                    for exercise in processed_exercises
+                    if exercise.get("id") is not None
+                ]
             )
 
             log_utils.info("WGER catalogue refresh completed successfully.")

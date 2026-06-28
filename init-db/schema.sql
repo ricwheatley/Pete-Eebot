@@ -54,6 +54,9 @@ DROP TABLE IF EXISTS training_plans CASCADE;
 DROP TABLE IF EXISTS wger_logs CASCADE;
 DROP TABLE IF EXISTS body_age_daily CASCADE;
 DROP TABLE IF EXISTS withings_daily CASCADE;
+DROP TABLE IF EXISTS exercise_difficulty_unlock_state CASCADE;
+DROP TABLE IF EXISTS exercise_programming_metadata CASCADE;
+DROP TABLE IF EXISTS core_pool CASCADE;
 DROP TABLE IF EXISTS assistance_pool CASCADE;
 DROP TABLE IF EXISTS wger_exercise_muscle_secondary CASCADE;
 DROP TABLE IF EXISTS wger_exercise_muscle_primary CASCADE;
@@ -589,19 +592,47 @@ CREATE TABLE training_plan_workouts (
     comment TEXT,
     optional BOOLEAN NOT NULL DEFAULT false,
     recovery_focused BOOLEAN NOT NULL DEFAULT false,
-    details JSONB
+    details JSONB,
+    programmed_difficulty SMALLINT CHECK (programmed_difficulty IS NULL OR programmed_difficulty BETWEEN 0 AND 10)
 );
 
 CREATE TABLE assistance_pool (
     main_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
     assistance_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
+    difficulty SMALLINT NOT NULL DEFAULT 5 CHECK (difficulty BETWEEN 0 AND 10),
     PRIMARY KEY(main_exercise_id, assistance_exercise_id)
 );
+COMMENT ON COLUMN assistance_pool.difficulty IS '0 excludes the assistance exercise from planning; 1-10 rates easiest to hardest.';
 
 CREATE TABLE core_pool (
     exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE
 );
-COMMENT ON TABLE core_pool IS 'Operator-managed pool of core exercises used during plan generation.';
+COMMENT ON TABLE core_pool IS 'Legacy core pool retained for compatibility; generated plans use exercise_programming_metadata.';
+
+CREATE TABLE exercise_programming_metadata (
+    exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE,
+    difficulty SMALLINT NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 10),
+    eligible_core BOOLEAN NOT NULL DEFAULT false,
+    eligible_bench_assistance BOOLEAN NOT NULL DEFAULT false,
+    eligible_squat_assistance BOOLEAN NOT NULL DEFAULT false,
+    eligible_ohp_assistance BOOLEAN NOT NULL DEFAULT false,
+    eligible_deadlift_assistance BOOLEAN NOT NULL DEFAULT false,
+    notes TEXT,
+    metadata_source TEXT NOT NULL DEFAULT 'operator',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE exercise_programming_metadata IS 'Pete-owned exercise programming metadata layered over the synced WGER catalogue.';
+COMMENT ON COLUMN exercise_programming_metadata.difficulty IS '0 excludes the exercise from planning; 1-10 rates easiest to hardest.';
+
+CREATE TABLE exercise_difficulty_unlock_state (
+    scope TEXT PRIMARY KEY DEFAULT 'global' CHECK (scope = 'global'),
+    current_cap SMALLINT NOT NULL DEFAULT 2 CHECK (current_cap BETWEEN 1 AND 10),
+    last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_unlocked_at TIMESTAMPTZ,
+    unlock_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE exercise_difficulty_unlock_state IS 'Stores the global adaptive exercise difficulty cap and its latest evidence.';
 
 CREATE TABLE training_cycle (
     id SERIAL PRIMARY KEY,
@@ -1434,14 +1465,16 @@ RETURNS TABLE (
     exercise_name TEXT,
     sets INT,
     reps INT,
-    target_weight_kg NUMERIC
+    target_weight_kg NUMERIC,
+    programmed_difficulty INT
 ) LANGUAGE sql AS $$
     SELECT p_date::date AS workout_date,
            tpw.scheduled_time,
            COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
            tpw.sets,
            tpw.reps,
-           tpw.target_weight_kg
+           tpw.target_weight_kg,
+           tpw.programmed_difficulty::int
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id
@@ -1461,7 +1494,8 @@ RETURNS TABLE (
     exercise_name TEXT,
     sets INT,
     reps INT,
-    target_weight_kg NUMERIC
+    target_weight_kg NUMERIC,
+    programmed_difficulty INT
 ) LANGUAGE sql AS $$
     SELECT (p_start_date + (tpw.day_of_week - 1))::date AS workout_date,
            tpw.day_of_week,
@@ -1469,7 +1503,8 @@ RETURNS TABLE (
            COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
            tpw.sets,
            tpw.reps,
-           tpw.target_weight_kg
+           tpw.target_weight_kg,
+           tpw.programmed_difficulty::int
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id

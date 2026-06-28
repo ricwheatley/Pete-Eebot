@@ -137,6 +137,7 @@ class Workout:
     optional: bool = False
     recovery_focused: bool = False
     details: MutableMapping[str, object] | None = None
+    programmed_difficulty: int | None = None
 
     def is_weights_session(self) -> bool:
         return not self.is_cardio and self.type == "weights"

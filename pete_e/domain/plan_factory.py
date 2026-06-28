@@ -89,8 +89,19 @@ class PlanFactory:
         plan_weeks: List[Dict[str, Any]] = []
         trace_by_week: Dict[str, List[Dict[str, Any]]] = {}
 
-        # Fetch assistance/core pools once
-        core_ids = self.plan_repository.get_core_pool_ids() or schedule_rules.DEFAULT_CORE_POOL_IDS
+        cap_loader = getattr(self.plan_repository, "get_exercise_difficulty_cap", None)
+        difficulty_state = (
+            cap_loader(as_of_date=start_date)
+            if callable(cap_loader)
+            else {
+                "current_cap": 2,
+                "source": "planner-default",
+                "evidence": {"available": False},
+            }
+        )
+        difficulty_cap = self._difficulty_cap_from_state(difficulty_state)
+        core_candidates = self._get_core_candidates(difficulty_cap)
+        assistance_candidate_counts: Dict[str, int] = {}
 
         for week_num in range(1, weeks_in_plan + 1):
             is_deload_week = (week_num == 4)
@@ -125,15 +136,23 @@ class PlanFactory:
                     })
                 
                 # 3. Add Assistance Lifts
-                assistance_ids = self.plan_repository.get_assistance_pool_for(main_lift_id)
-                if not assistance_ids:
-                    assistance_ids = schedule_rules.default_assistance_for(main_lift_id)
-                chosen_assistance = self._pick_random(assistance_ids, 2)
+                assistance_candidates = self._get_assistance_candidates(
+                    main_lift_id,
+                    difficulty_cap,
+                )
+                lift_code = schedule_rules.LIFT_CODE_BY_ID.get(
+                    main_lift_id,
+                    str(main_lift_id),
+                )
+                assistance_candidate_counts[lift_code] = len(assistance_candidates)
+                chosen_assistance = self._pick_random(assistance_candidates, 2)
                 
                 if chosen_assistance:
                     a1_scheme = schedule_rules.ASSISTANCE_1
                     week_workouts.append({
-                        "day_of_week": dow, "exercise_id": chosen_assistance[0],
+                        "day_of_week": dow,
+                        "exercise_id": self._candidate_exercise_id(chosen_assistance[0]),
+                        "programmed_difficulty": self._candidate_difficulty(chosen_assistance[0]),
                         "sets": a1_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": a1_scheme["reps_low"], "rir_cue": a1_scheme["rir_cue"], "is_cardio": False,
                         "scheduled_time": slot_str,
@@ -141,18 +160,22 @@ class PlanFactory:
                 if len(chosen_assistance) > 1:
                     a2_scheme = schedule_rules.ASSISTANCE_2
                     week_workouts.append({
-                        "day_of_week": dow, "exercise_id": chosen_assistance[1],
+                        "day_of_week": dow,
+                        "exercise_id": self._candidate_exercise_id(chosen_assistance[1]),
+                        "programmed_difficulty": self._candidate_difficulty(chosen_assistance[1]),
                         "sets": a2_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": a2_scheme["reps_low"], "rir_cue": a2_scheme["rir_cue"], "is_cardio": False,
                         "scheduled_time": slot_str,
                     })
 
                 # 4. Add Core Work
-                chosen_core = self._pick_random(core_ids, 1)
+                chosen_core = self._pick_random(core_candidates, 1)
                 if chosen_core:
                     core_scheme = schedule_rules.CORE_SCHEME
                     week_workouts.append({
-                        "day_of_week": dow, "exercise_id": chosen_core[0],
+                        "day_of_week": dow,
+                        "exercise_id": self._candidate_exercise_id(chosen_core[0]),
+                        "programmed_difficulty": self._candidate_difficulty(chosen_core[0]),
                         "sets": core_scheme["sets"] - (1 if is_deload_week else 0),
                         "reps": core_scheme["reps_low"], "rir_cue": core_scheme["rir_cue"], "is_cardio": False,
                         "scheduled_time": slot_str,
@@ -199,6 +222,15 @@ class PlanFactory:
                 "planner_feature_flag_overrides": self.planner_feature_flags.non_default_flags(),
                 "planner_feature_flag_effects": self._feature_flag_effects(trace_by_week),
                 "plan_decision_trace": trace_by_week,
+                "exercise_difficulty": {
+                    "current_cap": difficulty_cap,
+                    "source": difficulty_state.get("source"),
+                    "evidence": difficulty_state.get("evidence", {}),
+                    "selection": {
+                        "core_candidate_count": len(core_candidates),
+                        "assistance_candidate_counts": assistance_candidate_counts,
+                    },
+                },
             },
         }
 
@@ -257,6 +289,91 @@ class PlanFactory:
 
     def _workout_from_candidate(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
         return dict(candidate.get("workout") or {})
+
+    def _difficulty_cap_from_state(self, state: Dict[str, Any] | None) -> int:
+        if not isinstance(state, dict):
+            return 2
+        try:
+            cap = int(state.get("current_cap", 2))
+        except (TypeError, ValueError):
+            cap = 2
+        return max(1, min(10, cap))
+
+    def _normalise_candidates(self, items: List[Any]) -> List[Dict[str, int | None]]:
+        candidates: List[Dict[str, int | None]] = []
+        for item in items or []:
+            if isinstance(item, dict):
+                exercise_id = item.get("exercise_id")
+                difficulty = item.get("difficulty")
+            else:
+                exercise_id = item
+                difficulty = None
+            try:
+                parsed_id = int(exercise_id)
+            except (TypeError, ValueError):
+                continue
+            try:
+                parsed_difficulty = int(difficulty) if difficulty is not None else None
+            except (TypeError, ValueError):
+                parsed_difficulty = None
+            candidates.append(
+                {"exercise_id": parsed_id, "difficulty": parsed_difficulty}
+            )
+        return candidates
+
+    def _get_assistance_candidates(
+        self,
+        main_lift_id: int,
+        difficulty_cap: int,
+    ) -> List[Dict[str, int | None]]:
+        loader = getattr(self.plan_repository, "get_assistance_candidates_for", None)
+        raw = (
+            loader(main_lift_id, max_difficulty=difficulty_cap)
+            if callable(loader)
+            else self.plan_repository.get_assistance_pool_for(main_lift_id)
+        )
+        candidates = self._normalise_candidates(raw)
+        if candidates:
+            return candidates
+
+        defaults = [
+            item
+            for item in schedule_rules.default_assistance_candidates_for(main_lift_id)
+            if item["difficulty"] <= difficulty_cap
+        ]
+        if defaults:
+            return self._normalise_candidates(defaults)
+        return self._normalise_candidates(
+            schedule_rules.default_assistance_candidates_for(main_lift_id)
+        )
+
+    def _get_core_candidates(self, difficulty_cap: int) -> List[Dict[str, int | None]]:
+        loader = getattr(self.plan_repository, "get_core_candidates", None)
+        raw = (
+            loader(max_difficulty=difficulty_cap)
+            if callable(loader)
+            else self.plan_repository.get_core_pool_ids()
+        )
+        candidates = self._normalise_candidates(raw)
+        if candidates:
+            return candidates
+
+        defaults = [
+            item
+            for item in schedule_rules.default_core_candidates()
+            if item["difficulty"] <= difficulty_cap
+        ]
+        if defaults:
+            return self._normalise_candidates(defaults)
+        return self._normalise_candidates(schedule_rules.default_core_candidates())
+
+    def _candidate_exercise_id(self, candidate: Any) -> int | None:
+        normalised = self._normalise_candidates([candidate])
+        return normalised[0]["exercise_id"] if normalised else None
+
+    def _candidate_difficulty(self, candidate: Any) -> int | None:
+        normalised = self._normalise_candidates([candidate])
+        return normalised[0]["difficulty"] if normalised else None
 
     def _feature_flag_effects(self, trace_by_week: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
         effects: List[Dict[str, Any]] = []

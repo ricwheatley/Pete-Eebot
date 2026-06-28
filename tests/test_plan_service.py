@@ -85,6 +85,53 @@ def test_plan_factory_computes_expected_targets(monkeypatch: pytest.MonkeyPatch)
     """Perform test plan factory computes expected targets."""
 
 
+def test_plan_factory_records_programmed_difficulty(monkeypatch: pytest.MonkeyPatch) -> None:
+    class MetadataRepo(StubPlanRepository):
+        def get_exercise_difficulty_cap(self, *, as_of_date=None) -> Dict[str, Any]:
+            return {
+                "current_cap": 2,
+                "source": "test",
+                "evidence": {"available": True},
+            }
+
+        def get_assistance_candidates_for(
+            self,
+            main_lift_id: int,
+            *,
+            max_difficulty: int,
+        ) -> List[Dict[str, int]]:
+            return [
+                {"exercise_id": self._assistance[main_lift_id][0], "difficulty": 1},
+                {"exercise_id": self._assistance[main_lift_id][1], "difficulty": 2},
+            ]
+
+        def get_core_candidates(self, *, max_difficulty: int) -> List[Dict[str, int]]:
+            return [{"exercise_id": self._core[0], "difficulty": 1}]
+
+    repo = MetadataRepo()
+    factory = PlanFactory(plan_repository=repo)
+    monkeypatch.setattr("random.sample", lambda population, k: population[:k])
+
+    plan = factory.create_531_block_plan(
+        start_date=date(2024, 1, 1),
+        training_maxes=_training_maxes(),
+    )
+
+    first_week = plan["plan_weeks"][0]
+    assistance = [
+        item
+        for item in first_week["workouts"]
+        if item["exercise_id"] in repo._assistance[schedule_rules.SQUAT_ID]
+    ]
+    assert {item["programmed_difficulty"] for item in assistance} == {1, 2}
+    assert plan["metadata"]["exercise_difficulty"]["current_cap"] == 2
+    assert (
+        plan["metadata"]["exercise_difficulty"]["selection"]["core_candidate_count"]
+        == 1
+    )
+    """Perform test plan factory records programmed difficulty."""
+
+
 def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> None:
     saved_payload: Dict[str, Any] = {}
 

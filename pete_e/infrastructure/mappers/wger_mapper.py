@@ -102,6 +102,7 @@ class WgerPayloadMapper:
             "optional": workout.optional,
             "recovery_focused": workout.recovery_focused,
             "details": None if workout.details is None else dict(workout.details),
+            "programmed_difficulty": workout.programmed_difficulty,
         }
 
         if exercise is not None:

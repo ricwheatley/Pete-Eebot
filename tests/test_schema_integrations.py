@@ -105,8 +105,19 @@ def test_training_plan_schema_includes_single_active_index_and_core_pool() -> No
     schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
 
     assert "CREATE UNIQUE INDEX ux_training_plans_single_active" in schema_sql
+    plan_workout_columns = _extract_table_columns(schema_sql, "training_plan_workouts")
+    assert "programmed_difficulty" in plan_workout_columns
     core_pool_columns = _extract_table_columns(schema_sql, "core_pool")
     assert core_pool_columns == ["exercise_id"]
+    assistance_pool_columns = _extract_table_columns(schema_sql, "assistance_pool")
+    assert "difficulty" in assistance_pool_columns
+    metadata_columns = _extract_table_columns(schema_sql, "exercise_programming_metadata")
+    assert metadata_columns[:2] == ["exercise_id", "difficulty"]
+    assert "eligible_core" in metadata_columns
+    assert "eligible_deadlift_assistance" in metadata_columns
+    unlock_columns = _extract_table_columns(schema_sql, "exercise_difficulty_unlock_state")
+    assert unlock_columns[:2] == ["scope", "current_cap"]
+    assert "CHECK (difficulty BETWEEN 0 AND 10)" in schema_sql
     """Perform test training plan schema includes single active index and core pool."""
 
 

@@ -156,6 +156,7 @@ class PlanMapper:
         comment = data.get("comment")
         optional = bool(data.get("optional", False))
         recovery_focused = bool(data.get("recovery_focused", False))
+        programmed_difficulty = self._to_int(data.get("programmed_difficulty"))
 
         exercise = self._build_exercise(data)
 
@@ -172,6 +173,7 @@ class PlanMapper:
             optional=optional,
             recovery_focused=recovery_focused,
             details=details,
+            programmed_difficulty=programmed_difficulty,
         )
         """Perform build workout."""
 
@@ -247,6 +249,7 @@ class PlanMapper:
             "optional": workout.optional,
             "recovery_focused": workout.recovery_focused,
             "details": None if workout.details is None else dict(workout.details),
+            "programmed_difficulty": workout.programmed_difficulty,
         }
 
         if exercise is not None:

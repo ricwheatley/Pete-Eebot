@@ -26,7 +26,7 @@ The important operating concepts are:
 - `training_plan_weeks`: one row per week within a plan
 - `training_plan_workouts`: the actual scheduled sessions
 - `training_max`: the latest row per `lift_code` drives weight targets during plan generation
-- `assistance_pool`: the pool used to randomly choose assistance exercises for each main lift
+- `exercise_programming_metadata`: Pete-owned programming metadata used to choose assistance and core exercises
 - `wger_exercise`: the local exercise catalogue used for IDs, names, categories, and export
 - `wger_export_log`: record of what was exported to wger
 - `nutrition_log`: immutable approximate macro events supplied by the GPT layer; Postgres is the source of truth
@@ -139,7 +139,8 @@ python -m scripts.sync_wger_catalog
 This refreshes the catalogue and seeds:
 
 - `wger_exercise.is_main_lift`
-- the `assistance_pool` rows from `pete_e/domain/schedule_rules.py`
+- missing `exercise_programming_metadata` rows with `difficulty = 0`
+- first-run default ratings and role flags from `pete_e/domain/schedule_rules.py`
 
 ### 2.6 Seed Training Maxes
 
@@ -554,82 +555,99 @@ This is mostly a database job.
 
 Current behaviour:
 
-- each main lift maps to a pool of assistance exercise IDs
-- the factory samples 2 exercises from that pool for each lifting day
-- if the DB pool is empty, the code falls back to the hard-coded `ASSISTANCE_POOL_DATA`
+- WGER sync keeps the catalogue aligned with WGER
+- `exercise_programming_metadata` stores Pete-owned ratings and role eligibility
+- the factory samples 2 assistance exercises per lifting day from rows rated `1` through the current adaptive cap
+- `difficulty = 0` excludes an exercise from generated plans
 
-Inspect the current pool:
+Inspect current assistance candidates:
 
 ```sql
-SELECT ap.main_exercise_id,
-       main.name AS main_name,
-       ap.assistance_exercise_id,
-       assist.name AS assistance_name
-FROM assistance_pool ap
-JOIN wger_exercise main ON main.id = ap.main_exercise_id
-JOIN wger_exercise assist ON assist.id = ap.assistance_exercise_id
-ORDER BY main.name, assist.name;
+SELECT epm.exercise_id,
+       ex.name,
+       epm.difficulty,
+       epm.eligible_bench_assistance,
+       epm.eligible_squat_assistance,
+       epm.eligible_ohp_assistance,
+       epm.eligible_deadlift_assistance
+FROM exercise_programming_metadata epm
+JOIN wger_exercise ex ON ex.id = epm.exercise_id
+WHERE epm.eligible_bench_assistance
+   OR epm.eligible_squat_assistance
+   OR epm.eligible_ohp_assistance
+   OR epm.eligible_deadlift_assistance
+ORDER BY epm.difficulty, ex.name;
 ```
 
 Add a new assistance movement:
 
 ```sql
-INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id)
-VALUES (<main_lift_id>, <assistance_exercise_id>)
-ON CONFLICT DO NOTHING;
+UPDATE exercise_programming_metadata
+SET difficulty = <difficulty_1_to_10>,
+    eligible_squat_assistance = true,
+    metadata_source = 'operator',
+    updated_at = now()
+WHERE exercise_id = <assistance_exercise_id>;
 ```
 
 Remove one:
 
 ```sql
-DELETE FROM assistance_pool
-WHERE main_exercise_id = <main_lift_id>
-  AND assistance_exercise_id = <assistance_exercise_id>;
+UPDATE exercise_programming_metadata
+SET difficulty = 0
+WHERE exercise_id = <exercise_id>;
 ```
 
 Important:
 
 - this changes future plan generation, not already persisted workouts
 - because assistance selection is random, adding one exercise does not guarantee it appears every week
+- the adaptive cap starts at `2` and is stored in `exercise_difficulty_unlock_state`
 - if you want a fixed accessory prescription, change `PlanFactory` instead of just editing the pool
 
 ### 8.4 Change Core Movements
 
-Core selection is a little less clean than assistance selection.
+Core selection uses the same operator-managed metadata table.
 
 The actual resolution order is:
 
-1. `core_pool` in Postgres
-2. category-based fallback from `wger_exercise` / `wger_category`
-3. if both return nothing, `DEFAULT_CORE_POOL_IDS` in `pete_e/domain/schedule_rules.py`
+1. `exercise_programming_metadata` rows with `eligible_core = true`
+2. only rows with `difficulty BETWEEN 1 AND current_cap`
+3. if no metadata candidates exist, the hard-coded curated defaults are used as a fail-closed fallback
 
-That means there is now a clean DB-backed control surface for core work.
+That means WGER categories such as `Abs` are not enough to make an exercise programmable.
 
 Safe operator options:
 
-#### Option A: manage `core_pool` directly
+#### Option A: manage `exercise_programming_metadata` directly
 
 Inspect it:
 
 ```sql
-SELECT cp.exercise_id, ex.name
-FROM core_pool cp
-JOIN wger_exercise ex ON ex.id = cp.exercise_id
-ORDER BY ex.name;
+SELECT epm.exercise_id, ex.name, epm.difficulty
+FROM exercise_programming_metadata epm
+JOIN wger_exercise ex ON ex.id = epm.exercise_id
+WHERE epm.eligible_core
+ORDER BY epm.difficulty, ex.name;
 ```
 
 Add a core exercise:
 
 ```sql
-INSERT INTO core_pool (exercise_id)
-VALUES (<core_exercise_id>)
-ON CONFLICT DO NOTHING;
+UPDATE exercise_programming_metadata
+SET difficulty = <difficulty_1_to_10>,
+    eligible_core = true,
+    metadata_source = 'operator',
+    updated_at = now()
+WHERE exercise_id = <core_exercise_id>;
 ```
 
 Remove one:
 
 ```sql
-DELETE FROM core_pool
+UPDATE exercise_programming_metadata
+SET difficulty = 0,
+    updated_at = now()
 WHERE exercise_id = <core_exercise_id>;
 ```
 
@@ -637,15 +655,11 @@ This is the cleanest DB-backed way to control future core selection.
 
 #### Option B: change the hard-coded default core pool
 
-Edit `DEFAULT_CORE_POOL_IDS` in `pete_e/domain/schedule_rules.py`.
+Edit `DEFAULT_CORE_POOL_DATA` in `pete_e/domain/schedule_rules.py`.
 
 This is the most reliable route if you want predictable behaviour.
 
-#### Option C: use the exercise catalogue categories
-
-If your desired core exercises exist in `wger_exercise`, make sure their category is something like `Core` or `Abs`, then newly generated plans can pick them up through the fallback path.
-
-Find current core-category candidates:
+You can still inspect category candidates before adding safe choices to `exercise_programming_metadata`:
 
 ```sql
 SELECT ex.id, ex.name, cat.name AS category
@@ -776,7 +790,7 @@ If the exercise does not exist upstream and you want a local-only exercise:
 
 1. insert a new `wger_exercise` row with a locally reserved integer ID
 2. attach category, equipment, and muscle rows as needed
-3. use that ID in `assistance_pool`, `schedule_rules.py`, or `training_plan_workouts`
+3. add or update the matching `exercise_programming_metadata` row if it should be programmable
 
 Example local insert:
 
@@ -907,11 +921,12 @@ Fix:
 - generate the next block with `pete plan`
 - or run the Sunday review flow
 
-### You edited `assistance_pool` but the plan did not change
+### You edited `exercise_programming_metadata` but the plan did not change
 
 Cause:
 
-- you changed the pool after the plan was already generated
+- you changed metadata after the plan was already generated
+- or the exercise is rated above the current adaptive cap in `exercise_difficulty_unlock_state`
 
 Fix:
 
@@ -969,8 +984,8 @@ DB tables you will most likely touch:
 - `training_plan_workouts`
 - `training_max`
 - `strength_test_result`
-- `assistance_pool`
-- `core_pool`
+- `exercise_programming_metadata`
+- `exercise_difficulty_unlock_state`
 - `wger_exercise`
 - `wger_category`
 - `wger_export_log`

@@ -29,6 +29,20 @@ _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
 _PLAN_GENERATION_LOCK_KEY = 7041917001
 
+_ASSISTANCE_METADATA_FLAG_BY_MAIN_LIFT = {
+    schedule_rules.BENCH_ID: "eligible_bench_assistance",
+    schedule_rules.SQUAT_ID: "eligible_squat_assistance",
+    schedule_rules.OHP_ID: "eligible_ohp_assistance",
+    schedule_rules.DEADLIFT_ID: "eligible_deadlift_assistance",
+}
+
+_EXERCISE_DIFFICULTY_INITIAL_CAP = 2
+_EXERCISE_DIFFICULTY_MIN_COMPLETION_RATIO = 0.75
+_EXERCISE_DIFFICULTY_FIRST_UNLOCK_DAYS = 365
+_EXERCISE_DIFFICULTY_FIRST_UNLOCK_SESSIONS = 24
+_EXERCISE_DIFFICULTY_NEXT_UNLOCK_DAYS = 56
+_EXERCISE_DIFFICULTY_NEXT_UNLOCK_SESSIONS = 8
+
 
 def _json_dumps_safe(value: Any) -> str:
     return json.dumps(value, default=str)
@@ -130,6 +144,24 @@ class PostgresDal(PlanRepository):
         return bool(row[0])
         """Perform core pool table exists."""
 
+    @staticmethod
+    def _programming_metadata_table_exists(cur) -> bool:
+        cur.execute("SELECT to_regclass('public.exercise_programming_metadata');")
+        row = cur.fetchone()
+        if not row:
+            return False
+        return bool(row[0])
+        """Perform programming metadata table exists."""
+
+    @staticmethod
+    def _difficulty_unlock_state_table_exists(cur) -> bool:
+        cur.execute("SELECT to_regclass('public.exercise_difficulty_unlock_state');")
+        row = cur.fetchone()
+        if not row:
+            return False
+        return bool(row[0])
+        """Perform difficulty unlock state table exists."""
+
     @contextmanager
     def hold_plan_generation_lock(self):
         """Serialize plan generation and export across processes."""
@@ -217,6 +249,7 @@ class PostgresDal(PlanRepository):
             optional = bool(payload.get("optional", False))
             recovery_focused = bool(payload.get("recovery_focused", False))
             details = payload.get("details")
+            programmed_difficulty = _coerce_int(payload.get("programmed_difficulty"))
 
             cur.execute(
                 """
@@ -235,9 +268,10 @@ class PostgresDal(PlanRepository):
                     comment,
                     optional,
                     recovery_focused,
-                    details
+                    details,
+                    programmed_difficulty
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     week_id,
@@ -255,6 +289,7 @@ class PostgresDal(PlanRepository):
                     optional,
                     recovery_focused,
                     Json(details) if details is not None else None,
+                    programmed_difficulty,
                 ),
             )
             """Perform persist workout."""
@@ -299,44 +334,408 @@ class PostgresDal(PlanRepository):
         """Perform save full plan."""
 
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
-        sql = (
-            """
-            SELECT assistance_exercise_id
-            FROM assistance_pool
-            WHERE main_exercise_id = %s
-              AND difficulty BETWEEN 1 AND %s
-            ORDER BY difficulty, assistance_exercise_id
-            """
-        )
-        max_difficulty = max(1, min(10, int(settings.ASSISTANCE_MAX_DIFFICULTY)))
-        with self._get_cursor(use_dict_row=False) as cur:
-            cur.execute(sql, (main_lift_id, max_difficulty))
-            rows = cur.fetchall()
-            return [row[0] for row in rows]
+        cap_state = self.get_exercise_difficulty_cap()
+        max_difficulty = int(cap_state.get("current_cap", _EXERCISE_DIFFICULTY_INITIAL_CAP))
+        return [
+            int(candidate["exercise_id"])
+            for candidate in self.get_assistance_candidates_for(
+                main_lift_id,
+                max_difficulty=max_difficulty,
+            )
+        ]
         """Perform get assistance pool for."""
 
-    def get_core_pool_ids(self) -> List[int]:
-        sql_primary = "SELECT exercise_id FROM core_pool ORDER BY exercise_id"
+    def get_assistance_candidates_for(
+        self,
+        main_lift_id: int,
+        *,
+        max_difficulty: int,
+    ) -> List[Dict[str, Any]]:
+        role_column = _ASSISTANCE_METADATA_FLAG_BY_MAIN_LIFT.get(main_lift_id)
+        if role_column is None:
+            return []
+        max_difficulty = max(1, min(10, int(max_difficulty)))
         with self._get_cursor(use_dict_row=False) as cur:
-            if self._core_pool_table_exists(cur):
-                cur.execute(sql_primary)
-                rows = cur.fetchall()
-                if rows:
-                    return [row[0] for row in rows]
+            if not self._programming_metadata_table_exists(cur):
+                return self._default_assistance_candidates(main_lift_id, max_difficulty)
 
-        sql_fallback = (
-            """
-            SELECT ex.id
-            FROM wger_exercise ex
-            JOIN wger_category cat ON cat.id = ex.category_id
-            WHERE LOWER(cat.name) LIKE 'core%%' OR LOWER(cat.name) LIKE 'abs%%'
-            ORDER BY ex.id
-            """
+        query = (
+            sql.SQL(
+                """
+                SELECT exercise_id, difficulty
+                FROM exercise_programming_metadata
+                WHERE {role_column} = true
+                  AND difficulty BETWEEN 1 AND %s
+                ORDER BY difficulty, exercise_id
+                """
+            ).format(role_column=sql.Identifier(role_column))
         )
-        with self._get_cursor(use_dict_row=False) as cur:
-            cur.execute(sql_fallback)
-            return [row[0] for row in cur.fetchall()]
+        with self._get_cursor(use_dict_row=True) as cur:
+            cur.execute(query, (max_difficulty,))
+            rows = cur.fetchall()
+        candidates = [
+            {"exercise_id": int(row["exercise_id"]), "difficulty": int(row["difficulty"])}
+            for row in rows
+        ]
+        if candidates:
+            return candidates
+        log_utils.warn(
+            "No metadata-rated assistance candidates for "
+            f"main_lift_id={main_lift_id} at difficulty cap {max_difficulty}; "
+            "falling back to curated defaults."
+        )
+        return self._default_assistance_candidates(main_lift_id, max_difficulty)
+        """Perform get assistance candidates for."""
+
+    def get_core_pool_ids(self) -> List[int]:
+        cap_state = self.get_exercise_difficulty_cap()
+        max_difficulty = int(cap_state.get("current_cap", _EXERCISE_DIFFICULTY_INITIAL_CAP))
+        return [
+            int(candidate["exercise_id"])
+            for candidate in self.get_core_candidates(max_difficulty=max_difficulty)
+        ]
         """Perform get core pool ids."""
+
+    def get_core_candidates(self, *, max_difficulty: int) -> List[Dict[str, Any]]:
+        max_difficulty = max(1, min(10, int(max_difficulty)))
+        with self._get_cursor(use_dict_row=False) as cur:
+            if not self._programming_metadata_table_exists(cur):
+                return self._default_core_candidates(max_difficulty)
+
+        query = """
+            SELECT exercise_id, difficulty
+            FROM exercise_programming_metadata
+            WHERE eligible_core = true
+              AND difficulty BETWEEN 1 AND %s
+            ORDER BY difficulty, exercise_id
+        """
+        with self._get_cursor(use_dict_row=True) as cur:
+            cur.execute(query, (max_difficulty,))
+            rows = cur.fetchall()
+        candidates = [
+            {"exercise_id": int(row["exercise_id"]), "difficulty": int(row["difficulty"])}
+            for row in rows
+        ]
+        if candidates:
+            return candidates
+        log_utils.warn(
+            "No metadata-rated core candidates at difficulty cap "
+            f"{max_difficulty}; falling back to curated defaults."
+        )
+        return self._default_core_candidates(max_difficulty)
+        """Perform get core candidates."""
+
+    def _default_assistance_candidates(
+        self,
+        main_lift_id: int,
+        max_difficulty: int,
+    ) -> List[Dict[str, Any]]:
+        candidates = [
+            item
+            for item in schedule_rules.default_assistance_candidates_for(main_lift_id)
+            if item["difficulty"] <= max_difficulty
+        ]
+        if candidates:
+            return candidates
+        return schedule_rules.default_assistance_candidates_for(main_lift_id)
+        """Perform default assistance candidates."""
+
+    def _default_core_candidates(self, max_difficulty: int) -> List[Dict[str, Any]]:
+        candidates = [
+            item
+            for item in schedule_rules.default_core_candidates()
+            if item["difficulty"] <= max_difficulty
+        ]
+        if candidates:
+            return candidates
+        return schedule_rules.default_core_candidates()
+        """Perform default core candidates."""
+
+    def get_exercise_difficulty_cap(self, as_of_date: date | None = None) -> Dict[str, Any]:
+        evaluation_date = as_of_date or date.today()
+        with self._get_cursor(use_dict_row=False) as cur:
+            if not (
+                self._programming_metadata_table_exists(cur)
+                and self._difficulty_unlock_state_table_exists(cur)
+            ):
+                return {
+                    "current_cap": _EXERCISE_DIFFICULTY_INITIAL_CAP,
+                    "source": "schema-missing-default",
+                    "evidence": {"available": False},
+                }
+
+        with self._get_cursor(use_dict_row=True) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM exercise_difficulty_unlock_state
+                WHERE scope = 'global'
+                """
+            )
+            state = cur.fetchone()
+            if not state:
+                cur.execute(
+                    """
+                    INSERT INTO exercise_difficulty_unlock_state (scope, current_cap)
+                    VALUES ('global', %s)
+                    RETURNING *
+                    """,
+                    (_EXERCISE_DIFFICULTY_INITIAL_CAP,),
+                )
+                state = cur.fetchone()
+
+        current_cap = max(
+            1,
+            min(
+                10,
+                int(
+                    (state or {}).get(
+                        "current_cap",
+                        _EXERCISE_DIFFICULTY_INITIAL_CAP,
+                    )
+                ),
+            ),
+        )
+        evidence = self._exercise_difficulty_evidence(
+            as_of_date=evaluation_date,
+            current_cap=current_cap,
+            last_unlocked_at=(state or {}).get("last_unlocked_at"),
+        )
+        next_cap = self._next_exercise_difficulty_cap(current_cap, evidence)
+
+        with self._get_cursor(use_dict_row=True) as cur:
+            if next_cap > current_cap:
+                cur.execute(
+                    """
+                    UPDATE exercise_difficulty_unlock_state
+                    SET current_cap = %s,
+                        last_evaluated_at = now(),
+                        last_unlocked_at = now(),
+                        unlock_evidence = %s,
+                        updated_at = now()
+                    WHERE scope = 'global'
+                    """,
+                    (next_cap, Json(evidence)),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE exercise_difficulty_unlock_state
+                    SET last_evaluated_at = now(),
+                        unlock_evidence = %s,
+                        updated_at = now()
+                    WHERE scope = 'global'
+                    """,
+                    (Json(evidence),),
+                )
+
+        return {
+            "current_cap": next_cap,
+            "source": "exercise_difficulty_unlock_state",
+            "evidence": evidence,
+        }
+        """Perform get exercise difficulty cap."""
+
+    def _exercise_difficulty_evidence(
+        self,
+        *,
+        as_of_date: date,
+        current_cap: int,
+        last_unlocked_at: datetime | None,
+    ) -> Dict[str, Any]:
+        window_start = as_of_date - timedelta(weeks=26)
+        window_end = as_of_date - timedelta(days=1)
+        comparison_cap = min(current_cap, 2) if current_cap < 3 else current_cap
+
+        with self._get_cursor(use_dict_row=True) as cur:
+            cur.execute("SELECT MIN(date) AS first_log_date FROM wger_logs;")
+            first_log_row = cur.fetchone() or {}
+            first_log_date = first_log_row.get("first_log_date")
+
+            cur.execute(
+                """
+                WITH planned AS (
+                    SELECT
+                        (tp.start_date + (((tw.week_number - 1) * 7) + (tpw.day_of_week - 1)))::date AS workout_date,
+                        tpw.exercise_id,
+                        COALESCE(tpw.programmed_difficulty, epm.difficulty) AS difficulty
+                    FROM training_plan_workouts tpw
+                    JOIN training_plan_weeks tw ON tw.id = tpw.week_id
+                    JOIN training_plans tp ON tp.id = tw.plan_id
+                    JOIN exercise_programming_metadata epm ON epm.exercise_id = tpw.exercise_id
+                    WHERE tpw.exercise_id IS NOT NULL
+                      AND (
+                          epm.eligible_core
+                          OR epm.eligible_bench_assistance
+                          OR epm.eligible_squat_assistance
+                          OR epm.eligible_ohp_assistance
+                          OR epm.eligible_deadlift_assistance
+                      )
+                )
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE workout_date BETWEEN %s AND %s
+                          AND difficulty BETWEEN 1 AND %s
+                    )::int AS planned_sessions,
+                    COUNT(*) FILTER (
+                        WHERE workout_date BETWEEN %s AND %s
+                          AND difficulty BETWEEN 1 AND %s
+                          AND EXISTS (
+                              SELECT 1
+                              FROM wger_logs wl
+                              WHERE wl.date = planned.workout_date
+                                AND wl.exercise_id = planned.exercise_id
+                          )
+                    )::int AS completed_sessions,
+                    COUNT(*) FILTER (
+                        WHERE workout_date BETWEEN %s AND %s
+                          AND difficulty = %s
+                          AND EXISTS (
+                              SELECT 1
+                              FROM wger_logs wl
+                              WHERE wl.date = planned.workout_date
+                                AND wl.exercise_id = planned.exercise_id
+                          )
+                    )::int AS completed_sessions_at_current_cap
+                FROM planned;
+                """,
+                (
+                    window_start,
+                    window_end,
+                    comparison_cap,
+                    window_start,
+                    window_end,
+                    comparison_cap,
+                    window_start,
+                    window_end,
+                    current_cap,
+                ),
+            )
+            completion_row = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT
+                    wl.exercise_id,
+                    wl.date,
+                    SUM(wl.reps)::float AS total_reps,
+                    SUM(COALESCE(wl.weight_kg, 0) * wl.reps)::float AS total_volume
+                FROM wger_logs wl
+                JOIN exercise_programming_metadata epm ON epm.exercise_id = wl.exercise_id
+                WHERE wl.date BETWEEN %s AND %s
+                  AND epm.difficulty BETWEEN 1 AND %s
+                  AND (
+                      epm.eligible_core
+                      OR epm.eligible_bench_assistance
+                      OR epm.eligible_squat_assistance
+                      OR epm.eligible_ohp_assistance
+                      OR epm.eligible_deadlift_assistance
+                  )
+                GROUP BY wl.exercise_id, wl.date
+                ORDER BY wl.exercise_id, wl.date;
+                """,
+                (window_start, window_end, comparison_cap),
+            )
+            progress_rows = cur.fetchall()
+
+        planned_sessions = int(completion_row.get("planned_sessions") or 0)
+        completed_sessions = int(completion_row.get("completed_sessions") or 0)
+        completed_current_cap = int(
+            completion_row.get("completed_sessions_at_current_cap") or 0
+        )
+        completion_ratio = (
+            completed_sessions / planned_sessions
+            if planned_sessions > 0
+            else 0.0
+        )
+        nondeclining_count = self._nondeclining_exercise_count(progress_rows)
+        history_days = (
+            (as_of_date - first_log_date).days
+            if isinstance(first_log_date, date)
+            else 0
+        )
+        if last_unlocked_at is None:
+            days_since_last_unlock = 999999
+        else:
+            days_since_last_unlock = max(
+                0,
+                (as_of_date - last_unlocked_at.date()).days,
+            )
+
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "first_strength_log_date": first_log_date.isoformat()
+            if isinstance(first_log_date, date)
+            else None,
+            "strength_history_days": history_days,
+            "planned_sessions": planned_sessions,
+            "completed_sessions": completed_sessions,
+            "completion_ratio": round(completion_ratio, 3),
+            "nondeclining_exercise_count": nondeclining_count,
+            "completed_sessions_at_current_cap": completed_current_cap,
+            "days_since_last_unlock": days_since_last_unlock,
+        }
+        """Perform exercise difficulty evidence."""
+
+    def _nondeclining_exercise_count(self, rows: List[Dict[str, Any]]) -> int:
+        by_exercise: Dict[int, List[Dict[str, Any]]] = {}
+        for row in rows:
+            exercise_id = row.get("exercise_id")
+            if exercise_id is None:
+                continue
+            by_exercise.setdefault(int(exercise_id), []).append(row)
+
+        count = 0
+        for exercise_rows in by_exercise.values():
+            if len(exercise_rows) < 2:
+                continue
+            first = exercise_rows[0]
+            last = exercise_rows[-1]
+            first_volume = float(first.get("total_volume") or 0.0)
+            last_volume = float(last.get("total_volume") or 0.0)
+            first_reps = float(first.get("total_reps") or 0.0)
+            last_reps = float(last.get("total_reps") or 0.0)
+            if max(first_volume, last_volume) > 0:
+                if last_volume >= first_volume:
+                    count += 1
+            elif last_reps >= first_reps:
+                count += 1
+        return count
+        """Perform nondeclining exercise count."""
+
+    def _next_exercise_difficulty_cap(
+        self,
+        current_cap: int,
+        evidence: Dict[str, Any],
+    ) -> int:
+        completion_ratio = float(evidence.get("completion_ratio") or 0.0)
+        if current_cap < 3:
+            if (
+                int(evidence.get("strength_history_days") or 0)
+                >= _EXERCISE_DIFFICULTY_FIRST_UNLOCK_DAYS
+                and int(evidence.get("completed_sessions") or 0)
+                >= _EXERCISE_DIFFICULTY_FIRST_UNLOCK_SESSIONS
+                and completion_ratio >= _EXERCISE_DIFFICULTY_MIN_COMPLETION_RATIO
+                and int(evidence.get("nondeclining_exercise_count") or 0) >= 3
+            ):
+                return 3
+            return current_cap
+
+        if current_cap >= 10:
+            return current_cap
+
+        if (
+            int(evidence.get("days_since_last_unlock") or 0)
+            >= _EXERCISE_DIFFICULTY_NEXT_UNLOCK_DAYS
+            and int(evidence.get("completed_sessions_at_current_cap") or 0)
+            >= _EXERCISE_DIFFICULTY_NEXT_UNLOCK_SESSIONS
+            and completion_ratio >= _EXERCISE_DIFFICULTY_MIN_COMPLETION_RATIO
+        ):
+            return current_cap + 1
+        return current_cap
+        """Perform next exercise difficulty cap."""
 
     def create_block_and_plan(self, start_date: date, weeks: int = 4) -> Tuple[int, List[int]]:
         with self.pool.connection() as conn:
@@ -359,7 +758,8 @@ class PostgresDal(PlanRepository):
         """Perform create block and plan."""
 
     def insert_workout(self, **kwargs) -> None:
-        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s);"
+        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details, programmed_difficulty) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s, %(programmed_difficulty)s);"
+        kwargs.setdefault("programmed_difficulty", None)
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
         """Perform insert workout."""
@@ -1085,9 +1485,18 @@ class PostgresDal(PlanRepository):
             )
         """Perform upsert wger exercises and relations."""
 
-    def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[Any]]]):
+    def seed_main_lifts(self, main_lift_ids: List[int]) -> None:
         with self._get_cursor() as cur:
-            cur.execute('UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)', (main_lift_ids,))
+            cur.execute(
+                'UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)',
+                (main_lift_ids,),
+            )
+        log_utils.info("Seeding of main lift flags complete.")
+        """Perform seed main lifts."""
+
+    def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[Any]]]):
+        self.seed_main_lifts(main_lift_ids)
+        with self._get_cursor() as cur:
             assistance_values = []
             for main, assists in assistance_pool_data:
                 for assist in assists:
@@ -1096,6 +1505,10 @@ class PostgresDal(PlanRepository):
                     else:
                         assist_id, difficulty = assist, 5
                     assistance_values.append((main, assist_id, difficulty))
+            cur.execute(
+                "UPDATE assistance_pool SET difficulty = 0 WHERE main_exercise_id = ANY(%s)",
+                (main_lift_ids,),
+            )
             if assistance_values:
                 stmt = sql.SQL("""
                     INSERT INTO assistance_pool (main_exercise_id, assistance_exercise_id, difficulty)
@@ -1104,8 +1517,156 @@ class PostgresDal(PlanRepository):
                     DO UPDATE SET difficulty = EXCLUDED.difficulty
                 """)
                 cur.executemany(stmt, assistance_values)
+        self.seed_default_exercise_programming_metadata(
+            assistance_pool_data=assistance_pool_data,
+            core_pool_data=schedule_rules.DEFAULT_CORE_POOL_DATA,
+        )
         log_utils.info("Seeding of main lifts and assistance pools complete.")
         """Perform seed main lifts and assistance."""
+
+    def seed_core_pool(self, core_pool_ids: List[int]) -> None:
+        if not core_pool_ids:
+            return
+        with self._get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO core_pool (exercise_id)
+                SELECT id
+                FROM wger_exercise
+                WHERE id = ANY(%s)
+                ON CONFLICT DO NOTHING
+                """,
+                (core_pool_ids,),
+            )
+        log_utils.info("Seeding of core pool complete.")
+        """Perform seed core pool."""
+
+    def seed_exercise_programming_metadata(self, exercise_ids: List[int]) -> None:
+        if not exercise_ids:
+            return
+        with self._get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO exercise_programming_metadata (exercise_id)
+                SELECT id
+                FROM wger_exercise
+                WHERE id = ANY(%s)
+                ON CONFLICT (exercise_id) DO NOTHING
+                """,
+                (exercise_ids,),
+            )
+        log_utils.info("Seeded missing exercise programming metadata rows.")
+        """Perform seed exercise programming metadata."""
+
+    def seed_default_exercise_programming_metadata(
+        self,
+        *,
+        assistance_pool_data: List[Tuple[int, List[Any]]],
+        core_pool_data: List[Tuple[int, int]],
+    ) -> None:
+        rows = self._default_programming_metadata_rows(
+            assistance_pool_data=assistance_pool_data,
+            core_pool_data=core_pool_data,
+        )
+        if not rows:
+            return
+        stmt = """
+            INSERT INTO exercise_programming_metadata (
+                exercise_id,
+                difficulty,
+                eligible_core,
+                eligible_bench_assistance,
+                eligible_squat_assistance,
+                eligible_ohp_assistance,
+                eligible_deadlift_assistance,
+                notes,
+                metadata_source
+            )
+            SELECT
+                %(exercise_id)s,
+                %(difficulty)s,
+                %(eligible_core)s,
+                %(eligible_bench_assistance)s,
+                %(eligible_squat_assistance)s,
+                %(eligible_ohp_assistance)s,
+                %(eligible_deadlift_assistance)s,
+                %(notes)s,
+                'seed'
+            WHERE EXISTS (
+                SELECT 1
+                FROM wger_exercise
+                WHERE id = %(exercise_id)s
+            )
+            ON CONFLICT (exercise_id) DO NOTHING
+        """
+        with self._get_cursor() as cur:
+            cur.executemany(stmt, rows)
+        log_utils.info("Seeded default exercise programming metadata.")
+        """Perform seed default exercise programming metadata."""
+
+    def _default_programming_metadata_rows(
+        self,
+        *,
+        assistance_pool_data: List[Tuple[int, List[Any]]],
+        core_pool_data: List[Tuple[int, int]],
+    ) -> List[Dict[str, Any]]:
+        rows: Dict[int, Dict[str, Any]] = {}
+
+        def ensure_row(exercise_id: int, difficulty: int, notes: str) -> Dict[str, Any]:
+            row = rows.setdefault(
+                exercise_id,
+                {
+                    "exercise_id": exercise_id,
+                    "difficulty": difficulty,
+                    "eligible_core": False,
+                    "eligible_bench_assistance": False,
+                    "eligible_squat_assistance": False,
+                    "eligible_ohp_assistance": False,
+                    "eligible_deadlift_assistance": False,
+                    "notes": notes,
+                },
+            )
+            if row["difficulty"] == 0 or (difficulty > 0 and difficulty < row["difficulty"]):
+                row["difficulty"] = difficulty
+            if notes and notes not in str(row.get("notes") or ""):
+                row["notes"] = "; ".join(part for part in (row.get("notes"), notes) if part)
+            return row
+
+        role_by_main = {
+            schedule_rules.BENCH_ID: "eligible_bench_assistance",
+            schedule_rules.SQUAT_ID: "eligible_squat_assistance",
+            schedule_rules.OHP_ID: "eligible_ohp_assistance",
+            schedule_rules.DEADLIFT_ID: "eligible_deadlift_assistance",
+        }
+
+        for main_lift_id, assists in assistance_pool_data:
+            role_flag = role_by_main.get(main_lift_id)
+            if role_flag is None:
+                continue
+            for assist in assists:
+                if isinstance(assist, tuple):
+                    assist_id, difficulty = assist
+                else:
+                    assist_id, difficulty = assist, 0
+                row = ensure_row(
+                    int(assist_id),
+                    int(difficulty),
+                    "Seeded from curated assistance defaults.",
+                )
+                if int(difficulty) > 0:
+                    row[role_flag] = True
+
+        for exercise_id, difficulty in core_pool_data:
+            row = ensure_row(
+                int(exercise_id),
+                int(difficulty),
+                "Seeded from curated core defaults.",
+            )
+            if int(difficulty) > 0:
+                row["eligible_core"] = True
+
+        return list(rows.values())
+        """Perform default programming metadata rows."""
 
     # ----------------------------------------------
     # --- Metrics, Summaries & Views ---

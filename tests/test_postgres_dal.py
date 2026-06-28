@@ -199,7 +199,7 @@ class TestPostgresDal(unittest.TestCase):
 
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
-    def test_get_assistance_pool_filters_by_configured_difficulty(self, mock_get_pool):
+    def test_get_assistance_candidates_uses_programming_metadata(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -207,16 +207,47 @@ class TestPostgresDal(unittest.TestCase):
         mock_get_pool.return_value = mock_pool
         mock_pool.connection.return_value.__enter__.return_value = mock_conn
         mock_conn.cursor.return_value.__enter__.return_value = mock_cur
-        mock_cur.fetchall.return_value = [(201,), (202,)]
+        mock_cur.fetchone.return_value = ("exercise_programming_metadata",)
+        mock_cur.fetchall.return_value = [
+            {"exercise_id": 201, "difficulty": 1},
+            {"exercise_id": 202, "difficulty": 2},
+        ]
 
         dal = PostgresDal()
-        result = dal.get_assistance_pool_for(615)
+        result = dal.get_assistance_candidates_for(615, max_difficulty=2)
 
-        self.assertEqual(result, [201, 202])
-        sql_text, params = mock_cur.execute.call_args.args
-        self.assertIn("difficulty BETWEEN 1 AND %s", sql_text)
-        self.assertEqual(params, (615, 5))
-        """Perform test get assistance pool filters by configured difficulty."""
+        self.assertEqual(
+            result,
+            [
+                {"exercise_id": 201, "difficulty": 1},
+                {"exercise_id": 202, "difficulty": 2},
+            ],
+        )
+        self.assertEqual(mock_cur.execute.call_args.args[1], (2,))
+        """Perform test get assistance candidates uses programming metadata."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_assistance_candidates_falls_back_to_curated_defaults_without_metadata(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchone.return_value = (None,)
+
+        dal = PostgresDal()
+        result = dal.get_assistance_candidates_for(615, max_difficulty=2)
+
+        self.assertEqual(
+            result,
+            [
+                {"exercise_id": 46, "difficulty": 2},
+                {"exercise_id": 1366, "difficulty": 2},
+            ],
+        )
+        """Perform test get assistance candidates falls back to curated defaults without metadata."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_wger_reference_upserts_use_bulk_upsert(self, mock_get_pool):
@@ -266,7 +297,7 @@ class TestPostgresDal(unittest.TestCase):
         """Perform test wger reference upserts use bulk upsert."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
-    def test_get_core_pool_ids_reads_core_pool_table_when_present(self, mock_get_pool):
+    def test_get_core_candidates_uses_programming_metadata(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -274,41 +305,145 @@ class TestPostgresDal(unittest.TestCase):
         mock_get_pool.return_value = mock_pool
         mock_pool.connection.return_value.__enter__.return_value = mock_conn
         mock_conn.cursor.return_value.__enter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ("core_pool",)
-        mock_cur.fetchall.return_value = [(101,), (102,)]
+        mock_cur.fetchone.return_value = ("exercise_programming_metadata",)
+        mock_cur.fetchall.return_value = [
+            {"exercise_id": 458, "difficulty": 1},
+            {"exercise_id": 500, "difficulty": 2},
+        ]
 
         dal = PostgresDal()
-        result = dal.get_core_pool_ids()
+        result = dal.get_core_candidates(max_difficulty=2)
 
-        self.assertEqual(result, [101, 102])
-        executed_sql = [call.args[0] for call in mock_cur.execute.call_args_list]
-        self.assertIn("SELECT to_regclass('public.core_pool');", executed_sql)
-        self.assertIn("SELECT exercise_id FROM core_pool ORDER BY exercise_id", executed_sql)
-        """Perform test get core pool ids reads core pool table when present."""
+        self.assertEqual(
+            result,
+            [
+                {"exercise_id": 458, "difficulty": 1},
+                {"exercise_id": 500, "difficulty": 2},
+            ],
+        )
+        self.assertEqual(mock_cur.execute.call_args.args[1], (2,))
+        """Perform test get core candidates uses programming metadata."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
-    def test_get_core_pool_ids_falls_back_to_categories_without_core_pool(self, mock_get_pool):
+    def test_get_core_candidates_falls_back_to_curated_defaults_without_metadata(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()
-        first_cur = MagicMock()
-        second_cur = MagicMock()
+        mock_cur = MagicMock()
 
         mock_get_pool.return_value = mock_pool
         mock_pool.connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.side_effect = [
-            MagicMock(__enter__=MagicMock(return_value=first_cur), __exit__=MagicMock(return_value=False)),
-            MagicMock(__enter__=MagicMock(return_value=second_cur), __exit__=MagicMock(return_value=False)),
-        ]
-        first_cur.fetchone.return_value = (None,)
-        second_cur.fetchall.return_value = [(201,), (202,)]
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchone.return_value = (None,)
 
         dal = PostgresDal()
-        result = dal.get_core_pool_ids()
+        result = dal.get_core_candidates(max_difficulty=2)
 
-        self.assertEqual(result, [201, 202])
-        second_cur.execute.assert_called_once()
-        self.assertIn("FROM wger_exercise ex", second_cur.execute.call_args.args[0])
-        """Perform test get core pool ids falls back to categories without core pool."""
+        self.assertEqual(
+            result,
+            [
+                {"exercise_id": 458, "difficulty": 1},
+                {"exercise_id": 1001, "difficulty": 1},
+                {"exercise_id": 500, "difficulty": 2},
+                {"exercise_id": 580, "difficulty": 2},
+            ],
+        )
+        """Perform test get core candidates falls back to curated defaults without metadata."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_seed_main_lifts_and_assistance_disables_stale_pool_rows(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.seed_main_lifts_and_assistance([615], [(615, [(46, 5), (373, 0)])])
+
+        executed_sql = [call.args[0] for call in mock_cur.execute.call_args_list]
+        self.assertIn(
+            "UPDATE assistance_pool SET difficulty = 0 WHERE main_exercise_id = ANY(%s)",
+            executed_sql,
+        )
+        values = mock_cur.executemany.call_args_list[0].args[1]
+        self.assertEqual(values, [(615, 46, 5), (615, 373, 0)])
+        """Perform test seed main lifts and assistance disables stale pool rows."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_seed_core_pool_inserts_existing_default_ids(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.seed_core_pool([458, 500])
+
+        mock_cur.execute.assert_called_once()
+        sql_text, params = mock_cur.execute.call_args.args
+        self.assertIn("INSERT INTO core_pool", sql_text)
+        self.assertIn("WHERE id = ANY(%s)", sql_text)
+        self.assertEqual(params, ([458, 500],))
+        """Perform test seed core pool inserts existing default ids."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_seed_programming_metadata_inserts_missing_rows_only(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.seed_exercise_programming_metadata([458, 1409])
+
+        sql_text, params = mock_cur.execute.call_args.args
+        self.assertIn("INSERT INTO exercise_programming_metadata", sql_text)
+        self.assertIn("ON CONFLICT (exercise_id) DO NOTHING", sql_text)
+        self.assertEqual(params, ([458, 1409],))
+        """Perform test seed programming metadata inserts missing rows only."""
+
+    def test_difficulty_cap_stays_at_two_without_sufficient_evidence(self):
+        dal = PostgresDal(pool=MagicMock())
+        evidence = {
+            "strength_history_days": 364,
+            "completed_sessions": 24,
+            "completion_ratio": 0.9,
+            "nondeclining_exercise_count": 3,
+        }
+
+        self.assertEqual(dal._next_exercise_difficulty_cap(2, evidence), 2)
+        """Perform test difficulty cap stays at two without sufficient evidence."""
+
+    def test_difficulty_cap_unlocks_to_three_with_sufficient_evidence(self):
+        dal = PostgresDal(pool=MagicMock())
+        evidence = {
+            "strength_history_days": 365,
+            "completed_sessions": 24,
+            "completion_ratio": 0.75,
+            "nondeclining_exercise_count": 3,
+        }
+
+        self.assertEqual(dal._next_exercise_difficulty_cap(2, evidence), 3)
+        """Perform test difficulty cap unlocks to three with sufficient evidence."""
+
+    def test_difficulty_cap_rises_one_level_after_introduction_window(self):
+        dal = PostgresDal(pool=MagicMock())
+        evidence = {
+            "days_since_last_unlock": 56,
+            "completed_sessions_at_current_cap": 8,
+            "completion_ratio": 0.8,
+        }
+
+        self.assertEqual(dal._next_exercise_difficulty_cap(3, evidence), 4)
+        """Perform test difficulty cap rises one level after introduction window."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_get_plan_week_rows_includes_catalogue_exercise_name(self, mock_get_pool):
