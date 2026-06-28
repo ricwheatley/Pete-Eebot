@@ -372,6 +372,22 @@ class TestPostgresDal(unittest.TestCase):
         """Perform test seed main lifts and assistance disables stale pool rows."""
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_seed_main_lifts_passes_tuple_ids_as_postgres_array(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+
+        dal = PostgresDal()
+        dal.seed_main_lifts((615, 73, 184, 566))
+
+        self.assertEqual(mock_cur.execute.call_args.args[1], ([615, 73, 184, 566],))
+        """Perform test seed main lifts passes tuple ids as postgres array."""
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_seed_core_pool_inserts_existing_default_ids(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()

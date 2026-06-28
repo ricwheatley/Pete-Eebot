@@ -145,6 +145,8 @@ SELECT ex.id
 FROM wger_exercise ex
 ON CONFLICT (exercise_id) DO NOTHING;
 
+DROP FUNCTION IF EXISTS sp_plan_for_day(DATE);
+
 CREATE OR REPLACE FUNCTION sp_plan_for_day(p_date DATE)
 RETURNS TABLE (
     workout_date DATE,
@@ -171,6 +173,8 @@ RETURNS TABLE (
       AND (tp.start_date + ((tw.week_number + 1) * 7)) > p_date
       AND tpw.day_of_week = extract(isodow from p_date);
 $$;
+
+DROP FUNCTION IF EXISTS sp_plan_for_week(DATE);
 
 CREATE OR REPLACE FUNCTION sp_plan_for_week(p_start_date DATE)
 RETURNS TABLE (

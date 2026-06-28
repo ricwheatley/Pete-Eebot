@@ -1486,16 +1486,18 @@ class PostgresDal(PlanRepository):
         """Perform upsert wger exercises and relations."""
 
     def seed_main_lifts(self, main_lift_ids: List[int]) -> None:
+        main_lift_id_list = [int(exercise_id) for exercise_id in main_lift_ids]
         with self._get_cursor() as cur:
             cur.execute(
                 'UPDATE wger_exercise SET is_main_lift = true WHERE id = ANY(%s)',
-                (main_lift_ids,),
+                (main_lift_id_list,),
             )
         log_utils.info("Seeding of main lift flags complete.")
         """Perform seed main lifts."""
 
     def seed_main_lifts_and_assistance(self, main_lift_ids: List[int], assistance_pool_data: List[Tuple[int, List[Any]]]):
-        self.seed_main_lifts(main_lift_ids)
+        main_lift_id_list = [int(exercise_id) for exercise_id in main_lift_ids]
+        self.seed_main_lifts(main_lift_id_list)
         with self._get_cursor() as cur:
             assistance_values = []
             for main, assists in assistance_pool_data:
@@ -1507,7 +1509,7 @@ class PostgresDal(PlanRepository):
                     assistance_values.append((main, assist_id, difficulty))
             cur.execute(
                 "UPDATE assistance_pool SET difficulty = 0 WHERE main_exercise_id = ANY(%s)",
-                (main_lift_ids,),
+                (main_lift_id_list,),
             )
             if assistance_values:
                 stmt = sql.SQL("""
