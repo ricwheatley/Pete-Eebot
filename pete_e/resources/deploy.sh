@@ -16,6 +16,8 @@ SHARED_ROOT="${SHARED_ROOT:-${PROJECT_ROOT}/shared}"
 VENV_ROOT="${VENV_ROOT:-${SHARED_ROOT}/venv}"
 ENV_FILE="${ENV_FILE:-${SHARED_ROOT}/.env}"
 PYTHON_BIN="${PYTHON_BIN:-${VENV_ROOT}/bin/python3}"
+UV_BIN="${UV_BIN:-${SHARED_ROOT}/uv-tool/bin/uv}"
+EXPECTED_UV_VERSION="${EXPECTED_UV_VERSION:-0.12.5}"
 SERVICE_NAME="${SERVICE_NAME:-peteeebot.service}"
 LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
 LOCKFILE="${LOCKFILE:-/var/lock/pete_eebot-deploy.lock}"
@@ -82,6 +84,7 @@ log "Deploy lock acquired. lock=${LOCKFILE} pid=${DEPLOY_PID}"
 
 [[ -d "${APP_ROOT}/.git" ]] || fail "Git repository not found at ${APP_ROOT}"
 [[ -x "${PYTHON_BIN}" ]] || fail "Python venv not found at ${PYTHON_BIN}"
+[[ -x "${UV_BIN}" ]] || fail "Pinned uv executable not found at ${UV_BIN}"
 [[ -f "${VENV_ROOT}/bin/activate" ]] || fail "Virtual environment activation script not found at ${VENV_ROOT}/bin/activate"
 [[ -f "${ENV_FILE}" ]] || fail ".env not found at ${ENV_FILE}"
 
@@ -101,13 +104,26 @@ else
 fi
 
 COMMIT_INFO="$(git log -1 --pretty=format:'%s (%an)')"
+[[ -f "${APP_ROOT}/pyproject.toml" ]] || fail "Dependency input not found at ${APP_ROOT}/pyproject.toml"
+[[ -f "${APP_ROOT}/uv.lock" ]] || fail "Dependency lock not found at ${APP_ROOT}/uv.lock"
+
+ACTUAL_UV_VERSION="$("${UV_BIN}" --version | awk '{print $2}')"
+[[ "${ACTUAL_UV_VERSION}" == "${EXPECTED_UV_VERSION}" ]] || fail "uv ${EXPECTED_UV_VERSION} required; found ${ACTUAL_UV_VERSION}"
 
 log "Activating virtual environment..."
 # shellcheck source=/dev/null
 source "${VENV_ROOT}/bin/activate"
 
-log "Installing application from ${APP_ROOT}..."
-"${PYTHON_BIN}" -m pip install -e "${APP_ROOT}"
+log "Installing the frozen runtime graph and non-editable application from ${APP_ROOT}..."
+"${UV_BIN}" lock --project "${APP_ROOT}" --check
+UV_PROJECT_ENVIRONMENT="${VENV_ROOT}" "${UV_BIN}" sync \
+    --project "${APP_ROOT}" \
+    --frozen \
+    --no-dev \
+    --no-editable
+
+log "Checking installed dependency consistency..."
+"${UV_BIN}" pip check --python "${PYTHON_BIN}"
 
 log "Writing and activating cron jobs..."
 "${PYTHON_BIN}" -m pete_e.infrastructure.cron_manager --write --activate --summary

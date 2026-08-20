@@ -739,51 +739,6 @@ app = typer.Typer(
     add_completion=False,
 )
 
-
-def _patch_cli_runner_boolean_flags() -> None:
-    try:
-        from typer.testing import CliRunner  # type: ignore
-    except Exception:
-        return
-
-    invoke = getattr(CliRunner, "invoke", None)
-    code = getattr(invoke, "__code__", None)
-    if not code or "conftest" not in code.co_filename:
-        return
-    if getattr(invoke, "__pete_flag_patch__", False):
-        return
-
-    flag_names = {"--send", "--summary", "--trainer", "--plan"}
-    original_invoke = invoke
-
-    def patched_invoke(self, app, args=None, **kwargs):
-        args_list = list(args or [])
-        if args_list:
-            normalized: list[str] = []
-            i = 0
-            length = len(args_list)
-            while i < length:
-                token = args_list[i]
-                normalized.append(token)
-                if token in flag_names:
-                    if i + 1 < length and not args_list[i + 1].startswith("--"):
-                        i += 1
-                        normalized.append(args_list[i])
-                    else:
-                        normalized.append("true")
-                i += 1
-            args_list = normalized
-        return original_invoke(self, app, args_list, **kwargs)
-        """Perform patched invoke."""
-
-    setattr(patched_invoke, "__pete_flag_patch__", True)
-    CliRunner.invoke = patched_invoke  # type: ignore[attr-defined]
-    """Perform patch cli runner boolean flags."""
-
-
-_patch_cli_runner_boolean_flags()
-
-
 @app.command("bootstrap-owner")
 def bootstrap_owner(
     username: Annotated[
@@ -1056,10 +1011,10 @@ def lets_begin(
 
 @app.command()
 def message(
-    send: Annotated[bool, Option("--send", help="Send the generated message via Telegram.", is_flag=True)] = False,
-    summary: Annotated[bool, Option("--summary", help="Generate and send the daily summary.", is_flag=True)] = False,
-    trainer: Annotated[bool, Option("--trainer", help="Generate Pierre's trainer check-in.", is_flag=True)] = False,
-    plan: Annotated[bool, Option("--plan", help="Generate and send the weekly training plan.", is_flag=True)] = False,
+    send: Annotated[bool, Option("--send", help="Send the generated message via Telegram.")] = False,
+    summary: Annotated[bool, Option("--summary", help="Generate and send the daily summary.")] = False,
+    trainer: Annotated[bool, Option("--trainer", help="Generate Pierre's trainer check-in.")] = False,
+    plan: Annotated[bool, Option("--plan", help="Generate and send the weekly training plan.")] = False,
 ) -> None:
     """
     Generate and optionally send messages (daily summary, trainer check-in, or weekly plan).
@@ -1112,7 +1067,7 @@ def message(
 def morning_report(
     send: Annotated[
         bool,
-        Option("--send", help="Send the morning report via Telegram.", is_flag=True),
+        Option("--send", help="Send the morning report via Telegram."),
     ] = False,
     target_date: Annotated[
         Optional[str],

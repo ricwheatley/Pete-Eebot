@@ -151,7 +151,7 @@ def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch)
     result = runner.invoke(cli.app, ["sync"])
 
     assert result.exit_code == 4
-    assert "Manual sync failed: database offline" in result.stdout
+    assert "Manual sync failed: database offline" in result.output
 
 
 def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,4 +169,4 @@ def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(cli.app, ["plan"])
 
     assert result.exit_code == 2
-    assert "Plan deployment failed: plan validation failed" in result.stdout
+    assert "Plan deployment failed: plan validation failed" in result.output

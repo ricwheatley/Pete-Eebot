@@ -356,7 +356,7 @@ def _exercise_real_cli() -> dict[str, object]:
         color=False,
     )
     assert invalid_result.exit_code == 2
-    assert "not in the range 4<=x<=4" in invalid_result.stdout
+    assert "not in the range 4<=x<=4" in invalid_result.output
     assert build_calls == 1
     return {"default_weeks": calls[0]["weeks"], "invalid_exit_code": invalid_result.exit_code}
 

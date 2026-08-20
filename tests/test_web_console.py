@@ -1968,10 +1968,12 @@ def test_console_morning_report_failure_includes_request_and_job_ids(monkeypatch
 
 
 def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
+    schema = api.app.openapi()
     mounted_routes = {
-        (method, route.path)
-        for route in getattr(api.app, "routes", [])
-        for method in getattr(route, "methods", set())
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if method != "parameters"
     }
 
     assert ("GET", "/console/status") in mounted_routes

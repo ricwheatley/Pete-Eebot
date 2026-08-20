@@ -1,6 +1,6 @@
 # Production Readiness Checklist
 
-Last updated: 2026-05-15.
+Last updated: 2026-08-20.
 
 Use this checklist before exposing Pete-Eebot to production traffic or before a material production change such as a new host, reverse proxy change, auth change, schema migration, backup change, or alerting change. Record evidence in the release notes or in a copied signoff from `docs/production_readiness_signoff_template.md`.
 
@@ -31,7 +31,7 @@ Severity guidance:
 | [ ] Production layout matches the runbook: `.env`, `venv`, `deploy.sh`, `app`, and backup directories live outside the Git cleanup boundary where expected. | Blocker | Path listing or operator confirmation. |
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
 | [ ] Required environment values are populated: Postgres, Dropbox, Withings, Telegram if enabled, wger if enabled, `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, and `DEPLOY_SCRIPT_PATH`. | Blocker | Redacted env inventory. |
-| [ ] Python dependencies install cleanly from `requirements.txt` and the package installs with `pip install --no-deps -e .`. | Blocker | Install log summary. |
+| [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
 | [ ] Database schema baseline and all intended migrations have been applied in order. | Blocker | Applied SQL list and DB target. |
 | [ ] Migration rollback or restore path is known before applying any migration that changes production data. | Blocker | Rollback section in release note. |
 | [ ] `python -m scripts.check_auth` and `pete status` complete with expected provider status. | Blocker | Command output summary. |
@@ -135,7 +135,10 @@ Adapt paths and service names to the host:
 cd /opt/myapp/current
 git fetch --all --prune
 git reset --hard <previous-known-good-sha>
-/opt/myapp/shared/venv/bin/python -m pip install --no-deps -e .
+/opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
+UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+/opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 sudo systemctl restart peteeebot.service
 ```
 

@@ -47,7 +47,8 @@ Not supported today:
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.11, 3.12, or 3.13
+- uv 0.12.5 (the required version is enforced by `pyproject.toml`)
 - PostgreSQL client tools (`psql`, `pg_dump`, `pg_restore`)
 - Docker and Docker Compose if using the local PostgreSQL container
 - Dropbox app credentials for Apple Health Auto Export files
@@ -58,22 +59,23 @@ Not supported today:
 ### 1. Create the Python environment
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -e ".[dev]"
+uv sync --frozen
 ```
 
-For a production install, keep dependency versions pinned and install the package without resolving extras:
+For a production install, sync the runtime subset of the same lock into the
+external application environment and install Pete-Eebot non-editably:
 
 ```bash
 python3 -m venv venv
-source venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
+uv lock --check
+UV_PROJECT_ENVIRONMENT="$PWD/venv" uv sync --frozen --no-dev --no-editable
+uv pip check --python "$PWD/venv/bin/python"
 ```
+
+`pyproject.toml` is the only dependency input and `uv.lock` is the generated,
+hashed, cross-platform lock. See
+[`docs/dependency_management.md`](docs/dependency_management.md) before changing
+either dependency constraints or the lock.
 
 ### 2. Configure environment
 
@@ -329,6 +331,7 @@ If using `/opt/myapp`, set path overrides in the wrapper environment or edit the
 PROJECT_ROOT=/opt/myapp
 APP_ROOT=/opt/myapp/current
 VENV_ROOT=/opt/myapp/shared/venv
+UV_BIN=/opt/myapp/shared/uv-tool/bin/uv
 ```
 
 ## Operational Workflows

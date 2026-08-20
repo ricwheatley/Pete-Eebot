@@ -70,19 +70,21 @@ Not supported today:
 
 ## 2) Local Development Run Steps
 
-1. Create and activate venv.
+1. Provision the pinned uv tool and create the application venv.
 
 ```bash
+python3 -m venv /opt/myapp/shared/uv-tool
+/opt/myapp/shared/uv-tool/bin/python -m pip install uv==0.12.5
 python3 -m venv /opt/myapp/shared/venv
-source /opt/myapp/shared/venv/bin/activate
 ```
 
-2. Install dependencies and package.
+2. Install the frozen runtime graph and package non-editably.
 
 ```bash
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
+/opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
+UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+/opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
 
 3. Start local Postgres with Compose (optional local path in repo). Compose intentionally starts only Postgres; run the app from the host virtual environment.
@@ -121,6 +123,7 @@ Assumed host layout used by deploy scripts:
 
 - `/opt/myapp/shared/.env`
 - `/opt/myapp/shared/venv`
+- `/opt/myapp/shared/uv-tool/bin/uv` (uv 0.12.5)
 - `/opt/myapp/current` (git checkout)
 
 ### 3.1 API service (manual start command)
@@ -203,8 +206,9 @@ Current deploy chain in repo:
    - `git clean -fdx`
 4. Wrapper executes tracked deploy script `pete_e/resources/deploy.sh` with `SKIP_GIT_UPDATE=1`.
 5. Tracked deploy script does:
-   - validates `.env`, venv, repo existence
-   - `pip install -e <app_root>`
+   - validates `.env`, venv, pinned uv, `pyproject.toml`, and `uv.lock`
+   - rejects a stale `uv.lock`, then exact-syncs its frozen runtime subset into the shared venv with `--no-dev --no-editable`
+   - checks the installed dependency graph with `uv pip check`
    - refreshes cron via `pete_e.infrastructure.cron_manager`
    - notifies Telegram
    - restarts `peteeebot.service`
@@ -512,7 +516,7 @@ rollback, and future profile-scoping guidance.
 - Removed the legacy app `Dockerfile`.
 - Removed the Compose `app` service that built the stale image and then idled with `tail -f /dev/null`.
 - Kept `docker-compose.yml` as the supported local Postgres helper.
-- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `requirements.txt`, `pete_e/`, `scripts/`, `init-db/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
+- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `uv.lock`, `pete_e/`, `scripts/`, `init-db/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
 
 ### 8.2 Disabled/missing cron scripts
 

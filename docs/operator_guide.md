@@ -76,20 +76,21 @@ Notes:
 Windows:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
+uv sync --frozen
 ```
 
 Ubuntu production:
 
 ```bash
 python3 -m venv /opt/myapp/shared/venv
-source /opt/myapp/shared/venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
+/opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
+UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+/opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
+
+Provision the required uv 0.12.5 tool environment separately as documented in
+`docs/venv_setup.md`. Do not regenerate `uv.lock` on the production host.
 
 ### 2.3 Database
 

@@ -70,10 +70,12 @@ def _auth_headers() -> dict[str, str]:
 
 
 def test_api_v1_mounts_key_read_routes():
+    schema = api.app.openapi()
     mounted_routes = {
-        (method, route.path)
-        for route in api.app.routes
-        for method in getattr(route, "methods", set())
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if method != "parameters"
     }
 
     key_read_paths = [
@@ -97,10 +99,12 @@ def test_api_v1_mounts_key_read_routes():
 
 
 def test_legacy_routes_remain_mounted_during_v1_transition():
+    schema = api.app.openapi()
     mounted_routes = {
-        (method, route.path)
-        for route in api.app.routes
-        for method in getattr(route, "methods", set())
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if method != "parameters"
     }
 
     assert ("GET", "/metrics_overview") in mounted_routes

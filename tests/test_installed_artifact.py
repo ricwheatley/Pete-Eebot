@@ -40,16 +40,16 @@ def _artifact_environment(tmp_path: Path) -> dict[str, str]:
             "USER_GOAL_WEIGHT_KG": "80",
             "TELEGRAM_TOKEN": "artifact-test-token",
             "TELEGRAM_CHAT_ID": "123456",
-            "WITHINGS_CLIENT_ID": "",
-            "WITHINGS_CLIENT_SECRET": "",
-            "WITHINGS_REDIRECT_URI": "",
-            "WITHINGS_REFRESH_TOKEN": "",
+            "WITHINGS_CLIENT_ID": "artifact-client",
+            "WITHINGS_CLIENT_SECRET": "artifact-secret",
+            "WITHINGS_REDIRECT_URI": "https://localhost/callback",
+            "WITHINGS_REFRESH_TOKEN": "artifact-refresh",
             "WGER_API_KEY": "artifact-test-key",
             "DROPBOX_HEALTH_METRICS_DIR": "/health",
             "DROPBOX_WORKOUTS_DIR": "/workouts",
-            "DROPBOX_APP_KEY": "",
-            "DROPBOX_APP_SECRET": "",
-            "DROPBOX_REFRESH_TOKEN": "",
+            "DROPBOX_APP_KEY": "artifact-dropbox-key",
+            "DROPBOX_APP_SECRET": "artifact-dropbox-secret",
+            "DROPBOX_REFRESH_TOKEN": "artifact-dropbox-refresh",
             "POSTGRES_USER": "pete_test",
             "POSTGRES_PASSWORD": "pete_test",
             "POSTGRES_HOST": "127.0.0.1",
@@ -97,8 +97,42 @@ def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> N
     environment_dir = tmp_path / "installed-environment"
     venv.EnvBuilder(with_pip=True).create(environment_dir)
     python = _venv_python(environment_dir)
+
+    sync_environment = dict(os.environ)
+    sync_environment.pop("VIRTUAL_ENV", None)
+    sync_environment["UV_PROJECT_ENVIRONMENT"] = str(environment_dir)
+    sync = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "uv",
+            "sync",
+            "--frozen",
+            "--no-dev",
+            "--no-install-project",
+        ],
+        cwd=ROOT,
+        env=sync_environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert sync.returncode == 0, sync.stdout + sync.stderr
+
     install = subprocess.run(
-        [str(python), "-m", "pip", "install", "--force-reinstall", str(wheel)],
+        [
+            sys.executable,
+            "-m",
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            "--no-deps",
+            "--force-reinstall",
+            str(wheel),
+        ],
         cwd=tmp_path,
         check=False,
         capture_output=True,
@@ -107,35 +141,58 @@ def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> N
     )
     assert install.returncode == 0, install.stdout + install.stderr
 
-    environment = _artifact_environment(tmp_path)
-    cli = subprocess.run(
-        [str(_venv_cli(environment_dir)), "--help"],
+    dependency_check = subprocess.run(
+        [sys.executable, "-m", "uv", "pip", "check", "--python", str(python)],
         cwd=tmp_path,
-        env=environment,
         check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
-    assert cli.returncode == 0, cli.stdout + cli.stderr
-    assert "Usage" in cli.stdout
+    assert dependency_check.returncode == 0, dependency_check.stdout + dependency_check.stderr
+
+    environment = _artifact_environment(tmp_path)
+    cli_cases = (
+        (["--help"], "Usage"),
+        (["status", "--help"], "--timeout"),
+        (["withings-auth"], "https://account.withings.com/oauth2_user/authorize2"),
+    )
+    for arguments, expected in cli_cases:
+        cli = subprocess.run(
+            [str(_venv_cli(environment_dir)), *arguments],
+            cwd=tmp_path,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert cli.returncode == 0, cli.stdout + cli.stderr
+        assert expected in cli.stdout
 
     smoke_script = f"""
+import asyncio
 from importlib.resources import files
 from pathlib import Path
 
-from fastapi.testclient import TestClient
 import pete_e
 from pete_e.api import app
+from pete_e.api_routes.status_sync import healthz
 
 module_path = Path(pete_e.__file__).resolve()
 assert Path({str(ROOT)!r}) not in module_path.parents, module_path
 assert (files('pete_e') / 'resources' / 'phrases_tagged.json').is_file()
 assert (files('pete_e') / 'templates' / 'console' / 'base.html').is_file()
-with TestClient(app) as client:
-    response = client.get('/healthz')
-    assert response.status_code == 200, response.text
-    assert response.json() == {{'ok': True, 'status': 'live'}}
+
+schema = app.openapi()
+assert schema['info']['title'] == 'Pete-Eebot API'
+assert '/healthz' in schema['paths']
+
+async def startup_smoke():
+    async with app.router.lifespan_context(app):
+        assert healthz() == {{'ok': True, 'status': 'live'}}
+
+asyncio.run(startup_smoke())
 """
     api_smoke = subprocess.run(
         [str(python), "-c", smoke_script],

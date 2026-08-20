@@ -6,20 +6,22 @@ packages. `tests/conftest.py` isolates settings from the repository `.env` and
 supplies non-production defaults, but it does not manufacture dependency
 modules.
 
-## Install the known dependency set
+## Install the locked dependency set
 
-CI uses Python 3.11 and the pinned runtime set in `requirements.txt`:
+`pyproject.toml` is the only hand-edited dependency input. CI uses its declared
+Python matrix and uv 0.12.5 to install the exact development graph from
+`uv.lock`:
 
 ```bash
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -e ".[dev]"
-python -m pip check
+uv lock --check
+uv sync --frozen --no-editable
+.venv/bin/python -m pip check
+.venv/bin/python -m pip_audit --local --skip-editable
 ```
 
-The pinned `psycopg[binary]==3.2.0` build is not available for Python 3.13.
-On Python 3.13, install `.[dev]` to resolve a compatible version within the
-declared `pyproject.toml` range, or use Python 3.11 to reproduce CI exactly.
+Python 3.11 through 3.13 are supported by project metadata. CI runs the unit and
+contract lanes on 3.11 and 3.13; production and the PostgreSQL/artifact jobs use
+3.11. The universal lock preserves Python and OS markers across that range.
 
 Pytest uses strict marker validation. Tests without an explicit external lane
 marker are classified as `unit` during collection.
@@ -86,9 +88,11 @@ python -m pytest -q -m artifact
 
 This lane copies the current package sources to a clean temporary build tree,
 builds a wheel, creates a clean virtualenv outside the checkout, installs the
-wheel and its declared dependencies, then smokes `pete --help`, bundled
-templates/resources, API import, and `/healthz`. It also asserts that the
-installed package did not resolve from the editable source checkout.
+runtime graph from `uv.lock`, and installs the wheel with dependency resolution
+disabled. It then smokes `pete --help`, `pete status --help`, a side-effect-free
+command, bundled templates/resources, API lifespan startup, and OpenAPI
+generation. It also asserts that the installed package did not resolve from the
+editable source checkout.
 
 ## Wider validation
 

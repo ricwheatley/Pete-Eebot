@@ -1,38 +1,52 @@
 [build-system]
-requires = ["setuptools>=70", "wheel"]
+requires = ["setuptools==84.0.0", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pete_e"
 version = "1.0.0"
 description = "Personal health and fitness orchestrator."
+requires-python = ">=3.11,<3.14"
 
-# These are the essential packages needed to RUN the application
+# Runtime dependency constraints are the authoritative human-edited input.
+# Exact cross-platform versions and distribution hashes live in uv.lock.
 dependencies = [
-    "psycopg[binary,pool]>=3.2,<4",
-    "pydantic>=2.8,<3",
-    "pydantic-settings>=2.3,<3",
-    "requests>=2.32,<3",
-    "typer[all]>=0.12,<0.13",
-    "click>=8.1,<8.2",
+    "psycopg[binary,pool]>=3.3.4,<3.4",
+    "pydantic>=2.13.4,<2.14",
+    "pydantic-settings>=2.15,<2.16",
+    "requests>=2.33,<3",
+    "typer>=0.27,<0.28",
+    "click>=8.3.3,<8.5",
     "rich>=13.7,<14",
-    "Jinja2>=3.1,<4",
+    "Jinja2>=3.1.6,<4",
     "python-dateutil>=2.9,<3",
     "tenacity>=8.5,<9",
     "dropbox>=12.0.2,<13",
-    "fastapi>=0.110,<0.112",
-    "python-dotenv>=1.0,<2",
-    "uvicorn[standard]>=0.29,<0.30"
+    "fastapi>=0.141,<0.142",
+    "starlette>=1.6,<1.7",
+    "python-dotenv>=1.2.2,<2",
+    "uvicorn[standard]>=0.52,<0.53",
 ]
 
-
-[project.optional-dependencies]
-# These are packages for development, testing, and publishing.
-# Install with: pip install .[dev]
+[dependency-groups]
 dev = [
-    "pytest>=8.2,<9",
+    "httpx2>=2.12,<3",
+    "pip==26.2.1",
+    "pip-audit==2.10.1",
+    "pytest>=9.0.3,<10",
+    "setuptools==84.0.0",
     "twine>=5.1,<6",
     "ruff==0.5.0",
+    "uv==0.12.5",
+    "wheel==0.48.0",
+]
+
+[tool.uv]
+required-version = "==0.12.5"
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 
 [project.scripts]

@@ -1,6 +1,6 @@
 # Pete Eebot Virtual Environment Deployment
 
-These steps provision the native Python virtual environment used by the Ubuntu production layout. The pinned dependencies live in `requirements.txt`, so recreating the same environment later is reproducible.
+These steps provision the native Python virtual environment used by the Ubuntu production layout. Direct constraints live only in `pyproject.toml`; the generated `uv.lock` supplies the exact cross-platform graph and artifact hashes.
 
 > **Production path:** keep the virtual environment outside the Git checkout at `/opt/myapp/shared/venv`. Docker is used for PostgreSQL only.
 
@@ -15,6 +15,12 @@ These steps provision the native Python virtual environment used by the Ubuntu p
   sudo apt install -y python3-venv
   ```
 * **Git and build tooling.** Psycopg wheels bundle libpq, so no extra headers are required, but `git` is needed to clone the repo: `sudo apt install -y git`.
+* **uv 0.12.5 in a separate tool environment.** Keeping uv outside the application venv lets an exact sync safely remove packages that are not in the application lock:
+  ```bash
+  python3 -m venv /opt/myapp/shared/uv-tool
+  /opt/myapp/shared/uv-tool/bin/python -m pip install uv==0.12.5
+  /opt/myapp/shared/uv-tool/bin/uv --version
+  ```
 
 ---
 
@@ -40,28 +46,35 @@ The prompt should now show the active environment. To exit later, run `deactivat
 
 ---
 
-## 4. Install the pinned dependencies
+## 4. Install the locked runtime and package
 
-Upgrade `pip` so it understands the newest wheel tags, then install the reproducible lock file:
+Sync the production subset of `uv.lock` into the external venv. `--frozen`
+forbids resolution or lock changes and `--no-editable` installs the package in
+its current non-editable packaging form:
 
 ```bash
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+cd /opt/myapp/current
+/opt/myapp/shared/uv-tool/bin/uv lock --check
+UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
+  /opt/myapp/shared/uv-tool/bin/uv sync --frozen --no-dev --no-editable
 ```
 
-The packages ship binary wheels for Linux `aarch64`, so the install completes without compiling C extensions even on a Pi.
+The lock requires compatible artifacts for Linux `aarch64` and `x86_64` as
+well as Windows AMD64. A lock regeneration fails if a wheel-only dependency
+does not cover one of those supported environments.
 
 ---
 
-## 5. Install the Pete Eebot package
+## 5. Verify the locked installation
 
-With the dependencies in place, install the local package so the `pete` CLI entry point is registered:
+Verify dependency metadata and both operational help paths without contacting
+external services:
 
 ```bash
-python -m pip install --no-deps -e .
+/opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
+/opt/myapp/shared/venv/bin/pete --help
+/opt/myapp/shared/venv/bin/pete status --help
 ```
-
-The `--no-deps` flag keeps the previously pinned versions intact. Use `pip install .` instead if you are not modifying the source tree and prefer an immutable install.
 
 ---
 
@@ -119,13 +132,19 @@ Use `/opt/myapp/current/scripts/install_cron_examples.sh --print` first if you w
 
 ## 9. Updating the environment
 
-When new versions of Pete Eebot ship, pull the latest commits and reinstall the editable package. If the dependencies change, update `requirements.txt` (or download the latest copy) and reinstall:
+When a new Pete-Eebot commit ships, sync its committed lock. Operators never
+edit or regenerate the lock on the production host:
 
 ```bash
 cd /opt/myapp/current
-python -m pip install -r requirements.txt
-python -m pip install --no-deps -e .
+/opt/myapp/shared/uv-tool/bin/uv lock --check
+UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
+  /opt/myapp/shared/uv-tool/bin/uv sync --frozen --no-dev --no-editable
+/opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
+
+Dependency maintainers should follow `docs/dependency_management.md` to change
+constraints, regenerate the lock, audit it, and review the graph.
 
 ---
 
