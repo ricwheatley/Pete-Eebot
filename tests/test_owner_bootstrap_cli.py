@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from click import unstyle
 import pytest
 from typer.testing import CliRunner
 
@@ -17,10 +18,11 @@ pytestmark = pytest.mark.contract
 
 def test_bootstrap_owner_help_is_rendered_by_typer() -> None:
     result = runner.invoke(app, ["bootstrap-owner", "--help"], color=False)
+    output = unstyle(result.stdout)
 
     assert result.exit_code == 0
-    assert "--username" in result.stdout
-    assert "--password-env" in result.stdout
+    assert "--username" in output
+    assert "--password-env" in output
 
 
 class _BootstrapService:

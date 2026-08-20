@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.metadata
 
+from click import unstyle
 from fastapi.testclient import TestClient
 import pytest
 from typer.testing import CliRunner
@@ -20,12 +21,14 @@ def test_real_cli_help_paths_render_with_locked_typer_and_click() -> None:
 
     root_help = runner.invoke(messenger.app, ["--help"], color=False)
     status_help = runner.invoke(messenger.app, ["status", "--help"], color=False)
+    root_output = unstyle(root_help.output)
+    status_output = unstyle(status_help.output)
 
     assert root_help.exit_code == 0, root_help.output
-    assert "Usage: pete [OPTIONS] COMMAND [ARGS]" in root_help.output
+    assert "Usage: pete [OPTIONS] COMMAND [ARGS]" in root_output
     assert status_help.exit_code == 0, status_help.output
-    assert "Usage: pete status [OPTIONS]" in status_help.output
-    assert "--timeout" in status_help.output
+    assert "Usage: pete status [OPTIONS]" in status_output
+    assert "--timeout" in status_output
     assert importlib.metadata.version("typer") == "0.27.1"
     assert importlib.metadata.version("click") == "8.4.2"
 

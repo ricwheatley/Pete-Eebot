@@ -9,6 +9,7 @@ import subprocess
 import sys
 import venv
 
+from click import unstyle
 import pytest
 
 
@@ -168,7 +169,7 @@ def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> N
             timeout=30,
         )
         assert cli.returncode == 0, cli.stdout + cli.stderr
-        assert expected in cli.stdout
+        assert expected in unstyle(cli.stdout)
 
     smoke_script = f"""
 import asyncio
