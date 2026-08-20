@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from pete_e import observability
 from pete_e.application.adapter_contracts import NotificationChannel, NotificationMessage
-from pete_e.config import get_env
+from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import get_container
 
@@ -60,7 +60,7 @@ def reset_alert_state() -> None:
 def emit_alert(event: AlertEvent) -> bool:
     """Emit an alert log/metric/notification event, with best-effort delivery."""
 
-    dedupe_seconds = _float_env("PETEEEBOT_ALERT_DEDUPE_SECONDS", 3600.0)
+    dedupe_seconds = settings.PETEEEBOT_ALERT_DEDUPE_SECONDS
     now = time.monotonic()
     with _lock:
         last_emitted = _last_emitted_at.get(event.dedupe_key)
@@ -89,7 +89,7 @@ def emit_alert(event: AlertEvent) -> bool:
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
 
-    if not _bool_env("PETEEEBOT_ALERT_TELEGRAM_ENABLED", True):
+    if not settings.PETEEEBOT_ALERT_TELEGRAM_ENABLED:
         return True
 
     try:
@@ -132,10 +132,7 @@ def emit_stale_ingest_if_needed(
     last_sync_at: str | None,
     completeness_pct: float | None = None,
 ) -> bool:
-    threshold_days = _int_env(
-        "PETEEEBOT_STALE_INGEST_ALERT_DAYS",
-        _int_env("APPLE_MAX_STALE_DAYS", 3),
-    )
+    threshold_days = settings.PETEEEBOT_STALE_INGEST_ALERT_DAYS
     is_stale = stale_days is None or stale_days >= threshold_days
     if not is_stale:
         return False
@@ -192,7 +189,7 @@ def record_operation_outcome(
     context: Mapping[str, Any] | None = None,
 ) -> bool:
     normalized_outcome = str(outcome or "").lower()
-    threshold = _int_env("PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD", 3)
+    threshold = settings.PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD
     if threshold <= 0:
         return False
 
@@ -239,24 +236,3 @@ def _format_alert_message(event: AlertEvent) -> str:
 
 def _level_for_severity(severity: str) -> str:
     return "CRITICAL" if severity == SEVERITY_P1 else "ERROR" if severity == SEVERITY_P2 else "WARNING"
-
-
-def _bool_env(name: str, default: bool) -> bool:
-    value = get_env(name, default)
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _int_env(name: str, default: int) -> int:
-    try:
-        return int(get_env(name, default))
-    except (TypeError, ValueError):
-        return int(default)
-
-
-def _float_env(name: str, default: float) -> float:
-    try:
-        return float(get_env(name, default))
-    except (TypeError, ValueError):
-        return float(default)

@@ -117,11 +117,13 @@ fi
 DATABASE_URL="${DATABASE_URL:-}"
 POSTGRES_USER="${POSTGRES_USER:-}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
-POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+POSTGRES_HOST="${POSTGRES_HOST:-}"
+POSTGRES_PORT_CONFIGURED="${POSTGRES_PORT:-}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 POSTGRES_DB="${POSTGRES_DB:-}"
+DB_HOST_OVERRIDE="${DB_HOST_OVERRIDE:-}"
 
-if [[ -z "${DATABASE_URL}" && ( -z "${POSTGRES_USER}" || -z "${POSTGRES_PASSWORD}" || -z "${POSTGRES_DB}" ) ]]; then
+if [[ -z "${DATABASE_URL}" && ( -z "${POSTGRES_USER}" || -z "${POSTGRES_PASSWORD}" || -z "${POSTGRES_HOST}" || -z "${POSTGRES_DB}" ) ]]; then
     log "ERROR: Database connection details are incomplete. Set DATABASE_URL or the POSTGRES_* variables in ${ENV_FILE}."
     exit 1
 fi
@@ -130,17 +132,20 @@ TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 DB_BACKUP_FILE="${DB_BACKUP_DIR}/pete_eebot_${TIMESTAMP}.dump"
 SECRET_BACKUP_FILES=()
 
-if [[ -n "${POSTGRES_USER}" && -n "${POSTGRES_PASSWORD}" && -n "${POSTGRES_DB}" ]]; then
+if [[ -n "${DATABASE_URL}" ]]; then
+    if [[ -n "${POSTGRES_USER}" || -n "${POSTGRES_PASSWORD}" || -n "${POSTGRES_HOST}" || -n "${POSTGRES_PORT_CONFIGURED}" || -n "${POSTGRES_DB}" || -n "${DB_HOST_OVERRIDE}" ]]; then
+        log "WARNING: DATABASE_URL is set and is authoritative for this backup; POSTGRES_* and DB_HOST_OVERRIDE are ignored. Application startup rejects conflicting values."
+    fi
+    pg_dump --format=custom --file "${DB_BACKUP_FILE}" "${DATABASE_URL}"
+else
     export PGPASSWORD="${POSTGRES_PASSWORD}"
-    pg_dump --host "${POSTGRES_HOST}" \
+    pg_dump --host "${DB_HOST_OVERRIDE:-${POSTGRES_HOST}}" \
             --port "${POSTGRES_PORT}" \
             --username "${POSTGRES_USER}" \
             --format=custom \
             --file "${DB_BACKUP_FILE}" \
             "${POSTGRES_DB}"
     unset PGPASSWORD
-else
-    pg_dump --format=custom --file "${DB_BACKUP_FILE}" "${DATABASE_URL}"
 fi
 
 chmod 600 "${DB_BACKUP_FILE}"

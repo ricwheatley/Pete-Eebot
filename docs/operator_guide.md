@@ -61,13 +61,15 @@ Copy `.env.sample` to `.env` and fill in:
 - Withings: `WITHINGS_CLIENT_ID`, `WITHINGS_CLIENT_SECRET`, `WITHINGS_REDIRECT_URI`, `WITHINGS_REFRESH_TOKEN`
 - Dropbox: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, `DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`
 - wger: `WGER_API_KEY`
-- Postgres: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`
+- Postgres: either `DATABASE_URL` alone or `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, optional `POSTGRES_PORT`, and `POSTGRES_DB`
 - API/Webhook if you use them: `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`
 - Nutrition logging: `USER_TIMEZONE` controls local-date assignment when GPT macro logs omit a timestamp
 
 Notes:
 
-- the settings layer builds `DATABASE_URL` from the `POSTGRES_*` values
+- `DATABASE_URL` is authoritative when present; otherwise the settings layer builds a percent-encoded URL from the complete `POSTGRES_*` set
+- if both database sources are present they must describe the same decoded user, password, effective host, port, and database; partial or conflicting component configuration fails startup
+- `DB_HOST_OVERRIDE` is an optional typed replacement for `POSTGRES_HOST` in component mode
 - the API now fails closed if `PETEEEBOT_API_KEY` is not set
 - the webhook now refuses to run if `GITHUB_WEBHOOK_SECRET` or `DEPLOY_SCRIPT_PATH` are unset
 
@@ -102,11 +104,16 @@ Docker path for local Postgres only:
 docker compose up -d db
 ```
 
-Manual Postgres path:
+Manual Postgres path using an explicit URL:
 
 ```bash
 psql "$DATABASE_URL" -f init-db/schema.sql
 ```
+
+For component-only configuration, export libpq's `PGUSER`, `PGPASSWORD`,
+`PGHOST`, `PGPORT`, and `PGDATABASE` variables from the corresponding
+`POSTGRES_*` values and invoke `psql` without a URL. Do not print either form of
+the resolved connection string.
 
 For an existing database, apply the incremental migration before relying on the new hardening features:
 

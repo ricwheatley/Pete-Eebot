@@ -84,7 +84,7 @@ cp .env.sample .env
 chmod 600 .env
 ```
 
-Fill in the required values described in [Environment Variables](#environment-variables). The settings layer reads `.env` from the repository root and builds `DATABASE_URL` from the `POSTGRES_*` values.
+Fill in the required values described in [Environment Variables](#environment-variables). Settings use initializer values first, then process environment variables, then the selected dotenv file, then model defaults. Database configuration follows the explicit rule documented under [PostgreSQL](#postgresql).
 
 ### 3. Start PostgreSQL for local development
 
@@ -98,14 +98,30 @@ This starts PostgreSQL only. Run Pete-Eebot from the host virtualenv.
 
 For a new database:
 
+Load `.env`, then use the command form matching the selected database source. An
+explicit URL can be passed directly. Component configuration should use libpq's
+standard environment variables so credentials are not placed in process
+arguments:
+
 ```bash
 set -a
 . ./.env
 set +a
-psql "$DATABASE_URL" -f init-db/schema.sql
+
+if [ -n "${DATABASE_URL:-}" ]; then
+  psql_args=("$DATABASE_URL")
+else
+  export PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD"
+  export PGHOST="${DB_HOST_OVERRIDE:-$POSTGRES_HOST}" PGPORT="${POSTGRES_PORT:-5432}"
+  export PGDATABASE="$POSTGRES_DB"
+  psql_args=()
+fi
+
+psql "${psql_args[@]}" -f init-db/schema.sql
 for file in migrations/*.sql; do
-  psql "$DATABASE_URL" -f "$file"
+  psql "${psql_args[@]}" -f "$file"
 done
+unset PGPASSWORD
 ```
 
 For an existing database, apply only migrations that have not already been applied. Migrations are plain SQL files and must be tracked operationally by the operator.
@@ -508,9 +524,26 @@ Use `.env.sample` as the starting point.
 
 | Variable | Purpose |
 | --- | --- |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` | Database connection settings. |
-| `DATABASE_URL` | Optional explicit connection string; normally built from `POSTGRES_*`. |
-| `DB_HOST_OVERRIDE` | Optional host override used when constructing the connection string. |
+| `DATABASE_URL` | Optional explicit libpq/PostgreSQL connection string. When present, this is the authoritative value and its query options are preserved. |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` | Component connection settings used only when `DATABASE_URL` is absent. User, password, and database name are percent-encoded when the URL is built; port defaults to `5432`. |
+| `DB_HOST_OVERRIDE` | Optional typed replacement for `POSTGRES_HOST` when component configuration is used. |
+
+Use either `DATABASE_URL` alone or the complete component set (`POSTGRES_PORT`
+may be omitted to use `5432`). If both sources are present, all decoded user,
+password, effective host, port, and database values must match; otherwise
+startup fails instead of choosing a database silently. A matching explicit URL
+wins so parameters such as `sslmode` and `connect_timeout` survive. A partial
+component set is invalid even when a URL is present: remove the unused
+components or provide the complete matching set. Process environment values
+override dotenv values field by field, so a process override that creates a
+mixed/conflicting configuration also fails clearly.
+
+For local Compose, `POSTGRES_*` configures the database container independently
+of the application. If the application uses an explicit URL, ensure it targets
+the intended Compose database. Explicit URLs containing reserved characters
+must already be percent-encoded; component configuration performs that encoding
+automatically. Connection strings and `POSTGRES_PASSWORD` are redacted in
+Settings representations and must not be logged.
 
 ### Dropbox and Apple Health
 
@@ -562,9 +595,9 @@ Use `.env.sample` as the starting point.
 | Variable | Purpose |
 | --- | --- |
 | `PETE_LOG_LEVEL`, `PETE_LOG_FORMAT`, `PETE_LOG_TO_CONSOLE` | Application logging controls. |
-| `PETEEEBOT_ALERT_TELEGRAM_ENABLED`, `PETEEEBOT_ALERT_DEDUPE_SECONDS` | Alert delivery controls. |
-| `PETEEEBOT_STALE_INGEST_ALERT_DAYS`, `PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD` | Data freshness and failure thresholds. |
-| `APPLE_MAX_STALE_DAYS` | Apple ingest stale-data threshold. |
+| `PETEEEBOT_ALERT_TELEGRAM_ENABLED`, `PETEEEBOT_ALERT_DEDUPE_SECONDS` | Telegram delivery (default `true`) and non-negative dedupe window in seconds (default `3600`; `0` disables dedupe). |
+| `PETEEEBOT_STALE_INGEST_ALERT_DAYS`, `PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD` | Stale-ingest threshold of at least one day (default `3`) and non-negative consecutive-failure threshold (default `3`; `0` disables repeated-failure alerts). |
+| `APPLE_MAX_STALE_DAYS` | Legacy Apple stale-data threshold. It remains the effective alert threshold when `PETEEEBOT_STALE_INGEST_ALERT_DAYS` is absent; the new setting wins when both are supplied. |
 | `PETEEEBOT_SERVICE_NAME`, `PETEEEBOT_RESTART_TIMEOUT_SECONDS`, `PETEEEBOT_SERVICE_MONITOR_LOG`, `SYSTEMCTL_BIN`, `SUDO_BIN` | Heartbeat and service recovery settings. |
 
 ### Backups and DNS

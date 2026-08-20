@@ -108,9 +108,9 @@ def test_dependency_check_emits_external_api_health_metric() -> None:
 def test_stale_ingest_alert_emits_structured_metric(monkeypatch) -> None:
     observability.reset_metrics()
     alerts.reset_alert_state()
-    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
-    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
-    monkeypatch.setenv("PETEEEBOT_STALE_INGEST_ALERT_DAYS", "3")
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", False)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_STALE_INGEST_ALERT_DAYS", 3)
 
     payload = MetricsService(dal=None)._coach_data_quality(
         rows=[
@@ -136,8 +136,8 @@ def test_stale_ingest_alert_emits_structured_metric(monkeypatch) -> None:
 def test_readyz_returns_503_when_dependency_check_fails(monkeypatch) -> None:
     observability.reset_metrics()
     alerts.reset_alert_state()
-    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
-    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", False)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
 
     class _StatusService:
         def run_checks(self, timeout):
@@ -209,9 +209,9 @@ def test_prometheus_metrics_endpoint_requires_api_key_and_returns_text(monkeypat
 def test_repeated_failed_jobs_emit_alert_metric(monkeypatch) -> None:
     observability.reset_metrics()
     alerts.reset_alert_state()
-    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "0")
-    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
-    monkeypatch.setenv("PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD", "2")
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", False)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD", 2)
 
     for _ in range(2):
         result = dependencies.run_guarded_high_risk_operation(

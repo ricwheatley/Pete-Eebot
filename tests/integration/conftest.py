@@ -25,7 +25,6 @@ def postgres_test_dsn(request: pytest.FixtureRequest) -> str:
     except ValueError as exc:
         raise pytest.UsageError(str(exc)) from exc
 
-    os.environ["DATABASE_URL"] = dsn
     schema_files = [ROOT / "init-db" / "schema.sql", *sorted((ROOT / "migrations").glob("*.sql"))]
     with psycopg.connect(dsn, autocommit=True, cursor_factory=ClientCursor) as connection:
         for sql_file in schema_files:

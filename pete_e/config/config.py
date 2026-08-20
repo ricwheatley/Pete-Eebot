@@ -9,11 +9,12 @@ through a singleton `settings` object.
 import os
 from datetime import date
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, TypeVar
+from urllib.parse import quote
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict
 
 CONFIG_FILE = Path(__file__).resolve()
 
@@ -80,13 +81,14 @@ class Settings(BaseSettings):
         env_file=ENV_FILE_PATH,
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="forbid",
     )
 
     # --- CORE APP SETTINGS ---
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
     PETEEEBOT_ENV_FILE: Path | None = None
     ENVIRONMENT: str = "development"
-    DATABASE_URL: Optional[str] = Field(None, validate_default=True)
+    DATABASE_URL: SecretStr | None = Field(None, validate_default=True)
 
     # --- USER PROFILE (from environment) ---
     USER_DATE_OF_BIRTH: date
@@ -169,15 +171,20 @@ class Settings(BaseSettings):
     PETEEEBOT_LLM_KEEP_ALIVE: str = "30m"
 
     # --- SANITY CHECK ALERTS ---
-    APPLE_MAX_STALE_DAYS: int = 3
+    APPLE_MAX_STALE_DAYS: int = Field(3, ge=1)
     WITHINGS_ALERT_REAUTH: bool = True
+    PETEEEBOT_ALERT_TELEGRAM_ENABLED: bool = True
+    PETEEEBOT_ALERT_DEDUPE_SECONDS: float = Field(3600.0, ge=0, allow_inf_nan=False)
+    PETEEEBOT_STALE_INGEST_ALERT_DAYS: int = Field(3, ge=1)
+    PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD: int = Field(3, ge=0)
 
     # --- DATABASE CONNECTION (from environment) ---
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: SecretStr
-    POSTGRES_HOST: str
-    POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str
+    POSTGRES_USER: str | None = None
+    POSTGRES_PASSWORD: SecretStr | None = None
+    POSTGRES_HOST: str | None = None
+    POSTGRES_PORT: int = Field(5432, ge=1, le=65535)
+    POSTGRES_DB: str | None = None
+    DB_HOST_OVERRIDE: str | None = None
 
     # --- PROGRESSION & RECOVERY THRESHOLDS ---
     PROGRESSION_INCREMENT: float = 0.05
@@ -218,19 +225,68 @@ class Settings(BaseSettings):
     PETEEEBOT_PLANNER_FEATURE_FLAGS: str = ""
 
     @model_validator(mode="after")
-    def build_database_url(self) -> "Settings":
-        """Dynamically construct the ``DATABASE_URL`` after validation."""
+    def preserve_legacy_stale_alert_threshold(self) -> "Settings":
+        """Use the legacy Apple threshold when the new alert setting is absent."""
 
-        db_host = os.getenv("DB_HOST_OVERRIDE", self.POSTGRES_HOST)
-        conninfo_params = {
-            "user": self.POSTGRES_USER,
-            "password": self.POSTGRES_PASSWORD.get_secret_value(),
-            "host": db_host,
-            "port": self.POSTGRES_PORT,
-            "dbname": self.POSTGRES_DB,
+        if (
+            "PETEEEBOT_STALE_INGEST_ALERT_DAYS" not in self.model_fields_set
+            and "APPLE_MAX_STALE_DAYS" in self.model_fields_set
+        ):
+            self.PETEEEBOT_STALE_INGEST_ALERT_DAYS = self.APPLE_MAX_STALE_DAYS
+        return self
+
+    @model_validator(mode="after")
+    def resolve_database_url(self) -> "Settings":
+        """Resolve one authoritative database connection string."""
+
+        explicit_url = _secret_value(self.DATABASE_URL)
+        if explicit_url is not None:
+            explicit_url = explicit_url.strip()
+        if not explicit_url:
+            explicit_url = None
+
+        component_names = {
+            "POSTGRES_USER",
+            "POSTGRES_PASSWORD",
+            "POSTGRES_HOST",
+            "POSTGRES_PORT",
+            "POSTGRES_DB",
+            "DB_HOST_OVERRIDE",
         }
+        supplied_components = component_names.intersection(self.model_fields_set)
+        missing_components = _missing_database_components(self)
 
-        self.DATABASE_URL = _build_conninfo(conninfo_params)
+        if explicit_url is not None:
+            explicit_params = _parse_database_connection_string(explicit_url)
+            if supplied_components:
+                if missing_components:
+                    missing = ", ".join(missing_components)
+                    raise ValueError(
+                        "DATABASE_URL was provided with a partial POSTGRES_* configuration. "
+                        "Remove all component values or provide the complete matching set; "
+                        f"missing: {missing}."
+                    )
+                component_url = _build_database_url(self)
+                component_params = _parse_database_connection_string(component_url)
+                conflicts = _database_component_conflicts(explicit_params, component_params)
+                if conflicts:
+                    names = ", ".join(conflicts)
+                    raise ValueError(
+                        "DATABASE_URL conflicts with the supplied PostgreSQL components: "
+                        f"{names}. Remove one source or make them match."
+                    )
+            self.DATABASE_URL = SecretStr(explicit_url)
+            return self
+
+        if missing_components:
+            missing = ", ".join(missing_components)
+            raise ValueError(
+                "Database configuration is incomplete. Set DATABASE_URL by itself, or "
+                "provide POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, and POSTGRES_DB; "
+                f"missing: {missing}."
+            )
+
+        self.DATABASE_URL = SecretStr(_build_database_url(self))
         return self
 
     # --- DYNAMIC FILE PATHS ---
@@ -280,10 +336,71 @@ class Settings(BaseSettings):
         return APP_ROOT / "pete_e/resources/phrases_tagged.json"
 
 
-def _build_conninfo(params: dict[str, Any]) -> str:
-    """Return a libpq-compatible connection string from keyword parameters."""
+def _secret_value(value: SecretStr | str | None) -> str | None:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
 
-    return make_conninfo(**params)
+
+def _missing_database_components(settings_value: Settings) -> list[str]:
+    values = {
+        "POSTGRES_USER": settings_value.POSTGRES_USER,
+        "POSTGRES_PASSWORD": _secret_value(settings_value.POSTGRES_PASSWORD),
+        "POSTGRES_HOST": settings_value.POSTGRES_HOST,
+        "POSTGRES_DB": settings_value.POSTGRES_DB,
+    }
+    return [name for name, value in values.items() if value is None or value == ""]
+
+
+def _build_database_url(settings_value: Settings) -> str:
+    """Build a percent-encoded PostgreSQL URI from validated components."""
+
+    user = quote(str(settings_value.POSTGRES_USER), safe="")
+    password = quote(str(_secret_value(settings_value.POSTGRES_PASSWORD)), safe="")
+    host_value = settings_value.DB_HOST_OVERRIDE or settings_value.POSTGRES_HOST
+    host = _encode_database_host(str(host_value))
+    database = quote(str(settings_value.POSTGRES_DB), safe="")
+    return f"postgresql://{user}:{password}@{host}:{settings_value.POSTGRES_PORT}/{database}"
+
+
+def _encode_database_host(host: str) -> str:
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if ":" in host:
+        return f"[{quote(host, safe=':')}]"
+    return quote(host, safe="")
+
+
+def _parse_database_connection_string(connection_string: str) -> dict[str, str]:
+    try:
+        return conninfo_to_dict(connection_string)
+    except Exception as exc:
+        raise ValueError(
+            "DATABASE_URL is not a valid PostgreSQL connection string."
+        ) from exc
+
+
+def _database_component_conflicts(
+    explicit_params: dict[str, str],
+    component_params: dict[str, str],
+) -> list[str]:
+    field_names = {
+        "user": "POSTGRES_USER",
+        "password": "POSTGRES_PASSWORD",
+        "host": "POSTGRES_HOST/DB_HOST_OVERRIDE",
+        "port": "POSTGRES_PORT",
+        "dbname": "POSTGRES_DB",
+    }
+    conflicts: list[str] = []
+    for parameter, field_name in field_names.items():
+        explicit_value = explicit_params.get(parameter)
+        component_value = component_params.get(parameter)
+        if parameter == "port":
+            explicit_value = explicit_value or "5432"
+            component_value = component_value or "5432"
+        if explicit_value != component_value:
+            conflicts.append(field_name)
+    return conflicts
 
 
 settings = Settings()

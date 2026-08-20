@@ -1,6 +1,6 @@
 # Runtime & Deploy Runbook (Phase 0 Source of Truth)
 
-Last audited: 2026-05-15.
+Last audited: 2026-08-20.
 
 This runbook documents **what currently exists in this repository** for runtime, deploy, migrations, and ops checks.
 
@@ -93,11 +93,30 @@ UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
 docker compose up -d db
 ```
 
-4. Initialize schema (new DB) and apply migrations (existing/new DB updates).
+4. Validate Settings without printing the resolved connection string, then
+   initialize schema (new DB)
+   and apply migrations (existing/new DB updates). `DATABASE_URL` is
+   authoritative when supplied. Otherwise export libpq's `PGUSER`,
+   `PGPASSWORD`, `PGHOST`, `PGPORT`, and `PGDATABASE` from the complete
+   `POSTGRES_*` set and invoke `psql` without a URL. If both sources are present,
+   application startup accepts them only when their decoded connection values
+   match; partial or conflicting components fail validation.
 
 ```bash
-psql "$DATABASE_URL" -f init-db/schema.sql
-for f in migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done
+python -c "from pete_e.config import settings; assert settings.DATABASE_URL is not None"
+
+if [ -n "${DATABASE_URL:-}" ]; then
+  psql_args=("$DATABASE_URL")
+else
+  export PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD"
+  export PGHOST="${DB_HOST_OVERRIDE:-$POSTGRES_HOST}" PGPORT="${POSTGRES_PORT:-5432}"
+  export PGDATABASE="$POSTGRES_DB"
+  psql_args=()
+fi
+
+psql "${psql_args[@]}" -f init-db/schema.sql
+for f in migrations/*.sql; do psql "${psql_args[@]}" -f "$f"; done
+unset PGPASSWORD
 ```
 
 5. Sanity check integrations and service health.
@@ -546,6 +565,15 @@ PETEEEBOT_ALERT_DEDUPE_SECONDS=3600
 PETEEEBOT_STALE_INGEST_ALERT_DAYS=3
 PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD=3
 ```
+
+`PETEEEBOT_ALERT_DEDUPE_SECONDS` must be non-negative (`0` disables dedupe),
+`PETEEEBOT_STALE_INGEST_ALERT_DAYS` must be at least `1`, and
+`PETEEEBOT_REPEATED_FAILURE_ALERT_THRESHOLD` must be non-negative (`0` disables
+the repeated-failure alert). These values are parsed once by Settings at
+startup; invalid values stop startup instead of falling back silently.
+Existing deployments that set only `APPLE_MAX_STALE_DAYS` retain that value as
+the stale-ingest alert threshold; `PETEEEBOT_STALE_INGEST_ALERT_DAYS` takes
+precedence when explicitly set.
 
 Alert metrics:
 

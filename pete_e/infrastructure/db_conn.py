@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from pete_e.config import get_env
+from pete_e.config import settings
 
 
 def get_database_url() -> str:
-    """Return the configured PostgreSQL connection URL.
+    """Return the validated, authoritative PostgreSQL connection string."""
 
-    Preference is given to the ``DATABASE_URL`` environment variable so that
-    command invocations can override configuration at runtime. If it is not
-    present, the value constructed from the ``POSTGRES_*`` settings is used.
-    A descriptive error is raised if neither source provides a connection
-    string, keeping failure modes explicit.
-    """
-
-    url = get_env("DATABASE_URL")
-    if url:
-        return str(url)
+    url = settings.DATABASE_URL
+    if url is not None:
+        secret_getter = getattr(url, "get_secret_value", None)
+        return secret_getter() if callable(secret_getter) else str(url)
 
     raise RuntimeError(
-        "Database connection information is missing. Set the DATABASE_URL "
-        "environment variable or configure the POSTGRES_* variables."
+        "Validated database connection information is unavailable. Recreate "
+        "Settings with DATABASE_URL or a complete POSTGRES_* configuration."
     )

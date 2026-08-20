@@ -132,8 +132,8 @@ def test_alert_delivery_uses_notification_channel_contract(monkeypatch) -> None:
     observability.reset_metrics()
     alerts.reset_alert_state()
     channel = _CapturingChannel()
-    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "1")
-    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", True)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
     monkeypatch.setattr(alerts, "_get_notification_channel", lambda: channel)
 
     emitted = alerts.emit_alert(
@@ -167,8 +167,8 @@ def test_notification_delivery_failure_does_not_break_alert(monkeypatch) -> None
     observability.reset_metrics()
     alerts.reset_alert_state()
     channel = FailingChannel()
-    monkeypatch.setenv("PETEEEBOT_ALERT_TELEGRAM_ENABLED", "1")
-    monkeypatch.setenv("PETEEEBOT_ALERT_DEDUPE_SECONDS", "0")
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", True)
+    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
     monkeypatch.setattr(alerts, "_get_notification_channel", lambda: channel)
 
     emitted = alerts.emit_alert(
