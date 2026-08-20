@@ -1153,10 +1153,9 @@ def refresh_withings_tokens() -> None:
     """
     try:
         client = WithingsClient()
-        tokens = client._refresh_access_token()  # returns body from API
+        client._refresh_access_token()
         typer.echo("[OK] Withings tokens refreshed.")
-        typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
-        typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
+        typer.echo(f"Tokens were saved to {configured_withings_token_file()} and are not displayed.")
     except Exception as e:
         log_utils.log_message(f"Failed to refresh Withings tokens: {e}", "ERROR")
         raise typer.Exit(code=1)
@@ -1174,20 +1173,25 @@ def withings_auth_url() -> None:
 
 
 @app.command("withings-code")
-def withings_exchange_code(code: str) -> None:
+def withings_exchange_code(
+    code: Optional[str] = Argument(
+        None,
+        help="Short-lived authorization code. Omit it to use a hidden prompt and keep it out of shell history.",
+    ),
+) -> None:
     """
     Exchange an authorization code (from Withings redirect) for tokens.
     Saves tokens to the configured Withings token file for future use.
     """
     try:
+        if not code:
+            code = typer.prompt("Withings authorization code", hide_input=True)
         tokens = withings_oauth_helper.exchange_code_for_tokens(code)
         client = WithingsClient()
         client._save_tokens(tokens)
 
         typer.echo("[OK] Successfully exchanged code for tokens.")
-        typer.echo(f"Access token:  {tokens['access_token'][:12]}... (truncated)")
-        typer.echo(f"Refresh token: {tokens['refresh_token'][:12]}... (truncated)")
-        typer.echo(f"\nTokens have been saved to {configured_withings_token_file()}")
+        typer.echo(f"Tokens were saved to {configured_withings_token_file()} and are not displayed.")
     except Exception as e:
         log_utils.log_message(f"Failed to exchange code: {e}", "ERROR")
         raise typer.Exit(code=1)

@@ -74,6 +74,9 @@ Severity guidance:
 | [ ] Webhook secret is configured and signature failure returns unauthorized without starting deploy. | Blocker | Negative webhook test summary. |
 | [ ] Provider secrets and refresh tokens have owner-only permissions where possible and are excluded from backup locations that are not encrypted. | Blocker | Redacted path/permission evidence. |
 | [ ] Backup encryption key or passphrase is stored outside the repo and recoverable by the operator. | Blocker | Password manager/key-file location confirmation. |
+| [ ] Gitleaks fixture and candidate-tree checks pass with the pinned version, and the `Secret scan` CI check is required before merge. | Blocker | Redacted local output and successful CI run. |
+| [ ] GitHub Secret Protection, secret scanning, and push protection are enabled; unresolved alerts have an owner. | Blocker | Settings screenshot/status and alert inventory without secret values. |
+| [ ] Any credential incident has completed the rotation-before-purge and fresh-clone gates in `docs/credential_incident_runbook.md`. | Blocker | Private incident closure record. |
 
 ## 4. Backup and Restore Validation
 

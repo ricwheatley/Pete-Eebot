@@ -118,7 +118,7 @@ Withings:
 
 ```bash
 pete withings-auth
-pete withings-code <code-from-redirect>
+pete withings-code  # paste the short-lived code at the hidden prompt
 pete refresh-withings
 ```
 

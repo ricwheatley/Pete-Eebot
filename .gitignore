@@ -108,10 +108,15 @@ MANIFEST
 
 # =================================================================
 
-# Environment variables file
+# Environment and local credential files
 
 .env
+.env.*
+!.env.sample
 .withings_tokens.json
+**/.withings_tokens.json
+**/withings_token.json
+**/withings_tokens.json
 docs/postman/out/
 
 

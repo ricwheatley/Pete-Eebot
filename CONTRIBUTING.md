@@ -11,3 +11,16 @@ Pete-E centralises cross-cutting helpers inside `pete_e/utils/`. When adding or 
 - **Reusability.** Before introducing a new helper, review the existing modules to avoid duplicating behaviour. Shared improvements belong in `pete_e.utils` so other layers can benefit from them.
 
 Documenting these expectations ensures future contributors extend the utilities consistently and keeps shared helpers easy to discover.
+
+## Secret scanning
+
+Install Gitleaks 8.30.1 from its official release and verify the published checksum before use. Then run the repository policy before every push:
+
+```bash
+python scripts/test_secret_scanner.py
+gitleaks git --redact=100 --config .gitleaks.toml --log-opts="origin/main..HEAD" .
+```
+
+The Python check proves that the custom Withings and DuckDNS rules detect generated, non-secret fixtures and that the candidate tree is clean. It copies tracked and non-ignored untracked files to a temporary directory, so ignored local files such as `.env` and runtime token files are never scanned into a report.
+
+Never weaken or allowlist a rule merely to make CI pass. If a finding may be real, stop, avoid printing it, rotate the credential, and follow `docs/credential_incident_runbook.md`. Review staged content with `git diff --cached` and add intended paths explicitly instead of using broad add commands.

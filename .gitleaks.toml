@@ -1,0 +1,37 @@
+title = "Pete-Eebot secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pete-withings-token-file"
+description = "Withings OAuth token in a runtime or captured-response token file"
+path = '''(?i)(?:^|[/\\])(?:\.withings_tokens|withings_tokens?)\.json$'''
+regex = '''(?i)["'](?:access_token|refresh_token)["']\s*:\s*["']([A-Za-z0-9._~+/=-]{20,})["']'''
+secretGroup = 1
+keywords = ["access_token", "refresh_token"]
+
+[[rules]]
+id = "pete-withings-environment-token"
+description = "Withings OAuth token assigned in source or environment text"
+regex = '''(?i)\bWITHINGS_(?:ACCESS|REFRESH)_TOKEN\b\s*[:=]\s*["']?([A-Za-z0-9._~+/=-]{20,})'''
+secretGroup = 1
+keywords = ["withings_access_token", "withings_refresh_token"]
+
+    [[rules.allowlists]]
+    description = "Short, explicit unit-test sentinel"
+    stopwords = ["withings-refresh-token"]
+
+[[rules]]
+id = "pete-duckdns-token-assignment"
+description = "DuckDNS account token assigned in source or environment text"
+regex = '''(?i)\bDUCKDNS_TOKEN\b\s*[:=]\s*["']?([A-Za-z0-9._~+/=-]{20,})'''
+secretGroup = 1
+keywords = ["duckdns_token"]
+
+[[rules]]
+id = "pete-duckdns-token-url"
+description = "DuckDNS account token embedded in an update URL"
+regex = '''(?i)duckdns\.org/update[^\r\n]{0,512}[?&]token=([A-Za-z0-9._~+/=-]{20,})'''
+secretGroup = 1
+keywords = ["duckdns.org"]

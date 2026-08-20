@@ -2,6 +2,7 @@
 
 
 import os
+import getpass
 import requests
 import json
 from pathlib import Path
@@ -77,10 +78,8 @@ if __name__ == "__main__":
     print("Step 1: Visit this URL in your browser and approve access:")
     print(build_authorize_url())
     print()
-    code = input("Step 2: Paste the ?code=... value from the redirect URL here: ").strip()
-    tokens = exchange_code_for_tokens(code)
-    print("\n✅ Success! Here are your tokens:")
-    print(f"Access token:  {tokens['access_token']}")
-    print(f"Refresh token: {tokens['refresh_token']}")
-    print("\n👉 Paste the refresh token into your .env as WITHINGS_REFRESH_TOKEN")
+    code = getpass.getpass("Step 2: Paste the ?code=... value from the redirect URL here: ").strip()
+    exchange_code_for_tokens(code)
+    print(f"\n[OK] Authorization complete. Tokens were saved to {TOKEN_FILE}.")
+    print("Token values are intentionally not printed.")
 

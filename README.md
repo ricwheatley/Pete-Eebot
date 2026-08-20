@@ -114,7 +114,7 @@ Withings:
 
 ```bash
 pete withings-auth
-pete withings-code "PASTE_CODE_FROM_REDIRECT"
+pete withings-code  # paste the short-lived code at the hidden prompt
 pete refresh-withings
 ```
 
@@ -599,6 +599,7 @@ Useful docs:
 - `docs/logging_observability.md`
 - `docs/api_endpoint_inventory.md`
 - `docs/production_readiness_checklist.md`
+- `docs/credential_incident_runbook.md`
 - `docs/planner_feature_flags.md`
 - `docs/unified_global_planner.md`
 - `docs/pete_coach_openapi.yaml`
@@ -609,7 +610,8 @@ Contribution workflow:
 1. Create a feature branch.
 2. Add or update tests for behavior changes.
 3. Run `pytest` and relevant targeted checks.
-4. Document operational impact in the PR, including new environment variables, migrations, scheduling changes, or deployment changes.
+4. Run `python scripts/test_secret_scanner.py` with the pinned Gitleaks version documented in `CONTRIBUTING.md`.
+5. Document operational impact in the PR, including new environment variables, migrations, scheduling changes, or deployment changes.
 
 ## Disclaimer
 
