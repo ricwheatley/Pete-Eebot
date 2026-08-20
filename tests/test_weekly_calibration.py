@@ -21,12 +21,21 @@ class DummyDal:
 class StubValidationService:
     def __init__(self):
         self.calls: list[date] = []
+        self.applied: list[object] = []
         """Initialize this object."""
 
-    def validate_and_adjust_plan(self, week_start: date):
+    def assess_plan(self, week_start: date):
         self.calls.append(week_start)
         return SimpleNamespace(explanation="ok", needs_backoff=False)
-        """Perform validate and adjust plan."""
+        """Perform assess plan."""
+
+    def apply_adjustment(self, decision):
+        self.applied.append(decision)
+        return decision
+        """Perform apply adjustment."""
+
+    def validate_and_adjust_plan(self, week_start: date):  # pragma: no cover
+        raise AssertionError("weekly calibration must use explicit assess/apply operations")
     """Represent StubValidationService."""
 
 
@@ -50,4 +59,5 @@ def test_run_weekly_calibration_uses_next_monday(monkeypatch):
     orch.run_weekly_calibration(reference_date=date(2024, 3, 6))  # Wednesday
 
     assert validation_service.calls == [date(2024, 3, 11)]
+    assert len(validation_service.applied) == 1
     """Perform test run weekly calibration uses next monday."""

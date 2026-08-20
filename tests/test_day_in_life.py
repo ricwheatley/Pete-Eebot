@@ -100,5 +100,6 @@ def test_export_service_respects_existing_export(monkeypatch: pytest.MonkeyPatch
     assert result["status"] == "skipped"
     assert not dal.export_logs
     assert client.calls == []
+    assert validation_service.calls == []
     """Perform test export service respects existing export."""
 

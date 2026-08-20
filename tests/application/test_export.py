@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -14,6 +15,7 @@ from pete_e.domain.validation import (
     BackoffRecommendation,
     ReadinessSummary,
     ValidationDecision,
+    calculate_effective_prescription,
 )
 from tests.di_utils import build_stub_container
 
@@ -119,6 +121,166 @@ def test_export_plan_week_uses_cached_validation() -> None:
     assert result["status"] == "exported"
     validation_service.validate_and_adjust_plan.assert_not_called()
     """Perform test export plan week uses cached validation."""
+
+
+def test_export_skip_precedes_readiness_assessment() -> None:
+    class AlreadyExportedDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return True
+
+    validation_service = SimpleNamespace(
+        assess_plan=MagicMock(side_effect=AssertionError("assessment must not run")),
+        apply_adjustment=MagicMock(),
+    )
+    service = WgerExportService(
+        dal=AlreadyExportedDal(),
+        wger_client=SimpleNamespace(),
+        validation_service=validation_service,
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=1,
+        start_date=date(2024, 6, 3),
+    )
+
+    assert result == {"status": "skipped", "reason": "already-exported"}
+    validation_service.assess_plan.assert_not_called()
+    validation_service.apply_adjustment.assert_not_called()
+
+
+def test_export_dry_run_assesses_without_applying() -> None:
+    decision = replace(
+        _make_backoff_decision(),
+        source_data_hash="source-v1",
+        baseline_prescription_hash="baseline-v1",
+        plan_id=10,
+        week_number=1,
+        week_start=date(2024, 6, 3),
+    )
+
+    class StubDal:
+        def was_week_exported(self, plan_id: int, week_number: int) -> bool:
+            return False
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return []
+
+    validation_service = SimpleNamespace(
+        assess_plan=MagicMock(return_value=decision),
+        apply_adjustment=MagicMock(),
+    )
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        validation_service=validation_service,
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=1,
+        start_date=date(2024, 6, 3),
+        dry_run=True,
+    )
+
+    assert result["status"] == "dry-run"
+    validation_service.assess_plan.assert_called_once_with(date(2024, 6, 3))
+    validation_service.apply_adjustment.assert_not_called()
+
+
+def test_force_overwrite_reassesses_but_keeps_effective_prescription_stable() -> None:
+    class StatefulDal:
+        def __init__(self) -> None:
+            self.baseline_sets = 5
+            self.baseline_rir = 2.0
+            self.sets = self.baseline_sets
+            self.rir = self.baseline_rir
+            self.payloads: list[dict] = []
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "exercise_name": "Bench Press",
+                    "sets": self.sets,
+                    "baseline_sets": self.baseline_sets,
+                    "reps": 5,
+                    "rir": self.rir,
+                    "baseline_rir": self.baseline_rir,
+                    "is_cardio": False,
+                }
+            ]
+
+        def record_wger_export(self, plan_id, week_number, payload, **kwargs):
+            self.payloads.append(payload)
+
+    class IdempotentValidationService:
+        def __init__(self, dal: StatefulDal) -> None:
+            self.dal = dal
+            self.assess_calls = 0
+            self.apply_calls = 0
+
+        def assess_plan(self, start_date: date) -> ValidationDecision:
+            self.assess_calls += 1
+            decision = _make_backoff_decision()
+            return replace(
+                decision,
+                should_apply=True,
+                recommendation=replace(decision.recommendation, set_multiplier=0.8),
+                policy_version="policy-v1",
+                source_data_hash="source-v1",
+                baseline_prescription_hash="baseline-v1",
+                plan_id=7,
+                week_number=1,
+                week_start=start_date,
+            )
+
+        def apply_adjustment(self, decision: ValidationDecision, **kwargs) -> ValidationDecision:
+            self.apply_calls += 1
+            effective = calculate_effective_prescription(
+                baseline_sets=self.dal.baseline_sets,
+                baseline_rir=self.dal.baseline_rir,
+                set_multiplier=decision.recommendation.set_multiplier,
+                rir_increment=decision.recommendation.rir_increment,
+            )
+            self.dal.sets = effective.sets
+            self.dal.rir = effective.rir
+            return replace(decision, applied=True, adjustment_id=1)
+
+    class StubClient:
+        def find_or_create_routine(self, **kwargs):
+            return {"id": 42}
+
+        def delete_all_days_in_routine(self, routine_id: int) -> None:
+            pass
+
+    dal = StatefulDal()
+    validation_service = IdempotentValidationService(dal)
+    service = WgerExportService(
+        dal=dal,
+        wger_client=StubClient(),
+        validation_service=validation_service,
+    )
+
+    first = service.export_plan_week(
+        plan_id=7,
+        week_number=1,
+        start_date=date(2024, 6, 3),
+        force_overwrite=True,
+    )
+    second = service.export_plan_week(
+        plan_id=7,
+        week_number=1,
+        start_date=date(2024, 6, 3),
+        force_overwrite=True,
+    )
+
+    assert first["status"] == second["status"] == "exported"
+    assert (dal.sets, dal.rir) == (4, 3.0)
+    assert [payload["days"][0]["exercises"][0]["sets"] for payload in dal.payloads] == [4, 4]
+    assert validation_service.assess_calls == validation_service.apply_calls == 2
 
 
 def test_export_plan_week_applies_daily_strength_adjustment_only_to_scoped_day() -> None:

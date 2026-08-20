@@ -3,6 +3,8 @@ BEGIN;
 ALTER TABLE training_plan_workouts
     ALTER COLUMN exercise_id DROP NOT NULL;
 
+DROP FUNCTION IF EXISTS sp_plan_for_day(DATE);
+
 CREATE OR REPLACE FUNCTION sp_plan_for_day(p_date DATE)
 RETURNS TABLE (
     workout_date DATE,
@@ -28,6 +30,8 @@ RETURNS TABLE (
       AND tpw.day_of_week = extract(isodow from p_date);
 $$;
 
+
+DROP FUNCTION IF EXISTS sp_plan_for_week(DATE);
 
 CREATE OR REPLACE FUNCTION sp_plan_for_week(p_start_date DATE)
 RETURNS TABLE (

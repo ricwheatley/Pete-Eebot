@@ -256,6 +256,24 @@ class DataAccessLayer(ABC):
         """Perform refresh actual view."""
 
     @abstractmethod
+    def apply_plan_adjustment(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        week_start_date: date,
+        policy_version: str,
+        source_data_hash: str,
+        baseline_prescription_hash: str,
+        set_multiplier: float,
+        rir_increment: int,
+        source_summary: Dict[str, Any],
+        decision_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Atomically converge effective values from baseline and record the decision."""
+        pass
+
+    @abstractmethod
     def apply_plan_backoff(
         self,
         week_start_date: date,

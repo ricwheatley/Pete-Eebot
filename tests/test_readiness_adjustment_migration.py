@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+MIGRATION = Path("migrations/20260820_add_readiness_adjustment_idempotency.sql")
+
+
+def test_bootstrap_schema_distinguishes_baseline_and_effective_prescriptions() -> None:
+    schema = Path("init-db/schema.sql").read_text(encoding="utf-8")
+
+    assert "baseline_sets INT NOT NULL" in schema
+    assert "baseline_rir FLOAT" in schema
+    assert "CREATE TABLE plan_readiness_adjustments" in schema
+    assert "effective_readiness_adjustment_id" in schema
+    assert "ux_plan_readiness_adjustment_identity" in schema
+
+
+def test_readiness_migration_backfills_baselines_and_enforces_identity() -> None:
+    migration = MIGRATION.read_text(encoding="utf-8")
+
+    assert "SET baseline_sets = sets" in migration
+    assert "SET baseline_rir = rir" in migration
+    assert "CREATE TABLE IF NOT EXISTS plan_readiness_adjustments" in migration
+    assert "source_data_hash CHAR(64) NOT NULL" in migration
+    assert "baseline_prescription_hash CHAR(64) NOT NULL" in migration
+    assert "CONSTRAINT ux_plan_readiness_adjustment_identity UNIQUE" in migration
+    assert "training_plan_weeks_effective_readiness_adjustment_fk" in migration

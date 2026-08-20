@@ -27,6 +27,10 @@ def postgres_test_dsn(request: pytest.FixtureRequest) -> str:
 
     schema_files = [ROOT / "init-db" / "schema.sql", *sorted((ROOT / "migrations").glob("*.sql"))]
     with psycopg.connect(dsn, autocommit=True, cursor_factory=ClientCursor) as connection:
+        # The guard above makes this an explicitly disposable database. Reset the
+        # schema so a prior failed bootstrap cannot leave relation-type conflicts.
+        connection.execute("DROP SCHEMA public CASCADE")
+        connection.execute("CREATE SCHEMA public")
         for sql_file in schema_files:
             connection.execute(sql_file.read_text(encoding="utf-8"))
     return dsn

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import copy
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from statistics import median, mean
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 
@@ -27,6 +28,10 @@ _HRV_METRIC_KEYS: Tuple[str, ...] = (
     "hrv",
 )
 _ZERO_TOLERANCE: float = 1e-6
+
+# Bump this value whenever the readiness/adherence adjustment algorithm changes
+# in a way that should produce a distinct persisted decision.
+READINESS_ADJUSTMENT_POLICY_VERSION: str = "readiness-adjustment-v1"
 
 
 _EXPECTED_PLAN_WEEKS: int = 4
@@ -98,6 +103,49 @@ class ValidationDecision:
     readiness: ReadinessSummary
     recommendation: BackoffRecommendation
     applied: bool = False
+    policy_version: str = READINESS_ADJUSTMENT_POLICY_VERSION
+    source_data_hash: str = ""
+    baseline_prescription_hash: str = ""
+    source_summary: Dict[str, Any] = field(default_factory=dict)
+    plan_id: Optional[int] = None
+    week_number: Optional[int] = None
+    week_start: Optional[date] = None
+    adjustment_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class EffectivePrescription:
+    """Strength prescription calculated from immutable baseline values."""
+
+    sets: int
+    rir: Optional[float]
+
+
+def calculate_effective_prescription(
+    *,
+    baseline_sets: int,
+    baseline_rir: Optional[float],
+    set_multiplier: float,
+    rir_increment: int,
+) -> EffectivePrescription:
+    """Calculate effective sets/RIR without consulting prior effective values."""
+
+    if baseline_sets < 1:
+        raise ValueError("baseline_sets must be at least 1")
+    adjusted_sets = max(
+        1,
+        int(
+            (Decimal(baseline_sets) * Decimal(str(set_multiplier))).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        ),
+    )
+    if baseline_rir is None:
+        adjusted_rir = None if rir_increment == 0 else float(rir_increment)
+    else:
+        adjusted_rir = float(Decimal(str(baseline_rir)) + Decimal(rir_increment))
+    return EffectivePrescription(sets=adjusted_sets, rir=adjusted_rir)
 
 
 @dataclass(frozen=True)
@@ -849,14 +897,14 @@ def summarise_readiness(
     return _build_readiness_summary(rec)
 
 
-def validate_and_adjust_plan(
+def assess_plan_adjustment(
     historical_rows: List[Dict[str, Any]],
     week_start_date: date,
     *,
     plan_context: Optional[PlanContext] = None,
     adherence_snapshot: Optional[Dict[str, Any]] = None,
 ) -> ValidationDecision:
-    """Assess recovery ahead of the upcoming week and compute recommended adjustments."""
+    """Purely assess recovery and compute a recommended plan adjustment."""
 
     rec = assess_recovery_and_backoff(historical_rows, week_start_date)
     readiness = _build_readiness_summary(rec)
@@ -955,6 +1003,23 @@ def validate_and_adjust_plan(
         readiness=readiness,
         recommendation=rec,
         applied=False,
+    )
+
+
+def validate_and_adjust_plan(
+    historical_rows: List[Dict[str, Any]],
+    week_start_date: date,
+    *,
+    plan_context: Optional[PlanContext] = None,
+    adherence_snapshot: Optional[Dict[str, Any]] = None,
+) -> ValidationDecision:
+    """Compatibility alias for the pure readiness assessment function."""
+
+    return assess_plan_adjustment(
+        historical_rows,
+        week_start_date,
+        plan_context=plan_context,
+        adherence_snapshot=adherence_snapshot,
     )
 
 MAX_BASELINE_WINDOW_DAYS: int = max(_BASELINE_WINDOWS_DAYS)

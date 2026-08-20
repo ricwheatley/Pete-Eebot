@@ -46,6 +46,7 @@ DROP TABLE IF EXISTS training_max CASCADE;
 DROP TABLE IF EXISTS training_cycle CASCADE;
 DROP TABLE IF EXISTS training_blocks CASCADE;
 DROP TABLE IF EXISTS wger_export_log CASCADE;
+DROP TABLE IF EXISTS plan_readiness_adjustments CASCADE;
 DROP TABLE IF EXISTS nutrition_log CASCADE;
 DROP TABLE IF EXISTS withings_measure_groups CASCADE;
 DROP TABLE IF EXISTS training_plan_workouts CASCADE;
@@ -582,8 +583,10 @@ CREATE TABLE training_plan_workouts (
     day_of_week INT NOT NULL,  -- 1 = Mon … 7 = Sun
     exercise_id INT REFERENCES wger_exercise(id),
     sets INT NOT NULL,
+    baseline_sets INT NOT NULL CONSTRAINT training_plan_workouts_baseline_sets_positive CHECK (baseline_sets >= 1),
     reps INT NOT NULL,
     rir FLOAT,
+    baseline_rir FLOAT,
     percent_1rm NUMERIC(5,2),
     target_weight_kg NUMERIC(6,2),
     rir_cue NUMERIC(3,1),
@@ -595,6 +598,51 @@ CREATE TABLE training_plan_workouts (
     details JSONB,
     programmed_difficulty SMALLINT CHECK (programmed_difficulty IS NULL OR programmed_difficulty BETWEEN 0 AND 10)
 );
+
+COMMENT ON COLUMN training_plan_workouts.baseline_sets IS
+    'Canonical prescribed set count; readiness application never mutates this value.';
+COMMENT ON COLUMN training_plan_workouts.sets IS
+    'Effective set count consumed by plan reads and exports; derived from baseline_sets.';
+COMMENT ON COLUMN training_plan_workouts.baseline_rir IS
+    'Canonical prescribed RIR; readiness application never mutates this value.';
+COMMENT ON COLUMN training_plan_workouts.rir IS
+    'Effective RIR consumed by plan reads and exports; derived from baseline_rir.';
+
+CREATE TABLE plan_readiness_adjustments (
+    id BIGSERIAL PRIMARY KEY,
+    plan_id INT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+    week_id INT NOT NULL REFERENCES training_plan_weeks(id) ON DELETE CASCADE,
+    week_number INT NOT NULL CHECK (week_number >= 1),
+    week_start_date DATE NOT NULL,
+    policy_version TEXT NOT NULL,
+    source_data_hash CHAR(64) NOT NULL,
+    baseline_prescription_hash CHAR(64) NOT NULL,
+    set_multiplier NUMERIC(6,4) NOT NULL CHECK (set_multiplier > 0),
+    rir_increment INT NOT NULL,
+    source_summary JSONB NOT NULL,
+    decision_json JSONB NOT NULL,
+    result_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ux_plan_readiness_adjustment_identity UNIQUE (
+        plan_id,
+        week_id,
+        policy_version,
+        source_data_hash,
+        baseline_prescription_hash
+    )
+);
+
+ALTER TABLE training_plan_weeks
+    ADD COLUMN effective_readiness_adjustment_id BIGINT,
+    ADD CONSTRAINT training_plan_weeks_effective_readiness_adjustment_fk
+        FOREIGN KEY (effective_readiness_adjustment_id)
+        REFERENCES plan_readiness_adjustments(id)
+        ON DELETE SET NULL;
+
+COMMENT ON TABLE plan_readiness_adjustments IS
+    'Durable audit ledger for readiness decisions applied idempotently to plan-week baselines.';
+COMMENT ON COLUMN training_plan_weeks.effective_readiness_adjustment_id IS
+    'Readiness ledger row that currently defines this week effective strength prescription.';
 
 CREATE TABLE assistance_pool (
     main_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,

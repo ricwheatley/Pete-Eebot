@@ -56,6 +56,10 @@ class MessagingContract(Protocol):
 
 
 class ValidationContract(Protocol):
+    def assess_plan(self, reference_date: date) -> Any: ...
+
+    def apply_adjustment(self, decision: Any, **kwargs: Any) -> Any: ...
+
     def validate_and_adjust_plan(self, reference_date: date) -> Any: ...
 
 

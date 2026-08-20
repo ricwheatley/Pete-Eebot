@@ -205,14 +205,8 @@ class WgerExportService:
             summary={"force_overwrite": force_overwrite, "dry_run": dry_run},
         )
 
-        # 1. Perform readiness validation and apply adjustments if needed
-        if validation_decision is None:
-            decision = self.validation_service.validate_and_adjust_plan(start_date)
-            log_utils.info(f"Readiness check: {decision.explanation}")
-        else:
-            decision = validation_decision
-
-        # 2. Check if this week was already exported
+        # A normal retry must not run unrelated readiness work once export state
+        # already says there is nothing to send.
         if not force_overwrite and self.dal.was_week_exported(plan_id, week_number):
             log_utils.warn(f"Skipping export: plan {plan_id}, week {week_number} already exported.")
             log_utils.log_checkpoint(
@@ -222,8 +216,46 @@ class WgerExportService:
                 summary={"reason": "already-exported"},
             )
             return {"status": "skipped", "reason": "already-exported"}
+
+        # Force overwrite means reassess idempotently and resend to wger. It does
+        # not mean applying another delta to the effective prescription.
+        if validation_decision is None:
+            assess = getattr(self.validation_service, "assess_plan", None)
+            apply = getattr(self.validation_service, "apply_adjustment", None)
+            if callable(assess):
+                decision = assess(start_date)
+                if not dry_run and callable(apply):
+                    decision = apply(
+                        decision,
+                        plan_id=plan_id,
+                        week_number=week_number,
+                        week_start=start_date,
+                    )
+            else:  # Compatibility for application-owned adapter/test ports.
+                decision = self.validation_service.validate_and_adjust_plan(start_date)
+            log_utils.info(f"Readiness check: {decision.explanation}")
+        else:
+            decision = validation_decision
+            apply = getattr(self.validation_service, "apply_adjustment", None)
+            has_durable_identity = bool(getattr(decision, "source_data_hash", ""))
+            targets_exported_week = (
+                getattr(decision, "plan_id", None) == plan_id
+                and getattr(decision, "week_number", None) == week_number
+            )
+            if (
+                not dry_run
+                and callable(apply)
+                and has_durable_identity
+                and (not getattr(decision, "applied", False) or not targets_exported_week)
+            ):
+                decision = apply(
+                    decision,
+                    plan_id=plan_id,
+                    week_number=week_number,
+                    week_start=start_date,
+                )
         
-        # 3. Build the payload from the (potentially adjusted) plan in the DB
+        # Build the payload from the effective plan values in the DB.
         week_rows = self.dal.get_plan_week_rows(plan_id, week_number)
         normalized_rows = self._normalize_week_rows(week_rows, week_number=week_number)
         payload = self._assemble_payload(

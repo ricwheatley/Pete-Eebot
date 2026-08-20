@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import pytest
 from pete_e.domain.validation import (
     assess_recovery_and_backoff,
+    calculate_effective_prescription,
     compute_dynamic_baselines,
 )
 
@@ -95,3 +96,33 @@ def test_backoff_triggers_on_sleep_drop():
     assert rec.severity in {"mild", "moderate", "severe"}
     assert rec.metrics["sleep_baseline"] == pytest.approx(420.0, abs=1e-6)
     """Perform test backoff triggers on sleep drop."""
+
+
+def test_effective_prescription_is_always_calculated_from_baseline() -> None:
+    first = calculate_effective_prescription(
+        baseline_sets=5,
+        baseline_rir=2.0,
+        set_multiplier=0.8,
+        rir_increment=1,
+    )
+    repeated = calculate_effective_prescription(
+        baseline_sets=5,
+        baseline_rir=2.0,
+        set_multiplier=0.8,
+        rir_increment=1,
+    )
+
+    assert first == repeated
+    assert (first.sets, first.rir) == (4, 3.0)
+
+
+def test_neutral_effective_prescription_preserves_null_baseline_rir() -> None:
+    result = calculate_effective_prescription(
+        baseline_sets=3,
+        baseline_rir=None,
+        set_multiplier=1.0,
+        rir_increment=0,
+    )
+
+    assert result.sets == 3
+    assert result.rir is None

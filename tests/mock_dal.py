@@ -285,6 +285,23 @@ class MockableDal(DataAccessLayer):
         pass
         """Perform apply plan backoff."""
 
+    def apply_plan_adjustment(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        week_start_date: date,
+        policy_version: str,
+        source_data_hash: str,
+        baseline_prescription_hash: str,
+        set_multiplier: float,
+        rir_increment: int,
+        source_summary: Dict[str, Any],
+        decision_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {"adjustment_id": None, "created": True}
+        """Perform apply plan adjustment."""
+
     # ------------------------------------------------------------------
     # Wger Catalog Upserts
     # ------------------------------------------------------------------

@@ -24,7 +24,8 @@ The important operating concepts are:
 
 - `training_plans`: one row per generated plan block
 - `training_plan_weeks`: one row per week within a plan
-- `training_plan_workouts`: the actual scheduled sessions
+- `training_plan_workouts`: scheduled sessions with canonical baseline and effective/exported prescriptions
+- `plan_readiness_adjustments`: readiness decision/audit ledger for each plan week
 - `training_max`: the latest row per `lift_code` drives weight targets during plan generation
 - `exercise_programming_metadata`: Pete-owned programming metadata used to choose assistance and core exercises
 - `wger_exercise`: the local exercise catalogue used for IDs, names, categories, and export
@@ -50,6 +51,7 @@ Planner experiments are gated by feature flags. See `docs/planner_feature_flags.
 - if the active plan is at its rollover point, Pete creates the next plan block
 - otherwise it re-exports the upcoming active week to wger
 - the current rollover decision is based on active plan dates and length, not on the `training_cycle` table
+- readiness assessment is non-mutating; application is transactional and derives effective sets/RIR from the stored baseline
 
 ## 2. First-Time Setup
 
@@ -408,10 +410,13 @@ SELECT tpw.id,
        tpw.scheduled_time,
        tpw.exercise_id,
        e.name AS exercise_name,
+       tpw.baseline_sets,
        tpw.sets,
        tpw.reps,
        tpw.percent_1rm,
        tpw.target_weight_kg,
+       tpw.baseline_rir,
+       tpw.rir,
        tpw.rir_cue,
        tpw.is_cardio
 FROM training_plan_workouts tpw
@@ -830,7 +835,7 @@ When changing already persisted workouts:
 1. identify the active `plan_id`
 2. inspect the target `week_id`
 3. export the current rows before editing
-4. apply your `INSERT`, `UPDATE`, or `DELETE`
+4. apply your `INSERT`, `UPDATE`, or `DELETE`; for an intentional strength prescription change, update `baseline_sets`/`baseline_rir` and effective `sets`/`rir` together
 5. refresh `plan_muscle_volume` if analytics depend on the changed rows
 6. if needed, re-export the week to wger
 
@@ -840,7 +845,7 @@ Quick export before editing:
 pete db "SELECT * FROM training_plan_workouts WHERE week_id = <week_id>" --json-file week_backup.json
 ```
 
-If you need to push the edited week back out, the cleanest operator route is usually to run the weekly review or invoke the relevant export path through code. Pete's export services use force-overwrite behaviour for the automated weekly export paths, so replacing an already exported week is expected.
+If you need to push the edited week back out, the cleanest operator route is usually to run the weekly review or invoke the relevant export path through code. Pete's automated paths use force overwrite to reassess idempotently and resend/replace the wger routine; force does not compound the readiness adjustment. See `docs/readiness_adjustments.md` for baseline, audit, and migration semantics.
 
 ## 11. API Operations
 
@@ -1000,6 +1005,7 @@ DB tables you will most likely touch:
 - `wger_exercise`
 - `wger_category`
 - `wger_export_log`
+- `plan_readiness_adjustments`
 
 ## 14. Practical Default Advice
 

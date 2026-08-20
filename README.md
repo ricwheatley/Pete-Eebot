@@ -374,6 +374,12 @@ python -m scripts.run_sunday_review
 
 Standard plan generation has one duration contract across CLI, API, and browser console: four weeks. Omitting `weeks` selects `4`; an explicit unsupported duration is rejected before a background job is created. The separate `pete lets-begin` strength-test workflow remains a one-week plan.
 
+Readiness adjustment keeps generated `baseline_sets`/`baseline_rir` separate
+from exported effective `sets`/`rir`. Assessment is non-mutating; durable
+application is keyed by plan week, policy, source snapshot, and baseline
+prescription so retries and force-overwrites converge instead of compounding.
+See [`docs/readiness_adjustments.md`](docs/readiness_adjustments.md).
+
 ### Telegram listener
 
 The Telegram listener is intentionally short-lived and is designed to be called repeatedly by cron:

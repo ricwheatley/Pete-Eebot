@@ -38,7 +38,12 @@ class WeeklyCalibrationWorkflow:
         )
 
         try:
-            validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
+            assess = getattr(self.validation_service, "assess_plan", None)
+            apply = getattr(self.validation_service, "apply_adjustment", None)
+            if callable(assess) and callable(apply):
+                validation_decision = apply(assess(next_monday))
+            else:  # Compatibility for application-owned test/adaptor ports.
+                validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
         except ApplicationError:
             raise
         except Exception as exc:  # pragma: no cover

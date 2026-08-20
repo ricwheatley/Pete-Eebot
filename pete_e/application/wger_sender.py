@@ -99,9 +99,14 @@ def push_week(
 ) -> Dict[str, Any]:
     """Push a single plan week to Wger with idempotency guards."""
 
-    # The validation and adherence logic can remain as it was
     validation_service = ValidationService(dal)
-    decision: ValidationDecision = validation_service.validate_and_adjust_plan(start_date)
+    decision: ValidationDecision = validation_service.assess_plan(start_date)
+    decision = validation_service.apply_adjustment(
+        decision,
+        plan_id=plan_id,
+        week_number=week,
+        week_start=start_date,
+    )
     adherence_snapshot = validation_service.get_adherence_snapshot(start_date)
     adherence_summary = _summarize_adherence(adherence_snapshot)
     log_entries = getattr(decision, "log_entries", None) or []
@@ -129,7 +134,8 @@ def push_week(
             plan_id=plan_id,
             week_number=week,
             start_date=start_date,
-            force_overwrite=True,  # Assuming you want to overwrite
+            force_overwrite=True,
+            validation_decision=decision,
         )
 
         if result.get("status") == "skipped":

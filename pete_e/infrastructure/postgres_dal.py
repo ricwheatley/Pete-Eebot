@@ -258,8 +258,10 @@ class PostgresDal(PlanRepository):
                     day_of_week,
                     exercise_id,
                     sets,
+                    baseline_sets,
                     reps,
                     rir,
+                    baseline_rir,
                     percent_1rm,
                     target_weight_kg,
                     rir_cue,
@@ -271,14 +273,16 @@ class PostgresDal(PlanRepository):
                     details,
                     programmed_difficulty
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     week_id,
                     day_of_week,
                     exercise_id,
                     sets,
+                    sets,
                     reps,
+                    rir,
                     rir,
                     percent_1rm,
                     target_weight,
@@ -758,7 +762,7 @@ class PostgresDal(PlanRepository):
         """Perform create block and plan."""
 
     def insert_workout(self, **kwargs) -> None:
-        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, reps, rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details, programmed_difficulty) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(reps)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s, %(programmed_difficulty)s);"
+        sql = "INSERT INTO training_plan_workouts (week_id, day_of_week, exercise_id, sets, baseline_sets, reps, rir, baseline_rir, percent_1rm, target_weight_kg, scheduled_time, is_cardio, comment, optional, recovery_focused, details, programmed_difficulty) VALUES (%(week_id)s, %(day_of_week)s, %(exercise_id)s, %(sets)s, %(sets)s, %(reps)s, %(rir_cue)s, %(rir_cue)s, %(percent_1rm)s, %(target_weight_kg)s, %(scheduled_time)s, %(is_cardio)s, %(comment)s, %(optional)s, %(recovery_focused)s, %(details)s, %(programmed_difficulty)s);"
         kwargs.setdefault("programmed_difficulty", None)
         with self._get_cursor() as cur:
             cur.execute(sql, kwargs)
@@ -863,56 +867,238 @@ class PostgresDal(PlanRepository):
             )
         """Perform update workout targets."""
 
-    def apply_plan_backoff(self, week_start_date: date, set_multiplier: float, rir_increment: int) -> None:
+    def apply_plan_adjustment(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        week_start_date: date,
+        policy_version: str,
+        source_data_hash: str,
+        baseline_prescription_hash: str,
+        set_multiplier: float,
+        rir_increment: int,
+        source_summary: Dict[str, Any],
+        decision_payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Atomically apply a readiness decision from immutable workout baselines."""
+
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """
+                        SELECT tw.id
+                        FROM training_plan_weeks tw
+                        WHERE tw.plan_id = %s AND tw.week_number = %s
+                        FOR UPDATE OF tw;
+                        """,
+                        (plan_id, week_number),
+                    )
+                    week = cur.fetchone()
+                    if not week:
+                        raise ValueError(
+                            f"plan {plan_id} does not contain week {week_number}"
+                        )
+                    week_id = int(week["id"])
+
+                    cur.execute(
+                        """
+                        INSERT INTO plan_readiness_adjustments (
+                            plan_id,
+                            week_id,
+                            week_number,
+                            week_start_date,
+                            policy_version,
+                            source_data_hash,
+                            baseline_prescription_hash,
+                            set_multiplier,
+                            rir_increment,
+                            source_summary,
+                            decision_json
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (
+                            plan_id,
+                            week_id,
+                            policy_version,
+                            source_data_hash,
+                            baseline_prescription_hash
+                        ) DO NOTHING
+                        RETURNING id;
+                        """,
+                        (
+                            plan_id,
+                            week_id,
+                            week_number,
+                            week_start_date,
+                            policy_version,
+                            source_data_hash,
+                            baseline_prescription_hash,
+                            set_multiplier,
+                            rir_increment,
+                            Json(source_summary, dumps=_json_dumps_safe),
+                            Json(decision_payload, dumps=_json_dumps_safe),
+                        ),
+                    )
+                    inserted = cur.fetchone()
+                    created = inserted is not None
+                    if inserted is None:
+                        cur.execute(
+                            """
+                            SELECT id
+                            FROM plan_readiness_adjustments
+                            WHERE plan_id = %s
+                              AND week_id = %s
+                              AND policy_version = %s
+                              AND source_data_hash = %s
+                              AND baseline_prescription_hash = %s;
+                            """,
+                            (
+                                plan_id,
+                                week_id,
+                                policy_version,
+                                source_data_hash,
+                                baseline_prescription_hash,
+                            ),
+                        )
+                        inserted = cur.fetchone()
+                    if inserted is None:  # pragma: no cover - protected by lock and constraint
+                        raise RuntimeError("failed to resolve readiness adjustment ledger row")
+                    adjustment_id = int(inserted["id"])
+
+                    cur.execute(
+                        """
+                        UPDATE training_plan_workouts
+                        SET
+                            sets = GREATEST(1, ROUND(baseline_sets * %s)::int),
+                            rir = CASE
+                                WHEN baseline_rir IS NULL AND %s = 0 THEN NULL
+                                WHEN baseline_rir IS NULL THEN %s
+                                ELSE baseline_rir + %s
+                            END
+                        WHERE week_id = %s AND is_cardio = false;
+                        """,
+                        (
+                            set_multiplier,
+                            rir_increment,
+                            rir_increment,
+                            rir_increment,
+                            week_id,
+                        ),
+                    )
+                    cur.execute(
+                        """
+                        SELECT
+                            id AS workout_id,
+                            baseline_sets,
+                            sets AS effective_sets,
+                            baseline_rir,
+                            rir AS effective_rir
+                        FROM training_plan_workouts
+                        WHERE week_id = %s AND is_cardio = false
+                        ORDER BY id;
+                        """,
+                        (week_id,),
+                    )
+                    result_snapshot = cur.fetchall()
+                    cur.execute(
+                        """
+                        UPDATE plan_readiness_adjustments
+                        SET result_snapshot = %s
+                        WHERE id = %s;
+                        """,
+                        (
+                            Json(result_snapshot, dumps=_json_dumps_safe),
+                            adjustment_id,
+                        ),
+                    )
+                    cur.execute(
+                        """
+                        UPDATE training_plan_weeks
+                        SET effective_readiness_adjustment_id = %s
+                        WHERE id = %s;
+                        """,
+                        (adjustment_id, week_id),
+                    )
+
+        log_utils.info(
+            f"Applied readiness adjustment {adjustment_id} to plan {plan_id}, week {week_number}."
+        )
+        return {"adjustment_id": adjustment_id, "created": created}
+
+    def apply_plan_backoff(
+        self,
+        week_start_date: date,
+        set_multiplier: float,
+        rir_increment: int,
+    ) -> None:
+        """Compatibility wrapper using a stable legacy adjustment identity."""
+
         with self._get_cursor() as cur:
             cur.execute(
-                "SELECT id, start_date, weeks FROM training_plans WHERE is_active = true ORDER BY id DESC LIMIT 1;"
+                """
+                SELECT id, start_date, weeks
+                FROM training_plans
+                WHERE is_active = true
+                ORDER BY id DESC
+                LIMIT 1;
+                """
             )
             plan = cur.fetchone()
-
             if not plan:
                 cur.execute(
-                    "SELECT id, start_date, weeks FROM training_plans WHERE start_date <= %s ORDER BY start_date DESC LIMIT 1;",
+                    """
+                    SELECT id, start_date, weeks
+                    FROM training_plans
+                    WHERE start_date <= %s
+                    ORDER BY start_date DESC
+                    LIMIT 1;
+                    """,
                     (week_start_date,),
                 )
                 plan = cur.fetchone()
-
-            if not plan:
-                log_utils.warn(
-                    f"Skipped plan back-off: no plan matched week starting {week_start_date.isoformat()}."
-                )
-                return
-
-            plan_start = plan["start_date"]
-            week_number = ((week_start_date - plan_start).days // 7) + 1
-            if not (1 <= week_number <= plan["weeks"]):
-                log_utils.warn(
-                    f"Skipped plan back-off: computed week {week_number} outside plan bounds for plan_id={plan['id']}."
-                )
-                return
-
-            cur.execute(
-                "SELECT id FROM training_plan_weeks WHERE plan_id = %s AND week_number = %s;",
-                (plan["id"], week_number),
+        if not plan:
+            log_utils.warn(
+                f"Skipped plan back-off: no plan matched week starting {week_start_date.isoformat()}."
             )
-            week = cur.fetchone()
-            if not week:
-                log_utils.warn(
-                    f"Skipped plan back-off: no week {week_number} found for plan_id={plan['id']}."
-                )
-                return
-
-            cur.execute(
-                """
-                UPDATE training_plan_workouts
-                SET
-                    sets = GREATEST(1, ROUND(sets * %s)::int),
-                    rir = CASE WHEN rir IS NULL THEN %s ELSE rir + %s END
-                WHERE week_id = %s AND is_cardio = false;
-                """,
-                (set_multiplier, rir_increment, rir_increment, week["id"]),
+            return
+        week_number = ((week_start_date - plan["start_date"]).days // 7) + 1
+        if not (1 <= week_number <= plan["weeks"]):
+            log_utils.warn(
+                f"Skipped plan back-off: computed week {week_number} outside plan bounds for plan_id={plan['id']}."
             )
-            log_utils.info(f"Applied plan back-off to week {week_number} (plan_id={plan['id']}).")
+            return
+        rows = self.get_plan_week_rows(int(plan["id"]), week_number)
+        baseline = [
+            {
+                "workout_id": row.get("id"),
+                "baseline_sets": row.get("baseline_sets", row.get("sets")),
+                "baseline_rir": row.get("baseline_rir", row.get("rir")),
+            }
+            for row in rows
+        ]
+        baseline_hash = hashlib.sha256(
+            json.dumps(baseline, default=str, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        source_hash = hashlib.sha256(
+            f"legacy:{week_start_date}:{set_multiplier}:{rir_increment}".encode("utf-8")
+        ).hexdigest()
+        self.apply_plan_adjustment(
+            plan_id=int(plan["id"]),
+            week_number=week_number,
+            week_start_date=week_start_date,
+            policy_version="legacy-apply-plan-backoff-v1",
+            source_data_hash=source_hash,
+            baseline_prescription_hash=baseline_hash,
+            set_multiplier=set_multiplier,
+            rir_increment=rir_increment,
+            source_summary={"legacy_call": True},
+            decision_payload={
+                "set_multiplier": set_multiplier,
+                "rir_increment": rir_increment,
+            },
+        )
         """Perform apply plan backoff."""
 
     # ----------------------------------------------
