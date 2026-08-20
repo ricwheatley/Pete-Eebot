@@ -8,6 +8,7 @@ import pytest
 
 import tests.config_stub  # noqa: F401
 
+from pete_e.application.exceptions import ValidationError
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.domain.daily_sync import DailySyncResult
 from tests.di_utils import build_stub_container
@@ -280,6 +281,28 @@ def test_generate_and_deploy_next_plan_uses_cycle_creation():
         ("export", (88, 1, date(2024, 5, 6))),
     ]
     """Perform test generate and deploy next plan uses cycle creation."""
+
+
+def test_generate_and_deploy_next_plan_rejects_unsupported_duration_before_generation():
+    calls: list[tuple[str, object]] = []
+    plan_service = SimpleNamespace(
+        create_next_plan_for_cycle=lambda start_date: calls.append(("cycle", start_date)) or 88
+    )
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=SimpleNamespace(
+            export_plan_week=lambda **kwargs: calls.append(("export", kwargs))
+        ),
+    )
+    orch = Orchestrator(container=container)
+
+    with pytest.raises(ValidationError) as exc_info:
+        orch.generate_and_deploy_next_plan(start_date=date(2024, 5, 6), weeks=1)
+
+    assert exc_info.value.code == "unsupported_plan_duration"
+    assert calls == []
 
 
 def test_generate_strength_test_week_serializes_plan_generation():

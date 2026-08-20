@@ -192,8 +192,39 @@ def _run_with_retry(
         )
         + wait_random(0, base_delay),
         before_sleep=_before_sleep,
-        reraise=True,
+        reraise=False,
     )
+
+    def _failure_result(last_exception: BaseException | None) -> SyncResult:
+        nonlocal last_failures, last_statuses
+        if isinstance(last_exception, SyncAttemptFailedError):
+            last_failures = last_exception.failed_sources or []
+            if last_exception.source_statuses:
+                last_statuses.update(last_exception.source_statuses)
+            message = _build_failure_message(label, max_attempts, last_failures)
+        elif last_exception is not None:
+            last_failures = [str(last_exception)]
+            message = _build_failure_message(label, max_attempts, last_failures, last_exception)
+        else:
+            last_failures = []
+            message = _build_failure_message(label, max_attempts, last_failures)
+
+        log_kwargs = {}
+        if last_exception is not None and not isinstance(last_exception, SyncAttemptFailedError):
+            log_kwargs["exc_info"] = (
+                type(last_exception),
+                last_exception,
+                last_exception.__traceback__,
+            )
+        log_utils.log_message(message, "ERROR", **log_kwargs)
+        return SyncResult(
+            success=False,
+            attempts=attempts,
+            failed_sources=sorted(set(last_failures)),
+            source_statuses=dict(last_statuses),
+            label=summary_label,
+            undelivered_alerts=list(last_alerts),
+        )
 
     try:
         retryer(_sync_once)
@@ -207,46 +238,9 @@ def _run_with_retry(
             undelivered_alerts=list(last_alerts),
         )
     except RetryError as exc:
-        last_exception = exc.last_attempt.exception()
-
-        if isinstance(last_exception, SyncAttemptFailedError):
-            last_failures = last_exception.failed_sources or []
-            if last_exception.source_statuses:
-                last_statuses.update(last_exception.source_statuses)
-            message = _build_failure_message(label, max_attempts, last_failures)
-        elif last_exception is not None:
-            last_failures = [str(last_exception)]
-            message = _build_failure_message(label, max_attempts, last_failures, last_exception)
-        else:
-            last_failures = []
-            message = _build_failure_message(label, max_attempts, last_failures)
-
-        log_utils.log_message(message, "ERROR")
-        unique_failures = sorted(set(last_failures))
-        return SyncResult(
-            success=False,
-            attempts=attempts,
-            failed_sources=unique_failures,
-            source_statuses=dict(last_statuses),
-            label=summary_label,
-            undelivered_alerts=list(last_alerts),
-        )
-
-    except SyncAttemptFailedError as exc:
-        last_failures = exc.failed_sources or []
-        if exc.source_statuses:
-            last_statuses.update(exc.source_statuses)
-        message = _build_failure_message(label, max_attempts, last_failures)
-        log_utils.log_message(message, "ERROR")
-        unique_failures = sorted(set(last_failures))
-        return SyncResult(
-            success=False,
-            attempts=attempts,
-            failed_sources=unique_failures,
-            source_statuses=dict(last_statuses),
-            label=summary_label,
-            undelivered_alerts=list(last_alerts),
-        )
+        return _failure_result(exc.last_attempt.exception())
+    except Exception as exc:  # pragma: no cover - defensive fallback for retry-wrapper failures.
+        return _failure_result(exc)
     """Perform run with retry."""
 
 

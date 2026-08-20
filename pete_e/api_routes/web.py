@@ -16,8 +16,14 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pete_e.api_routes import dependencies
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user, require_role
-from pete_e.application.exceptions import ApplicationError, BadRequestError
+from pete_e.application.exceptions import ApplicationError
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.plan_duration import (
+    DEFAULT_PLAN_WEEKS,
+    PLAN_DURATION_HELP,
+    SUPPORTED_PLAN_WEEKS,
+    validate_plan_weeks,
+)
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.web_console import WebConsoleReadModel
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
@@ -399,12 +405,21 @@ def _command_cards(today: date) -> list[dict[str, object]]:
         {
             "key": "plan",
             "title": "Generate Plan",
-            "body": "Start the plan generator.",
+            "body": "Create and export the next fixed 4-week 5/3/1 block.",
             "endpoint": "/console/operations/generate-plan",
             "confirmation": COMMAND_CONFIRMATIONS["plan"],
             "fields": [
                 {"name": "start_date", "label": "Start date", "type": "date", "value": today.isoformat()},
-                {"name": "weeks", "label": "Weeks", "type": "number", "value": 1, "min": 1, "max": 12},
+                {
+                    "name": "weeks",
+                    "label": "Plan length (weeks)",
+                    "type": "number",
+                    "value": DEFAULT_PLAN_WEEKS,
+                    "min": min(SUPPORTED_PLAN_WEEKS),
+                    "max": max(SUPPORTED_PLAN_WEEKS),
+                    "readonly": True,
+                    "help": PLAN_DURATION_HELP,
+                },
             ],
         },
         {
@@ -1269,7 +1284,14 @@ def console_generate_plan(request: Request, payload: dict[str, Any] | None = Non
     command = "plan"
     user = _require_operator_command_user(request, command)
     _require_command_confirmation(request, command, payload)
-    weeks = _payload_int(payload, "weeks", 1, min_value=1, max_value=12)
+    raw_weeks = _payload_value(payload, "weeks", DEFAULT_PLAN_WEEKS)
+    try:
+        if isinstance(raw_weeks, bool) or not isinstance(raw_weeks, (int, str)):
+            raise ValueError
+        requested_weeks = int(raw_weeks)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="weeks must be an integer") from exc
+    weeks = validate_plan_weeks(requested_weeks)
     start_date = str(_payload_value(payload, "start_date", _operator_today().isoformat())).strip()
     try:
         date.fromisoformat(start_date)

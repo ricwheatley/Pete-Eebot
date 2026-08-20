@@ -13,6 +13,12 @@ from pete_e.api_routes.dependencies import (
 )
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.exceptions import ApplicationError
+from pete_e.application.plan_duration import (
+    DEFAULT_PLAN_WEEKS,
+    PLAN_DURATION_HELP,
+    SUPPORTED_PLAN_WEEKS,
+    validate_plan_weeks,
+)
 from pete_e.domain.auth import ROLE_OPERATOR
 
 router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
@@ -59,13 +65,18 @@ def plan_decision_trace(
 @router.post("/run_pete_plan_async")
 async def run_pete_plan_async(
     request: Request,
-    weeks: int = Query(1),
+    weeks: int = Query(
+        DEFAULT_PLAN_WEEKS,
+        description=PLAN_DURATION_HELP,
+        json_schema_extra={"enum": list(SUPPORTED_PLAN_WEEKS)},
+    ),
     start_date: str = Query(...),
     x_api_key: str = Header(None),
     timeout: float = Query(DEFAULT_PROCESS_TIMEOUT_SECONDS, ge=30, le=3600),
 ):
     validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
     enforce_command_rate_limit(request, "plan")
+    weeks = validate_plan_weeks(weeks)
     job_id = prepare_job_context(request, "plan")
     summary = {"weeks": weeks, "start_date": start_date}
     audit_command_event(request, command="plan", outcome="started", summary=summary)

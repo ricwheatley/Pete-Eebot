@@ -41,6 +41,7 @@
               {% if field.min is defined %}min="{{ field.min }}"{% endif %}
               {% if field.max is defined %}max="{{ field.max }}"{% endif %}
               {% if field.placeholder is defined %}placeholder="{{ field.placeholder }}"{% endif %}
+              {% if field.readonly %}readonly{% endif %}
               {% if field.required %}required{% endif %}
             >
             {% if field.help is defined %}

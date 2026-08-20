@@ -349,6 +349,8 @@ python -m scripts.run_sunday_review
 
 `pete plan` creates the next 4-week block. `pete lets-begin` creates and exports a strength-test week. The Sunday review validates or rolls forward the active plan.
 
+Standard plan generation has one duration contract across CLI, API, and browser console: four weeks. Omitting `weeks` selects `4`; an explicit unsupported duration is rejected before a background job is created. The separate `pete lets-begin` strength-test workflow remains a one-week plan.
+
 ### Telegram listener
 
 The Telegram listener is intentionally short-lived and is designed to be called repeatedly by cron:

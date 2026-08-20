@@ -9,6 +9,7 @@ import pytest
 
 from pete_e import api
 from pete_e.api_routes import dependencies, web
+from pete_e.application.exceptions import ValidationError
 from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY
@@ -1015,6 +1016,12 @@ def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.
     assert "Withings Sync" in html
     assert "Apple Ingest" in html
     assert "Generate Plan" in html
+    assert "fixed 4-week 5/3/1 block" in html
+    assert 'name="weeks"' in html
+    assert 'value="4"' in html
+    assert 'min="4"' in html
+    assert 'max="4"' in html
+    assert "readonly" in html
     assert "Run Sunday Review" in html
     assert "Start Strength Test Week" in html
     assert "Preview Message" in html
@@ -1391,7 +1398,7 @@ def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: 
 
     plan_payload = web.console_generate_plan(
         request,
-        payload={"confirmation": "GENERATE PLAN", "weeks": 4, "start_date": "2026-05-18"},
+        payload={"confirmation": "GENERATE PLAN", "start_date": "2026-05-18"},
     )
     message_payload = web.console_resend_message(
         request,
@@ -1420,6 +1427,40 @@ def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: 
     assert job_service.enqueued[0]["request_id"] == "req-plan-1"
     assert job_service.enqueued[1]["command"] == ["pete", "message", "--trainer", "--send"]
     assert job_service.enqueued[1]["operation"] == "message_resend"
+
+
+def test_console_plan_rejects_unsupported_duration_before_job_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
+    monkeypatch.setattr(
+        dependencies,
+        "prepare_job_context",
+        lambda request, operation: pytest.fail("unsupported duration created a job"),
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        web.console_generate_plan(
+            _Request(
+                path="/console/operations/generate-plan",
+                method="POST",
+                headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+                cookies={
+                    dependencies.session_cookie_name(): service.token,
+                    dependencies.csrf_cookie_name(): csrf_token,
+                },
+            ),
+            payload={
+                "confirmation": "GENERATE PLAN",
+                "weeks": 1,
+                "start_date": "2026-05-18",
+            },
+        )
+
+    assert exc_info.value.code == "unsupported_plan_duration"
 
 
 def test_console_weekly_review_and_lets_begin_start_guarded_jobs(monkeypatch: pytest.MonkeyPatch) -> None:

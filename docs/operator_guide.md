@@ -35,6 +35,7 @@ Current plan generation behaviour:
 
 - `pete lets-begin` creates a 1-week strength-test plan and exports week 1.
 - `pete plan` creates a 4-week 5/3/1 block and exports week 1.
+- CLI, API, and browser-console standard plan requests all default to 4 weeks. Other explicit durations are rejected before job creation; they are not coerced.
 - A newly generated plan automatically deactivates any previously active plan.
 - Assistance and core selections are partly random. Generating twice is not guaranteed to produce the same accessory mix.
 - Weight targets are calculated from the latest `training_max` rows. If a lift has no TM, the plan still generates but target kg values can be blank.
@@ -196,6 +197,8 @@ pete sync --days 1
 ```
 
 `pete sync` participates in the same database-backed high-risk operation lock as the API and console command paths, so cron and manual CLI syncs will not overlap with an active API/console sync, plan generation, message resend, or deploy job.
+
+Sync retries use Tenacity and return a structured failed sync result after exhaustion, including the attempt count, final source statuses, failed sources, run label, and undelivered alerts. The final underlying exception is logged with its traceback for diagnosis; it is not allowed to escape past the sync-result contract.
 
 Withings-only branch:
 

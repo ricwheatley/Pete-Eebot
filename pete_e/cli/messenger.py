@@ -89,6 +89,12 @@ from pete_e.application.exceptions import (
     PlanRolloverError,
     ValidationError,
 )
+from pete_e.application.plan_duration import (
+    DEFAULT_PLAN_WEEKS,
+    PLAN_DURATION_HELP,
+    SUPPORTED_PLAN_WEEKS,
+    validate_plan_weeks,
+)
 from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
@@ -947,9 +953,11 @@ def plan(
     weeks: Annotated[
         int,
         Option(
-            help="The duration of the new plan in weeks (only 4-week plans are currently supported)."
+            help=PLAN_DURATION_HELP,
+            min=min(SUPPORTED_PLAN_WEEKS),
+            max=max(SUPPORTED_PLAN_WEEKS),
         ),
-    ] = 4,
+    ] = DEFAULT_PLAN_WEEKS,
     start_date_str: Annotated[str, Option("--start-date", help="Start date in YYYY-MM-DD format. Defaults to next Monday.")] = None,
 ) -> None:
     """Generate and deploy the next 4-week training plan block."""
@@ -958,6 +966,11 @@ def plan(
     else:
         today = date.today()
         start_date = today + timedelta(days=-today.weekday(), weeks=1)
+
+    try:
+        weeks = validate_plan_weeks(weeks)
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Plan deployment")
 
     log_utils.log_message("Invoking plan generator...", "INFO")
     orchestrator = _build_orchestrator()

@@ -14,7 +14,6 @@ from pete_e.application.exceptions import (
     ApplicationError,
     DataAccessError,
     PlanRolloverError,
-    ValidationError,
 )
 from pete_e.application.composition import (
     provide_coach_voice_service,
@@ -33,6 +32,7 @@ from pete_e.application.collaborator_contracts import (
     ValidationContract,
 )
 from pete_e.application.plan_generation import PlanGenerationService  # 🆕 added
+from pete_e.application.plan_duration import DEFAULT_PLAN_WEEKS, validate_plan_weeks
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
@@ -288,11 +288,14 @@ class Orchestrator:
             orchestrator=self,
         )
 
-    def generate_and_deploy_next_plan(self, start_date: date, weeks: int = 4) -> int:
+    def generate_and_deploy_next_plan(
+        self,
+        start_date: date,
+        weeks: int = DEFAULT_PLAN_WEEKS,
+    ) -> int:
         """Create the next 4-week plan block and export week one."""
 
-        if weeks != 4:
-            raise ValidationError("Only 4-week plan generation is currently supported.")
+        validate_plan_weeks(weeks)
 
         log_utils.info(
             f"Generating and deploying the next plan block starting {start_date.isoformat()}."
