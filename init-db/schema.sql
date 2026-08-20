@@ -583,7 +583,7 @@ CREATE TABLE training_plan_workouts (
     day_of_week INT NOT NULL,  -- 1 = Mon … 7 = Sun
     exercise_id INT REFERENCES wger_exercise(id),
     sets INT NOT NULL,
-    baseline_sets INT NOT NULL CONSTRAINT training_plan_workouts_baseline_sets_positive CHECK (baseline_sets >= 1),
+    baseline_sets INT NOT NULL CONSTRAINT training_plan_workouts_baseline_sets_nonnegative CHECK (baseline_sets >= 0),
     reps INT NOT NULL,
     rir FLOAT,
     baseline_rir FLOAT,

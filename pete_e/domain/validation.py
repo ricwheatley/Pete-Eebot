@@ -130,8 +130,10 @@ def calculate_effective_prescription(
 ) -> EffectivePrescription:
     """Calculate effective sets/RIR without consulting prior effective values."""
 
-    if baseline_sets < 1:
-        raise ValueError("baseline_sets must be at least 1")
+    if baseline_sets < 0:
+        raise ValueError("baseline_sets must be non-negative")
+    if baseline_sets == 0:
+        return EffectivePrescription(sets=0, rir=baseline_rir)
     adjusted_sets = max(
         1,
         int(

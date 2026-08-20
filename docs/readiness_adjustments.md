@@ -16,6 +16,10 @@ For strength rows in `training_plan_workouts`:
   baseline columns. It replaces effective values with
   `round(baseline_sets * set_multiplier)` and
   `baseline_rir + rir_increment` (with a one-set floor).
+- A zero-set baseline is retained for legacy/comment-only placeholder rows.
+  Those rows are not exercise prescriptions, so readiness application leaves
+  both their effective sets and RIR unchanged. Negative set baselines are
+  rejected.
 
 A neutral decision (`1.0`, `0`) therefore restores the baseline. If an operator
 intentionally changes a persisted prescription, update the baseline and

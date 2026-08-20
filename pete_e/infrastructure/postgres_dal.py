@@ -977,7 +977,9 @@ class PostgresDal(PlanRepository):
                                 WHEN baseline_rir IS NULL THEN %s
                                 ELSE baseline_rir + %s
                             END
-                        WHERE week_id = %s AND is_cardio = false;
+                        WHERE week_id = %s
+                          AND is_cardio = false
+                          AND baseline_sets > 0;
                         """,
                         (
                             set_multiplier,
@@ -996,7 +998,9 @@ class PostgresDal(PlanRepository):
                             baseline_rir,
                             rir AS effective_rir
                         FROM training_plan_workouts
-                        WHERE week_id = %s AND is_cardio = false
+                        WHERE week_id = %s
+                          AND is_cardio = false
+                          AND baseline_sets > 0
                         ORDER BY id;
                         """,
                         (week_id,),

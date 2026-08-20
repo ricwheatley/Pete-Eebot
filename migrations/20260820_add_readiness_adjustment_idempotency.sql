@@ -17,22 +17,28 @@ WHERE baseline_rir IS NULL AND rir IS NOT NULL;
 ALTER TABLE training_plan_workouts
     ALTER COLUMN baseline_sets SET NOT NULL;
 
+-- Zero-set rows are valid legacy/comment-only placeholders. They are not
+-- adjustable exercise prescriptions, but their immutable baseline must still
+-- be preserved. Negative prescriptions remain invalid.
+ALTER TABLE training_plan_workouts
+    DROP CONSTRAINT IF EXISTS training_plan_workouts_baseline_sets_positive;
+
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
-        WHERE conname = 'training_plan_workouts_baseline_sets_positive'
+        WHERE conname = 'training_plan_workouts_baseline_sets_nonnegative'
           AND conrelid = 'training_plan_workouts'::regclass
     ) THEN
         ALTER TABLE training_plan_workouts
-            ADD CONSTRAINT training_plan_workouts_baseline_sets_positive
-            CHECK (baseline_sets >= 1) NOT VALID;
+            ADD CONSTRAINT training_plan_workouts_baseline_sets_nonnegative
+            CHECK (baseline_sets >= 0) NOT VALID;
     END IF;
 END $$;
 
 ALTER TABLE training_plan_workouts
-    VALIDATE CONSTRAINT training_plan_workouts_baseline_sets_positive;
+    VALIDATE CONSTRAINT training_plan_workouts_baseline_sets_nonnegative;
 
 COMMENT ON COLUMN training_plan_workouts.baseline_sets IS
     'Canonical prescribed set count; readiness application never mutates this value.';

@@ -10,6 +10,8 @@ def test_bootstrap_schema_distinguishes_baseline_and_effective_prescriptions() -
     schema = Path("init-db/schema.sql").read_text(encoding="utf-8")
 
     assert "baseline_sets INT NOT NULL" in schema
+    assert "training_plan_workouts_baseline_sets_nonnegative" in schema
+    assert "CHECK (baseline_sets >= 0)" in schema
     assert "baseline_rir FLOAT" in schema
     assert "CREATE TABLE plan_readiness_adjustments" in schema
     assert "effective_readiness_adjustment_id" in schema
@@ -21,6 +23,8 @@ def test_readiness_migration_backfills_baselines_and_enforces_identity() -> None
 
     assert "SET baseline_sets = sets" in migration
     assert "SET baseline_rir = rir" in migration
+    assert "training_plan_workouts_baseline_sets_nonnegative" in migration
+    assert "CHECK (baseline_sets >= 0) NOT VALID" in migration
     assert "CREATE TABLE IF NOT EXISTS plan_readiness_adjustments" in migration
     assert "source_data_hash CHAR(64) NOT NULL" in migration
     assert "baseline_prescription_hash CHAR(64) NOT NULL" in migration

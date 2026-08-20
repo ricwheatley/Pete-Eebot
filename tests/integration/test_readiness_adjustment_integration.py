@@ -173,6 +173,59 @@ def test_repeated_and_changed_decisions_converge_from_baseline(postgres_test_dsn
         pool.close()
 
 
+def test_zero_set_placeholder_is_not_promoted_by_readiness_adjustment(
+    postgres_test_dsn: str,
+) -> None:
+    plan_id, week_id, workout_id = _seed_plan(postgres_test_dsn)
+    with psycopg.connect(postgres_test_dsn, autocommit=True) as connection:
+        placeholder_id = connection.execute(
+            """
+            INSERT INTO training_plan_workouts (
+                week_id,
+                day_of_week,
+                sets,
+                baseline_sets,
+                reps,
+                rir,
+                baseline_rir,
+                is_cardio,
+                comment
+            )
+            VALUES (%s, 2, 0, 0, 0, NULL, NULL, false, 'Rest day')
+            RETURNING id;
+            """,
+            (week_id,),
+        ).fetchone()[0]
+
+    pool = ConnectionPool(conninfo=postgres_test_dsn, min_size=1, max_size=2)
+    dal = PostgresDal(pool=pool)
+    try:
+        result = dal.apply_plan_adjustment(**_apply_args(plan_id))
+    finally:
+        pool.close()
+
+    with psycopg.connect(postgres_test_dsn) as connection:
+        placeholder = connection.execute(
+            """
+            SELECT sets, baseline_sets, rir, baseline_rir
+            FROM training_plan_workouts
+            WHERE id = %s;
+            """,
+            (placeholder_id,),
+        ).fetchone()
+        snapshot = connection.execute(
+            """
+            SELECT result_snapshot
+            FROM plan_readiness_adjustments
+            WHERE id = %s;
+            """,
+            (result["adjustment_id"],),
+        ).fetchone()[0]
+
+    assert placeholder == (0, 0, None, None)
+    assert [row["workout_id"] for row in snapshot] == [workout_id]
+
+
 def test_concurrent_duplicate_adjustments_share_one_ledger_row(postgres_test_dsn: str) -> None:
     plan_id, _, workout_id = _seed_plan(postgres_test_dsn)
     pool = ConnectionPool(conninfo=postgres_test_dsn, min_size=2, max_size=4)
@@ -298,6 +351,16 @@ def test_migration_backfills_existing_effective_values_as_initial_baseline(
             """,
             (week_id,),
         ).fetchone()[0]
+        placeholder_id = connection.execute(
+            """
+            INSERT INTO training_plan_workouts (
+                week_id, day_of_week, sets, reps, rir, is_cardio, comment
+            )
+            VALUES (%s, 2, 0, 0, NULL, false, 'Rest day')
+            RETURNING id;
+            """,
+            (week_id,),
+        ).fetchone()[0]
 
         connection.execute(migration)
         row = connection.execute(
@@ -308,5 +371,14 @@ def test_migration_backfills_existing_effective_values_as_initial_baseline(
             """,
             (workout_id,),
         ).fetchone()
+        placeholder = connection.execute(
+            """
+            SELECT sets, baseline_sets, rir, baseline_rir
+            FROM training_plan_workouts
+            WHERE id = %s;
+            """,
+            (placeholder_id,),
+        ).fetchone()
 
     assert row == (3, 3, 4.0, 4.0)
+    assert placeholder == (0, 0, None, None)

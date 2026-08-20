@@ -126,3 +126,15 @@ def test_neutral_effective_prescription_preserves_null_baseline_rir() -> None:
 
     assert result.sets == 3
     assert result.rir is None
+
+
+def test_zero_set_placeholder_is_not_adjusted() -> None:
+    result = calculate_effective_prescription(
+        baseline_sets=0,
+        baseline_rir=None,
+        set_multiplier=0.8,
+        rir_increment=1,
+    )
+
+    assert result.sets == 0
+    assert result.rir is None
