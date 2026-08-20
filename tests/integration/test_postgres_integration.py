@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import date
+from datetime import datetime, timezone
 
 import pytest
 
+from pete_e.infrastructure.apple_parser import AppleHealthParser
+from pete_e.infrastructure.apple_writer import AppleHealthWriter
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
 
@@ -65,3 +68,83 @@ def test_nutrition_insert_uses_real_psycopg_and_rolls_back(postgres_connection) 
             (record["client_event_id"],),
         )
         assert cursor.fetchone() == (0,)
+
+
+def _parsed_apple_checkpoint_fixture() -> dict:
+    return AppleHealthParser().parse(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "checkpoint_integration_metric",
+                        "units": "count",
+                        "data": [
+                            {
+                                "date": "2026-08-20 08:00:00 +0000",
+                                "source": "Checkpoint Integration Watch",
+                                "qty": 7,
+                            }
+                        ],
+                    }
+                ],
+                "workouts": [],
+            }
+        }
+    )
+
+
+def test_apple_checkpoint_persistence_and_replay_use_real_postgres(
+    postgres_connection,
+) -> None:
+    checkpoint = datetime(2026, 8, 20, 9, 0, tzinfo=timezone.utc)
+    writer = AppleHealthWriter(postgres_connection)
+    parsed = _parsed_apple_checkpoint_fixture()
+
+    with postgres_connection.transaction(force_rollback=True):
+        writer.upsert_all(parsed)
+        writer.upsert_all(parsed)
+        writer.save_last_import_timestamp(checkpoint)
+
+        assert writer.get_last_import_timestamp() == checkpoint
+        with postgres_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT count(*)
+                FROM "DailyMetric" AS daily_metric
+                JOIN "MetricType" AS metric_type
+                  ON metric_type.metric_id = daily_metric.metric_id
+                JOIN "Device" AS device
+                  ON device.device_id = daily_metric.device_id
+                WHERE metric_type.name = %s AND device.name = %s
+                """,
+                ("checkpoint_integration_metric", "Checkpoint Integration Watch"),
+            )
+            assert cursor.fetchone() == (1,)
+
+
+def test_apple_checkpoint_failure_rolls_back_health_write_in_real_postgres(
+    postgres_connection,
+) -> None:
+    writer = AppleHealthWriter(postgres_connection)
+    parsed = _parsed_apple_checkpoint_fixture()
+
+    with postgres_connection.transaction(force_rollback=True):
+        with pytest.raises(Exception):
+            with postgres_connection.transaction():
+                writer.upsert_all(parsed)
+                writer.save_last_import_timestamp(None)  # type: ignore[arg-type]
+
+        with postgres_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT count(*)
+                FROM "DailyMetric" AS daily_metric
+                JOIN "MetricType" AS metric_type
+                  ON metric_type.metric_id = daily_metric.metric_id
+                JOIN "Device" AS device
+                  ON device.device_id = daily_metric.device_id
+                WHERE metric_type.name = %s AND device.name = %s
+                """,
+                ("checkpoint_integration_metric", "Checkpoint Integration Watch"),
+            )
+            assert cursor.fetchone() == (0,)

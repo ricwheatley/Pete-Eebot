@@ -882,15 +882,22 @@ def ingest_apple() -> None:
         _echo_error(f"Apple Health Dropbox ingestion failed: {exc}")
         raise typer.Exit(code=1)
 
-    processed_files = len(report.sources)
+    summary = report.summary
+    processed_files = len(summary.sources) if summary else 0
+    workouts = summary.workouts if summary else 0
+    daily_points = summary.daily_points if summary else 0
     log_utils.log_message(
         (
             "Apple Health Dropbox ingestion finished. "
             f"Processed {processed_files} file(s), "
-            f"{report.workouts} workouts, and {report.daily_points} metric points."
+            f"{workouts} workouts, and {daily_points} metric points."
         ),
-        "INFO",
+        "INFO" if report.success else "ERROR",
     )
+    if not report.success:
+        for alert in report.alerts:
+            _echo_error(str(alert))
+        raise typer.Exit(code=1)
 
 
 @app.command()

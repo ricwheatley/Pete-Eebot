@@ -644,10 +644,23 @@ class AppleHealthParser:
                 "Apple Health parser skipped " + ", ".join(skipped_sections) + " due to invalid data.",
                 "WARN",
             )
+        skipped_row_count = sum(
+            (
+                skipped_metric_rows,
+                skipped_hr_rows,
+                skipped_sleep_rows,
+                skipped_workout_headers,
+                skipped_workout_hr_rows,
+                skipped_workout_energy_rows,
+                skipped_workout_steps_rows,
+                skipped_workout_recovery_rows,
+            )
+        )
         return {
             "daily_metric_points": daily_metric_points, "hr_summaries": hr_summaries,
             "sleep_summaries": sleep_summaries, "workout_headers": workout_headers,
             "workout_hr": workout_hr, "workout_steps": workout_steps,
             "workout_energy": workout_energy, "workout_hr_recovery": workout_hr_recovery,
+            "skipped_row_count": skipped_row_count,
         }
 

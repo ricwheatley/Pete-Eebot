@@ -821,7 +821,13 @@ def _apple_ingest_failed_sources(result: AppleHealthIngestResult) -> list[str]:
 def _apple_ingest_summary(result: AppleHealthIngestResult) -> str:
     statuses = _apple_ingest_source_statuses(result)
     status_fragment = ", ".join(f"{source}={status}" for source, status in statuses.items())
-    verdict = "success" if result.success else "failed"
+    verdict = (
+        "success"
+        if result.success
+        else "partial"
+        if "partial" in statuses.values()
+        else "failed"
+    )
     import_summary = result.summary
     if import_summary is None:
         return f"Apple ingest summary: result={verdict} | {status_fragment}"
@@ -829,7 +835,7 @@ def _apple_ingest_summary(result: AppleHealthIngestResult) -> str:
         f"Apple ingest summary: result={verdict} | {status_fragment} | "
         f"files={len(import_summary.sources)} | workouts={import_summary.workouts} | "
         f"metric_points={import_summary.daily_points} | hr_days={import_summary.hr_days} | "
-        f"sleep_days={import_summary.sleep_days}"
+        f"sleep_days={import_summary.sleep_days} | failures={len(result.failure_details)}"
     )
 
 
@@ -845,6 +851,18 @@ def _apple_ingest_import_summary(result: AppleHealthIngestResult) -> dict[str, A
         "hr_days": import_summary.hr_days,
         "sleep_days": import_summary.sleep_days,
     }
+
+
+def _apple_ingest_failure_details(result: AppleHealthIngestResult) -> list[dict[str, Any]]:
+    return [
+        {
+            "stage": failure.stage,
+            "reason": failure.reason,
+            "file_path": failure.file_path,
+            "modified_at": failure.modified_at.isoformat() if failure.modified_at else None,
+        }
+        for failure in result.failure_details
+    ]
 
 
 def _render_console(
@@ -1254,6 +1272,8 @@ def console_ingest_apple(request: Request, payload: dict[str, Any] | None = None
         "failed_sources": _apple_ingest_failed_sources(result),
         "source_statuses": _apple_ingest_source_statuses(result),
         "import_summary": _apple_ingest_import_summary(result),
+        "failure_details": _apple_ingest_failure_details(result),
+        "alerts": list(result.alerts),
     }
     _audit_command_success(request, command, payload_out)
     return payload_out

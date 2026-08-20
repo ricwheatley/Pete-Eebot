@@ -21,14 +21,31 @@ class AppleHealthImportSummary:
 
 
 @dataclass(frozen=True)
+class AppleHealthIngestFailure:
+    """Safe, operator-visible detail for one failed ingest stage or file."""
+
+    stage: str
+    reason: str
+    file_path: str | None = None
+    modified_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class AppleHealthIngestResult:
-    """Outcome of importing data from Apple Health."""
+    """Outcome of importing data from Apple Health.
+
+    ``success`` is true only when every discovered file was safely handled.
+    A source status of ``partial`` means some files were committed while at
+    least one file remains eligible for replay; ``failed`` means no file from
+    the run was committed.
+    """
 
     success: bool
     summary: AppleHealthImportSummary | None = None
     failures: Sequence[str] = field(default_factory=tuple)
     statuses: Mapping[str, str] = field(default_factory=dict)
     alerts: Sequence[str] = field(default_factory=tuple)
+    failure_details: Sequence[AppleHealthIngestFailure] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -255,6 +272,7 @@ class DailySyncService:
 
 
 __all__ = [
+    "AppleHealthIngestFailure",
     "AppleHealthImportSummary",
     "AppleHealthIngestResult",
     "AppleHealthIngestor",

@@ -222,6 +222,38 @@ Apple ingest only:
 pete ingest-apple
 ```
 
+Apple Health imports use Dropbox `client_modified` timestamps as an exclusive
+checkpoint. Files are processed in timestamp order, with Dropbox path as a
+deterministic tie-breaker. All files sharing a timestamp form one checkpoint
+group: the checkpoint advances past that timestamp only when every discovered
+file in the group was handled.
+
+An unreadable download, malformed JSON/ZIP, or parser failure is reported as
+`Apple Health=partial` when another file was committed, or
+`Apple Health=failed` when none was committed. The result and logs identify the
+file path, modification time, stage, and a bounded error reason; health payload
+contents are not logged. The checkpoint remains strictly before the earliest
+failed timestamp, so the failed file and any later successfully upserted files
+are eligible for the next run. Apple metric and workout writes use their
+natural conflict keys, so this replay updates or ignores existing rows instead
+of duplicating them.
+
+The parser remains best-effort within a structurally valid export: it writes
+valid rows and counts invalid rows by section. Any non-zero invalid-row count
+marks the file and run as `partial` and holds the same watermark, so correcting
+the export can recover the omitted rows without duplicating the valid rows.
+
+To retry, correct or replace the Dropbox export and ensure its
+`client_modified` value is later than the last committed checkpoint, then run
+`pete ingest-apple` once. Check `/console/jobs`, the command response's
+`failure_details` and `alerts`, or logs for the failed path and stage. A
+database-write, checkpoint-write, or commit failure rolls back both health data
+and checkpoint changes for that run. There is no quarantine table: a file stops
+blocking the watermark only after it can be handled successfully. Dropbox
+cannot reveal a file that first appears later with a `client_modified` value at
+or before an already committed checkpoint; replace such a file so Dropbox gives
+it a newer modification time.
+
 Build a morning report:
 
 ```bash

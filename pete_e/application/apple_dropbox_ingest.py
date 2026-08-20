@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from pete_e.domain.daily_sync import (
+    AppleHealthIngestFailure,
     AppleHealthImportSummary,
     AppleHealthIngestResult,
     AppleHealthIngestor,
@@ -13,6 +14,7 @@ from pete_e.infrastructure.apple_health_ingestor import AppleIngestError, _get_j
 from pete_e.infrastructure.di_container import Container, get_container
 
 __all__ = [
+    "AppleHealthIngestFailure",
     "AppleHealthImportSummary",
     "AppleHealthIngestResult",
     "AppleHealthIngestor",
@@ -72,5 +74,9 @@ if __name__ == "__main__":
         log_utils.info(f"Metric points: {summary.daily_points}")
         log_utils.info(f"HR days:      {summary.hr_days}")
         log_utils.info(f"Sleep days:   {summary.sleep_days}")
-        log_utils.info("Import complete.")
+    if not outcome.success:
+        for alert in outcome.alerts:
+            log_utils.error(str(alert))
+        raise SystemExit(1)
+    log_utils.info("Import complete.")
 

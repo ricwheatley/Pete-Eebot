@@ -5,13 +5,10 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import List
 
-import pytest
-
 from pete_e.application import apple_dropbox_ingest
 from pete_e.domain.daily_sync import AppleHealthImportSummary, AppleHealthIngestResult
 from pete_e.infrastructure.apple_health_ingestor import (
     AppleHealthDropboxIngestor,
-    AppleIngestError,
     _get_json_from_content,
 )
 
@@ -256,7 +253,7 @@ def test_ingestor_skips_already_processed_files():
     """Perform test ingestor skips already processed files."""
 
 
-def test_ingestor_raises_on_parser_failure():
+def test_ingestor_reports_parser_failure():
     class DummyConn:
         def commit(self):  # pragma: no cover - not reached
             raise AssertionError("commit should not be called on failure")
@@ -331,12 +328,16 @@ def test_ingestor_raises_on_parser_failure():
         writer_factory=DummyWriter,
     )
 
-    with pytest.raises(AppleIngestError) as excinfo:
-        ingestor.ingest()
+    result = ingestor.ingest()
 
-    assert excinfo.value.stage == "parse"
-    assert excinfo.value.file_path == "bad.json"
-    """Perform test ingestor raises on parser failure."""
+    assert result.success is False
+    assert result.statuses == {"Apple Health": "failed"}
+    assert result.failures == ("Apple Health",)
+    assert len(result.failure_details) == 1
+    assert result.failure_details[0].stage == "parse"
+    assert result.failure_details[0].file_path == "bad.json"
+    assert "bad.json" in result.alerts[0]
+    """Perform test ingestor reports parser failure."""
 
 
 def test_application_wrapper_uses_injected_ingestor():

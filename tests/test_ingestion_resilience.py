@@ -170,6 +170,7 @@ def test_apple_parser_handles_partial_rows_without_crashing(capture_logs):
     assert len(result["workout_energy"]) == 1
     assert len(result["workout_steps"]) == 1
     assert len(result["workout_hr_recovery"]) == 1
+    assert result["skipped_row_count"] == 9
 
     warn_messages = [msg for msg, level in capture_logs if level == "WARN"]
     assert warn_messages, "Expected a WARN log about skipped Apple rows"

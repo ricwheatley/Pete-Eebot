@@ -78,7 +78,7 @@ class AppleHealthWriter:
         with self.conn.cursor() as cur:
             cur.execute("""
                 SELECT last_file_processed_at FROM "ImportLog"
-                ORDER BY import_timestamp DESC
+                ORDER BY import_id DESC
                 LIMIT 1
             """)
             result = cur.fetchone()

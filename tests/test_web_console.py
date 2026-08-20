@@ -13,7 +13,11 @@ from pete_e.application.exceptions import ValidationError
 from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY
-from pete_e.domain.daily_sync import AppleHealthImportSummary, AppleHealthIngestResult
+from pete_e.domain.daily_sync import (
+    AppleHealthImportSummary,
+    AppleHealthIngestFailure,
+    AppleHealthIngestResult,
+)
 from pete_e.domain.jobs import ApplicationJob, CommandHistoryEntry
 
 
@@ -1375,12 +1379,52 @@ def test_console_apple_ingest_uses_job_service_and_reports_sources(
     assert payload["source_statuses"] == {"Apple Health": "ok"}
     assert payload["failed_sources"] == []
     assert payload["import_summary"]["source_file_count"] == 1
+    assert payload["failure_details"] == []
+    assert payload["alerts"] == []
     assert "Apple Health=ok" in payload["summary"]
     assert "workouts=3" in payload["summary"]
     assert job_service.enqueued[0]["operation"] == "apple_ingest"
     assert job_service.enqueued[0]["request_summary"] == {"source": "Apple Health"}
     assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
     assert audit_events[-1]["summary"]["source_statuses"] == {"Apple Health": "ok"}
+
+
+def test_apple_ingest_partial_result_exposes_safe_failure_details() -> None:
+    modified_at = datetime(2026, 8, 20, 8, 30, tzinfo=timezone.utc)
+    result = AppleHealthIngestResult(
+        success=False,
+        summary=AppleHealthImportSummary(
+            sources=("/health/HealthAutoExport-valid.json",),
+            workouts=0,
+            daily_points=1,
+            hr_days=0,
+            sleep_days=0,
+        ),
+        failures=("Apple Health",),
+        statuses={"Apple Health": "partial"},
+        alerts=("Apple Health ingest partially completed; retry required.",),
+        failure_details=(
+            AppleHealthIngestFailure(
+                stage="extract",
+                reason="no extractable JSON object",
+                file_path="/health/HealthAutoExport-malformed.json",
+                modified_at=modified_at,
+            ),
+        ),
+    )
+
+    assert web._apple_ingest_source_statuses(result) == {"Apple Health": "partial"}
+    assert web._apple_ingest_failed_sources(result) == ["Apple Health"]
+    assert "result=partial" in web._apple_ingest_summary(result)
+    assert "failures=1" in web._apple_ingest_summary(result)
+    assert web._apple_ingest_failure_details(result) == [
+        {
+            "stage": "extract",
+            "reason": "no extractable JSON object",
+            "file_path": "/health/HealthAutoExport-malformed.json",
+            "modified_at": modified_at.isoformat(),
+        }
+    ]
 
 
 def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: pytest.MonkeyPatch) -> None:
