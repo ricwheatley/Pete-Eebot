@@ -2,8 +2,6 @@
 
 from typer.testing import CliRunner
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.cli import messenger
 from pete_e.domain import schedule_rules
 from pete_e.domain import narrative_builder

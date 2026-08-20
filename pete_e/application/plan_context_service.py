@@ -4,10 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, Optional
 
-try:  # pragma: no cover - dependency may be stubbed in tests
-    from psycopg import Error as PsycopgError  # type: ignore[attr-defined]
-except (ImportError, AttributeError):  # pragma: no cover - fallback for stubs
-    PsycopgError = RuntimeError  # type: ignore[assignment]
+from psycopg import Error as PsycopgError
 
 from pete_e.application.exceptions import DataAccessError
 from pete_e.domain.data_access import DataAccessLayer

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.staticfiles import StaticFiles
 
 from pete_e.api_routes import (
     auth_router,
@@ -70,17 +71,9 @@ install_request_logging_middleware(app)
 
 
 def mount_static_assets(api_app: FastAPI) -> None:
-    """Mount browser assets when running on real FastAPI/Starlette."""
+    """Mount browser assets."""
 
-    mount = getattr(api_app, "mount", None)
-    if not callable(mount):
-        return
-    try:
-        from fastapi.staticfiles import StaticFiles
-    except ImportError:  # pragma: no cover - lightweight test stubs.
-        return
-
-    mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    api_app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def include_api_routers(api_app: FastAPI) -> None:
@@ -99,10 +92,9 @@ def include_web_routers(api_app: FastAPI) -> None:
         api_app.include_router(router)
 
 
-if hasattr(app, "include_router"):
-    include_api_routers(app)
-    include_web_routers(app)
-    mount_static_assets(app)
+include_api_routers(app)
+include_web_routers(app)
+mount_static_assets(app)
 
 
 def status(

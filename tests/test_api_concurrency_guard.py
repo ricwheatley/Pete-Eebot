@@ -59,6 +59,9 @@ def test_sync_endpoint_returns_conflict_when_durable_job_lock_active(monkeypatch
             )
 
     monkeypatch.setattr(status_sync, "get_job_service", lambda: _JobService())
+    monkeypatch.setattr(status_sync, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(status_sync, "prepare_job_context", lambda *_args: "sync-conflict-test")
+    monkeypatch.setattr(status_sync, "audit_command_event", lambda *_args, **_kwargs: None)
 
     with pytest.raises(status_sync.HTTPException) as exc:
         status_sync.sync(

@@ -5,6 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
+
+pytestmark = pytest.mark.contract
+
 
 def test_normal_workflow_regressions_use_real_frameworks() -> None:
     script = Path(__file__).with_name("real_framework_regressions.py")

@@ -5,8 +5,6 @@ import pytest
 
 from pete_e.domain.progression import _adjust_exercise, _compute_recovery_flag
 from pete_e.config import settings
-from tests import config_stub  # noqa: F401 - ensure stub settings loaded
-
 
 def _make_metrics(rhr: float | None, sleep: float | None, count: int):
     return [

@@ -1,50 +1,8 @@
 # tests/test_validation.py
 from datetime import date, timedelta
-import sys
-import types
-from pathlib import Path
 from typing import List, Dict, Any
 
 import pytest
-
-# ---- Stubs for settings and logging paths, injected before import ----
-
-if "pete_e.config" not in sys.modules:
-    config_stub = types.ModuleType("pete_e.config")
-
-    class _SettingsStub:
-        # thresholds align with the shared config stub
-        RHR_ALLOWED_INCREASE = 0.10
-        SLEEP_ALLOWED_DECREASE = 0.85
-        HRV_ALLOWED_DECREASE = 0.12
-
-        def __getattr__(self, name):
-            return None
-            """Implement the `__getattr__` dunder method behavior."""
-
-        @property
-        def log_path(self):
-            # will be overridden by fixture to tmp_path
-            return Path("logs/test_validation.log")
-            """Perform log path."""
-        """Represent SettingsStub."""
-
-    config_stub.settings = _SettingsStub()
-    config_stub.get_env = lambda key, default=None: default
-    sys.modules["pete_e.config"] = config_stub
-
-if "pete_e.infrastructure.log_utils" not in sys.modules:
-    # Provide a minimal log_utils that does nothing, to avoid file writes before tmp patch
-    lu = types.ModuleType("pete_e.infrastructure.log_utils")
-
-    def _noop(msg: str, level: str = "INFO"):
-        pass
-        """Perform noop."""
-
-    lu.log_message = _noop
-    sys.modules["pete_e.infrastructure.log_utils"] = lu
-
-# Import after stubbing
 from pete_e.domain.validation import (
     assess_recovery_and_backoff,
     compute_dynamic_baselines,

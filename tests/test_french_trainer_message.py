@@ -5,8 +5,6 @@ import pytest
 
 from pete_e.domain import french_trainer
 from pete_e.domain.french_trainer import compose_daily_message
-from tests import config_stub  # noqa: F401 - ensure stub settings loaded
-
 
 @pytest.fixture(autouse=True)
 def deterministic_phrase(monkeypatch):

@@ -7,26 +7,9 @@ import re
 import uuid
 from typing import Any
 
-try:  # pragma: no cover - exercised when FastAPI is installed.
-    from fastapi import HTTPException, Request
-except ImportError:  # pragma: no cover - test stubs cover this path.
-    HTTPException = Exception  # type: ignore[assignment]
-    Request = Any  # type: ignore[assignment]
-
-try:  # pragma: no cover - exercised when FastAPI is installed.
-    from fastapi.exceptions import RequestValidationError
-except ImportError:  # pragma: no cover - FastAPI stubs do not expose this.
-    RequestValidationError = None  # type: ignore[assignment]
-
-try:  # pragma: no cover - exercised when FastAPI is installed.
-    from fastapi.responses import JSONResponse
-except ImportError:  # pragma: no cover - fallback for the repo's API stubs.
-
-    class JSONResponse:  # type: ignore[no-redef]
-        def __init__(self, content: dict[str, Any], status_code: int = 200, headers: dict[str, str] | None = None):
-            self.content = content
-            self.status_code = status_code
-            self.headers = headers or {}
+from fastapi import HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from pete_e.application.exceptions import ApplicationError
 
@@ -202,21 +185,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):  # noqa
 
 
 def install_api_error_handlers(api_app: Any) -> None:
-    """Install error handlers and correlation middleware when real FastAPI is available."""
+    """Install error handlers and correlation middleware on a FastAPI app."""
 
-    middleware = getattr(api_app, "middleware", None)
-    if callable(middleware):
-        middleware("http")(correlation_id_middleware)
-
-    add_handler = getattr(api_app, "add_exception_handler", None)
-    if not callable(add_handler):
-        return
-
-    add_handler(HTTPException, http_exception_handler)
-    add_handler(ApplicationError, application_error_handler)
-    if RequestValidationError is not None:
-        add_handler(RequestValidationError, validation_exception_handler)
-    add_handler(Exception, unhandled_exception_handler)
+    api_app.middleware("http")(correlation_id_middleware)
+    api_app.add_exception_handler(HTTPException, http_exception_handler)
+    api_app.add_exception_handler(ApplicationError, application_error_handler)
+    api_app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    api_app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 __all__ = [

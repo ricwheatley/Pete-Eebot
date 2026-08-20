@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from pete_e.application.exceptions import ApplicationError
 from pete_e.api_routes.dependencies import get_metrics_service, validate_api_key
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 @router.get("/metrics_overview")

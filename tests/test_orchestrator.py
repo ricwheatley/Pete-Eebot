@@ -6,8 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.application.exceptions import ValidationError
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.domain.daily_sync import DailySyncResult

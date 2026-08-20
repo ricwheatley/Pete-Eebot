@@ -2,26 +2,33 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from types import SimpleNamespace
 
 import pytest
 
 from pete_e.api_routes import dependencies, logs_webhooks, metrics, nutrition, plan, status_sync
 
 
+pytestmark = pytest.mark.contract
+
+
 def _request_with_query_api_key() -> dependencies.Request:
-    return dependencies.Request({"api_key": "test-key"})
+    return _request_for_path("/metrics_overview", query_string=b"api_key=test-key")
 
 
-def _request_for_path(path: str):
-    return SimpleNamespace(
-        method="GET",
-        headers={},
-        cookies={},
-        query_params={},
-        client=SimpleNamespace(host="127.0.0.1"),
-        scope={"path": path},
-        state=SimpleNamespace(),
+def _request_for_path(path: str, *, query_string: bytes = b"") -> dependencies.Request:
+    return dependencies.Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("ascii"),
+            "query_string": query_string,
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+        }
     )
 
 
@@ -38,7 +45,7 @@ def test_validate_api_key_ignores_query_param_api_key() -> None:
 
 
 def test_validate_api_key_accepts_header_even_when_query_param_is_wrong() -> None:
-    request = dependencies.Request({"api_key": "wrong-key"})
+    request = _request_for_path("/metrics_overview", query_string=b"api_key=wrong-key")
 
     dependencies.validate_api_key(request, x_api_key="test-key")
 

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import fastapi
 from fastapi import HTTPException, Request
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from pete_e.api_routes import dependencies
 from pete_e.api_errors import get_or_create_correlation_id
@@ -31,28 +32,7 @@ from pete_e.config import settings
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
 from pete_e.domain.daily_sync import AppleHealthIngestResult
 
-try:  # pragma: no cover - exercised when Starlette is installed.
-    from starlette.responses import JSONResponse
-    from starlette.responses import HTMLResponse, RedirectResponse
-except ImportError:  # pragma: no cover - keeps lightweight unit-test stubs importable.
-    class JSONResponse:  # type: ignore[no-redef]
-        def __init__(self, content: dict, status_code: int = 200, headers: dict[str, str] | None = None):
-            self.content = content
-            self.status_code = status_code
-            self.headers = headers or {}
-
-    class HTMLResponse:  # type: ignore[no-redef]
-        def __init__(self, content: str = "", status_code: int = 200, headers: dict[str, str] | None = None):
-            self.body = content.encode("utf-8")
-            self.status_code = status_code
-            self.headers = headers or {}
-
-    class RedirectResponse(HTMLResponse):  # type: ignore[no-redef]
-        def __init__(self, url: str, status_code: int = 303):
-            super().__init__("", status_code=status_code, headers={"location": url})
-
-
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 STATIC_DIR = Path(__file__).resolve().parents[1] / "static"

@@ -128,11 +128,7 @@ _APPLICATION_EXIT_CODES: dict[type[ApplicationError], int] = {
 
 
 def _echo_error(message: str) -> None:
-    secho = getattr(typer, "secho", None)
-    if callable(secho):
-        secho(message, err=True, fg="red")
-    else:  # pragma: no cover - exercised via typer test stubs
-        typer.echo(message)
+    typer.secho(message, err=True, fg="red")
     """Perform echo error."""
 
 
@@ -159,13 +155,7 @@ def _password_from_env_or_prompt(env_name: str) -> str:
         if password is not None:
             return password
 
-    prompt = getattr(typer, "prompt", None)
-    if not callable(prompt):
-        raise RuntimeError(
-            f"Set {resolved_env_name or 'PETEEEBOT_BOOTSTRAP_OWNER_PASSWORD'} "
-            "when running this command non-interactively."
-        )
-    return str(prompt("Owner password", hide_input=True, confirmation_prompt=True))
+    return str(typer.prompt("Owner password", hide_input=True, confirmation_prompt=True))
 
 
 def _audit_owner_password_reset(

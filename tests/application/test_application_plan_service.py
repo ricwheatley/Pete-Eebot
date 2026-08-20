@@ -3,8 +3,6 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.application.exceptions import DataAccessError
 from pete_e.application.plan_context_service import ApplicationPlanService
 from pete_e.domain.validation import PlanContext

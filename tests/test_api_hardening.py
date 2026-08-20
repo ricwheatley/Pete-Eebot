@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 import threading
 import time
@@ -13,6 +14,13 @@ from pete_e import api_security
 from pete_e.api_routes import dependencies
 from pete_e.application.exceptions import ValidationError
 from pete_e.application.concurrency_guard import high_risk_operation_guard
+
+
+pytestmark = pytest.mark.contract
+
+
+def _response_payload(response) -> dict:
+    return json.loads(response.body)
 
 
 class _Request:
@@ -96,12 +104,13 @@ def test_error_response_schema_includes_generated_correlation_id() -> None:
         )
     )
 
+    payload = _response_payload(response)
     assert response.status_code == 401
-    assert set(response.content.keys()) == {"error"}
-    assert response.content["error"]["code"] == "unauthorized"
-    assert response.content["error"]["message"] == "Invalid or missing API key"
-    assert response.content["error"]["correlation_id"]
-    assert response.headers[api_errors.CORRELATION_ID_HEADER] == response.content["error"]["correlation_id"]
+    assert set(payload) == {"error"}
+    assert payload["error"]["code"] == "unauthorized"
+    assert payload["error"]["message"] == "Invalid or missing API key"
+    assert payload["error"]["correlation_id"]
+    assert response.headers[api_errors.CORRELATION_ID_HEADER] == payload["error"]["correlation_id"]
 
 
 def test_error_handlers_share_consistent_schema_for_application_and_http_errors() -> None:
@@ -123,13 +132,13 @@ def test_error_handlers_share_consistent_schema_for_application_and_http_errors(
     app_response = asyncio.run(api_errors.application_error_handler(request, ValidationError("bad plan")))
 
     for response in (http_response, app_response):
-        error = response.content["error"]
+        error = _response_payload(response)["error"]
         assert {"code", "message", "correlation_id"}.issubset(error)
         assert error["correlation_id"] == "caller-request-7"
         assert response.headers[api_errors.CORRELATION_ID_HEADER] == "caller-request-7"
 
-    assert http_response.content["error"]["details"] == {"active_operation": "sync"}
-    assert app_response.content["error"]["code"] == "validation_failed"
+    assert _response_payload(http_response)["error"]["details"] == {"active_operation": "sync"}
+    assert _response_payload(app_response)["error"]["code"] == "validation_failed"
 
 
 def test_command_rate_limit_rejects_excess_requests() -> None:

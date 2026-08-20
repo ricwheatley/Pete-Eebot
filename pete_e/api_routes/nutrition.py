@@ -13,7 +13,7 @@ from pete_e.api_routes.dependencies import (
 from pete_e.application.exceptions import ApplicationError
 from pete_e.domain.auth import ROLE_OPERATOR
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 def _raise_http(exc: ApplicationError) -> None:

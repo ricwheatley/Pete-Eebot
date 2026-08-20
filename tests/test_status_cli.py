@@ -3,10 +3,20 @@ import pete_e.cli.messenger as messenger
 from pete_e.cli.messenger import app
 from pete_e.cli.status import CheckResult
 from pete_e.infrastructure.ollama_client import OllamaConnectionError, OllamaModelMissingError
+import pytest
 from typer.testing import CliRunner
 
 
 runner = CliRunner()
+pytestmark = pytest.mark.contract
+
+
+def test_status_cli_help_uses_click_rendering():
+    result = runner.invoke(app, ["status", "--help"], color=False)
+
+    assert result.exit_code == 0
+    assert "--timeout" in result.stdout
+    assert "Quick health check" in result.stdout
 
 
 def test_status_cli_all_ok(monkeypatch):

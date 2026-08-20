@@ -1,7 +1,7 @@
 import fastapi
 from fastapi import Request
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 @router.get("/")

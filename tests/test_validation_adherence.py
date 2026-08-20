@@ -5,8 +5,6 @@ from typing import Any, Dict, List
 
 import pytest
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.domain.validation import (
     PlanContext,
     collect_adherence_snapshot,

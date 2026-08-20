@@ -1,585 +1,32 @@
-import sys
+"""Shared pytest policy for deterministic, real-dependency test runs."""
+
+from __future__ import annotations
+
 import os
-import types
 from pathlib import Path
 
-os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-
-if "pydantic" not in sys.modules:
-    from mocks.pydantic_mock import Field, FieldInfo, SecretStr, model_validator
-
-    pydantic_module = types.ModuleType("pydantic")
-    pydantic_module.Field = Field
-    pydantic_module.FieldInfo = FieldInfo
-    pydantic_module.SecretStr = SecretStr
-    pydantic_module.model_validator = model_validator
-    pydantic_module.__all__ = ["Field", "FieldInfo", "SecretStr", "model_validator"]
-    pydantic_module.__file__ = __file__
-
-    sys.modules["pydantic"] = pydantic_module
-
-
-if "pydantic_settings" not in sys.modules:
-    from mocks.pydantic_settings_mock import BaseSettings, SettingsConfigDict
-
-    settings_module = types.ModuleType("pydantic_settings")
-    settings_module.BaseSettings = BaseSettings
-    settings_module.SettingsConfigDict = SettingsConfigDict
-    settings_module.__all__ = ["BaseSettings", "SettingsConfigDict"]
-    settings_module.__file__ = __file__
-
-    sys.modules["pydantic_settings"] = settings_module
-
-
-if "fastapi" not in sys.modules:
-    fastapi_module = types.ModuleType("fastapi")
-
-    class HTTPException(Exception):
-        def __init__(self, status_code: int, detail=None):
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-            """Initialize this object."""
-        """Represent HTTPException."""
-
-    class Request:
-        def __init__(self, query_params: dict | None = None, headers: dict | None = None):
-            self.query_params = query_params or {}
-            self.headers = headers or {}
-            """Initialize this object."""
-
-        async def body(self) -> bytes:
-            return b""
-            """Perform body."""
-        """Represent Request."""
-
-    def _identity(value=None, **kwargs):
-        return value
-        """Perform identity."""
-
-    class APIRouter:
-        def __init__(self, *args, **kwargs):
-            self.routes = []
-            """Initialize this object."""
-
-        def get(self, *args, **kwargs):
-            def decorator(func):
-                self.routes.append(
-                    types.SimpleNamespace(
-                        path=args[0],
-                        methods={"GET"},
-                        endpoint=func,
-                    )
-                )
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform get."""
-
-        def post(self, *args, **kwargs):
-            def decorator(func):
-                self.routes.append(
-                    types.SimpleNamespace(
-                        path=args[0],
-                        methods={"POST"},
-                        endpoint=func,
-                    )
-                )
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform post."""
-
-        def patch(self, *args, **kwargs):
-            def decorator(func):
-                self.routes.append(
-                    types.SimpleNamespace(
-                        path=args[0],
-                        methods={"PATCH"},
-                        endpoint=func,
-                    )
-                )
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform patch."""
-
-        def include_router(self, *args, **kwargs):
-            if not args:
-                return None
-            router = args[0]
-            prefix = kwargs.get("prefix", "")
-            for route in getattr(router, "routes", []):
-                self.routes.append(
-                    types.SimpleNamespace(
-                        path=f"{prefix}{route.path}",
-                        methods=set(route.methods),
-                        endpoint=route.endpoint,
-                    )
-                )
-            return None
-            """Perform include router."""
-        """Represent APIRouter."""
-
-    fastapi_module.APIRouter = APIRouter
-    fastapi_module.FastAPI = APIRouter
-    fastapi_module.Query = _identity
-    fastapi_module.Header = _identity
-    fastapi_module.HTTPException = HTTPException
-    fastapi_module.Request = Request
-    fastapi_module.__file__ = __file__
-
-    responses_module = types.ModuleType("fastapi.responses")
-
-    class StreamingResponse:
-        def __init__(self, content, media_type=None):
-            self.content = content
-            self.media_type = media_type
-            """Initialize this object."""
-        """Represent StreamingResponse."""
-
-    responses_module.StreamingResponse = StreamingResponse
-    responses_module.__file__ = __file__
-
-    sys.modules["fastapi"] = fastapi_module
-    sys.modules["fastapi.responses"] = responses_module
-
-
-if "psycopg" not in sys.modules:
-    psycopg = types.ModuleType("psycopg")
-    rows_module = types.ModuleType("psycopg.rows")
-    conninfo_module = types.ModuleType("psycopg.conninfo")
-    types_module = types.ModuleType("psycopg.types")
-    json_module = types.ModuleType("psycopg.types.json")
-    sql_module = types.ModuleType("psycopg.sql")
-
-    def _dict_row(*args, **kwargs):  # pragma: no cover - placeholder
-        return {}
-        """Perform dict row."""
-
-    def _make_conninfo(*args, **kwargs):  # pragma: no cover - placeholder
-        return ""
-        """Perform make conninfo."""
-
-    class _Json(dict):  # pragma: no cover - metadata container
-        pass
-        """Represent Json."""
-
-    rows_module.dict_row = _dict_row
-    conninfo_module.make_conninfo = _make_conninfo
-    json_module.Json = _Json
-    json_module.json = _Json
-
-    class _Connection:  # pragma: no cover - placeholder connection type
-        def cursor(self, *a, **k):
-            return types.SimpleNamespace(
-                __enter__=lambda s: s,
-                __exit__=lambda s, *exc: None,
-                execute=lambda *args, **kwargs: None,
-                fetchone=lambda: None,
-                fetchall=lambda: [],
-            )
-            """Perform cursor."""
-        
-        def close(self): pass
-        """Represent Connection."""
-
-    # Fake connect for "from psycopg import connect"
-    def _fake_connect(*args, **kwargs):
-        return _Connection()
-        """Perform fake connect."""
-
-    psycopg.Connection = _Connection
-    psycopg.connect = _fake_connect
-    psycopg.rows = rows_module
-    psycopg.conninfo = conninfo_module
-    psycopg.types = types_module
-    psycopg.sql = sql_module
-
-    def _sql_identity(value):  # pragma: no cover - placeholder
-        return value
-        """Perform sql identity."""
-
-    sql_module.SQL = _sql_identity
-    sql_module.Identifier = _sql_identity
-    sql_module.Literal = _sql_identity
-
-    # Add __file__ attributes so pytest’s import machinery doesn’t choke
-    psycopg.__file__ = __file__
-    rows_module.__file__ = __file__
-    conninfo_module.__file__ = __file__
-    types_module.__file__ = __file__
-    json_module.__file__ = __file__
-    sql_module.__file__ = __file__
-
-    sys.modules["psycopg"] = psycopg
-    sys.modules["psycopg.rows"] = rows_module
-    sys.modules["psycopg.conninfo"] = conninfo_module
-    sys.modules["psycopg.types"] = types_module
-    sys.modules["psycopg.types.json"] = json_module
-    sys.modules["psycopg.sql"] = sql_module
-
-
-
-if "psycopg_pool" not in sys.modules:
-    psycopg_pool_module = types.ModuleType("psycopg_pool")
-
-    class ConnectionPool:  # pragma: no cover - stub implementation
-        def __init__(self, *args, **kwargs):
-            pass
-            """Initialize this object."""
-
-        def close(self) -> None:
-            pass
-            """Perform close."""
-        """Represent ConnectionPool."""
-
-    psycopg_pool_module.ConnectionPool = ConnectionPool
-
-    # add __file__ so pytest doesn’t complain
-    psycopg_pool_module.__file__ = __file__
-
-    sys.modules["psycopg_pool"] = psycopg_pool_module
-
-
-
-if "dropbox" not in sys.modules:
-    dropbox_module = types.ModuleType("dropbox")
-    exceptions_module = types.ModuleType("dropbox.exceptions")
-    files_module = types.ModuleType("dropbox.files")
-
-    class DropboxException(Exception):  # pragma: no cover - stub
-        pass
-        """Represent DropboxException."""
-
-    class AuthError(DropboxException):  # pragma: no cover - stub
-        pass
-        """Represent AuthError."""
-
-    class FileMetadata:  # pragma: no cover - stub type
-        def __init__(self, name: str = "stub", client_modified=None, path_display: str = "/stub"):
-            from datetime import datetime, timezone
-            self.name = name
-            self.client_modified = client_modified or datetime.now(timezone.utc)
-            self.path_display = path_display
-            """Initialize this object."""
-        """Represent FileMetadata."""
-
-    class ListFolderResult:  # pragma: no cover - stub type
-        def __init__(self, entries=None, cursor="cursor", has_more=False):
-            self.entries = entries or []
-            self.has_more = has_more
-            self.cursor = cursor
-            """Initialize this object."""
-        """Represent ListFolderResult."""
-
-    class Dropbox:  # pragma: no cover - stub client
-        def __init__(self, *args, **kwargs):
-            pass
-            """Initialize this object."""
-
-        def users_get_current_account(self):
-            return types.SimpleNamespace(name=types.SimpleNamespace(display_name="Stub"))
-            """Perform users get current account."""
-        """Represent Dropbox."""
-
-    dropbox_module.Dropbox = Dropbox
-    dropbox_module.exceptions = exceptions_module
-    dropbox_module.files = files_module
-    exceptions_module.AuthError = AuthError
-    exceptions_module.DropboxException = DropboxException
-    files_module.FileMetadata = FileMetadata
-    files_module.ListFolderResult = ListFolderResult
-
-    # Add __file__ attributes so pytest’s import/rewrite doesn’t choke
-    dropbox_module.__file__ = __file__
-    exceptions_module.__file__ = __file__
-    files_module.__file__ = __file__
-
-    sys.modules["dropbox"] = dropbox_module
-    sys.modules["dropbox.exceptions"] = exceptions_module
-    sys.modules["dropbox.files"] = files_module
-
-
-if "tenacity" not in sys.modules:
-    tenacity_module = types.ModuleType("tenacity")
-
-    class RetryError(Exception):  # pragma: no cover - stub
-        def __init__(self, last_attempt=None):
-            super().__init__("Retry failed")
-            self.last_attempt = last_attempt
-            """Initialize this object."""
-        """Represent RetryError."""
-
-    class RetryCallState:  # pragma: no cover - stub for logging hooks
-        def __init__(self, attempt_number: int = 1, exception: Exception | None = None, sleep: float = 0.0):
-            self.attempt_number = attempt_number
-            self.outcome = types.SimpleNamespace(exception=lambda: exception)
-            self.next_action = types.SimpleNamespace(sleep=sleep)
-            """Initialize this object."""
-        """Represent RetryCallState."""
-
-    class _WaitSpec:  # pragma: no cover - supports addition
-        def __add__(self, other):
-            return self
-            """Implement the `__add__` dunder method behavior."""
-        """Represent WaitSpec."""
-
-    class Retrying:  # pragma: no cover - simplistic retry shim
-        def __init__(self, *, before_sleep=None, reraise=True, **kwargs):
-            self._before_sleep = before_sleep
-            self._reraise = reraise
-            """Initialize this object."""
-
-        def __call__(self, func):
-            try:
-                return func()
-            except Exception as exc:  # pragma: no cover - fallback path
-                # Bind exc into the lambda so it's not lost after except scope
-                attempt = types.SimpleNamespace(exception=lambda exc=exc: exc)
-                if self._before_sleep:
-                    state = RetryCallState(exception=exc)
-                    self._before_sleep(state)
-                if self._reraise:
-                    raise RetryError(last_attempt=attempt) from exc
-                raise
-            """Implement the `__call__` dunder method behavior."""
-        """Represent Retrying."""
-
-    def stop_after_attempt(*args, **kwargs):  # pragma: no cover - metadata only
-        return None
-        """Perform stop after attempt."""
-
-    def wait_exponential(*args, **kwargs):  # pragma: no cover - metadata only
-        return _WaitSpec()
-        """Perform wait exponential."""
-
-    def wait_random(*args, **kwargs):  # pragma: no cover - metadata only
-        return _WaitSpec()
-        """Perform wait random."""
-
-    tenacity_module.RetryError = RetryError
-    tenacity_module.RetryCallState = RetryCallState
-    tenacity_module.Retrying = Retrying
-    tenacity_module.stop_after_attempt = stop_after_attempt
-    tenacity_module.wait_exponential = wait_exponential
-    tenacity_module.wait_random = wait_random
-
-    sys.modules["tenacity"] = tenacity_module
-
-
-if "requests" not in sys.modules:
-    requests_module = types.ModuleType("requests")
-    exceptions_module = types.ModuleType("requests.exceptions")
-
-    class RequestException(Exception):  # pragma: no cover - stub hierarchy
-        pass
-        """Represent RequestException."""
-
-    class HTTPError(RequestException):  # pragma: no cover - mimics requests.HTTPError
-        def __init__(self, message: str | None = None, *, response=None):
-            super().__init__(message or "HTTP error")
-            self.response = response
-            """Initialize this object."""
-        """Represent HTTPError."""
-
-    class Response:  # pragma: no cover - basic response container
-        def __init__(self, status_code: int = 200, json_data: dict | None = None):
-            self.status_code = status_code
-            self._json_data = json_data or {}
-            """Initialize this object."""
-
-        def json(self):
-            return self._json_data
-            """Perform json."""
-
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise HTTPError(f"HTTP {self.status_code}", response=self)
-            """Perform raise for status."""
-        """Represent Response."""
-
-    def _fake_get(*args, **kwargs):  # pragma: no cover - patched in tests
-        raise NotImplementedError
-        """Perform fake get."""
-
-    def _fake_post(*args, **kwargs):  # pragma: no cover - patched in tests
-        raise NotImplementedError
-        """Perform fake post."""
-
-    requests_module.get = _fake_get
-    requests_module.post = _fake_post
-    requests_module.Response = Response
-    requests_module.RequestException = RequestException
-    requests_module.HTTPError = HTTPError
-    requests_module.exceptions = exceptions_module
-    exceptions_module.RequestException = RequestException
-    exceptions_module.HTTPError = HTTPError
-
-    # add __file__
-    requests_module.__file__ = __file__
-    exceptions_module.__file__ = __file__
-
-    sys.modules["requests"] = requests_module
-    sys.modules["requests.exceptions"] = exceptions_module
-
-
-if "typer" not in sys.modules:
-    typer_module = types.ModuleType("typer")
-
-    class Exit(Exception):
-        def __init__(self, code: int = 0):
-            super().__init__(code)
-            self.exit_code = code
-            """Initialize this object."""
-        """Represent Exit."""
-
-    class TyperApp:
-        def __init__(self, *args, **kwargs):
-            self._commands: dict[str, callable] = {}
-            """Initialize this object."""
-
-        def command(self, name: str | None = None, **kwargs):
-            def decorator(func):
-                command_name = name or func.__name__.replace("_", "-")
-                self._commands[command_name] = func
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform command."""
-        """Represent TyperApp."""
-
-    def option(*args, **kwargs):
-        return {"args": args, "kwargs": kwargs}
-        """Perform option."""
-
-    def argument(*args, **kwargs):
-        return {"args": args, "kwargs": kwargs}
-        """Perform argument."""
-
-    _echo_messages: list[str] = []
-
-    def echo(message: object) -> None:
-        _echo_messages.append(str(message))
-        """Perform echo."""
-
-    typer_module.Exit = Exit
-    typer_module.Typer = TyperApp
-    typer_module.Option = option
-    typer_module.Argument = argument
-    typer_module.echo = echo
-    typer_module._echo_messages = _echo_messages
-
-    class CliResult:
-        def __init__(self, exit_code: int, stdout: str, exception: Exception | None = None):
-            self.exit_code = exit_code
-            self.stdout = stdout
-            self.exception = exception
-            """Initialize this object."""
-        """Represent CliResult."""
-
-    class CliRunner:
-        def invoke(self, app: TyperApp, args: list[str] | None = None, **kwargs):
-            """
-            Minimal stub of Click's CliRunner.invoke.
-            Accepts extra kwargs (e.g. catch_exceptions) for compatibility.
-            """
-            args = list(args or [])
-            if not args:
-                raise ValueError("A command name is required")
-
-            command_name = args[0]
-            func = app._commands.get(command_name)
-            if func is None:
-                raise ValueError(f"Unknown command: {command_name}")
-
-            kwargs_dict: dict[str, object] = {}
-            idx = 1
-            while idx < len(args):
-                token = args[idx]
-                if token.startswith("--"):
-                    key = token.lstrip("-").replace("-", "_")
-                    idx += 1
-                    if idx >= len(args):
-                        raise ValueError(f"Missing value for option {token}")
-                    value_token = args[idx]
-                    if value_token.lower() in {"true", "false"}:
-                        value: object = value_token.lower() == "true"
-                    else:
-                        try:
-                            value = int(value_token)
-                        except ValueError:
-                            try:
-                                value = float(value_token)
-                            except ValueError:
-                                value = value_token
-                    kwargs_dict[key] = value
-                else:
-                    kwargs_dict.setdefault("_args", []).append(token)
-                idx += 1
-
-            typer_module._echo_messages.clear()
-            try:
-                if "_args" in kwargs_dict:
-                    positional = kwargs_dict.pop("_args")
-                    result = func(*positional, **kwargs_dict)
-                else:
-                    result = func(**kwargs_dict)
-            except Exit as exc:
-                stdout = "\n".join(typer_module._echo_messages)
-                if stdout:
-                    stdout += "\n"
-                return CliResult(exc.exit_code, stdout)
-            except Exception as exc:
-                stdout = "\n".join(typer_module._echo_messages)
-                if stdout:
-                    stdout += "\n"
-                return CliResult(1, stdout, exception=exc)
-
-            stdout = "\n".join(typer_module._echo_messages)
-            if stdout:
-                stdout += "\n"
-            return CliResult(0, stdout, exception=None if result is None else result)
-        """Represent CliRunner."""
-
-    testing_module = types.ModuleType("typer.testing")
-    testing_module.CliRunner = CliRunner
-    typer_module.testing = testing_module
-
-    # add __file__ attributes
-    typer_module.__file__ = __file__
-    testing_module.__file__ = __file__
-
-    sys.modules["typer"] = typer_module
-    sys.modules["typer.testing"] = testing_module
-
-    models_module = types.ModuleType("typer.models")
-    models_module.Option = option
-    models_module.Argument = argument
-    models_module.__file__ = __file__
-    typer_module.models = models_module
-
-    sys.modules["typer"] = typer_module
-    sys.modules["typer.testing"] = testing_module
-    sys.modules["typer.models"] = models_module
-
-_DEFAULT_ENV = {
+ISOLATED_ENV_FILE = ROOT / ".pytest-no-env"
+
+# Test collection imports modules that construct the settings singleton. Set a
+# complete, unmistakably non-production environment before those imports and
+# point Pydantic Settings away from the developer's repository-local ``.env``.
+_TEST_ENV = {
+    "ENVIRONMENT": "testing",
+    "PETEEEBOT_ENV_FILE": str(ISOLATED_ENV_FILE),
     "USER_DATE_OF_BIRTH": "1990-01-01",
     "USER_HEIGHT_CM": "180",
     "USER_GOAL_WEIGHT_KG": "80",
-    "TELEGRAM_TOKEN": "dummy",
+    "TELEGRAM_TOKEN": "test-telegram-token",
     "TELEGRAM_CHAT_ID": "123456",
     "WITHINGS_CLIENT_ID": "",
     "WITHINGS_CLIENT_SECRET": "",
     "WITHINGS_REDIRECT_URI": "",
     "WITHINGS_REFRESH_TOKEN": "",
-    "WGER_API_KEY": "dummy",
+    "WGER_API_KEY": "test-wger-key",
     "DROPBOX_HEALTH_METRICS_DIR": "/health",
     "DROPBOX_WORKOUTS_DIR": "/workouts",
     "DROPBOX_APP_KEY": "",
@@ -587,19 +34,36 @@ _DEFAULT_ENV = {
     "DROPBOX_REFRESH_TOKEN": "",
     "APPLE_MAX_STALE_DAYS": "3",
     "WITHINGS_ALERT_REAUTH": "true",
-    "POSTGRES_USER": "postgres",
-    "POSTGRES_PASSWORD": "postgres",
-    "POSTGRES_HOST": "localhost",
-    "POSTGRES_DB": "postgres",
-    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/postgres",
+    "POSTGRES_USER": "pete_test",
+    "POSTGRES_PASSWORD": "pete_test",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "POSTGRES_DB": "pete_e_test_unreachable",
+    "DATABASE_URL": (
+        "postgresql://pete_test:pete_test@127.0.0.1:1/"
+        "pete_e_test_unreachable?connect_timeout=1"
+    ),
+    "PETEEEBOT_API_KEY": "test-api-key",
+    "PETE_LOG_TO_CONSOLE": "false",
 }
-
-for _key, _value in _DEFAULT_ENV.items():
-    os.environ.setdefault(_key, _value)
+os.environ.update(_TEST_ENV)
 
 
-def pytest_configure():
-    """Ensure environment variables are populated for settings initialisation."""
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register the explicit opt-in for destructive disposable-DB setup."""
 
-    for key, value in _DEFAULT_ENV.items():
-        os.environ.setdefault(key, value)
+    parser.addoption(
+        "--run-postgres",
+        action="store_true",
+        default=False,
+        help="run PostgreSQL integration tests against PETEEEBOT_TEST_DATABASE_URL",
+    )
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Classify all otherwise-unmarked tests into the fast unit lane."""
+
+    lane_names = {"unit", "contract", "integration", "artifact"}
+    for item in items:
+        if not any(item.get_closest_marker(name) is not None for name in lane_names):
+            item.add_marker(pytest.mark.unit)

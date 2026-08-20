@@ -1,8 +1,14 @@
 from datetime import date
+from pathlib import Path
+
 import pytest
+from pydantic import ValidationError
 from psycopg.conninfo import make_conninfo
 
 from pete_e.config.config import CONFIG_FILE, Settings, _discover_project_root
+
+
+pytestmark = pytest.mark.contract
 
 
 @pytest.fixture()
@@ -85,6 +91,51 @@ def test_explicit_env_file_does_not_replace_code_root(monkeypatch: pytest.Monkey
     """Perform test explicit env file does not replace code root."""
 
 
+def test_settings_load_real_typed_values_from_isolated_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    base_settings_data: dict,
+) -> None:
+    for key in base_settings_data:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DB_HOST_OVERRIDE", raising=False)
+
+    env_file = tmp_path / "settings.env"
+    env_file.write_text(
+        "\n".join(f"{key}={value}" for key, value in base_settings_data.items()),
+        encoding="utf-8",
+    )
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.USER_DATE_OF_BIRTH == date(1990, 1, 1)
+    assert settings.USER_HEIGHT_CM == 180
+    assert settings.USER_GOAL_WEIGHT_KG == 80.0
+    assert settings.POSTGRES_PASSWORD.get_secret_value() == "postgres-password"
+    assert "dbname=postgres-db" in settings.DATABASE_URL
+
+
+def test_settings_reject_invalid_typed_value_from_isolated_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+    base_settings_data: dict,
+) -> None:
+    for key in base_settings_data:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    invalid_data = {**base_settings_data, "USER_HEIGHT_CM": "not-an-integer"}
+    env_file = tmp_path / "invalid-settings.env"
+    env_file.write_text(
+        "\n".join(f"{key}={value}" for key, value in invalid_data.items()),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=env_file)
+
+
 def test_log_path_fallback_notice_is_consumed_once(
     monkeypatch: pytest.MonkeyPatch,
     base_settings_data: dict,
@@ -127,10 +178,10 @@ def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: d
     assert settings.BACKUP_CLOUD_UPLOAD is True
     assert settings.DROPBOX_BACKUP_DIR == "/Pete-Eebot Backups"
     assert settings.BACKUP_ENCRYPTION_KEY_FILE is not None
-    assert str(settings.BACKUP_ENCRYPTION_KEY_FILE) == "/opt/myapp/shared/.backup_key"
-    assert str(settings.PETEEEBOT_ENV_FILE) == "/opt/myapp/shared/.env"
-    assert str(settings.WITHINGS_TOKEN_FILE) == "/opt/myapp/shared/runtime/withings/.withings_tokens.json"
-    assert str(settings.PETEEEBOT_CLI_BIN) == "/opt/myapp/shared/venv/bin/pete"
+    assert settings.BACKUP_ENCRYPTION_KEY_FILE == Path("/opt/myapp/shared/.backup_key")
+    assert settings.PETEEEBOT_ENV_FILE == Path("/opt/myapp/shared/.env")
+    assert settings.WITHINGS_TOKEN_FILE == Path("/opt/myapp/shared/runtime/withings/.withings_tokens.json")
+    assert Path(settings.PETEEEBOT_CLI_BIN) == Path("/opt/myapp/shared/venv/bin/pete")
     assert settings.PETEEEBOT_RESTART_TIMEOUT_SECONDS == 30
     assert settings.PETEEEBOT_PLANNER_FEATURE_FLAGS == ""
     """Perform test operational cron and backup settings are accepted."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import List
 
-import mocks.requests_mock
+from requests import HTTPError
 
 from unittest.mock import Mock
 
@@ -22,7 +22,7 @@ class DummyResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise mocks.requests_mock.HTTPError(response=self)
+            raise HTTPError(response=self)
         """Perform raise for status."""
 
     def json(self) -> dict:
