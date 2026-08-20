@@ -1,129 +1,74 @@
-import sys
-import types
+from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-
-# Provide a very small ``fastapi`` stub so the API module can be imported in tests
-
-
-if "fastapi" not in sys.modules:
-    fastapi_module = types.ModuleType("fastapi")
-
-    class HTTPException(Exception):
-        def __init__(self, status_code: int, detail: str | None = None):
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-            """Initialize this object."""
-        """Represent HTTPException."""
-
-    class Request:
-        def __init__(self, query_params: dict | None = None):
-            self.query_params = query_params or {}
-            """Initialize this object."""
-        """Represent Request."""
-
-    def _identity(value=None, **kwargs):
-        return value
-        """Perform identity."""
-
-    class FastAPI:
-        def __init__(self, *args, **kwargs):
-            pass
-            """Initialize this object."""
-
-        def get(self, *args, **kwargs):
-            def decorator(func):
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform get."""
-
-        def post(self, *args, **kwargs):
-            def decorator(func):
-                return func
-                """Perform decorator."""
-            return decorator
-            """Perform post."""
-        """Represent FastAPI."""
-
-    fastapi_module.FastAPI = FastAPI
-    fastapi_module.Query = _identity
-    fastapi_module.Header = _identity
-    fastapi_module.HTTPException = HTTPException
-    fastapi_module.Request = Request
-
-    responses_module = types.ModuleType("fastapi.responses")
-
-    class StreamingResponse:  # pragma: no cover - unused in these tests
-        def __init__(self, content, media_type=None):
-            self.content = content
-            self.media_type = media_type
-            """Initialize this object."""
-        """Represent StreamingResponse."""
-
-    responses_module.StreamingResponse = StreamingResponse
-
-    sys.modules["fastapi"] = fastapi_module
-    sys.modules["fastapi.responses"] = responses_module
-
-
 from pete_e import api
+from pete_e.api_routes import dependencies, logs_webhooks, status_sync
 from pete_e.application.exceptions import DataAccessError, ValidationError
+from pete_e.application.sync import SyncResult
 from pete_e.cli import messenger as cli
 from pete_e.cli.status import CheckResult
-from pete_e.application.sync import SyncResult
+
+
+pytestmark = pytest.mark.contract
 
 
 @pytest.fixture()
-def request_stub() -> api.Request:
-    return api.Request({})
-    """Perform request stub."""
+def client(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key")
+    with TestClient(api.app) as test_client:
+        yield test_client
 
 
-@pytest.fixture()
-def enable_api_key(monkeypatch):
-    monkeypatch.setattr(api.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    """Perform enable api key."""
-
-
-def test_status_endpoint_returns_checks(enable_api_key, request_stub, monkeypatch):
+def test_status_endpoint_returns_checks(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     checks = [
         CheckResult(name="DB", ok=True, detail="5ms"),
         CheckResult(name="Dropbox", ok=False, detail="timeout"),
     ]
 
-    class _StatusService:
+    class _StatusServiceFake:
         def run_checks(self, timeout: float):
             assert timeout == 1.5
             return checks
-            """Perform run checks."""
-        """Represent StatusService."""
 
-    monkeypatch.setattr(api, "get_status_service", lambda: _StatusService())
+    monkeypatch.setattr(status_sync, "get_status_service", lambda: _StatusServiceFake())
+    monkeypatch.setattr(
+        status_sync.alerts,
+        "emit_auth_expiry_if_needed",
+        lambda **_kwargs: None,
+    )
 
-    payload = api.status(request=request_stub, x_api_key="test-key", timeout=1.5)
+    response = client.get(
+        "/api/v1/status",
+        params={"timeout": "1.5"},
+        headers={"X-API-Key": "test-key"},
+    )
 
-    assert payload["ok"] is False
-    assert payload["checks"] == [
+    assert response.status_code == 200
+    assert response.json()["ok"] is False
+    assert response.json()["checks"] == [
         {"name": "DB", "ok": True, "detail": "5ms"},
         {"name": "Dropbox", "ok": False, "detail": "timeout"},
     ]
-    assert "Dropbox" in payload["summary"]
-    """Perform test status endpoint returns checks."""
+    assert "Dropbox" in response.json()["summary"]
 
 
-def test_status_endpoint_requires_valid_api_key(request_stub, enable_api_key):
-    with pytest.raises(api.HTTPException) as exc:
-        api.status(request=request_stub, x_api_key=None)
+def test_status_endpoint_requires_valid_api_key(client: TestClient):
+    response = client.get("/api/v1/status")
 
-    assert exc.value.status_code == 401
-    """Perform test status endpoint requires valid api key."""
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
 
 
-def test_sync_endpoint_returns_sync_result(enable_api_key, request_stub, monkeypatch):
+def test_sync_endpoint_returns_sync_result(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
     captured: dict[str, tuple[int, int]] = {}
 
     def fake_sync(days: int, retries: int):
@@ -136,38 +81,58 @@ def test_sync_endpoint_returns_sync_result(enable_api_key, request_stub, monkeyp
             label="daily",
             undelivered_alerts=["Alert A"],
         )
-        """Perform fake sync."""
 
-    monkeypatch.setattr(api, "run_sync_with_retries", fake_sync)
+    class _JobServiceFake:
+        def run_callback(self, *, callback, **_kwargs):
+            return callback()
 
-    payload = api.sync(
-        request=request_stub,
-        x_api_key="test-key",
-        days=3,
-        retries=1,
+        def record_command_event(self, **_kwargs):
+            return None
+
+    monkeypatch.setattr(status_sync, "run_sync_with_retries", fake_sync)
+    monkeypatch.setattr(status_sync, "get_job_service", lambda: _JobServiceFake())
+    monkeypatch.setattr(status_sync, "prepare_job_context", lambda *_args: "sync-test-job")
+    monkeypatch.setattr(status_sync, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(status_sync, "audit_command_event", lambda *_args, **_kwargs: None)
+
+    response = client.post(
+        "/api/v1/sync",
+        params={"days": "3", "retries": "1"},
+        headers={"X-API-Key": "test-key"},
     )
 
+    assert response.status_code == 200
     assert captured["args"] == (3, 1)
-    assert payload["success"] is True
-    assert payload["attempts"] == 2
-    assert payload["failed_sources"] == ["Dropbox"]
-    assert payload["source_statuses"]["Withings"] == "ok"
-    assert "Alert A" in payload["undelivered_alerts"]
-    assert "Sync summary" in payload["summary"]
-    """Perform test sync endpoint returns sync result."""
+    assert response.json()["success"] is True
+    assert response.json()["attempts"] == 2
+    assert response.json()["failed_sources"] == ["Dropbox"]
+    assert response.json()["source_statuses"]["Withings"] == "ok"
+    assert "Alert A" in response.json()["undelivered_alerts"]
+    assert response.json()["job_id"] == "sync-test-job"
 
 
-def test_logs_endpoint_returns_tail(enable_api_key, request_stub, tmp_path, monkeypatch):
+def test_logs_endpoint_returns_tail(
+    client: TestClient,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     log_path = tmp_path / "pete_history.log"
     log_path.write_text("line1\nline2\nline3\nline4\n", encoding="utf-8")
+    monkeypatch.setattr(
+        type(logs_webhooks.settings),
+        "log_path",
+        property(lambda self: log_path),
+    )
 
-    monkeypatch.setattr(type(api.settings), "log_path", property(lambda self: log_path))
+    response = client.get(
+        "/api/v1/logs",
+        params={"lines": "2"},
+        headers={"X-API-Key": "test-key"},
+    )
 
-    payload = api.logs(request=request_stub, x_api_key="test-key", lines=2)
-
-    assert payload["path"].endswith("pete_history.log")
-    assert payload["lines"] == ["line3", "line4"]
-    """Perform test logs endpoint returns tail."""
+    assert response.status_code == 200
+    assert response.json()["path"].endswith("pete_history.log")
+    assert response.json()["lines"] == ["line3", "line4"]
 
 
 def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -175,15 +140,18 @@ def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch)
 
     def _explode(*_args, **_kwargs):
         raise DataAccessError("database offline")
-        """Perform explode."""
 
     monkeypatch.setattr(cli, "run_sync_with_retries", _explode)
+    monkeypatch.setattr(
+        cli,
+        "_run_cli_application_job",
+        lambda *, callback, **_kwargs: callback(),
+    )
 
     result = runner.invoke(cli.app, ["sync"])
 
     assert result.exit_code == 4
     assert "Manual sync failed: database offline" in result.stdout
-    """Perform test sync command handles data access error."""
 
 
 def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,8 +160,9 @@ def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) 
     class _ExplodingOrchestrator:
         def generate_and_deploy_next_plan(self, start_date, weeks):  # noqa: ARG002
             raise ValidationError("plan validation failed")
-            """Perform generate and deploy next plan."""
-        """Represent ExplodingOrchestrator."""
+
+        def close(self):
+            return None
 
     monkeypatch.setattr(cli, "_build_orchestrator", lambda: _ExplodingOrchestrator())
 
@@ -201,5 +170,3 @@ def test_plan_command_handles_validation_error(monkeypatch: pytest.MonkeyPatch) 
 
     assert result.exit_code == 2
     assert "Plan deployment failed: plan validation failed" in result.stdout
-    """Perform test plan command handles validation error."""
-

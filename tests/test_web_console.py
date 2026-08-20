@@ -918,6 +918,10 @@ def test_status_service_falls_back_to_latest_sync_job_summary_when_log_missing(
 def test_operator_nav_shows_operator_page_but_hides_owner_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _UserService(_user(ROLE_OPERATOR))
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "get_status_service", lambda: _StatusService())
+    monkeypatch.setattr(dependencies, "get_metrics_service", lambda: _MetricsService())
+    monkeypatch.setattr(dependencies, "get_plan_service", lambda: _PlanService())
+    monkeypatch.setattr(dependencies, "get_nutrition_service", lambda: _NutritionService())
 
     response = web.console_plan(_Request(path="/console/plan", cookies={dependencies.session_cookie_name(): service.token}))
 
@@ -1139,6 +1143,7 @@ def test_console_command_requires_operator_role_before_execution(monkeypatch: py
     service = _UserService(_user(ROLE_READ_ONLY))
     csrf_token = dependencies.generate_csrf_token(service.token)
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "audit_command_event", lambda *_args, **_kwargs: None)
 
     with pytest.raises(web.HTTPException) as exc:
         web.console_run_sync(
@@ -1160,6 +1165,7 @@ def test_console_command_requires_operator_role_before_execution(monkeypatch: py
 def test_console_command_requires_csrf_before_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _UserService(_user(ROLE_OPERATOR))
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "audit_command_event", lambda *_args, **_kwargs: None)
 
     with pytest.raises(web.HTTPException) as exc:
         web.console_run_sync(

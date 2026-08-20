@@ -6,8 +6,6 @@ import pytest
 # Import the new classes and modules that are now used
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain.repositories import PlanRepository
-import tests.config_stub  # noqa: F401
-
 from pete_e.domain.validation import assess_recovery_and_backoff
 
 

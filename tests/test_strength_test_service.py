@@ -5,8 +5,6 @@ from typing import Any, Dict, List
 
 import pytest
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.application.services import PlanService
 from pete_e.application.strength_test import StrengthTestService
 from pete_e.domain import schedule_rules

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import fastapi
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 
 from pete_e.api_routes.dependencies import (
     clear_session_cookies,
@@ -22,8 +22,7 @@ from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_logging import session_fingerprint
 from pete_e.infrastructure import log_utils
 
-Response = getattr(fastapi, "Response", object)
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 def _client_ip(request: Request) -> str | None:

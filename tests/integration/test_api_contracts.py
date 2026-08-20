@@ -1,77 +1,26 @@
 from __future__ import annotations
 
-import sys
-import types
+import pytest
+from fastapi.testclient import TestClient
 
-if "fastapi" not in sys.modules:
-    fastapi_module = types.ModuleType("fastapi")
-
-    class HTTPException(Exception):
-        def __init__(self, status_code: int, detail: str | None = None):
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    class Request:
-        def __init__(self, query_params: dict | None = None):
-            self.query_params = query_params or {}
-
-    def _identity(value=None, **kwargs):
-        return value
-
-    class APIRouter:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def get(self, *args, **kwargs):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def post(self, *args, **kwargs):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def patch(self, *args, **kwargs):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def include_router(self, *args, **kwargs):
-            return None
-
-    fastapi_module.APIRouter = APIRouter
-    fastapi_module.FastAPI = APIRouter
-    fastapi_module.Query = _identity
-    fastapi_module.Header = _identity
-    fastapi_module.HTTPException = HTTPException
-    fastapi_module.Request = Request
-
-    responses_module = types.ModuleType("fastapi.responses")
-    responses_module.StreamingResponse = object
-
-    sys.modules["fastapi"] = fastapi_module
-    sys.modules["fastapi.responses"] = responses_module
-
-from pete_e.api_routes import dependencies, metrics, nutrition, plan
 from pete_e import api
+from pete_e.api_routes import dependencies, metrics, nutrition, plan
 
 
-class _StubMetricsService:
+pytestmark = pytest.mark.contract
+
+
+class _MetricsServiceFake:
     def overview(self, date: str):
         return {"columns": ["date", "value"], "rows": [[date, 42]]}
 
 
-class _StubPlanService:
+class _PlanServiceFake:
     def for_day(self, date: str):
         return {"columns": ["date", "session"], "rows": [[date, "A"]]}
 
 
-class _StubNutritionService:
+class _NutritionServiceFake:
     def log_macros(self, payload):
         return {
             "id": 1,
@@ -84,7 +33,17 @@ class _StubNutritionService:
         }
 
     def update_log(self, log_id: int, payload):
-        return {"id": log_id, "protein_g": 10, "carbs_g": 20, "fat_g": 5, "alcohol_g": payload.get("alcohol_g", 0), "estimated_total_calories": payload.get("estimated_total_calories"), "calories_est": payload.get("estimated_total_calories", 165), "duplicate": False, "warnings": []}
+        return {
+            "id": log_id,
+            "protein_g": 10,
+            "carbs_g": 20,
+            "fat_g": 5,
+            "alcohol_g": payload.get("alcohol_g", 0),
+            "estimated_total_calories": payload.get("estimated_total_calories"),
+            "calories_est": payload.get("estimated_total_calories", 165),
+            "duplicate": False,
+            "warnings": [],
+        }
 
     def daily_summary(self, date: str):
         return {
@@ -99,10 +58,21 @@ class _StubNutritionService:
         }
 
 
+@pytest.fixture()
+def client(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key")
+    with TestClient(api.app) as test_client:
+        yield test_client
+
+
+def _auth_headers() -> dict[str, str]:
+    return {"X-API-Key": "test-key"}
+
+
 def test_api_v1_mounts_key_read_routes():
     mounted_routes = {
         (method, route.path)
-        for route in getattr(api.app, "routes", [])
+        for route in api.app.routes
         for method in getattr(route, "methods", set())
     }
 
@@ -129,7 +99,7 @@ def test_api_v1_mounts_key_read_routes():
 def test_legacy_routes_remain_mounted_during_v1_transition():
     mounted_routes = {
         (method, route.path)
-        for route in getattr(api.app, "routes", [])
+        for route in api.app.routes
         for method in getattr(route, "methods", set())
     }
 
@@ -138,73 +108,91 @@ def test_legacy_routes_remain_mounted_during_v1_transition():
     assert ("GET", "/nutrition/daily-summary") in mounted_routes
 
 
-def test_metrics_overview_contract_shape(monkeypatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    monkeypatch.setattr(metrics, "get_metrics_service", lambda: _StubMetricsService())
+def test_metrics_overview_contract_shape(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(metrics, "get_metrics_service", lambda: _MetricsServiceFake())
 
-    payload = metrics.metrics_overview(
-        request=metrics.Request({}),
-        date="2024-01-01",
-        x_api_key="test-key",
+    response = client.get(
+        "/api/v1/metrics_overview",
+        params={"date": "2024-01-01"},
+        headers=_auth_headers(),
     )
 
-    assert set(payload.keys()) == {"columns", "rows"}
-    assert payload["columns"] == ["date", "value"]
+    assert response.status_code == 200
+    assert response.json() == {
+        "columns": ["date", "value"],
+        "rows": [["2024-01-01", 42]],
+    }
 
 
-def test_plan_for_day_contract_and_auth(monkeypatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    monkeypatch.setattr(plan, "get_plan_service", lambda: _StubPlanService())
+def test_plan_for_day_contract_and_auth(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(plan, "get_plan_service", lambda: _PlanServiceFake())
 
-    with_auth = plan.plan_for_day(
-        request=plan.Request({}),
-        date="2024-02-02",
-        x_api_key="test-key",
+    response = client.get(
+        "/api/v1/plan_for_day",
+        params={"date": "2024-02-02"},
+        headers=_auth_headers(),
+    )
+    unauthorized = client.get(
+        "/api/v1/plan_for_day",
+        params={"date": "2024-02-02"},
     )
 
-    assert set(with_auth.keys()) == {"columns", "rows"}
-    assert with_auth["rows"] == [["2024-02-02", "A"]]
+    assert response.status_code == 200
+    assert response.json() == {
+        "columns": ["date", "session"],
+        "rows": [["2024-02-02", "A"]],
+    }
+    assert unauthorized.status_code == 401
+    assert unauthorized.json()["error"]["code"] == "unauthorized"
 
 
-def test_nutrition_log_macros_contract(monkeypatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+def test_required_query_parameter_uses_fastapi_validation(client: TestClient):
+    response = client.get("/api/v1/metrics_overview", headers=_auth_headers())
 
-    payload = nutrition.log_macros(
-        request=nutrition.Request({}),
-        payload={"protein_g": 40, "carbs_g": 65, "fat_g": 18},
-        x_api_key="test-key",
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_nutrition_log_macros_contract(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _NutritionServiceFake())
+    monkeypatch.setattr(nutrition, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
+
+    response = client.post(
+        "/api/v1/nutrition/log-macros",
+        json={"protein_g": 40, "carbs_g": 65, "fat_g": 18},
+        headers=_auth_headers(),
     )
 
-    assert payload["id"] == 1
-    assert payload["calories_est"] == 582
-    assert payload["duplicate"] is False
+    assert response.status_code == 200
+    assert response.json()["id"] == 1
+    assert response.json()["calories_est"] == 582
+    assert response.json()["duplicate"] is False
 
 
-def test_nutrition_daily_summary_contract(monkeypatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+def test_nutrition_daily_summary_contract(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _NutritionServiceFake())
 
-    payload = nutrition.nutrition_daily_summary(
-        request=nutrition.Request({}),
-        date="2026-05-05",
-        x_api_key="test-key",
+    response = client.get(
+        "/api/v1/nutrition/daily-summary",
+        params={"date": "2026-05-05"},
+        headers=_auth_headers(),
     )
 
-    assert payload["date"] == "2026-05-05"
-    assert payload["meals_logged"] == 4
+    assert response.status_code == 200
+    assert response.json()["date"] == "2026-05-05"
+    assert response.json()["meals_logged"] == 4
 
 
-def test_nutrition_patch_contract(monkeypatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key", raising=False)
-    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _StubNutritionService())
+def test_nutrition_patch_contract(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(nutrition, "get_nutrition_service", lambda: _NutritionServiceFake())
+    monkeypatch.setattr(nutrition, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
 
-    payload = nutrition.update_nutrition_log(
-        log_id=6,
-        request=nutrition.Request({}),
-        payload={"alcohol_g": 18, "estimated_total_calories": 150},
-        x_api_key="test-key",
+    response = client.patch(
+        "/api/v1/nutrition/log-macros/6",
+        json={"alcohol_g": 18, "estimated_total_calories": 150},
+        headers=_auth_headers(),
     )
 
-    assert payload["id"] == 6
-    assert payload["calories_est"] == 150
+    assert response.status_code == 200
+    assert response.json()["id"] == 6
+    assert response.json()["calories_est"] == 150

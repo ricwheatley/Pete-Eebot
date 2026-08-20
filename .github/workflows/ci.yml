@@ -1,29 +1,18 @@
-name: CI – Pete-Eebot
+name: CI - Pete-Eebot
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-test:
+  unit-and-contract:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: pete_ci
-          POSTGRES_USER: pete_ci
-          POSTGRES_PASSWORD: pete_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U pete_ci -d pete_ci"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    timeout-minutes: 15
     steps:
       - name: Check out code
         uses: actions/checkout@v4
@@ -33,51 +22,99 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install the known test dependency set
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev]"
+          python -m pip check
 
-      - name: Lint Critical Modules
+      - name: Lint critical modules
         run: |
           python -m ruff check \
             pete_e/api.py \
+            pete_e/api_errors.py \
+            pete_e/api_security.py \
+            pete_e/api_routes \
             pete_e/application/orchestrator.py \
             pete_e/application/plan_generation.py \
+            pete_e/application/sync.py \
             pete_e/config/config.py \
             pete_e/infrastructure/postgres_dal.py \
             pete_e/logging_setup.py \
+            tests/conftest.py \
             tests/config/test_settings.py \
+            tests/integration/conftest.py \
+            tests/integration/test_api_contracts.py \
+            tests/integration/test_postgres_integration.py \
+            tests/postgres_safety.py \
             tests/test_api_cli_commands.py \
-            tests/test_orchestrator.py \
-            tests/test_plan_generation.py \
-            tests/test_postgres_dal.py \
-            tests/test_schema_integrations.py
+            tests/test_dependency_imports.py \
+            tests/test_installed_artifact.py \
+            tests/test_postgres_safety.py \
+            tests/test_tenacity_contract.py
 
-      - name: Schema Smoke Test
+      - name: Run unit lane
+        run: python -m pytest -q -m unit
+
+      - name: Run real-framework contract lane
+        run: python -m pytest -q -m contract
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15
         env:
-          PGHOST: 127.0.0.1
-          PGPORT: 5432
-          PGUSER: pete_ci
-          PGPASSWORD: pete_ci
-          PGDATABASE: pete_ci
+          POSTGRES_DB: pete_e_test_ci
+          POSTGRES_USER: pete_test
+          POSTGRES_PASSWORD: pete_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pete_test -d pete_e_test_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the known test dependency set
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import psycopg
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev]"
+          python -m pip check
 
-          schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+      - name: Run disposable PostgreSQL lane
+        env:
+          PETEEEBOT_TEST_DATABASE_URL: postgresql://pete_test:pete_test@127.0.0.1:5432/pete_e_test_ci
+        run: python -m pytest -q -m integration --run-postgres
 
-          with psycopg.connect(
-              "dbname=pete_ci user=pete_ci password=pete_ci host=127.0.0.1 port=5432"
-          ) as conn:
-              with conn.cursor() as cur:
-                  cur.execute(schema_sql)
-                  cur.execute(
-                      "SELECT to_regclass('public.training_plans'), to_regclass('public.core_pool'), to_regclass('public.withings_measure_groups');"
-                  )
-                  assert cur.fetchone() == ("training_plans", "core_pool", "withings_measure_groups")
-          PY
+  installed-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
 
-      - name: Run tests
-        run: pytest -q
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev]"
+
+      - name: Build, install, and smoke the wheel outside the checkout
+        run: python -m pytest -q -m artifact

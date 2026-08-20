@@ -3,8 +3,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import date
 
-import tests.config_stub  # noqa: F401
-
 from pete_e.application.plan_generation import PlanGenerationService
 
 

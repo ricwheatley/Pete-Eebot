@@ -1,4 +1,4 @@
-"""Focused regressions that deliberately bypass the repository's legacy dependency stubs."""
+"""Focused end-to-end regressions using the installed framework stack."""
 
 from __future__ import annotations
 
@@ -32,13 +32,14 @@ _TEST_ENV = {
     "WITHINGS_ALERT_REAUTH": "true",
     "POSTGRES_USER": "postgres",
     "POSTGRES_PASSWORD": "postgres",
-    "POSTGRES_HOST": "localhost",
-    "POSTGRES_DB": "postgres",
-    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/postgres",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "POSTGRES_DB": "pete_e_test_unreachable",
+    "DATABASE_URL": "postgresql://pete_test:pete_test@127.0.0.1:1/pete_e_test_unreachable",
+    "PETEEEBOT_ENV_FILE": str(Path(__file__).resolve().parents[1] / ".pytest-no-env"),
     "PETE_LOG_TO_CONSOLE": "false",
 }
-for _key, _value in _TEST_ENV.items():
-    os.environ.setdefault(_key, _value)
+os.environ.update(_TEST_ENV)
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -520,7 +521,8 @@ def main() -> None:
         "typer": str(Path(typer.__file__).resolve()),
         "tenacity": str(Path(tenacity.__file__).resolve()),
     }
-    assert all("tests\\conftest.py" not in path for path in module_files.values())
+    tests_dir = Path(__file__).resolve().parent
+    assert all(tests_dir not in Path(path).parents for path in module_files.values())
     payload = {
         "versions": {
             "fastapi": version("fastapi"),

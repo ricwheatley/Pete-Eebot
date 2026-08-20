@@ -6,8 +6,6 @@ from pete_e.config import settings
 from pete_e.domain.entities import Exercise, Week, Workout
 from pete_e.domain.progression import apply_progression
 
-from tests import config_stub  # noqa: F401 - ensure pete_e.config is stubbed
-
 
 def make_metrics(rhr: float, sleep: float, days: int) -> List[Dict[str, Any]]:
     return [

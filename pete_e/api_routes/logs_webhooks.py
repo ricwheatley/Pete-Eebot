@@ -18,7 +18,7 @@ from pete_e.api_routes.dependencies import (
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.config import settings
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 def read_recent_log_lines(lines: int) -> dict[str, object]:

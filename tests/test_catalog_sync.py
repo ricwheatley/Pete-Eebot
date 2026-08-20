@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tests.config_stub  # noqa: F401
 
 from pete_e.application.catalog_sync import CatalogSyncService
 from pete_e.domain import schedule_rules

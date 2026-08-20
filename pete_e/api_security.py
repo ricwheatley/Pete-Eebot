@@ -5,11 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pete_e.config import get_env
-
-try:  # pragma: no cover - exercised with real FastAPI/Starlette installed.
-    from starlette.middleware.cors import CORSMiddleware
-except ImportError:  # pragma: no cover - tests use lightweight API stubs.
-    CORSMiddleware = None  # type: ignore[assignment]
+from starlette.middleware.cors import CORSMiddleware
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
@@ -45,10 +41,9 @@ async def security_headers_middleware(request, call_next):
 
 
 def install_security_middleware(api_app: Any) -> None:
-    add_middleware = getattr(api_app, "add_middleware", None)
     origins = configured_cors_origins()
-    if callable(add_middleware) and CORSMiddleware is not None and origins:
-        add_middleware(
+    if origins:
+        api_app.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
             allow_credentials=True,
@@ -63,9 +58,7 @@ def install_security_middleware(api_app: Any) -> None:
             max_age=600,
         )
 
-    middleware = getattr(api_app, "middleware", None)
-    if callable(middleware):
-        middleware("http")(security_headers_middleware)
+    api_app.middleware("http")(security_headers_middleware)
 
 
 __all__ = [

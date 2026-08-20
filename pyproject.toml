@@ -40,9 +40,21 @@ pete = "pete_e.cli.messenger:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["pete_e*"]
 
 [tool.setuptools.package-data]
 pete_e = [
     "templates/**/*.html",
     "static/**/*",
+    "resources/**/*.json",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "unit: fast domain/application tests with external boundaries replaced locally",
+    "contract: tests using the installed frameworks and their real parsing/request semantics",
+    "integration: tests requiring an explicitly opted-in disposable PostgreSQL database",
+    "artifact: tests that build and install the wheel outside the source checkout",
 ]

@@ -21,7 +21,7 @@ from pete_e.application.plan_duration import (
 )
 from pete_e.domain.auth import ROLE_OPERATOR
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 @router.get("/plan_for_day")

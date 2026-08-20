@@ -6,8 +6,6 @@ from datetime import date, timedelta
 import pytest
 
 from pete_e.domain import metrics_service
-from tests import config_stub  # noqa: F401 - ensure stub settings loaded
-
 
 @pytest.fixture
 def sample_series():

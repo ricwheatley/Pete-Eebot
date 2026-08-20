@@ -5,7 +5,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests import config_stub  # noqa: F401 - ensure stub settings loaded
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.infrastructure.telegram_client import TelegramClient
 from tests.di_utils import build_stub_container

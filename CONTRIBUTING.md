@@ -12,6 +12,13 @@ Pete-E centralises cross-cutting helpers inside `pete_e/utils/`. When adding or 
 
 Documenting these expectations ensures future contributors extend the utilities consistently and keeps shared helpers easy to discover.
 
+## Testing
+
+Install and run the real-dependency test lanes described in
+[`docs/testing.md`](docs/testing.md). Tests must fake application-owned ports
+locally; do not insert replacement third-party modules into `sys.modules`.
+PostgreSQL tests require the documented explicit disposable-database opt-in.
+
 ## Secret scanning
 
 Install Gitleaks 8.30.1 from its official release and verify the published checksum before use. Then run the repository policy before every push:

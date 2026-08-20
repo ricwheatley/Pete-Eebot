@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional, TypeVar
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from psycopg.conninfo import make_conninfo
 
 CONFIG_FILE = Path(__file__).resolve()
 
@@ -282,24 +283,7 @@ class Settings(BaseSettings):
 def _build_conninfo(params: dict[str, Any]) -> str:
     """Return a libpq-compatible connection string from keyword parameters."""
 
-    try:
-        from psycopg.conninfo import make_conninfo as _make_conninfo  # type: ignore
-
-        return _make_conninfo(**params)
-    except ModuleNotFoundError:
-        pass
-
-    def _quote(value: Any) -> str:
-        text = str(value)
-        if not text:
-            return "''"
-        if any(ch.isspace() for ch in text) or any(ch in "'\\" for ch in text):
-            escaped = text.replace("\\", "\\\\").replace("'", "\\'")
-            return f"'{escaped}'"
-        return text
-        """Perform quote."""
-
-    return " ".join(f"{key}={_quote(value)}" for key, value in params.items())
+    return make_conninfo(**params)
 
 
 settings = Settings()

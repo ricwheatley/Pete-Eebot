@@ -171,11 +171,15 @@ curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/statu
 Run tests:
 
 ```bash
-pytest
-pytest tests/domain -q
-pytest tests/application -q
-pytest tests/integration -q
+python -m pytest -q -m unit
+python -m pytest -q -m contract
+python -m pytest -q -m artifact
 ```
+
+The PostgreSQL lane is deliberately opt-in and accepts only a loopback DSN
+whose database name starts with `pete_e_test` and whose user contains `test`.
+See [docs/testing.md](docs/testing.md) for dependency setup, lane definitions,
+the disposable database command, and full-suite validation.
 
 ## Production Deployment
 

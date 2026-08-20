@@ -1,19 +1,6 @@
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
-try:
-    from fastapi.responses import JSONResponse, PlainTextResponse
-except ImportError:  # pragma: no cover - lightweight FastAPI stubs.
-
-    class JSONResponse:  # type: ignore[no-redef]
-        def __init__(self, content: dict, status_code: int = 200):
-            self.content = content
-            self.status_code = status_code
-            self.body = content
-
-    class PlainTextResponse:  # type: ignore[no-redef]
-        def __init__(self, content: str, media_type: str = "text/plain"):
-            self.body = content.encode("utf-8")
-            self.media_type = media_type
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from pete_e.api_routes.dependencies import (
     DEFAULT_SYNC_TIMEOUT_SECONDS,
@@ -31,7 +18,7 @@ from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
 from pete_e import observability
 from pete_e.domain.auth import ROLE_OPERATOR
 
-router = fastapi.APIRouter() if hasattr(fastapi, "APIRouter") else fastapi.FastAPI()
+router = fastapi.APIRouter()
 
 
 def _checks_payload(results):

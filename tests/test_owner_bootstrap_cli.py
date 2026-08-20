@@ -12,6 +12,15 @@ from pete_e.domain.auth import AuthUser, ROLE_OWNER
 
 
 runner = CliRunner()
+pytestmark = pytest.mark.contract
+
+
+def test_bootstrap_owner_help_is_rendered_by_typer() -> None:
+    result = runner.invoke(app, ["bootstrap-owner", "--help"], color=False)
+
+    assert result.exit_code == 0
+    assert "--username" in result.stdout
+    assert "--password-env" in result.stdout
 
 
 class _BootstrapService:
