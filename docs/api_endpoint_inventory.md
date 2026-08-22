@@ -17,8 +17,8 @@ Classification definitions:
 | GET | `/metrics_overview?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Metrics dashboard overview for a date. |
 | GET | `/daily_summary?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Daily health/training summary. |
 | GET | `/recent_workouts?days=N&end_date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Recent workout history. |
-| GET | `/coach_state?date=YYYY-MM-DD&profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Coach context/readiness state; `profile` is optional and defaults to the single-user profile. |
-| GET | `/goal_state?profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Current goal metadata; `profile` is optional and defaults to the single-user profile. |
+| GET | `/coach_state?date=YYYY-MM-DD&profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Coach context/readiness state. Owners and the trusted machine key may read any active profile; other browser users are assignment-scoped. |
+| GET | `/goal_state?profile=slug` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Current goal metadata. Omitted profile selection is principal-aware; missing and unassigned profiles share the same 404 contract. |
 | GET | `/user_notes?days=N` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Recent user notes. |
 | GET | `/plan_context?date=YYYY-MM-DD` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Active plan phase/context. |
 | GET | `/sse` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/metrics.py` | Server-sent heartbeat stream. |
@@ -40,6 +40,13 @@ Classification definitions:
 Protected machine routes reject `api_key` query parameters. Send the machine key only in the `X-API-Key` header so secrets do not leak into browser history, logs, or referrers. Browser-only auth/session routes do not accept the machine API key.
 
 Browser sessions are role checked. Read routes allow any authenticated user. Command routes require an `operator` or `owner` session and valid CSRF token for browser requests.
+
+Profile-sensitive read routes additionally retain an explicit authenticated
+principal through the application service. `owner` sessions have global profile
+read access; `operator` and `read_only` sessions require an
+`auth_user_profiles` assignment. The configured machine API key has explicit
+trusted `profiles:read:any` scope. Existing-but-unassigned and missing profile
+slugs both return `404 profile_not_found` with the message `Profile not found.`.
 
 ## Browser Console Command Routes
 

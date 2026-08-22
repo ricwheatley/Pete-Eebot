@@ -21,7 +21,14 @@ _SENSITIVE_KEYS = {
     "password", "secret", "token", "api_key", "authorization", "auth", "cookie", "session",
 }
 _SAFE_IDENTITY_KEYS = {
+    "actor_id",
     "auth_scheme",
+    "machine_client_id",
+    "principal_kind",
+    "profile_id",
+    "profile_slug",
+    "requested_profile_slug",
+    "scopes",
     "session_id",
     "sessions_revoked",
     "request_id",

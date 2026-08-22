@@ -15,6 +15,7 @@ from pete_e.application.profile_service import ProfileService
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.exceptions import BadRequestError, DataAccessError
+from pete_e.domain.auth import AuthenticatedPrincipal
 from pete_e.utils import converters
 from pete_e.utils.coercion import coerce_numeric
 
@@ -253,9 +254,15 @@ class MetricsService(_DateParserMixin):
         }
         """Perform recent workouts."""
 
-    def coach_state(self, iso_date: str, *, profile_slug: str | None = None) -> Dict[str, Any]:
+    def coach_state(
+        self,
+        iso_date: str,
+        *,
+        principal: AuthenticatedPrincipal,
+        profile_slug: str | None = None,
+    ) -> Dict[str, Any]:
         target_date = self._parse_iso_date(iso_date, "date")
-        profile = self._profile_service.resolve_profile(profile_slug)
+        profile = self._profile_service.resolve_profile(profile_slug, principal=principal)
         history_start = target_date - timedelta(days=34)
         try:
             rows = list(self._dal.get_historical_data(history_start, target_date) or [])
@@ -332,7 +339,7 @@ class MetricsService(_DateParserMixin):
             "plan_context": plan_context,
             "nutrition": nutrition_context,
             "profile": profile.as_public_dict(),
-            "goal_state": self.goal_state(profile_slug=profile.slug),
+            "goal_state": self.goal_state(principal=principal, profile_slug=profile.slug),
             "data_quality": data_quality,
             "missing_subjective_inputs": [
                 "pain_location_and_severity",
@@ -350,8 +357,13 @@ class MetricsService(_DateParserMixin):
         }
         """Perform coach state."""
 
-    def goal_state(self, *, profile_slug: str | None = None) -> Dict[str, Any]:
-        profile = self._profile_service.resolve_profile(profile_slug)
+    def goal_state(
+        self,
+        *,
+        principal: AuthenticatedPrincipal,
+        profile_slug: str | None = None,
+    ) -> Dict[str, Any]:
+        profile = self._profile_service.resolve_profile(profile_slug, principal=principal)
         return {
             "profile": profile.as_public_dict(),
             "running_goal": {

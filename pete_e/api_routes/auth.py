@@ -12,6 +12,7 @@ from pete_e.api_routes.dependencies import (
     enforce_login_attempt_allowed,
     generate_csrf_token,
     get_user_service,
+    mark_authenticated_request,
     record_login_failure,
     record_login_success,
     require_browser_user,
@@ -21,6 +22,7 @@ from pete_e.api_routes.dependencies import (
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_logging import session_fingerprint
 from pete_e.infrastructure import log_utils
+from pete_e.domain.auth import AuthenticatedPrincipal
 
 router = fastapi.APIRouter()
 
@@ -108,10 +110,7 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
     )
     csrf_token = generate_csrf_token(created.token)
     set_session_cookies(response, created.token, csrf_token)
-    state = getattr(request, "state", None)
-    if state is not None:
-        setattr(state, "auth_scheme", "session")
-        setattr(state, "auth_user", user)
+    mark_authenticated_request(request, AuthenticatedPrincipal.for_user(user))
     log_utils.log_event(
         event="auth_login",
         message="login succeeded",

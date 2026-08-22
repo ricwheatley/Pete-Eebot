@@ -24,7 +24,16 @@ from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.config import get_env, settings
-from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName, normalize_role
+from pete_e.domain.auth import (
+    AuthenticatedPrincipal,
+    AuthUser,
+    ROLE_OPERATOR,
+    ROLE_OWNER,
+    ROLE_READ_ONLY,
+    RoleName,
+    normalize_role,
+    trusted_profile_reader,
+)
 from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
@@ -375,11 +384,14 @@ def _is_machine_api_key_path(request: Request) -> bool:
     return any(path.startswith(prefix) for prefix in MACHINE_API_KEY_PREFIX_PATHS)
 
 
-def _mark_authenticated_request(request: Request, *, scheme: str, user: AuthUser | None = None) -> None:
+def mark_authenticated_request(request: Request, principal: AuthenticatedPrincipal) -> None:
     state = getattr(request, "state", None)
     if state is None:
         return
+    scheme = principal.auth_scheme
+    user = principal.user
     setattr(state, "auth_scheme", scheme)
+    setattr(state, "auth_principal", principal)
     fields: dict[str, Any] = {"auth_scheme": scheme}
     if user is not None:
         setattr(state, "auth_user", user)
@@ -402,7 +414,7 @@ def current_user_from_session(request: Request) -> AuthUser | None:
 
     user = get_user_service().validate_session_token(token)
     if user is not None:
-        _mark_authenticated_request(request, scheme="session", user=user)
+        mark_authenticated_request(request, AuthenticatedPrincipal.for_user(user))
     return user
 
 
@@ -432,7 +444,7 @@ def require_browser_user(request: Request, *, require_csrf: bool = False) -> Aut
     if require_csrf:
         enforce_csrf_for_session(request, token)
 
-    _mark_authenticated_request(request, scheme="session", user=user)
+    mark_authenticated_request(request, AuthenticatedPrincipal.for_user(user))
     return user
 
 
@@ -458,14 +470,15 @@ def validate_api_key(
     x_api_key: str | None = Header(None),
     *,
     required_session_role: RoleName | str = ROLE_READ_ONLY,
-) -> None:
+) -> AuthenticatedPrincipal:
     key = x_api_key
     if key:
         if not _is_machine_api_key_path(request):
             raise HTTPException(status_code=403, detail="API key is not accepted for this endpoint")
         if hmac.compare_digest(key, configured_api_key()):
-            _mark_authenticated_request(request, scheme="api_key")
-            return
+            principal = trusted_profile_reader("primary-api-key", auth_scheme="api_key")
+            mark_authenticated_request(request, principal)
+            return principal
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
     token = session_token_from_request(request)
@@ -477,8 +490,9 @@ def validate_api_key(
                 raise HTTPException(status_code=403, detail="Insufficient role")
             if _request_method(request) not in SAFE_HTTP_METHODS:
                 enforce_csrf_for_session(request, token)
-            _mark_authenticated_request(request, scheme="session", user=user)
-            return
+            principal = AuthenticatedPrincipal.for_user(user)
+            mark_authenticated_request(request, principal)
+            return principal
 
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 

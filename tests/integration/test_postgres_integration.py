@@ -9,6 +9,7 @@ import pytest
 from pete_e.infrastructure.apple_parser import AppleHealthParser
 from pete_e.infrastructure.apple_writer import AppleHealthWriter
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.infrastructure.profile_repository import PostgresProfileRepository
 
 
 pytestmark = pytest.mark.integration
@@ -148,3 +149,61 @@ def test_apple_checkpoint_failure_rolls_back_health_write_in_real_postgres(
                 ("checkpoint_integration_metric", "Checkpoint Integration Watch"),
             )
             assert cursor.fetchone() == (0,)
+
+
+def test_profile_repository_scoped_queries_never_return_another_users_profile(
+    postgres_connection,
+) -> None:
+    pool = _SingleConnectionPoolPort(postgres_connection)
+    repository = PostgresProfileRepository(pool=pool)
+
+    with postgres_connection.transaction(force_rollback=True):
+        with postgres_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO auth_users (username, username_normalized, password_hash)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                ("Profile Alice", "profile-alice", "integration-test-hash"),
+            )
+            alice_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO auth_users (username, username_normalized, password_hash)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                ("Profile Bob", "profile-bob", "integration-test-hash"),
+            )
+            bob_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO user_profiles (slug, display_name, is_default)
+                VALUES (%s, %s, false)
+                RETURNING id
+                """,
+                ("integration-alice", "Integration Alice"),
+            )
+            alice_profile_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO user_profiles (slug, display_name, is_default)
+                VALUES (%s, %s, false)
+                RETURNING id
+                """,
+                ("integration-bob", "Integration Bob"),
+            )
+            bob_profile_id = cursor.fetchone()[0]
+            cursor.executemany(
+                """
+                INSERT INTO auth_user_profiles (user_id, profile_id)
+                VALUES (%s, %s)
+                """,
+                [(alice_id, alice_profile_id), (bob_id, bob_profile_id)],
+            )
+
+        assert repository.get_profile_by_slug_for_user(alice_id, "integration-alice") is not None
+        assert repository.get_profile_by_slug_for_user(alice_id, "integration-bob") is None
+        assert repository.get_profile_by_slug_for_user(bob_id, "integration-alice") is None
+        assert repository.get_default_profile_for_user(alice_id).slug == "integration-alice"

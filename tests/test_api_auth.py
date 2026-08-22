@@ -60,9 +60,13 @@ def test_api_key_is_rejected_outside_machine_api_paths() -> None:
 def test_api_key_is_accepted_for_versioned_machine_api_paths() -> None:
     request = _request_for_path("/api/v1/status")
 
-    dependencies.validate_api_key(request, x_api_key="test-key")
+    principal = dependencies.validate_api_key(request, x_api_key="test-key")
 
     assert request.state.auth_scheme == "api_key"
+    assert request.state.auth_principal is principal
+    assert principal.kind == "machine"
+    assert principal.machine_client_id == "primary-api-key"
+    assert principal.can_read_all_profiles is True
 
 
 @pytest.mark.parametrize(

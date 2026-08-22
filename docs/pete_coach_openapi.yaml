@@ -13,7 +13,7 @@ paths:
     get:
       operationId: get_coach_state
       summary: Get compact derived coaching state
-      description: Default first call for the GPT. Returns readiness, trend deltas, load, data quality, goals, plan context, and missing subjective inputs.
+      description: Default first call for the GPT. Returns readiness, trend deltas, load, data quality, goals, plan context, and missing subjective inputs. Browser sessions are assignment-scoped; the configured machine API key has trusted global profile-read scope.
       parameters:
         - name: date
           in: query
@@ -27,7 +27,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Optional profile slug. Defaults to the single-user default profile.
+          description: Optional profile slug. Browser sessions select an assigned default/first profile; the machine key selects the global default.
       responses:
         "200":
           description: Coach-ready state for the requested date.
@@ -39,6 +39,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ProfileNotFound"
   /daily_summary:
     get:
       operationId: get_daily_summary
@@ -179,7 +181,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Optional profile slug. Defaults to the single-user default profile.
+          description: Optional profile slug. Missing and existing-but-unassigned slugs use the same 404 response.
       responses:
         "200":
           description: Current goals and strength training max context.
@@ -189,6 +191,8 @@ paths:
                 $ref: "#/components/schemas/GoalState"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/ProfileNotFound"
   /plan_context:
     get:
       operationId: get_plan_context
@@ -241,7 +245,7 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Send PETEEEBOT_API_KEY in this header. Query-string API keys are not accepted.
+      description: Send PETEEEBOT_API_KEY in this header. Query-string API keys are not accepted. This trusted machine credential has profiles:read:any scope.
   responses:
     BadRequest:
       description: Invalid request parameter.
@@ -255,12 +259,30 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    ProfileNotFound:
+      description: The profile is missing or is not assigned to the browser principal. These cases are intentionally indistinguishable.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     Error:
       type: object
+      required: [error]
       properties:
-        detail:
-          type: string
+        error:
+          type: object
+          required: [code, message, correlation_id]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            correlation_id:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
     CoachState:
       type: object
       additionalProperties: true

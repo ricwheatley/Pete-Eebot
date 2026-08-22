@@ -21,6 +21,8 @@ Every structured record includes:
 | `auth_scheme` | `session` or `api_key` when authentication has been resolved. |
 | `user_id`, `username`, `roles` | Browser user identity when session auth applies. |
 | `session_id` | SHA-256 session-token fingerprint prefix. This is not the raw cookie. |
+| `principal_kind`, `actor_id` | Explicit browser-user or machine actor used by profile-sensitive services. |
+| `machine_client_id`, `scopes` | Non-secret machine identity and its explicit scopes when machine authentication applies. |
 
 HTTP request records use:
 
@@ -64,6 +66,13 @@ Command audit records use:
 | `correlation.request_id` | Request that initiated the command. |
 | `correlation.job_id` | Job spawned by the command when available. |
 | `summary` | Safe command parameters or result summary. Secrets and raw tokens are redacted. |
+
+Profile authorization records use `event=profile_authorization` and `tag=AUDIT`.
+They include `actor_id`, `principal_kind`, `auth_scheme`, and the requested
+profile slug. Authorized events also include the resolved `profile_id` and
+`profile_slug`. Denied events deliberately omit a resolved profile ID and use
+the same outcome for missing and unassigned slugs, so audit output does not turn
+the API's non-enumerating error contract into an existence oracle.
 
 Alert records use:
 

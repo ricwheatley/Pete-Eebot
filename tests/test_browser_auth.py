@@ -258,6 +258,25 @@ def test_session_route_accepts_valid_browser_cookie(
     assert payload["user"]["roles"] == [ROLE_OPERATOR]
 
 
+def test_session_authentication_returns_and_retains_explicit_principal(
+    monkeypatch: pytest.MonkeyPatch,
+    auth_user: AuthUser,
+) -> None:
+    service = _UserService(auth_user)
+    request = _Request(
+        cookies={dependencies.session_cookie_name(): service.token},
+        path="/api/v1/goal_state",
+    )
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+
+    principal = dependencies.validate_api_key(request, x_api_key=None)
+
+    assert principal.user is auth_user
+    assert principal.kind == "browser_user"
+    assert principal.auth_scheme == "session"
+    assert request.state.auth_principal is principal
+
+
 def test_logout_requires_session_csrf_revokes_session_and_clears_cookies(
     monkeypatch: pytest.MonkeyPatch,
     auth_user: AuthUser,

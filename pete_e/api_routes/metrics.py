@@ -55,9 +55,9 @@ def coach_state(
     profile: str | None = None,
     x_api_key: str = Header(None),
 ):
-    validate_api_key(request, x_api_key)
+    principal = validate_api_key(request, x_api_key)
     try:
-        return get_metrics_service().coach_state(date, profile_slug=profile)
+        return get_metrics_service().coach_state(date, principal=principal, profile_slug=profile)
     except ApplicationError:
         raise
     except Exception as exc:
@@ -70,9 +70,9 @@ def goal_state(
     profile: str | None = None,
     x_api_key: str = Header(None),
 ):
-    validate_api_key(request, x_api_key)
+    principal = validate_api_key(request, x_api_key)
     try:
-        return get_metrics_service().goal_state(profile_slug=profile)
+        return get_metrics_service().goal_state(principal=principal, profile_slug=profile)
     except ApplicationError:
         raise
     except Exception as exc:

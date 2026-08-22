@@ -29,7 +29,7 @@ from pete_e.application.sync import run_sync_with_retries, run_withings_only_wit
 from pete_e.application.web_console import WebConsoleReadModel
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
 from pete_e.config import settings
-from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
+from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
 from pete_e.domain.daily_sync import AppleHealthIngestResult
 
 router = fastapi.APIRouter()
@@ -871,7 +871,7 @@ def _render_console(
     *,
     min_role: RoleName = ROLE_READ_ONLY,
     template_name: str = "console/page.html",
-    context_loader: Callable[[], dict[str, object]] | None = None,
+    context_loader: Callable[[AuthUser], dict[str, object]] | None = None,
     **context,
 ):
     try:
@@ -885,7 +885,7 @@ def _render_console(
         raise HTTPException(status_code=403, detail="Insufficient role")
 
     if context_loader is not None:
-        context.update(context_loader())
+        context.update(context_loader(user))
 
     page = PAGE_CONTENT[page_key]
     return _render(
@@ -923,8 +923,12 @@ def console_status(request: Request):
         request,
         "status",
         template_name="console/status.html",
-        context_loader=lambda: {
-            "status_view": _console_read_model().status(target_date=_operator_today(), timeout=DEFAULT_TIMEOUT_SECONDS)
+        context_loader=lambda user: {
+            "status_view": _console_read_model().status(
+                target_date=_operator_today(),
+                timeout=DEFAULT_TIMEOUT_SECONDS,
+                principal=AuthenticatedPrincipal.for_user(user),
+            )
         },
     )
 
@@ -938,7 +942,9 @@ def console_plan(request: Request):
         request,
         "plan",
         template_name="console/plan.html",
-        context_loader=lambda: {"plan_view": _console_read_model().plan(target_date=_operator_today(), week_view=week_view)},
+        context_loader=lambda _user: {
+            "plan_view": _console_read_model().plan(target_date=_operator_today(), week_view=week_view)
+        },
     )
 
 
@@ -948,7 +954,12 @@ def console_trends(request: Request):
         request,
         "trends",
         template_name="console/trends.html",
-        context_loader=lambda: {"trends_view": _console_read_model().trends(target_date=_operator_today())},
+        context_loader=lambda user: {
+            "trends_view": _console_read_model().trends(
+                target_date=_operator_today(),
+                principal=AuthenticatedPrincipal.for_user(user),
+            )
+        },
     )
 
 
@@ -958,7 +969,9 @@ def console_nutrition(request: Request):
         request,
         "nutrition",
         template_name="console/nutrition.html",
-        context_loader=lambda: {"nutrition_view": _console_read_model().nutrition(target_date=_operator_today())},
+        context_loader=lambda _user: {
+            "nutrition_view": _console_read_model().nutrition(target_date=_operator_today())
+        },
     )
 
 
@@ -1007,7 +1020,7 @@ def console_alerts(request: Request):
         "alerts",
         min_role=ROLE_OPERATOR,
         template_name="console/alerts.html",
-        context_loader=lambda: {
+        context_loader=lambda _user: {
             "alerts_view": _console_read_model().alerts(
                 severity=severity or None,
                 alert_type=alert_type or None,
@@ -1023,7 +1036,7 @@ def console_scheduler(request: Request):
         "scheduler",
         min_role=ROLE_OPERATOR,
         template_name="console/scheduler.html",
-        context_loader=lambda: {"scheduler_view": _console_read_model().scheduler()},
+        context_loader=lambda _user: {"scheduler_view": _console_read_model().scheduler()},
     )
 
 
@@ -1036,7 +1049,7 @@ def console_logs(request: Request):
         request,
         "logs",
         template_name="console/logs.html",
-        context_loader=lambda: {
+        context_loader=lambda _user: {
             "logs_view": _console_read_model().logs(
                 lines=lines,
                 tag=tag or None,
@@ -1054,7 +1067,7 @@ def console_jobs(request: Request):
         "jobs",
         min_role=ROLE_OPERATOR,
         template_name="console/jobs.html",
-        context_loader=lambda: {
+        context_loader=lambda _user: {
             "current_jobs": dependencies.get_job_service().list_current_jobs(limit=10),
             "jobs": dependencies.get_job_service().list_recent_jobs(limit=limit),
             "selected_job": None,
@@ -1069,7 +1082,7 @@ def console_job_detail(request: Request, job_id: str):
         "jobs",
         min_role=ROLE_OPERATOR,
         template_name="console/jobs.html",
-        context_loader=lambda: {
+        context_loader=lambda _user: {
             "current_jobs": dependencies.get_job_service().list_current_jobs(limit=10),
             "jobs": dependencies.get_job_service().list_recent_jobs(limit=25),
             "selected_job": _require_job(job_id),
@@ -1113,7 +1126,7 @@ def console_command_history(request: Request):
         "history",
         min_role=ROLE_OPERATOR,
         template_name="console/history.html",
-        context_loader=lambda: _command_history_context(request),
+        context_loader=lambda _user: _command_history_context(request),
     )
 
 
@@ -1137,7 +1150,7 @@ def console_operations(request: Request):
         "operations",
         min_role=ROLE_OPERATOR,
         template_name="console/operations.html",
-        context_loader=lambda: {"command_cards": _command_cards(_operator_today())},
+        context_loader=lambda _user: {"command_cards": _command_cards(_operator_today())},
     )
 
 
@@ -1706,7 +1719,7 @@ def console_admin(request: Request):
         "admin",
         min_role=ROLE_OWNER,
         template_name="console/admin.html",
-        context_loader=lambda: {"users": _admin_users()},
+        context_loader=lambda _user: {"users": _admin_users()},
     )
 
 

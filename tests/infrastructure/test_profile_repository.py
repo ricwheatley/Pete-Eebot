@@ -83,6 +83,38 @@ def test_list_profiles_for_user_uses_assignment_table() -> None:
     assert "JOIN user_profiles p" in sql
 
 
+def test_get_profile_by_slug_for_user_scopes_lookup_through_assignment() -> None:
+    cur = MagicMock()
+    cur.fetchone.return_value = None
+    repo = PostgresProfileRepository(pool=_pool_with_cursor(cur))
+
+    profile = repo.get_profile_by_slug_for_user(7, "unassigned")
+
+    assert profile is None
+    sql, params = cur.execute.call_args.args
+    assert "FROM auth_user_profiles aup" in sql
+    assert "JOIN user_profiles p" in sql
+    assert "aup.user_id = %s" in sql
+    assert "p.slug = %s" in sql
+    assert params == (7, "unassigned")
+
+
+def test_get_default_profile_for_user_cannot_return_an_unassigned_default() -> None:
+    cur = MagicMock()
+    cur.fetchone.return_value = _profile_row(slug="athlete", is_default=False)
+    repo = PostgresProfileRepository(pool=_pool_with_cursor(cur))
+
+    profile = repo.get_default_profile_for_user(7)
+
+    assert profile is not None
+    assert profile.slug == "athlete"
+    sql, params = cur.execute.call_args.args
+    assert "FROM auth_user_profiles aup" in sql
+    assert "JOIN user_profiles p" in sql
+    assert "ORDER BY p.is_default DESC, p.slug" in sql
+    assert params == (7,)
+
+
 def test_list_profiles_returns_active_profiles() -> None:
     cur = MagicMock()
     cur.fetchall.return_value = [_profile_row(slug="default")]

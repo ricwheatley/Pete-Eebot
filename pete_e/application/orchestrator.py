@@ -513,8 +513,12 @@ class Orchestrator:
     def _load_coach_state_context(self, target: date) -> Dict[str, Any]:
         try:
             from pete_e.application.api_services import MetricsService
+            from pete_e.domain.auth import trusted_profile_reader
 
-            return MetricsService(self.dal).coach_state(target.isoformat())
+            return MetricsService(self.dal).coach_state(
+                target.isoformat(),
+                principal=trusted_profile_reader("morning-orchestrator"),
+            )
         except Exception as exc:  # pragma: no cover - context should not block fallback
             log_utils.warn(f"Failed to load structured coach state for voice context: {exc}")
             return {}

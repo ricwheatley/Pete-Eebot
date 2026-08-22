@@ -12,6 +12,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from pete_e.api_routes.logs_webhooks import read_recent_log_lines
+from pete_e.domain.auth import AuthenticatedPrincipal
 from pete_e.infrastructure.cron_manager import CRON_CSV
 
 
@@ -288,13 +289,19 @@ class WebConsoleReadModel:
         self._plan_service = plan_service
         self._status_service = status_service
 
-    def status(self, *, target_date: date, timeout: float) -> dict[str, Any]:
+    def status(
+        self,
+        *,
+        target_date: date,
+        timeout: float,
+        principal: AuthenticatedPrincipal,
+    ) -> dict[str, Any]:
         health = _safe_load(
             lambda: self._health_checks(timeout),
             {"ok": False, "checks": [], "status": "unavailable"},
         )
         coach_state = _safe_load(
-            lambda: self._metrics_service.coach_state(target_date.isoformat()),
+            lambda: self._metrics_service.coach_state(target_date.isoformat(), principal=principal),
             {"data_quality": {"status": "unavailable"}},
         )
         sync_outcome = _safe_load(
@@ -378,9 +385,9 @@ class WebConsoleReadModel:
             "decision_trace": trace,
         }
 
-    def trends(self, *, target_date: date) -> dict[str, Any]:
+    def trends(self, *, target_date: date, principal: AuthenticatedPrincipal) -> dict[str, Any]:
         coach_state = _safe_load(
-            lambda: self._metrics_service.coach_state(target_date.isoformat()),
+            lambda: self._metrics_service.coach_state(target_date.isoformat(), principal=principal),
             {"summary": {}, "derived": {}, "baselines": {}, "data_quality": {"status": "unavailable"}},
         )
         daily_summary = _safe_load(

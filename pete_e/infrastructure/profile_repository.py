@@ -155,6 +155,68 @@ class PostgresProfileRepository:
                 row = cur.fetchone()
         return self._profile_from_row(row) if row else None
 
+    def get_default_profile_for_user(self, user_id: int) -> UserProfile | None:
+        """Return only an assigned profile, preferring the global default."""
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        p.id,
+                        p.slug,
+                        p.display_name,
+                        p.date_of_birth,
+                        p.height_cm,
+                        p.goal_weight_kg,
+                        p.timezone,
+                        p.is_default,
+                        p.is_active,
+                        p.created_at,
+                        p.updated_at
+                    FROM auth_user_profiles aup
+                    JOIN user_profiles p ON p.id = aup.profile_id
+                    WHERE aup.user_id = %s
+                      AND p.is_active = true
+                    ORDER BY p.is_default DESC, p.slug
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                )
+                row = cur.fetchone()
+        return self._profile_from_row(row) if row else None
+
+    def get_profile_by_slug_for_user(self, user_id: int, slug: str) -> UserProfile | None:
+        """Resolve a profile through the assignment join without a global read."""
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        p.id,
+                        p.slug,
+                        p.display_name,
+                        p.date_of_birth,
+                        p.height_cm,
+                        p.goal_weight_kg,
+                        p.timezone,
+                        p.is_default,
+                        p.is_active,
+                        p.created_at,
+                        p.updated_at
+                    FROM auth_user_profiles aup
+                    JOIN user_profiles p ON p.id = aup.profile_id
+                    WHERE aup.user_id = %s
+                      AND p.slug = %s
+                      AND p.is_active = true
+                    LIMIT 1
+                    """,
+                    (user_id, slug),
+                )
+                row = cur.fetchone()
+        return self._profile_from_row(row) if row else None
+
     def list_profiles_for_user(self, user_id: int) -> list[UserProfile]:
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:

@@ -27,6 +27,11 @@ class UnauthorizedError(ApplicationError):
         super().__init__(message=message, code=code, http_status=401)
 
 
+class ForbiddenError(ApplicationError):
+    def __init__(self, message: str = "Forbidden", code: str = "forbidden"):
+        super().__init__(message=message, code=code, http_status=403)
+
+
 class NotFoundError(ApplicationError):
     def __init__(self, message: str = "Resource not found", code: str = "not_found"):
         super().__init__(message=message, code=code, http_status=404)
@@ -66,6 +71,7 @@ class DataAccessError(ServiceUnavailableError):
 __all__ = [
     "ApplicationError",
     "BadRequestError",
+    "ForbiddenError",
     "UnauthorizedError",
     "NotFoundError",
     "ConflictError",

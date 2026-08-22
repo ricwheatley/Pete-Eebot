@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from pete_e.api_errors import get_or_create_correlation_id
-from pete_e.domain.auth import AuthUser
+from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser
 from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
 
@@ -62,6 +62,7 @@ def identity_fields_from_request(request: Any) -> dict[str, Any]:
     """Extract safe identity fields that may be known for this request."""
 
     state = getattr(request, "state", None)
+    principal = getattr(state, "auth_principal", None)
     user = getattr(state, "auth_user", None)
     fields: dict[str, Any] = {
         "auth_scheme": getattr(state, "auth_scheme", None),
@@ -75,6 +76,8 @@ def identity_fields_from_request(request: Any) -> dict[str, Any]:
                 "roles": list(user.roles),
             }
         )
+    elif isinstance(principal, AuthenticatedPrincipal):
+        fields.update(principal.audit_fields())
     return {key: value for key, value in fields.items() if value is not None}
 
 

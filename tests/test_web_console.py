@@ -166,7 +166,7 @@ class _MetricsService:
             ]
         )
 
-    def coach_state(self, iso_date: str):
+    def coach_state(self, iso_date: str, *, principal):
         return {
             "summary": {
                 "readiness_state": "amber",

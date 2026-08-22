@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from pete_e.application.api_services import MetricsService
 from pete_e.application.profile_service import ProfileService
 from pete_e.config import settings
+from pete_e.domain.auth import trusted_profile_reader
 from pete_e.domain.profile import UserProfile
 
 
@@ -117,11 +118,21 @@ class ProfileRepo:
             return self.get_default_profile()
         return None
 
+    def get_default_profile_for_user(self, user_id):
+        return self.get_default_profile()
+
+    def get_profile_by_slug_for_user(self, user_id, slug):
+        return self.get_profile_by_slug(slug)
+
     def list_profiles_for_user(self, user_id):
         return [self.get_default_profile()]
 
     def list_profiles(self):
         return [self.get_default_profile()]
+
+
+def _principal():
+    return trusted_profile_reader("metrics-service-test")
 
 
 def test_daily_summary_adds_units_sources_and_quality():
@@ -135,7 +146,7 @@ def test_daily_summary_adds_units_sources_and_quality():
 
 
 def test_coach_state_exposes_derived_flags_and_context():
-    payload = MetricsService(CoachDal()).coach_state("2024-01-08")
+    payload = MetricsService(CoachDal()).coach_state("2024-01-08", principal=_principal())
 
     assert payload["derived"]["run_load_7d_km"] == 5.0
     assert payload["derived"]["strength_load_7d_kg"] == 7000.0
@@ -149,7 +160,7 @@ def test_coach_state_exposes_derived_flags_and_context():
 
 
 def test_goal_state_keeps_settings_backed_default_without_profile_repository():
-    payload = MetricsService(CoachDal()).goal_state()
+    payload = MetricsService(CoachDal()).goal_state(principal=_principal())
 
     assert payload["profile"]["slug"] == "default"
     assert payload["body_composition_goal"]["goal_weight_kg"] == settings.USER_GOAL_WEIGHT_KG
@@ -158,7 +169,7 @@ def test_goal_state_keeps_settings_backed_default_without_profile_repository():
 def test_goal_state_can_use_database_backed_profile():
     service = MetricsService(CoachDal(), profile_service=ProfileService(ProfileRepo()))
 
-    payload = service.goal_state(profile_slug="athlete")
+    payload = service.goal_state(principal=_principal(), profile_slug="athlete")
 
     assert payload["profile"]["slug"] == "athlete"
     assert payload["body_composition_goal"]["goal_weight_kg"] == 82

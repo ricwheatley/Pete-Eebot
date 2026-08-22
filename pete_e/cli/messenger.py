@@ -713,8 +713,12 @@ def _load_voice_coach_state(dal: Any, target: date) -> dict[str, Any]:
         return {}
     try:
         from pete_e.application.api_services import MetricsService
+        from pete_e.domain.auth import trusted_profile_reader
 
-        return MetricsService(dal).coach_state(target.isoformat())
+        return MetricsService(dal).coach_state(
+            target.isoformat(),
+            principal=trusted_profile_reader("local-cli", auth_scheme="cli"),
+        )
     except Exception as exc:
         log_utils.log_message(f"Failed to load structured coach state for weekly voice context: {exc}", "WARN")
         return {}
