@@ -55,3 +55,16 @@ def test_systemd_installer_does_not_start_or_restart_services() -> None:
     assert "/bin/systemctl daemon-reload" in installer
     assert "systemctl start" not in installer
     assert "systemctl restart" not in installer
+
+
+def test_host_topology_runbook_uses_a_harmless_exec_override_and_bounded_waits() -> None:
+    runbook = Path("docs/job_ownership_deployment_runbook.md").read_text(encoding="utf-8")
+
+    assert "Environment=DEPLOY_SCRIPT_PATH=/run/peteeebot-deploy-topology-test.sh" not in runbook
+    assert (
+        "ExecStart=/usr/bin/env DEPLOY_SCRIPT_PATH=/run/peteeebot-deploy-topology-test.sh"
+        in runbook
+    )
+    assert "Controlled deployment did not start within 30 seconds." in runbook
+    assert "Controlled deployment did not finish within 90 seconds." in runbook
+    assert "until sudo test -e /run/peteeebot-deploy-topology.started" not in runbook

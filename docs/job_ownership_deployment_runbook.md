@@ -42,6 +42,8 @@ fetch Git, migrate, install, or perform a real deployment.
 
 ```bash
 export TEST_JOB_ID="deploy-host-topology-$(date +%Y%m%d%H%M%S)"
+sudo rm -f /run/peteeebot-deploy-topology.started \
+  /run/peteeebot-deploy-topology.release
 sudo tee /run/peteeebot-deploy-topology-test.sh >/dev/null <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -51,10 +53,21 @@ printf '%s\n' "controlled deployment worker completed"
 EOF
 sudo chmod 0755 /run/peteeebot-deploy-topology-test.sh
 sudo mkdir -p "/etc/systemd/system/peteeebot-deploy@${TEST_JOB_ID}.service.d"
-printf '[Service]\nEnvironment=DEPLOY_SCRIPT_PATH=/run/peteeebot-deploy-topology-test.sh\n' | \
-  sudo tee "/etc/systemd/system/peteeebot-deploy@${TEST_JOB_ID}.service.d/override.conf" >/dev/null
+sudo tee "/etc/systemd/system/peteeebot-deploy@${TEST_JOB_ID}.service.d/override.conf" >/dev/null <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/env DEPLOY_SCRIPT_PATH=/run/peteeebot-deploy-topology-test.sh /opt/myapp/shared/venv/bin/python3 -m pete_e.deployment_worker %i
+EOF
 sudo systemctl daemon-reload
+sudo systemctl cat "peteeebot-deploy@${TEST_JOB_ID}.service"
+sudo systemctl show "peteeebot-deploy@${TEST_JOB_ID}.service" -p ExecStart
 ```
+
+The instance-specific `ExecStart=` reset is intentional. The base unit's
+`EnvironmentFile=` may define `DEPLOY_SCRIPT_PATH`, and systemd gives values
+read from an environment file precedence over `Environment=` assignments. The
+effective unit output above must show `/usr/bin/env` setting the harmless path
+on the worker command line before continuing.
 
 Dispatch the fixed test job through the same durable handoff and root-owned
 helper used by the API:
@@ -90,14 +103,40 @@ finally:
     service.close(wait=False)
 PY
 '
-until sudo test -e /run/peteeebot-deploy-topology.started; do sleep 0.2; done
+TEST_STARTED=0
+for attempt in {1..150}; do
+  if sudo test -e /run/peteeebot-deploy-topology.started; then
+    TEST_STARTED=1
+    break
+  fi
+  sleep 0.2
+done
+if [[ "${TEST_STARTED}" != "1" ]]; then
+  sudo systemctl status "peteeebot-deploy@${TEST_JOB_ID}.service" --no-pager || true
+  sudo journalctl -u "peteeebot-deploy@${TEST_JOB_ID}.service" --no-pager -n 100
+  printf '%s\n' "Controlled deployment did not start within 30 seconds." >&2
+  exit 1
+fi
 sudo systemctl show peteeebot.service \
   "peteeebot-deploy@${TEST_JOB_ID}.service" -p Id -p MainPID -p ControlGroup
 sudo systemctl restart peteeebot.service
 sudo systemctl is-active peteeebot.service
 sudo systemctl is-active "peteeebot-deploy@${TEST_JOB_ID}.service"
 sudo touch /run/peteeebot-deploy-topology.release
-while sudo systemctl is-active --quiet "peteeebot-deploy@${TEST_JOB_ID}.service"; do sleep 0.2; done
+TEST_FINISHED=0
+for attempt in {1..450}; do
+  if ! sudo systemctl is-active --quiet "peteeebot-deploy@${TEST_JOB_ID}.service"; then
+    TEST_FINISHED=1
+    break
+  fi
+  sleep 0.2
+done
+if [[ "${TEST_FINISHED}" != "1" ]]; then
+  sudo systemctl status "peteeebot-deploy@${TEST_JOB_ID}.service" --no-pager || true
+  sudo journalctl -u "peteeebot-deploy@${TEST_JOB_ID}.service" --no-pager -n 100
+  printf '%s\n' "Controlled deployment did not finish within 90 seconds." >&2
+  exit 1
+fi
 ```
 
 Require different non-empty `ControlGroup` values before restart, and require
