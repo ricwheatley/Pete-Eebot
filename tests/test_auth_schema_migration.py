@@ -17,9 +17,9 @@ def test_auth_migration_defines_users_sessions_and_rbac_roles() -> None:
     assert "token_hash CHAR(64) NOT NULL UNIQUE" in migration
 
 
-def test_bootstrap_schema_includes_auth_tables_for_new_databases() -> None:
-    schema = Path("init-db/schema.sql").read_text(encoding="utf-8")
+def test_authoritative_history_creates_auth_tables_for_new_databases() -> None:
+    schema = Path("migrations/20260515_add_auth_users_sessions_rbac.sql").read_text(encoding="utf-8")
 
     for table_name in ("auth_roles", "auth_users", "auth_user_roles", "auth_sessions"):
-        assert f"DROP TABLE IF EXISTS {table_name} CASCADE" in schema
-        assert f"CREATE TABLE {table_name}" in schema
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" in schema
+        assert f"DROP TABLE IF EXISTS {table_name}" not in schema

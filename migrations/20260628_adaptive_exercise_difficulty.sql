@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE assistance_pool
     ADD COLUMN IF NOT EXISTS difficulty SMALLINT NOT NULL DEFAULT 5;
@@ -207,5 +207,3 @@ RETURNS TABLE (
         COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
         tpw.scheduled_time;
 $$;
-
-COMMIT;

@@ -29,6 +29,12 @@ def _venv_cli(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "pete"
 
 
+def _venv_schema_cli(venv_dir: Path) -> Path:
+    if os.name == "nt":
+        return venv_dir / "Scripts" / "pete-schema.exe"
+    return venv_dir / "bin" / "pete-schema"
+
+
 def _artifact_environment(tmp_path: Path) -> dict[str, str]:
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
@@ -74,6 +80,7 @@ def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> N
     )
     shutil.copy2(ROOT / "pyproject.toml", build_source / "pyproject.toml")
     shutil.copy2(ROOT / "README.md", build_source / "README.md")
+    shutil.copytree(ROOT / "migrations", build_source / "migrations")
 
     wheel_dir = tmp_path / "wheelhouse"
     wheel_dir.mkdir()
@@ -171,6 +178,18 @@ def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> N
         assert cli.returncode == 0, cli.stdout + cli.stderr
         assert expected in unstyle(cli.stdout)
 
+    schema_cli = subprocess.run(
+        [str(_venv_schema_cli(environment_dir)), "--help"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert schema_cli.returncode == 0, schema_cli.stdout + schema_cli.stderr
+    assert "upgrade" in unstyle(schema_cli.stdout)
+
     smoke_script = f"""
 import asyncio
 from importlib.resources import files
@@ -179,11 +198,13 @@ from pathlib import Path
 import pete_e
 from pete_e.api import app
 from pete_e.api_routes.status_sync import healthz
+from pete_e.infrastructure.schema_migrations import head_revision
 
 module_path = Path(pete_e.__file__).resolve()
 assert Path({str(ROOT)!r}) not in module_path.parents, module_path
 assert (files('pete_e') / 'resources' / 'phrases_tagged.json').is_file()
 assert (files('pete_e') / 'templates' / 'console' / 'base.html').is_file()
+assert head_revision() == '20260822_reconcile_untracked_schema'
 
 schema = app.openapi()
 assert schema['info']['title'] == 'Pete-Eebot API'

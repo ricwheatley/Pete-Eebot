@@ -20,8 +20,8 @@ pete_e/
 Supporting directories:
 
 ```text
-init-db/             Base PostgreSQL schema bootstrap
-migrations/          Manually applied SQL migrations
+init-db/             Safety notice; executable bootstrap SQL is intentionally retired
+migrations/          Authoritative ordered SQL history and checksum manifest
 scripts/             Operational helpers for backup, auth checks, catalogue sync, reviews
 docs/                Operator, API, deployment, planner, and observability notes
 tests/               Unit, application, integration, and CLI coverage
@@ -41,7 +41,7 @@ Not supported today:
 
 - A production Pete-Eebot application Docker image.
 - Docker Compose as an application runtime.
-- Automatic migration management through Alembic or a migration runner.
+- Application containers as a deployment-time migration mechanism.
 
 ## First-Time Setup
 
@@ -96,35 +96,25 @@ This starts PostgreSQL only. Run Pete-Eebot from the host virtualenv.
 
 ### 4. Initialize the database
 
-For a new database:
-
-Load `.env`, then use the command form matching the selected database source. An
-explicit URL can be passed directly. Component configuration should use libpq's
-standard environment variables so credentials are not placed in process
-arguments:
+For a new database, load `.env` and apply the authoritative migration history.
+The command uses the validated `DATABASE_URL` or complete `POSTGRES_*` settings
+and never prints the resolved connection string:
 
 ```bash
 set -a
 . ./.env
 set +a
 
-if [ -n "${DATABASE_URL:-}" ]; then
-  psql_args=("$DATABASE_URL")
-else
-  export PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD"
-  export PGHOST="${DB_HOST_OVERRIDE:-$POSTGRES_HOST}" PGPORT="${POSTGRES_PORT:-5432}"
-  export PGDATABASE="$POSTGRES_DB"
-  psql_args=()
-fi
-
-psql "${psql_args[@]}" -f init-db/schema.sql
-for file in migrations/*.sql; do
-  psql "${psql_args[@]}" -f "$file"
-done
-unset PGPASSWORD
+pete-schema status
+pete-schema upgrade
+pete-schema verify
 ```
 
-For an existing database, apply only migrations that have not already been applied. Migrations are plain SQL files and must be tracked operationally by the operator.
+Never run a migration file manually. Existing databases without a ledger must use
+the backup-first verified baseline procedure in
+[`docs/schema_management.md`](docs/schema_management.md); `upgrade` refuses to
+touch a populated untracked database. The same guide includes the narrowly
+fingerprinted adoption path for databases created by the retired reset snapshot.
 
 ### 5. Complete OAuth setup
 
@@ -185,6 +175,9 @@ curl -fsS http://127.0.0.1:8000/healthz
 curl -fsS http://127.0.0.1:8000/readyz?timeout=5
 curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/status?timeout=5"
 ```
+
+`/readyz` checks only PostgreSQL schema compatibility and never calls external
+providers. Authenticated `/api/v1/status` retains the broader provider checks.
 
 Run tests:
 
@@ -269,15 +262,14 @@ Do not bind Uvicorn to a public interface in production. Public access should go
 
 ### Browser console owner
 
-If the browser console is enabled, create the first owner account from the host shell after applying the auth migrations:
+If the browser console is enabled, create the first owner account from the host shell after verifying schema head:
 
 ```bash
 cd /opt/myapp/current
 set -a
 . /opt/myapp/shared/.env
 set +a
-psql "$DATABASE_URL" -f migrations/20260515_add_auth_users_sessions_rbac.sql
-psql "$DATABASE_URL" -f migrations/20260516_add_auth_mfa_fields.sql
+pete-schema verify
 pete bootstrap-owner --username admin --email admin@example.com --display-name "Admin"
 ```
 
@@ -420,6 +412,9 @@ curl -fsS http://127.0.0.1:8000/readyz?timeout=5
 curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/status?timeout=5"
 ```
 
+`/readyz` is the local schema-revision gate; `/api/v1/status` is the detailed
+operational dependency view.
+
 Service:
 
 ```bash
@@ -508,6 +503,7 @@ export PGPASSWORD="$POSTGRES_PASSWORD"
 pg_restore -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
   -d "$POSTGRES_DB" --clean --if-exists --no-owner \
   /opt/myapp/backups/postgres/latest.dump
+pete-schema verify
 ```
 
 Keep backup encryption keys outside the Git checkout and in a password manager. A cloud backup is not restorable without the key or passphrase used to encrypt it.
@@ -531,6 +527,7 @@ Use `.env.sample` as the starting point.
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | Optional explicit libpq/PostgreSQL connection string. When present, this is the authoritative value and its query options are preserved. |
+| `PETEEEBOT_MIGRATOR_DATABASE_URL` | Optional deployment-only connection for the DDL-owning migrator role. Runtime readiness and repositories continue to use `DATABASE_URL`. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB` | Component connection settings used only when `DATABASE_URL` is absent. User, password, and database name are percent-encoded when the URL is built; port defaults to `5432`. |
 | `DB_HOST_OVERRIDE` | Optional typed replacement for `POSTGRES_HOST` when component configuration is used. |
 
@@ -629,6 +626,7 @@ Settings representations and must not be logged.
 - Disable SSH password login, use key-based authentication, and restrict sudo privileges to the commands needed for deployment and service restart.
 - Keep PostgreSQL data in a named Docker volume or explicitly managed host volume.
 - Run `scripts/backup_db.sh` on a schedule and periodically test restore into a disposable database.
+- Require `pete-schema verify` after every restore and before every service restart.
 - Configure log rotation for `/var/log/pete_eebot`.
 - Keep `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, Telegram credentials, Dropbox credentials, Withings credentials, and backup encryption keys in a password manager.
 - Rotate API and webhook secrets after suspected exposure or client changes.
@@ -643,6 +641,7 @@ Earlier Raspberry Pi production operation kept secrets, the virtualenv, deploy s
 Useful docs:
 
 - `docs/operator_guide.md`
+- `docs/schema_management.md`
 - `docs/runtime_deploy_runbook.md`
 - `docs/logging_observability.md`
 - `docs/api_endpoint_inventory.md`

@@ -133,39 +133,32 @@ def test_stale_ingest_alert_emits_structured_metric(monkeypatch) -> None:
     assert 'peteeebot_alert_active{alert_type="stale_ingest",severity="P2"} 1' in metrics
 
 
-def test_readyz_returns_503_when_dependency_check_fails(monkeypatch) -> None:
-    observability.reset_metrics()
-    alerts.reset_alert_state()
-    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_TELEGRAM_ENABLED", False)
-    monkeypatch.setattr(alerts.settings, "PETEEEBOT_ALERT_DEDUPE_SECONDS", 0.0)
+def test_readyz_returns_503_when_schema_readiness_fails(monkeypatch) -> None:
+    def checks(*, timeout):
+        assert timeout == 1.2
+        return [CheckResult("DB", False, "schema stale")]
 
-    class _StatusService:
-        def run_checks(self, timeout):
-            assert timeout == 1.2
-            return [
-                CheckResult("DB", True, "2ms"),
-                CheckResult("Withings", False, "token expired"),
-            ]
-
-    monkeypatch.setattr(status_sync, "get_status_service", lambda: _StatusService())
+    monkeypatch.setattr(status_sync, "run_readiness_checks", checks)
 
     response = status_sync.readyz(timeout=1.2)
 
     assert getattr(response, "status_code", 200) == 503
     payload = _response_payload(response)
     assert payload == {"ok": False, "status": "unhealthy"}
-    assert "Withings" not in json.dumps(payload)
-    assert "token expired" not in json.dumps(payload)
-    metrics = observability.render_prometheus()
-    assert 'peteeebot_alert_events_total{alert_type="auth_expiry",outcome="emitted",severity="P2"} 1' in metrics
+    assert "schema stale" not in json.dumps(payload)
 
 
 def test_readyz_returns_200_when_dependencies_are_healthy(monkeypatch) -> None:
-    class _StatusService:
-        def run_checks(self, timeout):
-            return [CheckResult("DB", True, "2ms"), CheckResult("Wger", True, "wger.de")]
-
-    monkeypatch.setattr(status_sync, "get_status_service", lambda: _StatusService())
+    monkeypatch.setattr(
+        status_sync,
+        "run_readiness_checks",
+        lambda *, timeout: [CheckResult("DB", True, f"schema head ({timeout}s)")],
+    )
+    monkeypatch.setattr(
+        status_sync,
+        "get_status_service",
+        lambda: (_ for _ in ()).throw(AssertionError("external checks called")),
+    )
 
     response = status_sync.readyz(timeout=0.5)
 

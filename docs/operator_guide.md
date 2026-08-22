@@ -98,7 +98,7 @@ Provision the required uv 0.12.5 tool environment separately as documented in
 
 ### 2.3 Database
 
-For a new database, apply `init-db/schema.sql`.
+For a new database, run the authoritative migration history.
 
 Docker path for local Postgres only:
 
@@ -106,22 +106,17 @@ Docker path for local Postgres only:
 docker compose up -d db
 ```
 
-Manual Postgres path using an explicit URL:
+Schema status, upgrade, and verification:
 
 ```bash
-psql "$DATABASE_URL" -f init-db/schema.sql
+pete-schema status
+pete-schema upgrade
+pete-schema verify
 ```
 
-For component-only configuration, export libpq's `PGUSER`, `PGPASSWORD`,
-`PGHOST`, `PGPORT`, and `PGDATABASE` variables from the corresponding
-`POSTGRES_*` values and invoke `psql` without a URL. Do not print either form of
-the resolved connection string.
-
-For an existing database, apply the incremental migration before relying on the new hardening features:
-
-```bash
-psql "$DATABASE_URL" -f migrations/20260401_harden_plan_generation.sql
-```
+The runner uses `DATABASE_URL` or complete `POSTGRES_*` configuration. Never run
+individual migration files. Existing installations without a ledger must follow
+the verified adoption procedure in `docs/schema_management.md`.
 
 ### 2.4 OAuth and Credential Sanity Check
 
@@ -752,7 +747,7 @@ WHERE id = <new_main_lift_id>;
 
 If by "core lifts" you mean the main barbell lifts the whole system revolves around, there is one extra step beyond `schedule_rules.py`.
 
-`sp_metrics_overview` in `init-db/schema.sql` currently hard-codes the existing big four exercise IDs:
+The current `sp_metrics_overview` migration history hard-codes the existing big four exercise IDs:
 
 - squat `615`
 - bench `73`
@@ -761,17 +756,19 @@ If by "core lifts" you mean the main barbell lifts the whole system revolves aro
 
 If you replace those lifts system-wide and still want metrics output to show the new lifts, you must:
 
-1. edit `init-db/schema.sql`
-2. update the `sp_metrics_overview` function definition for the new exercise IDs
-3. apply the SQL to the live database
+1. add a new ordered migration that replaces `sp_metrics_overview`
+2. add its checksum and revision to `migrations/manifest.json`
+3. test previous-to-head, then deploy through `pete-schema upgrade`
 
 Example deployment route:
 
 ```bash
-psql "$DATABASE_URL" -f init-db/schema.sql
+pete-schema upgrade
+pete-schema verify
 ```
 
-Be careful with this on a live DB. Reapplying the whole schema file may be heavier than needed. On a production database, prefer extracting and running only the updated `CREATE OR REPLACE FUNCTION sp_metrics_overview(...)` statement.
+Never edit or reapply an already-recorded migration. Function changes are forward
+migrations and receive the same checksum, backup, and rollout controls as tables.
 
 ### 8.7 Change Percentages, Deloads, Reps, and Rest Times
 
@@ -1023,7 +1020,8 @@ Code files you will most likely touch:
 - `pete_e/application/orchestrator.py`
 - `pete_e/cli/messenger.py`
 - `pete_e/api.py`
-- `init-db/schema.sql`
+- `migrations/manifest.json`
+- `docs/schema_management.md`
 
 DB tables you will most likely touch:
 

@@ -26,15 +26,15 @@ def test_web_console_jobs_migration_defines_command_history_storage() -> None:
     assert "idx_web_console_command_history_command_outcome" in migration
 
 
-def test_bootstrap_schema_includes_web_console_command_history_tables() -> None:
-    schema = Path("init-db/schema.sql").read_text(encoding="utf-8")
+def test_authoritative_history_includes_web_console_command_history_tables() -> None:
+    schema = Path("migrations/20260515_add_web_console_jobs.sql").read_text(encoding="utf-8")
     command_history = _table_block(schema, "web_console_command_history")
 
-    assert "DROP TABLE IF EXISTS web_console_command_history CASCADE" in schema
-    assert "CREATE TABLE web_console_command_history" in schema
+    assert "DROP TABLE IF EXISTS web_console_command_history CASCADE" not in schema
+    assert "CREATE TABLE IF NOT EXISTS web_console_command_history" in schema
     assert "job_id TEXT REFERENCES application_jobs(id) ON DELETE SET NULL" not in command_history
     assert "auth_scheme TEXT" in command_history
-    assert "CREATE INDEX idx_web_console_command_history_job_id" in schema
+    assert "CREATE INDEX IF NOT EXISTS idx_web_console_command_history_job_id" in schema
 
 
 def test_command_history_job_fk_relaxation_migration_drops_blocking_constraint() -> None:

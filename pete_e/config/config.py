@@ -89,6 +89,7 @@ class Settings(BaseSettings):
     PETEEEBOT_ENV_FILE: Path | None = None
     ENVIRONMENT: str = "development"
     DATABASE_URL: SecretStr | None = Field(None, validate_default=True)
+    PETEEEBOT_MIGRATOR_DATABASE_URL: SecretStr | None = None
 
     # --- USER PROFILE (from environment) ---
     USER_DATE_OF_BIRTH: date

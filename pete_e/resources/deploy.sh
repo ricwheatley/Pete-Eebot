@@ -125,6 +125,24 @@ UV_PROJECT_ENVIRONMENT="${VENV_ROOT}" "${UV_BIN}" sync \
 log "Checking installed dependency consistency..."
 "${UV_BIN}" pip check --python "${PYTHON_BIN}"
 
+log "Running read-only schema upgrade preflight..."
+"${PYTHON_BIN}" -m pete_e.cli.schema preflight
+
+if [[ "${SCHEMA_BACKUP_BEFORE_UPGRADE:-1}" == "1" ]]; then
+    [[ -x "${APP_ROOT}/scripts/backup_db.sh" ]] || fail "Database backup script is unavailable or not executable."
+    log "Backing up PostgreSQL before schema upgrade..."
+    PROJECT_ROOT="${PROJECT_ROOT}" APP_ROOT="${APP_ROOT}" ENV_FILE="${ENV_FILE}" \
+        "${APP_ROOT}/scripts/backup_db.sh"
+else
+    log "WARNING: Pre-migration backup explicitly disabled with SCHEMA_BACKUP_BEFORE_UPGRADE=0."
+fi
+
+log "Applying authoritative database migrations..."
+"${PYTHON_BIN}" -m pete_e.cli.schema upgrade
+
+log "Verifying the application role can read the required schema revision..."
+"${PYTHON_BIN}" -m pete_e.cli.schema verify
+
 log "Writing and activating cron jobs..."
 "${PYTHON_BIN}" -m pete_e.infrastructure.cron_manager --write --activate --summary
 

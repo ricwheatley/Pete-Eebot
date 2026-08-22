@@ -1,0 +1,138 @@
+{
+  "format": 1,
+  "previous_release_revision": "20260820_add_readiness_adjustment_idempotency",
+  "migrations": [
+    {
+      "revision": "00000000_initial_schema",
+      "filename": "00000000_initial_schema.sql",
+      "sha256": "60fa7c5addff62e228d7a1951f0dea3d0938a8a1c71bcd9f3e4d054c200547a2",
+      "transactional": true
+    },
+    {
+      "revision": "20251003_update_body_age_function",
+      "filename": "20251003_update_body_age_function.sql",
+      "sha256": "8824eb5e4c65d6e916f9cd299ab7cbe4b0f75d27530de8f2cb827412e9447745",
+      "transactional": true
+    },
+    {
+      "revision": "20260401_harden_plan_generation",
+      "filename": "20260401_harden_plan_generation.sql",
+      "sha256": "595c1da232b9b0f347603b74f7e869c90e1a48624970c5aefc0e49839450ac94",
+      "transactional": true
+    },
+    {
+      "revision": "20260413_capture_withings_measure_groups",
+      "filename": "20260413_capture_withings_measure_groups.sql",
+      "sha256": "5316c3334d2d38b66d0193eaae96f1685ad9942bc803b7071ed54dd17d7da5d8",
+      "transactional": true
+    },
+    {
+      "revision": "20260421_add_running_prescriptions",
+      "filename": "20260421_add_running_prescriptions.sql",
+      "sha256": "94b030c488b0c4a1e35145bc30c470c4114ddfc616b0e73eb6bd9e43280cc1f7",
+      "transactional": true
+    },
+    {
+      "revision": "20260421_allow_comment_only_plan_sessions",
+      "filename": "20260421_allow_comment_only_plan_sessions.sql",
+      "sha256": "da504acbdd569c959ababf73a35ae0da416de283d4f124950e47d55e2c4eeef4",
+      "transactional": true
+    },
+    {
+      "revision": "20260423_add_withings_body_comp_metrics",
+      "filename": "20260423_add_withings_body_comp_metrics.sql",
+      "sha256": "c67b5f43df61e3f9f4e92fe381889e92ca6dc0200a40d3b986c9186bb35f1bb0",
+      "transactional": true
+    },
+    {
+      "revision": "20260423_enrich_body_age_body_comp",
+      "filename": "20260423_enrich_body_age_body_comp.sql",
+      "sha256": "98eb3ad225a8709736d188a456f0df4eec94ab886add07ac0c58b28ef58ea8ed",
+      "transactional": true
+    },
+    {
+      "revision": "20260511_add_nutrition_log",
+      "filename": "20260511_add_nutrition_log.sql",
+      "sha256": "5789571eff8dea3fef59c1321f9e49cfc9ff2094c4481b5b4bb8daaa6212c31e",
+      "transactional": true
+    },
+    {
+      "revision": "20260511_add_nutrition_log_extended_fields",
+      "filename": "20260511_add_nutrition_log_extended_fields.sql",
+      "sha256": "5c272d26ada20287e983acdef8d834c7af3a04657fc5c6b161d933f6da7c0720",
+      "transactional": true
+    },
+    {
+      "revision": "20260511_add_nutrition_log_updated_at",
+      "filename": "20260511_add_nutrition_log_updated_at.sql",
+      "sha256": "be92ebc0fb67471a0cad255ee2fd48190a048926b57935f95f8264d9fc6d5916",
+      "transactional": true
+    },
+    {
+      "revision": "20260515_add_auth_users_sessions_rbac",
+      "filename": "20260515_add_auth_users_sessions_rbac.sql",
+      "sha256": "68cfc37c66841e803ad7d6615630a06a660fdb18d0bfd9e0bea22d55d59f7776",
+      "transactional": true
+    },
+    {
+      "revision": "20260515_add_user_profiles",
+      "filename": "20260515_add_user_profiles.sql",
+      "sha256": "49ae2bb3b0189ca09c0bc5e959844781ce50e679ecaa9db449ac4b5bcd88fce2",
+      "transactional": true
+    },
+    {
+      "revision": "20260515_add_web_console_jobs",
+      "filename": "20260515_add_web_console_jobs.sql",
+      "sha256": "f5d9a16f6e59dc6ae0f849e7ec1017877b7dc4cd10d16544fd29ec9a511bd407",
+      "transactional": true
+    },
+    {
+      "revision": "20260516_add_auth_mfa_fields",
+      "filename": "20260516_add_auth_mfa_fields.sql",
+      "sha256": "67d4d4653e9d03d89d6e0e56504c9164490aa0c71a97d6aa53e87dc8cbc42390",
+      "transactional": true
+    },
+    {
+      "revision": "20260516_add_job_leases_and_recovery",
+      "filename": "20260516_add_job_leases_and_recovery.sql",
+      "sha256": "55dc65bbb81e30d57c2cacd7042135f85908f40b93a8cc4a9f19be33abae27cf",
+      "transactional": true
+    },
+    {
+      "revision": "20260610_add_coach_voice_payloads",
+      "filename": "20260610_add_coach_voice_payloads.sql",
+      "sha256": "b607204068ff570cf8b3d6ee65efe5985c48155a4d140fc4766e84291718bec7",
+      "transactional": true
+    },
+    {
+      "revision": "20260610_relax_command_history_job_fk",
+      "filename": "20260610_relax_command_history_job_fk.sql",
+      "sha256": "74a8be7a2212ee0a17baae1b65cca685fc5a61e901ede562b4639adc7b968360",
+      "transactional": true
+    },
+    {
+      "revision": "20260624_add_assistance_difficulty",
+      "filename": "20260624_add_assistance_difficulty.sql",
+      "sha256": "85b9694007c777e31d6b6749905b7bb46c7a4067574b0ae2d975e51ff0aa5114",
+      "transactional": true
+    },
+    {
+      "revision": "20260628_adaptive_exercise_difficulty",
+      "filename": "20260628_adaptive_exercise_difficulty.sql",
+      "sha256": "9c5abde5d5c6ff7685d09688329d11a0216353e87ad32db7feea78c31ccd19eb",
+      "transactional": true
+    },
+    {
+      "revision": "20260820_add_readiness_adjustment_idempotency",
+      "filename": "20260820_add_readiness_adjustment_idempotency.sql",
+      "sha256": "f5f65cfec68ea49e617353794f98a3db4928adf1d5c3e967ea2be5748fa56463",
+      "transactional": true
+    },
+    {
+      "revision": "20260822_reconcile_untracked_schema",
+      "filename": "20260822_reconcile_untracked_schema.sql",
+      "sha256": "13aed6333e6305859fd7d5cfa5078852e107782b518b2dc168f7a864b280d9fd",
+      "transactional": true
+    }
+  ]
+}

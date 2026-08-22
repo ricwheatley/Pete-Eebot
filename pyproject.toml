@@ -51,6 +51,7 @@ required-environments = [
 
 [project.scripts]
 pete = "pete_e.cli.messenger:app"
+pete-schema = "pete_e.cli.schema:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -62,6 +63,9 @@ pete_e = [
     "static/**/*",
     "resources/**/*.json",
 ]
+
+[tool.setuptools.data-files]
+"share/pete_e/migrations" = ["migrations/*.sql", "migrations/manifest.json"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

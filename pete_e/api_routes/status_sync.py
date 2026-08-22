@@ -14,7 +14,7 @@ from pete_e.api_routes.dependencies import (
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.application import alerts
-from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results
+from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_readiness_checks
 from pete_e import observability
 from pete_e.domain.auth import ROLE_OPERATOR
 
@@ -45,7 +45,7 @@ def healthz():
 @router.get("/readyz")
 def readyz(timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1)):
     try:
-        detailed_payload = _checks_payload(get_status_service().run_checks(timeout=timeout))
+        detailed_payload = _checks_payload(run_readiness_checks(timeout=timeout))
         ok = bool(detailed_payload["ok"])
     except Exception:
         ok = False

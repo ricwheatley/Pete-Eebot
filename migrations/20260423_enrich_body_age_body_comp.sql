@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE body_age_daily
     ADD COLUMN IF NOT EXISTS used_enriched_body_comp BOOLEAN NOT NULL DEFAULT false;
@@ -207,5 +207,3 @@ BEGIN
         updated_at = now();
 END;
 $$;
-
-COMMIT;

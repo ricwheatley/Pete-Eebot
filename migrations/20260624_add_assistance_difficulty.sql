@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE assistance_pool
     ADD COLUMN IF NOT EXISTS difficulty SMALLINT NOT NULL DEFAULT 5;
@@ -21,5 +21,3 @@ ALTER TABLE assistance_pool
 
 COMMENT ON COLUMN assistance_pool.difficulty IS
     '0 excludes the assistance exercise from planning; 1-10 rates easiest to hardest.';
-
-COMMIT;

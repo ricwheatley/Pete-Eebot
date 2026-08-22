@@ -6,12 +6,11 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Callable, Iterable, List, Sequence
 
-import psycopg
-
 from pete_e import observability
 from pete_e.application import alerts
 from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
+from pete_e.infrastructure.schema_migrations import inspect_database
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.ollama_client import OllamaChatClient
 from pete_e.infrastructure.telegram_client import TelegramClient
@@ -58,15 +57,23 @@ def _record_result(name: str, ok: bool, start: float, *, kind: str) -> None:
 def check_database(timeout: float = DEFAULT_TIMEOUT_SECONDS) -> CheckResult:
     start = perf_counter()
     try:
-        with psycopg.connect(get_database_url(), connect_timeout=timeout) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
+        schema = inspect_database(get_database_url(), timeout=timeout)
+        if not schema.compatible:
+            detail = (
+                f"schema {schema.state}: current={schema.current_revision or 'none'} "
+                f"required={schema.head_revision}; {schema.detail}"
+            )
+            _record_result("DB", False, start, kind="database")
+            return CheckResult(name="DB", ok=False, detail=detail)
     except Exception as exc:  # pragma: no cover - handled via result
         _record_result("DB", False, start, kind="database")
         return CheckResult(name="DB", ok=False, detail=_format_exception(exc))
     _record_result("DB", True, start, kind="database")
-    return CheckResult(name="DB", ok=True, detail=_format_duration(start))
+    return CheckResult(
+        name="DB",
+        ok=True,
+        detail=f"schema {schema.head_revision} ({_format_duration(start)})",
+    )
     """Perform check database."""
 
 
@@ -178,6 +185,12 @@ def run_status_checks(
         )
 
     return [check() for check in checks]
+
+
+def run_readiness_checks(*, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> List[CheckResult]:
+    """Check only local runtime prerequisites; never call external providers."""
+
+    return [check_database(timeout)]
 
 
 def render_results(results: Iterable[CheckResult]) -> str:

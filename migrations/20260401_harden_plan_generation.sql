@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 CREATE TABLE IF NOT EXISTS core_pool (
     exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE
@@ -22,5 +22,3 @@ WHERE id IN (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_training_plans_single_active
     ON training_plans (is_active)
     WHERE is_active = true;
-
-COMMIT;
