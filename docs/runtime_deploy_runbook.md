@@ -61,10 +61,13 @@ Not supported today:
 
 ### 1.4 DB migration path
 
-- Base schema bootstrap: `init-db/schema.sql`.
-- Incremental SQL migrations are manually managed in `migrations/*.sql`.
-- No Alembic or migration runner is present in repo.
-- Current expected operator flow is explicit `psql` execution against schema + migration SQL files.
+- `migrations/manifest.json` is the authoritative ordered/checksummed history.
+- `petee_schema_migrations` is the database revision ledger.
+- `pete-schema status|preflight|upgrade|verify` is the only supported apply path.
+- `init-db/` intentionally has no executable SQL; development reset is a separately
+  named, guarded command.
+- Existing untracked installations use the backup-first baseline procedure in
+  `docs/schema_management.md`; deployment refuses to infer or replay their state.
 
 ---
 
@@ -93,30 +96,15 @@ UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
 docker compose up -d db
 ```
 
-4. Validate Settings without printing the resolved connection string, then
-   initialize schema (new DB)
-   and apply migrations (existing/new DB updates). `DATABASE_URL` is
-   authoritative when supplied. Otherwise export libpq's `PGUSER`,
-   `PGPASSWORD`, `PGHOST`, `PGPORT`, and `PGDATABASE` from the complete
-   `POSTGRES_*` set and invoke `psql` without a URL. If both sources are present,
-   application startup accepts them only when their decoded connection values
-   match; partial or conflicting components fail validation.
+4. Validate Settings without printing the resolved connection string, then run
+   the authoritative migration and verification commands. `DATABASE_URL` is
+   authoritative when supplied; a complete `POSTGRES_*` set is the alternative.
 
 ```bash
 python -c "from pete_e.config import settings; assert settings.DATABASE_URL is not None"
-
-if [ -n "${DATABASE_URL:-}" ]; then
-  psql_args=("$DATABASE_URL")
-else
-  export PGUSER="$POSTGRES_USER" PGPASSWORD="$POSTGRES_PASSWORD"
-  export PGHOST="${DB_HOST_OVERRIDE:-$POSTGRES_HOST}" PGPORT="${POSTGRES_PORT:-5432}"
-  export PGDATABASE="$POSTGRES_DB"
-  psql_args=()
-fi
-
-psql "${psql_args[@]}" -f init-db/schema.sql
-for f in migrations/*.sql; do psql "${psql_args[@]}" -f "$f"; done
-unset PGPASSWORD
+pete-schema status
+pete-schema upgrade
+pete-schema verify
 ```
 
 5. Sanity check integrations and service health.
@@ -175,9 +163,9 @@ as Caddy or Nginx:
   `Strict-Transport-Security` header at the proxy.
 - The proxy forwards `Host`, scheme/proto, and client IP headers so request logs
   and redirects preserve the public request context.
-- `/readyz` is unauthenticated but returns only coarse readiness. Detailed
-  dependency names and errors remain behind authenticated `/api/v1/status` and
-  `/console/status`.
+- `/readyz` is unauthenticated but returns only coarse local DB/schema readiness.
+  It never calls external providers. Detailed operational dependency names and
+  errors remain behind authenticated `/api/v1/status` and `/console/status`.
 
 Set conservative proxy limits. Use route-specific exceptions only when an
 operator workflow really needs them:
@@ -228,6 +216,10 @@ Current deploy chain in repo:
    - validates `.env`, venv, pinned uv, `pyproject.toml`, and `uv.lock`
    - rejects a stale `uv.lock`, then exact-syncs its frozen runtime subset into the shared venv with `--no-dev --no-editable`
    - checks the installed dependency graph with `uv pip check`
+   - runs a read-only schema preflight
+   - creates a PostgreSQL backup unless explicitly disabled
+   - applies pending migrations with the migrator role
+   - verifies head and essential schema through the runtime role
    - refreshes cron via `pete_e.infrastructure.cron_manager`
    - notifies Telegram
    - restarts `peteeebot.service`
@@ -253,6 +245,7 @@ export PGPASSWORD="$POSTGRES_PASSWORD"
 pg_restore -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" \
   -d "$POSTGRES_DB" --clean --if-exists --no-owner \
   /opt/myapp/backups/postgres/latest.dump
+pete-schema verify
 ```
 
 ### 5.3 Decrypt cloud backup artifact before restore (if encrypted upload used)
@@ -394,12 +387,11 @@ The first failures return normal authentication errors, immediate retries are ba
 Browser owner accounts are created from the host shell only. There is no public
 HTTP route for first-owner bootstrap.
 
-Before starting the web console for the first time, apply the auth migration and
-create one owner:
+Before starting the web console for the first time, verify schema head and create
+one owner:
 
 ```bash
-psql "$DATABASE_URL" -f migrations/20260515_add_auth_users_sessions_rbac.sql
-psql "$DATABASE_URL" -f migrations/20260516_add_auth_mfa_fields.sql
+pete-schema verify
 pete bootstrap-owner --username ric --email ric@example.com --display-name "Ric"
 ```
 
@@ -515,11 +507,11 @@ Restart the API/job process after changing the value. See `docs/planner_feature_
 The coached-person profile layer is optional. Existing single-user deployments
 continue to use the `USER_DATE_OF_BIRTH`, `USER_HEIGHT_CM`,
 `USER_GOAL_WEIGHT_KG`, and `USER_TIMEZONE` settings as the default profile
-facts. Apply the Phase 5.3 schema only when you want database-backed profile
-metadata:
+facts. The profile foundation is part of authoritative schema head. Verify it
+before enabling database-backed profile metadata:
 
 ```bash
-psql "$DATABASE_URL" -f migrations/20260515_add_user_profiles.sql
+pete-schema verify
 ```
 
 The migration does not rewrite or split existing training, nutrition, Withings,
@@ -535,7 +527,7 @@ rollback, and future profile-scoping guidance.
 - Removed the legacy app `Dockerfile`.
 - Removed the Compose `app` service that built the stale image and then idled with `tail -f /dev/null`.
 - Kept `docker-compose.yml` as the supported local Postgres helper.
-- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `uv.lock`, `pete_e/`, `scripts/`, `init-db/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
+- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `uv.lock`, `pete_e/`, `scripts/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
 
 ### 8.2 Disabled/missing cron scripts
 

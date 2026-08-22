@@ -58,11 +58,12 @@ were created before this authorization hardening.
 
 ## Apply
 
-Back up first, then apply the migration:
+Back up first, then apply and verify the authoritative migration head:
 
 ```bash
 scripts/backup_db.sh
-psql "$DATABASE_URL" -f migrations/20260515_add_user_profiles.sql
+pete-schema upgrade
+pete-schema verify
 ```
 
 Smoke checks:

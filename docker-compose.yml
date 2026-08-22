@@ -8,14 +8,13 @@
       timeout: 5s
       retries: 5
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-pete_db}
-      POSTGRES_USER: ${POSTGRES_USER:-pete_user}
+      POSTGRES_DB: ${POSTGRES_DB:-pete_e_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-pete_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_docker_password}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
     networks:
       - pete-net
 

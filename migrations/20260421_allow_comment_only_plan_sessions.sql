@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE training_plan_workouts
     ALTER COLUMN exercise_id DROP NOT NULL;
@@ -62,5 +62,3 @@ RETURNS TABLE (
         COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
         tpw.scheduled_time;
 $$;
-
-COMMIT;

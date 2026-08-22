@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 CREATE TABLE IF NOT EXISTS withings_measure_groups (
     grpid BIGINT PRIMARY KEY,
@@ -23,5 +23,3 @@ COMMENT ON TABLE withings_measure_groups IS
 
 CREATE INDEX IF NOT EXISTS idx_withings_measure_groups_day
     ON withings_measure_groups(day);
-
-COMMIT;

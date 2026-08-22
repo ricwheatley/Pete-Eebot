@@ -32,8 +32,8 @@ Severity guidance:
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
 | [ ] Required environment values are populated: Postgres, Dropbox, Withings, Telegram if enabled, wger if enabled, `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, and `DEPLOY_SCRIPT_PATH`. | Blocker | Redacted env inventory. |
 | [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
-| [ ] Database schema baseline and all intended migrations have been applied in order. | Blocker | Applied SQL list and DB target. |
-| [ ] Migration rollback or restore path is known before applying any migration that changes production data. | Blocker | Rollback section in release note. |
+| [ ] `pete-schema preflight`, backup, `upgrade`, and runtime-role `verify` pass; the ledger equals manifest head with valid checksums. | Blocker | Redacted command output, backup artifact/checksum, head revision, and DB identity. |
+| [ ] Migration failure and restore paths are known before applying any migration that changes production data. | Blocker | Rollback section in release note and disposable restore rehearsal. |
 | [ ] `python -m scripts.check_auth` and `pete status` complete with expected provider status. | Blocker | Command output summary. |
 | [ ] Cron source of truth has been rendered/applied from `pete_e/resources/pete_crontab.csv`; disabled missing-script rows remain disabled. | High | Cron summary output. |
 | [ ] `peteeebot.service` exists, runs under the intended user, and is managed by systemd. | Blocker | `systemctl status` summary. |
@@ -52,7 +52,7 @@ Severity guidance:
 | [ ] HSTS is enabled for production once HTTPS is confirmed stable: `PETEEEBOT_ENABLE_HSTS=true`. | High | Response header evidence. |
 | [ ] Reverse proxy forwards `Host`, scheme, and client IP headers required for accurate request logging and secure redirects. | High | Proxy config excerpt. |
 | [ ] Request body size, header size, and upstream timeout limits are set to conservative values for the API and webhook surface. | High | Proxy limit values. |
-| [ ] `/readyz` returns only coarse unauthenticated readiness; detailed dependency names/errors require authenticated `/api/v1/status` or `/console/status`. | High | Public `/readyz` sample plus authenticated status sample. |
+| [ ] `/readyz` returns only coarse unauthenticated DB/schema readiness and does not call external providers; detailed dependency names/errors require authenticated `/api/v1/status` or `/console/status`. | High | Public `/readyz` sample plus authenticated status sample. |
 | [ ] `/api/v1/metrics` remains authenticated and is scraped with `X-API-Key` or a trusted authenticated session. | High | Scrape config. |
 | [ ] GitHub webhook route is reachable only as needed and still relies on `X-Hub-Signature-256` HMAC validation. | High | Webhook test result. |
 
@@ -102,7 +102,7 @@ Severity guidance:
 | [ ] API responses include `X-Request-ID` and `X-Correlation-ID`; those IDs appear in JSON logs. | High | Request/log correlation sample. |
 | [ ] Background jobs emit `background_job` structured records with operation, outcome, duration, and job ID. | High | Sample log record. |
 | [ ] `/healthz` returns liveness without dependency checks. | High | `curl` result. |
-| [ ] `/readyz?timeout=5` returns only coarse `healthy`/`unhealthy` readiness and fails with `503` when a required dependency is unhealthy. | High | Healthy result plus known-failure or staging negative test. |
+| [ ] `/readyz?timeout=5` returns only coarse `healthy`/`unhealthy` readiness, succeeds at ledger head, and fails with `503` on a stale/incomplete schema. | High | Head result plus stale-schema negative test. |
 | [ ] `/api/v1/status?timeout=5` is authenticated and returns expected operational summary. | Blocker | Authenticated response summary. |
 | [ ] `/api/v1/metrics` exposes Prometheus metrics with authentication. | High | Scrape sample. |
 | [ ] Key metrics are present: job runs/failures/durations/retries, dependency health, external API health, alert events, and active alerts. | High | Metrics sample. |
@@ -119,7 +119,7 @@ Severity guidance:
 | [ ] Previous known-good Git SHA and deploy timestamp are recorded before deployment. | Blocker | SHA and timestamp. |
 | [ ] Rollback command sequence is written for the current host and does not depend on memory during an incident. | Blocker | Release-specific rollback note. |
 | [ ] Rollback trigger criteria are defined: failed smoke checks, failed auth, failing migrations, elevated 5xx, broken sync, broken daily message, or failed dependency readiness. | High | Criteria in signoff. |
-| [ ] Database rollback strategy is explicit: restore from predeploy backup, apply down SQL/manual correction, or accept forward-only migration with documented compatibility. | Blocker | DB rollback decision. |
+| [ ] Database rollback strategy is explicit: deploy a compatible previous binary or restore the verified predeploy backup; schema downgrades are not improvised in production. | Blocker | DB rollback decision and restore rehearsal. |
 | [ ] A fresh predeploy backup has completed before applying any schema or destructive data change. | Blocker | Backup timestamp. |
 | [ ] Feature flags and environment toggles can be reverted independently of code where applicable. | High | Flag/env rollback list. |
 | [ ] Reverse proxy config has a known-good copy and can be reloaded or restored independently. | High | Config backup path. |

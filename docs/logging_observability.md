@@ -151,7 +151,7 @@ Key emitted metrics:
 | `peteeebot_job_failures_total` | counter | Guarded job failures and timeouts. |
 | `peteeebot_job_duration_seconds` | summary | Guarded job latency count/sum by operation and outcome. |
 | `peteeebot_job_retries_total` | counter | Sync and external API retry attempts by operation/source. |
-| `peteeebot_dependency_health` | gauge | Latest readiness result for DB and external dependencies. |
+| `peteeebot_dependency_health` | gauge | Latest database-schema readiness and operational dependency results. |
 | `peteeebot_external_api_health` | gauge | Latest readiness result for Dropbox, Withings, Telegram, and wger. |
 | `peteeebot_alert_events_total` | counter | Alert events by `alert_type`, `severity`, and `outcome` (`emitted` or `deduped`). |
 | `peteeebot_alert_active` | gauge | Latest active alert state by `alert_type` and `severity`. |
@@ -159,5 +159,5 @@ Key emitted metrics:
 Probe endpoints:
 
 - `GET /healthz` is a liveness probe and does not touch dependencies.
-- `GET /readyz?timeout=3` runs the same meaningful dependency checks as `/status`, including DB and external providers, but returns only coarse readiness: `{"ok":true,"status":"healthy"}` or `{"ok":false,"status":"unhealthy"}`. It returns `200` only when all checks pass and `503` when any dependency fails.
+- `GET /readyz?timeout=3` checks only the local PostgreSQL connection, exact migration-ledger head, and essential schema markers. It never calls Dropbox, Withings, Telegram, wger, or an LLM. It returns only coarse readiness: `{"ok":true,"status":"healthy"}` or `{"ok":false,"status":"unhealthy"}`.
 - `GET /api/v1/status?timeout=3` remains the authenticated operational status endpoint with dependency names, error details, and a human-readable summary.

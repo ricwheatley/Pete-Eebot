@@ -6,14 +6,14 @@ from pathlib import Path
 MIGRATION = Path("migrations/20260820_add_readiness_adjustment_idempotency.sql")
 
 
-def test_bootstrap_schema_distinguishes_baseline_and_effective_prescriptions() -> None:
-    schema = Path("init-db/schema.sql").read_text(encoding="utf-8")
+def test_authoritative_migration_distinguishes_baseline_and_effective_prescriptions() -> None:
+    schema = MIGRATION.read_text(encoding="utf-8")
 
-    assert "baseline_sets INT NOT NULL" in schema
+    assert "ALTER COLUMN baseline_sets SET NOT NULL" in schema
     assert "training_plan_workouts_baseline_sets_nonnegative" in schema
     assert "CHECK (baseline_sets >= 0)" in schema
     assert "baseline_rir FLOAT" in schema
-    assert "CREATE TABLE plan_readiness_adjustments" in schema
+    assert "CREATE TABLE IF NOT EXISTS plan_readiness_adjustments" in schema
     assert "effective_readiness_adjustment_id" in schema
     assert "ux_plan_readiness_adjustment_identity" in schema
 

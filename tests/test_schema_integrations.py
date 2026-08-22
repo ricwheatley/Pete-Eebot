@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,6 +9,13 @@ import pytest
 from pete_e.cli import messenger
 from pete_e.domain import narrative_builder
 from pete_e.domain.narrative_builder import NarrativeBuilder
+from pete_e.infrastructure.schema_migrations import load_manifest
+
+
+def _schema_history_sql() -> str:
+    return "\n".join(
+        migration.path.read_text(encoding="utf-8") for migration in load_manifest()
+    )
 
 
 class _DeterministicRandom:
@@ -46,7 +52,7 @@ def stub_phrase_picker(monkeypatch):
 
 
 def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
-    pattern = rf"CREATE\s+(?:TEMPORARY\s+|TEMP\s+)?TABLE\s+{re.escape(table_name)}\s*\((.*?)\)\s*(?:ON\s+COMMIT\s+\w+\s*)?;"
+    pattern = rf"CREATE\s+(?:TEMPORARY\s+|TEMP\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\s*\((.*?)\)\s*(?:ON\s+COMMIT\s+\w+\s*)?;"
     match = re.search(pattern, sql_text, flags=re.IGNORECASE | re.DOTALL)
     if match is None:
         raise AssertionError(f"Could not find definition for table '{table_name}'.")
@@ -64,25 +70,27 @@ def _extract_table_columns(sql_text: str, table_name: str) -> list[str]:
 
 
 def test_withings_daily_table_includes_body_composition_columns():
-    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
-    columns = _extract_table_columns(schema_sql, "withings_daily")
+    schema_sql = _schema_history_sql()
 
-    assert "muscle_pct" in columns
-    assert "water_pct" in columns
-    assert "fat_free_mass_kg" in columns
-    assert "fat_mass_kg" in columns
-    assert "muscle_mass_kg" in columns
-    assert "water_mass_kg" in columns
-    assert "bone_mass_kg" in columns
-    assert "visceral_fat_index" in columns
-    assert "bmr_kcal_day" in columns
-    assert "nerve_health_score_feet" in columns
-    assert "metabolic_age_years" in columns
+    for column in (
+        "muscle_pct",
+        "water_pct",
+        "fat_free_mass_kg",
+        "fat_mass_kg",
+        "muscle_mass_kg",
+        "water_mass_kg",
+        "bone_mass_kg",
+        "visceral_fat_index",
+        "bmr_kcal_day",
+        "nerve_health_score_feet",
+        "metabolic_age_years",
+    ):
+        assert column in schema_sql
     """Perform test withings daily table includes body composition columns."""
 
 
 def test_withings_raw_measure_group_table_is_present() -> None:
-    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+    schema_sql = _schema_history_sql()
     columns = _extract_table_columns(schema_sql, "withings_measure_groups")
 
     assert columns[:4] == ["grpid", "day", "measured_at", "created_at_source"]
@@ -91,10 +99,9 @@ def test_withings_raw_measure_group_table_is_present() -> None:
 
 
 def test_body_age_table_tracks_enriched_body_comp_usage() -> None:
-    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
-    columns = _extract_table_columns(schema_sql, "body_age_daily")
+    schema_sql = _schema_history_sql()
 
-    assert "used_enriched_body_comp" in columns
+    assert "used_enriched_body_comp" in schema_sql
     assert "v_enriched_body_comp_rows" in schema_sql
     assert "visceral_fat_index" in schema_sql
     assert "used_enriched_body_comp = EXCLUDED.used_enriched_body_comp" in schema_sql
@@ -102,15 +109,13 @@ def test_body_age_table_tracks_enriched_body_comp_usage() -> None:
 
 
 def test_training_plan_schema_includes_single_active_index_and_core_pool() -> None:
-    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+    schema_sql = _schema_history_sql()
 
-    assert "CREATE UNIQUE INDEX ux_training_plans_single_active" in schema_sql
-    plan_workout_columns = _extract_table_columns(schema_sql, "training_plan_workouts")
-    assert "programmed_difficulty" in plan_workout_columns
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_training_plans_single_active" in schema_sql
+    assert "programmed_difficulty" in schema_sql
     core_pool_columns = _extract_table_columns(schema_sql, "core_pool")
     assert core_pool_columns == ["exercise_id"]
-    assistance_pool_columns = _extract_table_columns(schema_sql, "assistance_pool")
-    assert "difficulty" in assistance_pool_columns
+    assert "ADD COLUMN IF NOT EXISTS difficulty" in schema_sql
     metadata_columns = _extract_table_columns(schema_sql, "exercise_programming_metadata")
     assert metadata_columns[:2] == ["exercise_id", "difficulty"]
     assert "eligible_core" in metadata_columns
@@ -122,7 +127,7 @@ def test_training_plan_schema_includes_single_active_index_and_core_pool() -> No
 
 
 def test_schema_permissions_block_only_grants_to_pete_user_when_role_exists() -> None:
-    schema_sql = Path("init-db/schema.sql").read_text(encoding="utf-8")
+    schema_sql = _schema_history_sql()
 
     assert "IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pete_user') THEN" in schema_sql
     assert "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pete_user;" in schema_sql
@@ -170,17 +175,10 @@ _EXPECTED_DAILY_SUMMARY_COLUMNS = {
 
 
 def test_daily_summary_view_select_includes_expected_columns() -> None:
-    sql_text = Path("init-db/schema.sql").read_text(encoding="utf-8")
-    staging_columns = set(_extract_table_columns(sql_text, "tmp_daily_summary"))
-    table_columns = set(_extract_table_columns(sql_text, "daily_summary"))
+    sql_text = _schema_history_sql()
 
     for column in _EXPECTED_DAILY_SUMMARY_COLUMNS:
-        assert column in staging_columns, (
-            f"Expected column '{column}' in tmp_daily_summary staging table definition."
-        )
-        assert column in table_columns, (
-            f"Expected column '{column}' in daily_summary table definition."
-        )
+        assert column in sql_text, f"Expected column '{column}' in migration history."
     """Perform test daily summary view select includes expected columns."""
 
 

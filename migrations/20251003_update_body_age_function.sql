@@ -1,5 +1,5 @@
--- Update sp_upsert_body_age to consume direct VO2 max values and HRV adjustments
-BEGIN;
+-- Update sp_upsert_body_age to consume direct VO2 max values and HRV adjustments.
+-- The authoritative migration runner owns the transaction boundary.
 
 CREATE OR REPLACE FUNCTION sp_upsert_body_age(p_target_date date, p_birth_date date)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -93,5 +93,3 @@ BEGIN
         body_age_years = EXCLUDED.body_age_years, age_delta_years = EXCLUDED.age_delta_years, used_vo2max_direct = EXCLUDED.used_vo2max_direct, cap_minus_10_applied = EXCLUDED.cap_minus_10_applied, updated_at = now();
 END;
 $$;
-
-COMMIT;

@@ -1,9 +1,10 @@
 -- =============================================================================
--- Pete-Eebot PostgreSQL Schema
--- Version 3.0 (Apple Health Granular Integration)
+-- Pete-Eebot PostgreSQL initial migration
+-- Historical origin immediately before 20251003
 --
--- This script defines the complete, up-to-date relational schema.
--- Major changes in this version:
+-- This script defines only the non-destructive origin for the ordered history.
+-- Later revisions in migrations/ must always be applied by pete-schema.
+-- The historical origin:
 --  - Replaced the wide 'apple_daily' table with a fully normalized schema
 --    to support detailed daily JSON exports from HealthAutoExport.
 --  - Introduced new tables: Device, MetricType, DailyMetric,
@@ -13,258 +14,13 @@
 --    these new normalized tables.
 -- =============================================================================
 
-
--- Drop objects in reverse order of dependency to ensure a clean slate
-DROP VIEW IF EXISTS metrics_overview;
-DROP MATERIALIZED VIEW IF EXISTS daily_summary;
-DROP MATERIALIZED VIEW IF EXISTS plan_muscle_volume;
-DROP MATERIALIZED VIEW IF EXISTS actual_muscle_volume;
-DROP TABLE IF EXISTS "ImportLog" CASCADE;
-DROP TABLE IF EXISTS application_operation_locks CASCADE;
-DROP TABLE IF EXISTS web_console_command_history CASCADE;
-DROP TABLE IF EXISTS application_jobs CASCADE;
-DROP TABLE IF EXISTS coach_voice_payloads CASCADE;
-DROP TABLE IF EXISTS auth_sessions CASCADE;
-DROP TABLE IF EXISTS auth_user_profiles CASCADE;
-DROP TABLE IF EXISTS user_profiles CASCADE;
-DROP TABLE IF EXISTS auth_user_roles CASCADE;
-DROP TABLE IF EXISTS auth_users CASCADE;
-DROP TABLE IF EXISTS auth_roles CASCADE;
-DROP TABLE IF EXISTS "WorkoutHeartRateRecovery" CASCADE;
-DROP TABLE IF EXISTS "WorkoutActiveEnergy" CASCADE;
-DROP TABLE IF EXISTS "WorkoutStepCount" CASCADE;
-DROP TABLE IF EXISTS "WorkoutHeartRate" CASCADE;
-DROP TABLE IF EXISTS "Workout" CASCADE;
-DROP TABLE IF EXISTS "WorkoutType" CASCADE;
-DROP TABLE IF EXISTS "DailySleepSummary" CASCADE;
-DROP TABLE IF EXISTS "DailyHeartRateSummary" CASCADE;
-DROP TABLE IF EXISTS "DailyMetric" CASCADE;
-DROP TABLE IF EXISTS "MetricType" CASCADE;
-DROP TABLE IF EXISTS "Device" CASCADE;
-DROP TABLE IF EXISTS strength_test_result CASCADE;
-DROP TABLE IF EXISTS training_max CASCADE;
-DROP TABLE IF EXISTS training_cycle CASCADE;
-DROP TABLE IF EXISTS training_blocks CASCADE;
-DROP TABLE IF EXISTS wger_export_log CASCADE;
-DROP TABLE IF EXISTS plan_readiness_adjustments CASCADE;
-DROP TABLE IF EXISTS nutrition_log CASCADE;
-DROP TABLE IF EXISTS withings_measure_groups CASCADE;
-DROP TABLE IF EXISTS training_plan_workouts CASCADE;
-DROP TABLE IF EXISTS training_plan_weeks CASCADE;
-DROP TABLE IF EXISTS training_plans CASCADE;
-DROP TABLE IF EXISTS wger_logs CASCADE;
-DROP TABLE IF EXISTS body_age_daily CASCADE;
-DROP TABLE IF EXISTS withings_daily CASCADE;
-DROP TABLE IF EXISTS exercise_difficulty_unlock_state CASCADE;
-DROP TABLE IF EXISTS exercise_programming_metadata CASCADE;
-DROP TABLE IF EXISTS core_pool CASCADE;
-DROP TABLE IF EXISTS assistance_pool CASCADE;
-DROP TABLE IF EXISTS wger_exercise_muscle_secondary CASCADE;
-DROP TABLE IF EXISTS wger_exercise_muscle_primary CASCADE;
-DROP TABLE IF EXISTS wger_exercise_equipment CASCADE;
-DROP TABLE IF EXISTS wger_exercise CASCADE;
-DROP TABLE IF EXISTS wger_muscle CASCADE;
-DROP TABLE IF EXISTS wger_equipment CASCADE;
-DROP TABLE IF EXISTS wger_category CASCADE;
-DROP TABLE IF EXISTS daily_summary CASCADE;
-DROP FUNCTION IF EXISTS sp_upsert_body_age(date, date);
-DROP FUNCTION IF EXISTS sp_upsert_body_age_range(date, date, date);
-
+-- Reconstructed from Git commit 298f5e6^.
+-- The migration runner permits this revision only on an empty database.
+-- It contains no DROP statements and is not a reset mechanism.
 
 -- =============================================================================
 -- SECTION 1: CORE DATA & CATALOG TABLES
 -- =============================================================================
-
--- -----------------------------------------------------------------------------
--- AUTHENTICATION, SESSIONS & RBAC
--- -----------------------------------------------------------------------------
-CREATE TABLE auth_roles (
-    name TEXT PRIMARY KEY,
-    description TEXT NOT NULL,
-    CONSTRAINT ck_auth_roles_name CHECK (name IN ('owner', 'operator', 'read_only'))
-);
-
-INSERT INTO auth_roles (name, description)
-VALUES
-    ('owner', 'Full administrative access, including user and security administration.'),
-    ('operator', 'Can run operational workflows and manage day-to-day coach actions.'),
-    ('read_only', 'Can view status, plans, logs, and summaries without making changes.');
-
-CREATE TABLE auth_users (
-    id BIGSERIAL PRIMARY KEY,
-    username TEXT NOT NULL,
-    username_normalized TEXT NOT NULL UNIQUE,
-    email TEXT,
-    email_normalized TEXT UNIQUE,
-    display_name TEXT,
-    password_hash TEXT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    mfa_secret TEXT,
-    mfa_enabled BOOLEAN NOT NULL DEFAULT false,
-    mfa_recovery_code_hashes JSONB NOT NULL DEFAULT '[]'::jsonb,
-    password_changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_login_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_auth_users_username_not_blank CHECK (btrim(username) <> ''),
-    CONSTRAINT ck_auth_users_username_normalized_not_blank CHECK (btrim(username_normalized) <> '')
-);
-COMMENT ON TABLE auth_users IS 'Browser-facing user accounts for web UI sessions.';
-CREATE INDEX idx_auth_users_mfa_enabled
-    ON auth_users(mfa_enabled)
-    WHERE mfa_enabled = true;
-
-CREATE TABLE auth_user_roles (
-    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-    role_name TEXT NOT NULL REFERENCES auth_roles(name),
-    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (user_id, role_name)
-);
-CREATE INDEX idx_auth_user_roles_role_name ON auth_user_roles(role_name);
-
-CREATE TABLE auth_sessions (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-    token_hash CHAR(64) NOT NULL UNIQUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ NOT NULL,
-    last_seen_at TIMESTAMPTZ,
-    revoked_at TIMESTAMPTZ,
-    ip_address INET,
-    user_agent TEXT,
-    CONSTRAINT ck_auth_sessions_expires_after_created CHECK (expires_at > created_at)
-);
-CREATE INDEX idx_auth_sessions_user_id ON auth_sessions(user_id);
-CREATE INDEX idx_auth_sessions_expires_at ON auth_sessions(expires_at);
-CREATE INDEX idx_auth_sessions_active_token
-    ON auth_sessions(token_hash)
-    WHERE revoked_at IS NULL;
-COMMENT ON TABLE auth_sessions IS 'Opaque browser session tokens stored as SHA-256 hashes.';
-
-CREATE TABLE application_jobs (
-    id TEXT PRIMARY KEY,
-    operation TEXT NOT NULL,
-    requester_user_id BIGINT REFERENCES auth_users(id) ON DELETE SET NULL,
-    requester_username TEXT,
-    auth_scheme TEXT,
-    status TEXT NOT NULL,
-    request_id TEXT NOT NULL,
-    correlation_id TEXT NOT NULL,
-    request_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    exit_code INTEGER,
-    result_summary TEXT,
-    stdout_summary TEXT,
-    stderr_summary TEXT,
-    failure_reason TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    started_at TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_application_jobs_status CHECK (
-        status IN ('queued', 'running', 'succeeded', 'failed', 'timeout')
-    ),
-    CONSTRAINT ck_application_jobs_operation_not_blank CHECK (btrim(operation) <> ''),
-    CONSTRAINT ck_application_jobs_request_id_not_blank CHECK (btrim(request_id) <> ''),
-    CONSTRAINT ck_application_jobs_correlation_id_not_blank CHECK (btrim(correlation_id) <> '')
-);
-CREATE INDEX idx_application_jobs_created_at ON application_jobs(created_at DESC);
-CREATE INDEX idx_application_jobs_status ON application_jobs(status);
-CREATE INDEX idx_application_jobs_correlation_id ON application_jobs(correlation_id);
-CREATE INDEX idx_application_jobs_requester_user_id ON application_jobs(requester_user_id);
-
-CREATE TABLE web_console_command_history (
-    id BIGSERIAL PRIMARY KEY,
-    request_id TEXT NOT NULL,
-    correlation_id TEXT NOT NULL,
-    job_id TEXT,
-    requester_user_id BIGINT REFERENCES auth_users(id) ON DELETE SET NULL,
-    requester_username TEXT,
-    auth_scheme TEXT,
-    command TEXT NOT NULL,
-    outcome TEXT NOT NULL,
-    safe_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
-    client_identity TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_web_console_command_history_request_id_not_blank CHECK (btrim(request_id) <> ''),
-    CONSTRAINT ck_web_console_command_history_correlation_id_not_blank CHECK (btrim(correlation_id) <> ''),
-    CONSTRAINT ck_web_console_command_history_command_not_blank CHECK (btrim(command) <> ''),
-    CONSTRAINT ck_web_console_command_history_outcome_not_blank CHECK (btrim(outcome) <> '')
-);
-CREATE INDEX idx_web_console_command_history_created_at ON web_console_command_history(created_at DESC);
-CREATE INDEX idx_web_console_command_history_request_id ON web_console_command_history(request_id);
-CREATE INDEX idx_web_console_command_history_job_id ON web_console_command_history(job_id);
-CREATE INDEX idx_web_console_command_history_command_outcome ON web_console_command_history(command, outcome, created_at DESC);
-CREATE INDEX idx_web_console_command_history_requester_user_id ON web_console_command_history(requester_user_id);
-
-CREATE TABLE application_operation_locks (
-    lock_name TEXT PRIMARY KEY,
-    operation TEXT NOT NULL,
-    job_id TEXT REFERENCES application_jobs(id) ON DELETE SET NULL,
-    acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_application_operation_locks_lock_name_not_blank CHECK (btrim(lock_name) <> ''),
-    CONSTRAINT ck_application_operation_locks_operation_not_blank CHECK (btrim(operation) <> '')
-);
-CREATE INDEX idx_application_operation_locks_job_id ON application_operation_locks(job_id);
-
-CREATE TABLE coach_voice_payloads (
-    id BIGSERIAL PRIMARY KEY,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    message_type TEXT NOT NULL,
-    schema_version TEXT NOT NULL,
-    model TEXT,
-    status TEXT NOT NULL,
-    duration_ms INTEGER,
-    request_payload JSONB NOT NULL,
-    prompt_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
-    response_text TEXT,
-    fallback_text TEXT NOT NULL,
-    final_text TEXT NOT NULL,
-    error TEXT,
-    CONSTRAINT ck_coach_voice_payloads_message_type_not_blank CHECK (btrim(message_type) <> ''),
-    CONSTRAINT ck_coach_voice_payloads_schema_version_not_blank CHECK (btrim(schema_version) <> ''),
-    CONSTRAINT ck_coach_voice_payloads_status_not_blank CHECK (btrim(status) <> '')
-);
-CREATE INDEX idx_coach_voice_payloads_created_at ON coach_voice_payloads(created_at DESC);
-CREATE INDEX idx_coach_voice_payloads_message_type_created_at ON coach_voice_payloads(message_type, created_at DESC);
-CREATE INDEX idx_coach_voice_payloads_status_created_at ON coach_voice_payloads(status, created_at DESC);
-
-CREATE TABLE user_profiles (
-    id BIGSERIAL PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,
-    display_name TEXT NOT NULL,
-    date_of_birth DATE,
-    height_cm INTEGER,
-    goal_weight_kg NUMERIC(6,2),
-    timezone TEXT NOT NULL DEFAULT 'Europe/London',
-    is_default BOOLEAN NOT NULL DEFAULT false,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ck_user_profiles_slug_not_blank CHECK (btrim(slug) <> ''),
-    CONSTRAINT ck_user_profiles_slug_format CHECK (slug ~ '^[a-z0-9][a-z0-9_-]{0,63}$'),
-    CONSTRAINT ck_user_profiles_display_name_not_blank CHECK (btrim(display_name) <> ''),
-    CONSTRAINT ck_user_profiles_height_positive CHECK (height_cm IS NULL OR height_cm > 0),
-    CONSTRAINT ck_user_profiles_goal_weight_positive CHECK (goal_weight_kg IS NULL OR goal_weight_kg > 0),
-    CONSTRAINT ck_user_profiles_timezone_not_blank CHECK (btrim(timezone) <> '')
-);
-COMMENT ON TABLE user_profiles IS 'Coached-person profiles. Optional foundation for future multi-profile data scoping.';
-
-CREATE UNIQUE INDEX ux_user_profiles_single_default
-    ON user_profiles (is_default)
-    WHERE is_default = true;
-
-CREATE TABLE auth_user_profiles (
-    user_id BIGINT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-    profile_id BIGINT NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
-    assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (user_id, profile_id)
-);
-CREATE INDEX idx_auth_user_profiles_profile_id ON auth_user_profiles(profile_id);
-
-INSERT INTO user_profiles (slug, display_name, timezone, is_default)
-VALUES ('default', 'Default profile', 'Europe/London', true);
 
 -- -----------------------------------------------------------------------------
 -- WGER EXERCISE & TRAINING CATALOG
@@ -348,65 +104,9 @@ CREATE TABLE withings_daily (
     weight_kg NUMERIC(5,2),
     body_fat_pct NUMERIC(4,2),
     muscle_pct NUMERIC(4,2),
-    water_pct NUMERIC(4,2),
-    fat_free_mass_kg NUMERIC(5,2),
-    fat_mass_kg NUMERIC(5,2),
-    muscle_mass_kg NUMERIC(5,2),
-    water_mass_kg NUMERIC(5,2),
-    bone_mass_kg NUMERIC(5,2),
-    visceral_fat_index NUMERIC(5,2),
-    bmr_kcal_day NUMERIC(8,2),
-    nerve_health_score_feet NUMERIC(6,3),
-    metabolic_age_years NUMERIC(5,2)
+    water_pct NUMERIC(4,2)
 );
-COMMENT ON TABLE withings_daily IS 'Stores daily body composition metrics from Withings. Source of truth for scale summaries.';
-
-CREATE TABLE withings_measure_groups (
-    grpid BIGINT PRIMARY KEY,
-    day DATE NOT NULL,
-    measured_at TIMESTAMPTZ NOT NULL,
-    created_at_source TIMESTAMPTZ,
-    modified_at_source TIMESTAMPTZ,
-    category INT,
-    attrib INT,
-    comment TEXT,
-    device_id TEXT,
-    hash_device_id TEXT,
-    model TEXT,
-    model_id INT,
-    timezone_name TEXT,
-    raw_payload_json JSONB NOT NULL,
-    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE withings_measure_groups IS 'Stores every raw Withings measure group returned by getmeas so newly exposed scale metrics are retained without schema changes.';
-CREATE INDEX idx_withings_measure_groups_day ON withings_measure_groups(day);
-
-CREATE TABLE nutrition_log (
-    id BIGSERIAL PRIMARY KEY,
-    client_event_id TEXT NULL,
-    dedupe_fingerprint TEXT NOT NULL,
-    eaten_at TIMESTAMPTZ NOT NULL,
-    local_date DATE NOT NULL,
-    protein_g NUMERIC(7,2) NOT NULL,
-    carbs_g NUMERIC(7,2) NOT NULL,
-    fat_g NUMERIC(7,2) NOT NULL,
-    calories_est NUMERIC(8,2) NOT NULL,
-    source TEXT NOT NULL,
-    context TEXT NULL,
-    confidence TEXT NOT NULL,
-    meal_label TEXT NULL,
-    notes TEXT NULL,
-    raw_payload_json JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ux_nutrition_log_dedupe_fingerprint UNIQUE (dedupe_fingerprint)
-);
-COMMENT ON TABLE nutrition_log IS 'Immutable approximate nutrition events supplied by the GPT layer. Postgres is the source of truth.';
-CREATE UNIQUE INDEX ux_nutrition_log_client_event_id
-    ON nutrition_log(client_event_id)
-    WHERE client_event_id IS NOT NULL;
-CREATE INDEX idx_nutrition_log_local_date ON nutrition_log(local_date);
-CREATE INDEX idx_nutrition_log_eaten_at ON nutrition_log(eaten_at);
-CREATE INDEX idx_nutrition_log_source_local_date ON nutrition_log(source, local_date);
+COMMENT ON TABLE withings_daily IS 'Stores daily body metrics from Withings. Source of truth for weight/bodyfat.';
 
 -- NEW Apple Health Daily Metrics Tables (Normalized)
 CREATE TABLE "DailyMetric" (
@@ -475,7 +175,6 @@ CREATE TABLE body_age_daily (
     body_age_years NUMERIC(6,1),
     age_delta_years NUMERIC(6,1),
     used_vo2max_direct BOOLEAN NOT NULL DEFAULT false,
-    used_enriched_body_comp BOOLEAN NOT NULL DEFAULT false,
     cap_minus_10_applied BOOLEAN NOT NULL DEFAULT false,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -563,12 +262,8 @@ CREATE TABLE training_plans (
     start_date DATE NOT NULL,
     weeks INT NOT NULL,
     is_active BOOLEAN DEFAULT true,
-    metadata JSONB,
     created_at TIMESTAMP DEFAULT now()
 );
-CREATE UNIQUE INDEX ux_training_plans_single_active
-    ON training_plans (is_active)
-    WHERE is_active = true;
 
 CREATE TABLE training_plan_weeks (
     id SERIAL PRIMARY KEY,
@@ -581,117 +276,22 @@ CREATE TABLE training_plan_workouts (
     id SERIAL PRIMARY KEY,
     week_id INT REFERENCES training_plan_weeks(id) ON DELETE CASCADE,
     day_of_week INT NOT NULL,  -- 1 = Mon … 7 = Sun
-    exercise_id INT REFERENCES wger_exercise(id),
+    exercise_id INT NOT NULL REFERENCES wger_exercise(id),
     sets INT NOT NULL,
-    baseline_sets INT NOT NULL CONSTRAINT training_plan_workouts_baseline_sets_nonnegative CHECK (baseline_sets >= 0),
     reps INT NOT NULL,
     rir FLOAT,
-    baseline_rir FLOAT,
     percent_1rm NUMERIC(5,2),
     target_weight_kg NUMERIC(6,2),
     rir_cue NUMERIC(3,1),
     scheduled_time TIME,
-    is_cardio BOOLEAN NOT NULL DEFAULT false,
-    comment TEXT,
-    optional BOOLEAN NOT NULL DEFAULT false,
-    recovery_focused BOOLEAN NOT NULL DEFAULT false,
-    details JSONB,
-    programmed_difficulty SMALLINT CHECK (programmed_difficulty IS NULL OR programmed_difficulty BETWEEN 0 AND 10)
+    is_cardio BOOLEAN NOT NULL DEFAULT false
 );
-
-COMMENT ON COLUMN training_plan_workouts.baseline_sets IS
-    'Canonical prescribed set count; readiness application never mutates this value.';
-COMMENT ON COLUMN training_plan_workouts.sets IS
-    'Effective set count consumed by plan reads and exports; derived from baseline_sets.';
-COMMENT ON COLUMN training_plan_workouts.baseline_rir IS
-    'Canonical prescribed RIR; readiness application never mutates this value.';
-COMMENT ON COLUMN training_plan_workouts.rir IS
-    'Effective RIR consumed by plan reads and exports; derived from baseline_rir.';
-
-CREATE TABLE plan_readiness_adjustments (
-    id BIGSERIAL PRIMARY KEY,
-    plan_id INT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
-    week_id INT NOT NULL REFERENCES training_plan_weeks(id) ON DELETE CASCADE,
-    week_number INT NOT NULL CHECK (week_number >= 1),
-    week_start_date DATE NOT NULL,
-    policy_version TEXT NOT NULL,
-    source_data_hash CHAR(64) NOT NULL,
-    baseline_prescription_hash CHAR(64) NOT NULL,
-    set_multiplier NUMERIC(6,4) NOT NULL CHECK (set_multiplier > 0),
-    rir_increment INT NOT NULL,
-    source_summary JSONB NOT NULL,
-    decision_json JSONB NOT NULL,
-    result_snapshot JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT ux_plan_readiness_adjustment_identity UNIQUE (
-        plan_id,
-        week_id,
-        policy_version,
-        source_data_hash,
-        baseline_prescription_hash
-    )
-);
-
-ALTER TABLE training_plan_weeks
-    ADD COLUMN effective_readiness_adjustment_id BIGINT,
-    ADD CONSTRAINT training_plan_weeks_effective_readiness_adjustment_fk
-        FOREIGN KEY (effective_readiness_adjustment_id)
-        REFERENCES plan_readiness_adjustments(id)
-        ON DELETE SET NULL;
-
-COMMENT ON TABLE plan_readiness_adjustments IS
-    'Durable audit ledger for readiness decisions applied idempotently to plan-week baselines.';
-COMMENT ON COLUMN training_plan_weeks.effective_readiness_adjustment_id IS
-    'Readiness ledger row that currently defines this week effective strength prescription.';
 
 CREATE TABLE assistance_pool (
     main_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
     assistance_exercise_id INT NOT NULL REFERENCES wger_exercise(id) ON DELETE CASCADE,
-    difficulty SMALLINT NOT NULL DEFAULT 5 CHECK (difficulty BETWEEN 0 AND 10),
     PRIMARY KEY(main_exercise_id, assistance_exercise_id)
 );
-COMMENT ON COLUMN assistance_pool.difficulty IS '0 excludes the assistance exercise from planning; 1-10 rates easiest to hardest.';
-
-CREATE TABLE core_pool (
-    exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE
-);
-COMMENT ON TABLE core_pool IS 'Legacy core pool retained for compatibility; generated plans use exercise_programming_metadata.';
-
-CREATE TABLE exercise_programming_metadata (
-    exercise_id INT PRIMARY KEY REFERENCES wger_exercise(id) ON DELETE CASCADE,
-    difficulty SMALLINT NOT NULL DEFAULT 0 CHECK (difficulty BETWEEN 0 AND 10),
-    eligible_core BOOLEAN NOT NULL DEFAULT false,
-    eligible_bench_assistance BOOLEAN NOT NULL DEFAULT false,
-    eligible_squat_assistance BOOLEAN NOT NULL DEFAULT false,
-    eligible_ohp_assistance BOOLEAN NOT NULL DEFAULT false,
-    eligible_deadlift_assistance BOOLEAN NOT NULL DEFAULT false,
-    notes TEXT,
-    metadata_source TEXT NOT NULL DEFAULT 'operator',
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE exercise_programming_metadata IS 'Pete-owned exercise programming metadata layered over the synced WGER catalogue.';
-COMMENT ON COLUMN exercise_programming_metadata.difficulty IS '0 excludes the exercise from planning; 1-10 rates easiest to hardest.';
-
-CREATE TABLE exercise_difficulty_unlock_state (
-    scope TEXT PRIMARY KEY DEFAULT 'global' CHECK (scope = 'global'),
-    current_cap SMALLINT NOT NULL DEFAULT 2 CHECK (current_cap BETWEEN 1 AND 10),
-    last_evaluated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_unlocked_at TIMESTAMPTZ,
-    unlock_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE exercise_difficulty_unlock_state IS 'Stores the global adaptive exercise difficulty cap and its latest evidence.';
-
-CREATE TABLE training_cycle (
-    id SERIAL PRIMARY KEY,
-    start_date DATE NOT NULL,
-    current_week INT NOT NULL,
-    current_block INT NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE training_cycle IS 'Tracks the state of the 13-week 5/3/1 macrocycle.';
 
 CREATE TABLE training_max (
     id SERIAL PRIMARY KEY,
@@ -735,15 +335,6 @@ CREATE TABLE daily_summary (
   body_fat_pct         NUMERIC(4,2),
   muscle_pct           NUMERIC(4,2),
   water_pct            NUMERIC(4,2),
-  fat_free_mass_kg     NUMERIC(5,2),
-  fat_mass_kg          NUMERIC(5,2),
-  muscle_mass_kg       NUMERIC(5,2),
-  water_mass_kg        NUMERIC(5,2),
-  bone_mass_kg         NUMERIC(5,2),
-  visceral_fat_index   NUMERIC(5,2),
-  bmr_kcal_day         NUMERIC(8,2),
-  nerve_health_score_feet NUMERIC(6,3),
-  metabolic_age_years  NUMERIC(5,2),
 
   -- Activity / energy
   steps                DOUBLE PRECISION,
@@ -803,15 +394,6 @@ BEGIN
     body_fat_pct NUMERIC(4,2),
     muscle_pct NUMERIC(4,2),
     water_pct NUMERIC(4,2),
-    fat_free_mass_kg NUMERIC(5,2),
-    fat_mass_kg NUMERIC(5,2),
-    muscle_mass_kg NUMERIC(5,2),
-    water_mass_kg NUMERIC(5,2),
-    bone_mass_kg NUMERIC(5,2),
-    visceral_fat_index NUMERIC(5,2),
-    bmr_kcal_day NUMERIC(8,2),
-    nerve_health_score_feet NUMERIC(6,3),
-    metabolic_age_years NUMERIC(5,2),
     steps DOUBLE PRECISION,
     exercise_minutes DOUBLE PRECISION,
     calories_active DOUBLE PRECISION,
@@ -854,16 +436,7 @@ BEGIN
     SET weight_kg = w.weight_kg,
         body_fat_pct = w.body_fat_pct,
         muscle_pct = w.muscle_pct,
-        water_pct = w.water_pct,
-        fat_free_mass_kg = w.fat_free_mass_kg,
-        fat_mass_kg = w.fat_mass_kg,
-        muscle_mass_kg = w.muscle_mass_kg,
-        water_mass_kg = w.water_mass_kg,
-        bone_mass_kg = w.bone_mass_kg,
-        visceral_fat_index = w.visceral_fat_index,
-        bmr_kcal_day = w.bmr_kcal_day,
-        nerve_health_score_feet = w.nerve_health_score_feet,
-        metabolic_age_years = w.metabolic_age_years
+        water_pct = w.water_pct
   FROM withings_daily AS w
   WHERE w.date = tmp.date
     AND w.date BETWEEN p_start AND p_end;
@@ -978,108 +551,13 @@ WHERE am.record_date = tmp.date;
    WHERE strength_volume_kg IS NULL;
 
   -- Upsert into daily_summary
-  INSERT INTO daily_summary AS ds (
-      date,
-      weight_kg,
-      body_fat_pct,
-      muscle_pct,
-      water_pct,
-      fat_free_mass_kg,
-      fat_mass_kg,
-      muscle_mass_kg,
-      water_mass_kg,
-      bone_mass_kg,
-      visceral_fat_index,
-      bmr_kcal_day,
-      nerve_health_score_feet,
-      metabolic_age_years,
-      steps,
-      exercise_minutes,
-      calories_active,
-      calories_resting,
-      stand_minutes,
-      distance_m,
-      flights_climbed,
-      respiratory_rate,
-      walking_hr_avg,
-      blood_oxygen_saturation,
-      wrist_temperature,
-      time_in_daylight,
-      cardio_recovery,
-      hr_resting,
-      hrv_sdnn_ms,
-      vo2_max,
-      hr_avg,
-      hr_max,
-      hr_min,
-      sleep_total_minutes,
-      sleep_asleep_minutes,
-      sleep_rem_minutes,
-      sleep_deep_minutes,
-      sleep_core_minutes,
-      sleep_awake_minutes,
-      body_age_years,
-      body_age_delta_years,
-      strength_volume_kg
-  )
-  SELECT
-      date,
-      weight_kg,
-      body_fat_pct,
-      muscle_pct,
-      water_pct,
-      fat_free_mass_kg,
-      fat_mass_kg,
-      muscle_mass_kg,
-      water_mass_kg,
-      bone_mass_kg,
-      visceral_fat_index,
-      bmr_kcal_day,
-      nerve_health_score_feet,
-      metabolic_age_years,
-      steps,
-      exercise_minutes,
-      calories_active,
-      calories_resting,
-      stand_minutes,
-      distance_m,
-      flights_climbed,
-      respiratory_rate,
-      walking_hr_avg,
-      blood_oxygen_saturation,
-      wrist_temperature,
-      time_in_daylight,
-      cardio_recovery,
-      hr_resting,
-      hrv_sdnn_ms,
-      vo2_max,
-      hr_avg,
-      hr_max,
-      hr_min,
-      sleep_total_minutes,
-      sleep_asleep_minutes,
-      sleep_rem_minutes,
-      sleep_deep_minutes,
-      sleep_core_minutes,
-      sleep_awake_minutes,
-      body_age_years,
-      body_age_delta_years,
-      strength_volume_kg
-  FROM tmp_daily_summary
+  INSERT INTO daily_summary AS ds
+      SELECT * FROM tmp_daily_summary
   ON CONFLICT (date) DO UPDATE SET
       weight_kg            = EXCLUDED.weight_kg,
       body_fat_pct         = EXCLUDED.body_fat_pct,
       muscle_pct           = EXCLUDED.muscle_pct,
       water_pct            = EXCLUDED.water_pct,
-      fat_free_mass_kg     = EXCLUDED.fat_free_mass_kg,
-      fat_mass_kg          = EXCLUDED.fat_mass_kg,
-      muscle_mass_kg       = EXCLUDED.muscle_mass_kg,
-      water_mass_kg        = EXCLUDED.water_mass_kg,
-      bone_mass_kg         = EXCLUDED.bone_mass_kg,
-      visceral_fat_index   = EXCLUDED.visceral_fat_index,
-      bmr_kcal_day         = EXCLUDED.bmr_kcal_day,
-      nerve_health_score_feet = EXCLUDED.nerve_health_score_feet,
-      metabolic_age_years  = EXCLUDED.metabolic_age_years,
       steps                = EXCLUDED.steps,
       exercise_minutes     = EXCLUDED.exercise_minutes,
       calories_active      = EXCLUDED.calories_active,
@@ -1513,20 +991,18 @@ RETURNS TABLE (
     exercise_name TEXT,
     sets INT,
     reps INT,
-    target_weight_kg NUMERIC,
-    programmed_difficulty INT
+    target_weight_kg NUMERIC
 ) LANGUAGE sql AS $$
     SELECT p_date::date AS workout_date,
            tpw.scheduled_time,
-           COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
+           e.name AS exercise_name,
            tpw.sets,
            tpw.reps,
-           tpw.target_weight_kg,
-           tpw.programmed_difficulty::int
+           tpw.target_weight_kg
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id
-    LEFT JOIN wger_exercise e ON tpw.exercise_id = e.id
+    JOIN wger_exercise e ON tpw.exercise_id = e.id
     WHERE tp.is_active = TRUE
       AND tp.start_date <= p_date
       AND (tp.start_date + ((tw.week_number + 1) * 7)) > p_date
@@ -1542,28 +1018,23 @@ RETURNS TABLE (
     exercise_name TEXT,
     sets INT,
     reps INT,
-    target_weight_kg NUMERIC,
-    programmed_difficulty INT
+    target_weight_kg NUMERIC
 ) LANGUAGE sql AS $$
     SELECT (p_start_date + (tpw.day_of_week - 1))::date AS workout_date,
            tpw.day_of_week,
            tpw.scheduled_time,
-           COALESCE(tpw.details->>'display_name', NULLIF(tpw.comment, ''), e.name, 'Planned session') AS exercise_name,
+           e.name AS exercise_name,
            tpw.sets,
            tpw.reps,
-           tpw.target_weight_kg,
-           tpw.programmed_difficulty::int
+           tpw.target_weight_kg
     FROM training_plan_workouts tpw
     JOIN training_plan_weeks tw ON tpw.week_id = tw.id
     JOIN training_plans tp ON tw.plan_id = tp.id
-    LEFT JOIN wger_exercise e ON tpw.exercise_id = e.id
+    JOIN wger_exercise e ON tpw.exercise_id = e.id
     WHERE tp.is_active = TRUE
       AND tp.start_date <= p_start_date
       AND (tp.start_date + ((tw.week_number + 1) * 7)) > p_start_date
-    ORDER BY
-        tpw.day_of_week,
-        COALESCE((tpw.details ->> 'sequence_order')::int, CASE WHEN tpw.is_cardio THEN 15 ELSE 20 END),
-        tpw.scheduled_time;
+    ORDER BY tpw.day_of_week, tpw.scheduled_time;
 $$;
 
 
@@ -1616,20 +1087,13 @@ RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     v_start               date := p_target_date - INTERVAL '6 days';
     v_bodyfat_avg         double precision;
-    v_muscle_pct_avg      double precision;
-    v_visceral_fat_avg    double precision;
     v_steps_avg           double precision;
     v_ex_min_avg          double precision;
     v_rhr_avg             double precision;
     v_sleep_asleep_avg    double precision;
-    v_vo2_direct          double precision;
-    v_hrv_avg             double precision;
     v_vo2                 double precision;
     v_crf                 double precision;
     v_body_comp           double precision;
-    v_bodyfat_score       double precision;
-    v_visceral_score      double precision;
-    v_muscle_score        double precision;
     v_steps_score         double precision;
     v_ex_score            double precision;
     v_activity            double precision;
@@ -1641,9 +1105,6 @@ DECLARE
     v_body_age            double precision;
     v_cap_min             double precision;
     v_cap_applied         boolean;
-    v_used_vo2_direct     boolean := false;
-    v_used_enriched_body_comp boolean := false;
-    v_enriched_body_comp_rows integer := 0;
     v_any_rows            integer;
 BEGIN
     IF p_target_date IS NULL OR p_birth_date IS NULL THEN
@@ -1651,112 +1112,36 @@ BEGIN
     END IF;
     SELECT COUNT(*) INTO v_any_rows FROM daily_summary ds WHERE ds.date BETWEEN v_start AND p_target_date;
     IF v_any_rows = 0 THEN RETURN; END IF;
-    SELECT
-        avg(ds.body_fat_pct)::double precision,
-        avg(COALESCE(
-            ds.muscle_pct,
-            CASE
-                WHEN ds.weight_kg > 0 AND ds.muscle_mass_kg IS NOT NULL
-                THEN (ds.muscle_mass_kg / ds.weight_kg) * 100.0
-                ELSE NULL
-            END
-        ))::double precision,
-        avg(ds.visceral_fat_index)::double precision,
-        avg(ds.steps)::double precision,
-        avg(ds.exercise_minutes)::double precision,
-        avg(ds.hr_resting)::double precision,
-        avg(ds.sleep_asleep_minutes)::double precision,
-        avg(ds.vo2_max)::double precision,
-        avg(ds.hrv_sdnn_ms)::double precision,
-        count(*) FILTER (
-            WHERE ds.date >= DATE '2026-04-06'
-              AND (
-                  ds.visceral_fat_index IS NOT NULL
-                  OR ds.muscle_pct IS NOT NULL
-                  OR ds.muscle_mass_kg IS NOT NULL
-              )
-        )::integer
-    INTO v_bodyfat_avg,
-         v_muscle_pct_avg,
-         v_visceral_fat_avg,
-         v_steps_avg,
-         v_ex_min_avg,
-         v_rhr_avg,
-         v_sleep_asleep_avg,
-         v_vo2_direct,
-         v_hrv_avg,
-         v_enriched_body_comp_rows
-    FROM daily_summary ds
-    WHERE ds.date BETWEEN v_start AND p_target_date;
+    SELECT avg(ds.body_fat_pct)::double precision, avg(ds.steps)::double precision, avg(ds.exercise_minutes)::double precision, avg(ds.hr_resting)::double precision, avg(ds.sleep_asleep_minutes)::double precision
+    INTO v_bodyfat_avg, v_steps_avg, v_ex_min_avg, v_rhr_avg, v_sleep_asleep_avg FROM daily_summary ds WHERE ds.date BETWEEN v_start AND p_target_date;
     v_chrono_years := EXTRACT(EPOCH FROM (p_target_date::timestamp - p_birth_date::timestamp)) / 31557600.0;
-    -- Prefer direct VO2 max measurements when available; otherwise fall back to derived estimate.
-    IF v_vo2_direct IS NOT NULL THEN
-        v_vo2 := v_vo2_direct;
-        v_used_vo2_direct := true;
-    ELSIF v_rhr_avg IS NOT NULL THEN
-        v_vo2 := 38 - 0.15 * (v_chrono_years - 40) - 0.15 * (COALESCE(v_rhr_avg, 60) - 60) + 0.01 * COALESCE(v_ex_min_avg, 0);
-    ELSE
-        v_vo2 := 35;
-    END IF;
+    -- TODO: consider projecting Apple Health's direct VO₂ max metric
+    -- (MetricType.name = 'vo2_max') into ``daily_summary`` and, when available,
+    -- bypassing the proxy formula below.  ``used_vo2max_direct`` tracks whether
+    -- such a value was applied.
+    IF v_rhr_avg IS NOT NULL THEN v_vo2 := 38 - 0.15 * (v_chrono_years - 40) - 0.15 * (COALESCE(v_rhr_avg, 60) - 60) + 0.01 * COALESCE(v_ex_min_avg, 0);
+    ELSE v_vo2 := 35; END IF;
     v_crf := GREATEST(0.0, LEAST(100.0, ((v_vo2 - 20.0) / 40.0) * 100.0));
-    v_bodyfat_score := CASE
-        WHEN v_bodyfat_avg IS NULL THEN 50.0
-        WHEN v_bodyfat_avg <= 15.0 THEN 100.0
-        WHEN v_bodyfat_avg >= 30.0 THEN 0.0
-        ELSE GREATEST(0.0, LEAST(100.0, (30.0 - v_bodyfat_avg) / 15.0 * 100.0))
-    END;
-    v_visceral_score := CASE
-        WHEN v_visceral_fat_avg IS NULL THEN NULL
-        WHEN v_visceral_fat_avg <= 5.0 THEN 100.0
-        WHEN v_visceral_fat_avg >= 20.0 THEN 0.0
-        ELSE GREATEST(0.0, LEAST(100.0, (20.0 - v_visceral_fat_avg) / 15.0 * 100.0))
-    END;
-    v_muscle_score := CASE
-        WHEN v_muscle_pct_avg IS NULL THEN NULL
-        WHEN v_muscle_pct_avg >= 75.0 THEN 100.0
-        WHEN v_muscle_pct_avg <= 60.0 THEN 0.0
-        ELSE GREATEST(0.0, LEAST(100.0, (v_muscle_pct_avg - 60.0) / 15.0 * 100.0))
-    END;
-    IF p_target_date >= DATE '2026-04-12'
-       AND v_enriched_body_comp_rows >= 3
-       AND v_bodyfat_avg IS NOT NULL
-       AND (v_visceral_score IS NOT NULL OR v_muscle_score IS NOT NULL) THEN
-        v_body_comp := GREATEST(0.0, LEAST(100.0,
-            0.60 * v_bodyfat_score
-            + 0.25 * COALESCE(v_visceral_score, v_bodyfat_score)
-            + 0.15 * COALESCE(v_muscle_score, v_bodyfat_score)
-        ));
-        v_used_enriched_body_comp := true;
-    ELSE
-        v_body_comp := v_bodyfat_score;
-    END IF;
+    IF v_bodyfat_avg IS NULL THEN v_body_comp := 50.0; ELSIF v_bodyfat_avg <= 15.0 THEN v_body_comp := 100.0; ELSIF v_bodyfat_avg >= 30.0 THEN v_body_comp := 0.0;
+    ELSE v_body_comp := (30.0 - v_bodyfat_avg) / 15.0 * 100.0; END IF;
     v_steps_score := CASE WHEN v_steps_avg IS NULL THEN 0.0 ELSE GREATEST(0.0, LEAST(100.0, (v_steps_avg / 12000.0) * 100.0)) END;
     v_ex_score := CASE WHEN v_ex_min_avg IS NULL THEN 0.0 ELSE GREATEST(0.0, LEAST(100.0, (v_ex_min_avg / 30.0) * 100.0)) END;
     v_activity := 0.6 * v_steps_score + 0.4 * v_ex_score;
     v_sleep_score := CASE WHEN v_sleep_asleep_avg IS NULL THEN 50.0 ELSE GREATEST(0.0, LEAST(100.0, 100.0 - (ABS(v_sleep_asleep_avg - 450.0) / 150.0) * 60.0)) END;
     v_rhr_score := CASE WHEN v_rhr_avg IS NULL THEN 50.0 WHEN v_rhr_avg <= 55.0 THEN 90.0 WHEN v_rhr_avg <= 60.0 THEN 80.0 WHEN v_rhr_avg <= 70.0 THEN 60.0 WHEN v_rhr_avg <= 80.0 THEN 40.0 ELSE 20.0 END;
-    IF v_hrv_avg IS NOT NULL THEN
-        IF v_hrv_avg < 25.0 THEN
-            v_rhr_score := v_rhr_score - 20.0;
-        ELSIF v_hrv_avg < 35.0 THEN
-            v_rhr_score := v_rhr_score - 15.0;
-        ELSIF v_hrv_avg < 45.0 THEN
-            v_rhr_score := v_rhr_score - 10.0;
-        ELSIF v_hrv_avg < 55.0 THEN
-            v_rhr_score := v_rhr_score - 5.0;
-        END IF;
-        v_rhr_score := GREATEST(0.0, LEAST(100.0, v_rhr_score));
-    END IF;
+    -- TODO: Heart Rate Variability (HRV) could adjust ``v_rhr_score`` once the
+    -- metric is sourced from Apple Health.  E.g. scale the recovery score down
+    -- if the nightly HRV trend indicates fatigue.
     v_recovery := 0.66 * v_sleep_score + 0.34 * v_rhr_score;
     v_composite := 0.40 * v_crf + 0.25 * v_body_comp + 0.20 * v_activity + 0.15 * v_recovery;
     v_body_age := v_chrono_years - 0.2 * (v_composite - 50.0);
     v_cap_min := v_chrono_years - 10.0;
     IF v_body_age < v_cap_min THEN v_body_age := v_cap_min; v_cap_applied := true; ELSE v_cap_applied := false; END IF;
-    INSERT INTO body_age_daily (date, input_window_days, crf_score, body_comp_score, activity_score, recovery_score, composite_score, body_age_years, age_delta_years, used_vo2max_direct, used_enriched_body_comp, cap_minus_10_applied, updated_at)
-    VALUES (p_target_date, 7, ROUND(v_crf::numeric, 1), ROUND(v_body_comp::numeric, 1), ROUND(v_activity::numeric, 1), ROUND(v_recovery::numeric, 1), ROUND(v_composite::numeric, 1), ROUND(v_body_age::numeric, 1), ROUND((v_body_age - v_chrono_years)::numeric, 1), v_used_vo2_direct, v_used_enriched_body_comp, v_cap_applied, now())
+    INSERT INTO body_age_daily (date, input_window_days, crf_score, body_comp_score, activity_score, recovery_score, composite_score, body_age_years, age_delta_years, used_vo2max_direct, cap_minus_10_applied, updated_at)
+    VALUES (p_target_date, 7, ROUND(v_crf::numeric, 1), ROUND(v_body_comp::numeric, 1), ROUND(v_activity::numeric, 1), ROUND(v_recovery::numeric, 1), ROUND(v_composite::numeric, 1), ROUND(v_body_age::numeric, 1), ROUND((v_body_age - v_chrono_years)::numeric, 1), false, v_cap_applied, now())
     ON CONFLICT (date) DO UPDATE SET
         input_window_days = EXCLUDED.input_window_days, crf_score = EXCLUDED.crf_score, body_comp_score = EXCLUDED.body_comp_score, activity_score = EXCLUDED.activity_score, recovery_score = EXCLUDED.recovery_score, composite_score = EXCLUDED.composite_score,
-        body_age_years = EXCLUDED.body_age_years, age_delta_years = EXCLUDED.age_delta_years, used_vo2max_direct = EXCLUDED.used_vo2max_direct, used_enriched_body_comp = EXCLUDED.used_enriched_body_comp, cap_minus_10_applied = EXCLUDED.cap_minus_10_applied, updated_at = now();
+        body_age_years = EXCLUDED.body_age_years, age_delta_years = EXCLUDED.age_delta_years, used_vo2max_direct = EXCLUDED.used_vo2max_direct, cap_minus_10_applied = EXCLUDED.cap_minus_10_applied, updated_at = now();
 END;
 $$;
 

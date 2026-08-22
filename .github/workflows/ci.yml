@@ -53,12 +53,15 @@ jobs:
             pete_e/application/sync.py \
             pete_e/config/config.py \
             pete_e/infrastructure/postgres_dal.py \
+            pete_e/infrastructure/schema_migrations.py \
+            pete_e/cli/schema.py \
             pete_e/logging_setup.py \
             tests/conftest.py \
             tests/config/test_settings.py \
             tests/integration/conftest.py \
             tests/integration/test_api_contracts.py \
             tests/integration/test_postgres_integration.py \
+            tests/integration/test_schema_management_integration.py \
             tests/postgres_safety.py \
             tests/test_api_cli_commands.py \
             tests/test_dependency_imports.py \
@@ -110,10 +113,19 @@ jobs:
           uv sync --frozen --no-editable
           .venv/bin/python -m pip check
 
-      - name: Run disposable PostgreSQL lane
+      - name: Run schema lifecycle migrations first
         env:
           PETEEEBOT_TEST_DATABASE_URL: postgresql://pete_test:pete_test@127.0.0.1:5432/pete_e_test_ci
-        run: .venv/bin/python -m pytest -q -m integration --run-postgres
+        run: >-
+          .venv/bin/python -m pytest -q -m integration --run-postgres
+          tests/integration/test_schema_management_integration.py
+
+      - name: Run application PostgreSQL integration after schema validation
+        env:
+          PETEEEBOT_TEST_DATABASE_URL: postgresql://pete_test:pete_test@127.0.0.1:5432/pete_e_test_ci
+        run: >-
+          .venv/bin/python -m pytest -q -m integration --run-postgres
+          --ignore=tests/integration/test_schema_management_integration.py
 
   installed-artifact:
     runs-on: ubuntu-latest

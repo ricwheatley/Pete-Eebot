@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE withings_daily
     ADD COLUMN IF NOT EXISTS fat_free_mass_kg NUMERIC(5,2),
@@ -326,5 +326,3 @@ BEGIN
       strength_volume_kg = EXCLUDED.strength_volume_kg;
 END;
 $$;
-
-COMMIT;

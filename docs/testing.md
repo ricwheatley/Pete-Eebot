@@ -51,9 +51,9 @@ origins, and the dependency import guard.
 
 ### Disposable PostgreSQL integration
 
-The schema bootstrap drops and recreates objects. Start a dedicated disposable
-database; never point this lane at the normal Compose database, a developer
-database, or production.
+The fixture invokes the guarded development reset and authoritative runner. Start
+a dedicated disposable database; never point this lane at the normal Compose
+database, a developer database, or production.
 
 ```bash
 docker run --rm --name pete-e-test-postgres \
@@ -76,9 +76,13 @@ The lane refuses to start unless all of these are true:
 - the database user contains `test`;
 - the host is loopback-only.
 
-After the guard passes, the fixture applies `init-db/schema.sql` and every
-tracked migration. DAL tests use a real psycopg connection inside a forced
-rollback transaction and verify that test rows are absent afterward.
+After the guard passes, the fixture resets `public` and upgrades empty-to-head.
+The schema-management integration file runs first in CI and covers
+previous-release upgrade with retained data, linear baseline adoption, retired
+reset-snapshot adoption, failed migration rollback/rerun, no-op-at-head,
+readiness, repository smokes, and the guarded reset. Unit tests separately cover
+manifest order and checksum drift. DAL tests use a real psycopg connection inside
+a forced rollback transaction and verify that test rows are absent afterward.
 
 ### Installed artifact
 

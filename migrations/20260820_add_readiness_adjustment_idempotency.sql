@@ -1,4 +1,4 @@
-BEGIN;
+-- The authoritative migration runner owns the transaction boundary.
 
 ALTER TABLE training_plan_workouts
     ADD COLUMN IF NOT EXISTS baseline_sets INT,
@@ -96,5 +96,3 @@ COMMENT ON TABLE plan_readiness_adjustments IS
     'Durable audit ledger for readiness decisions applied idempotently to plan-week baselines.';
 COMMENT ON COLUMN training_plan_weeks.effective_readiness_adjustment_id IS
     'Readiness ledger row that currently defines this week effective strength prescription.';
-
-COMMIT;
