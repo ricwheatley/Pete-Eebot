@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
@@ -13,6 +18,24 @@ from pete_e.cli.status import CheckResult
 
 
 pytestmark = pytest.mark.contract
+
+_WEBHOOK_SECRET = b"test-webhook-secret"
+_VALID_COMMIT_SHA = "a" * 40
+
+
+def _signed_webhook_request(
+    payload: dict[str, object],
+    *,
+    event: str = "push",
+) -> tuple[bytes, dict[str, str]]:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    signature = hmac.new(_WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
+    return body, {
+        "Content-Type": "application/json",
+        "X-GitHub-Event": event,
+        "X-GitHub-Delivery": "test-delivery",
+        "X-Hub-Signature-256": f"sha256={signature}",
+    }
 
 
 @pytest.fixture()
@@ -133,6 +156,149 @@ def test_logs_endpoint_returns_tail(
     assert response.status_code == 200
     assert response.json()["path"].endswith("pete_history.log")
     assert response.json()["lines"] == ["line3", "line4"]
+
+
+@pytest.mark.parametrize(
+    ("event", "payload"),
+    [
+        (
+            "push",
+            {
+                "ref": "refs/heads/feature/example",
+                "after": _VALID_COMMIT_SHA,
+                "deleted": False,
+            },
+        ),
+        (
+            "push",
+            {
+                "ref": "refs/heads/feature/example",
+                "after": "0" * 40,
+                "deleted": True,
+            },
+        ),
+        (
+            "push",
+            {
+                "ref": "refs/heads/main",
+                "after": "0" * 40,
+                "deleted": True,
+            },
+        ),
+        (
+            "push",
+            {
+                "ref": "refs/heads/main",
+                "after": "0" * 40,
+                "deleted": False,
+            },
+        ),
+        ("push", {"ref": "refs/heads/main", "deleted": False}),
+        ("ping", {"zen": "Keep it logically awesome."}),
+    ],
+)
+def test_webhook_ignores_events_that_are_not_main_branch_pushes(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    event: str,
+    payload: dict[str, object],
+) -> None:
+    audits: list[dict[str, object]] = []
+
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("ignored webhook attempted to create a deployment job")
+
+    monkeypatch.setattr(logs_webhooks, "configured_webhook_secret", lambda: _WEBHOOK_SECRET)
+    monkeypatch.setattr(logs_webhooks, "enforce_command_rate_limit", unexpected)
+    monkeypatch.setattr(logs_webhooks, "prepare_job_context", unexpected)
+    monkeypatch.setattr(logs_webhooks, "get_job_service", unexpected)
+    monkeypatch.setattr(
+        logs_webhooks,
+        "audit_command_event",
+        lambda *_args, **kwargs: audits.append(kwargs),
+    )
+    body, headers = _signed_webhook_request(payload, event=event)
+
+    response = client.post("/api/v1/webhook", content=body, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Webhook ignored"
+    assert response.json()["event"] == event
+    assert audits[-1]["outcome"] == "succeeded"
+    assert audits[-1]["summary"]["status"] == "Webhook ignored"
+
+
+def test_webhook_enqueues_only_valid_main_branch_push(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueued: list[dict[str, object]] = []
+    rate_limits: list[tuple[object, str]] = []
+
+    class _DeployJobService:
+        def enqueue_subprocess(self, **kwargs):
+            enqueued.append(kwargs)
+
+    monkeypatch.setattr(logs_webhooks, "configured_webhook_secret", lambda: _WEBHOOK_SECRET)
+    monkeypatch.setattr(
+        logs_webhooks,
+        "enforce_command_rate_limit",
+        lambda request, operation: rate_limits.append((request, operation)),
+    )
+    monkeypatch.setattr(logs_webhooks, "prepare_job_context", lambda *_args: "deploy-job")
+    monkeypatch.setattr(logs_webhooks, "get_job_service", lambda: _DeployJobService())
+    monkeypatch.setattr(
+        logs_webhooks,
+        "configured_deploy_script_path",
+        lambda: Path("/opt/myapp/scripts/deploy.sh"),
+    )
+    monkeypatch.setattr(
+        logs_webhooks,
+        "get_or_create_correlation_id",
+        lambda _request: "deploy-correlation",
+    )
+    monkeypatch.setattr(logs_webhooks, "audit_command_event", lambda *_args, **_kwargs: None)
+    payload = {
+        "ref": "refs/heads/main",
+        "after": _VALID_COMMIT_SHA,
+        "deleted": False,
+    }
+    body, headers = _signed_webhook_request(payload)
+
+    response = client.post("/api/v1/webhook", content=body, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "Deployment triggered"
+    assert len(enqueued) == 1
+    assert rate_limits[0][1] == "deploy"
+    assert enqueued[0]["request_summary"]["ref"] == "refs/heads/main"
+    assert f"GITHUB_COMMIT_SHA={_VALID_COMMIT_SHA}" in enqueued[0]["command"]
+    assert "GITHUB_REF=refs/heads/main" in enqueued[0]["command"]
+
+
+def test_webhook_rejects_invalid_signature_before_filtering(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("invalid webhook reached deployment filtering")
+
+    monkeypatch.setattr(logs_webhooks, "configured_webhook_secret", lambda: _WEBHOOK_SECRET)
+    monkeypatch.setattr(logs_webhooks, "enforce_command_rate_limit", unexpected)
+    monkeypatch.setattr(logs_webhooks, "prepare_job_context", unexpected)
+
+    response = client.post(
+        "/api/v1/webhook",
+        content=b'{"ref":"refs/heads/main"}',
+        headers={
+            "Content-Type": "application/json",
+            "X-GitHub-Event": "push",
+            "X-Hub-Signature-256": "sha256=invalid",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["message"] == "Invalid signature"
 
 
 def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch) -> None:

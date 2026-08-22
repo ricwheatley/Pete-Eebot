@@ -37,7 +37,7 @@ Severity guidance:
 | [ ] `python -m scripts.check_auth` and `pete status` complete with expected provider status. | Blocker | Command output summary. |
 | [ ] Cron source of truth has been rendered/applied from `pete_e/resources/pete_crontab.csv`; disabled missing-script rows remain disabled. | High | Cron summary output. |
 | [ ] `peteeebot.service` exists, runs under the intended user, and is managed by systemd. | Blocker | `systemctl status` summary. |
-| [ ] Deploy webhook path is configured to run the stable wrapper script outside the checkout, then the tracked deploy script. | High | Redacted `DEPLOY_SCRIPT_PATH` and wrapper path. |
+| [ ] Deploy webhook runs the stable wrapper only for non-deletion pushes to `refs/heads/main`; feature pushes, deletions, pings, and other signed events are ignored. | High | Redacted `DEPLOY_SCRIPT_PATH`, accepted-main test, and ignored-deletion test. |
 | [ ] Post-deploy smoke checks from `docs/runtime_deploy_runbook.md` pass: CLI status, systemd active, sync dry run/short run, Telegram listener if enabled, local `/healthz`, local `/readyz`, local `/api/v1/status`, local `/api/v1/metrics`, public HTTPS `/healthz`, public HTTPS authenticated `/api/v1/status`, and direct public app-port denial. | Blocker | Smoke-check transcript or summary. |
 
 ## 2. TLS and Reverse Proxy Expectations
