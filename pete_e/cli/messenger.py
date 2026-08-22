@@ -216,8 +216,14 @@ def _run_cli_application_job(
     from pete_e.infrastructure.job_repository import PostgresApplicationJobRepository
 
     job_id = _new_cli_job_id(operation)
+    service = ApplicationJobService(
+        PostgresApplicationJobRepository(),
+        lease_seconds=settings.PETEEEBOT_JOB_LEASE_SECONDS,
+        heartbeat_interval_seconds=settings.PETEEEBOT_JOB_HEARTBEAT_SECONDS,
+        recovery_interval_seconds=settings.PETEEEBOT_JOB_RECOVERY_SECONDS,
+    )
     try:
-        return ApplicationJobService(PostgresApplicationJobRepository()).run_callback(
+        return service.run_callback(
             job_id=job_id,
             operation=operation,
             callback=callback,
@@ -239,10 +245,12 @@ def _run_cli_application_job(
         if isinstance(exc, ApplicationError):
             raise
         log_utils.log_message(
-            f"Durable job wrapper unavailable for CLI {operation}; running command directly: {exc}",
-            "WARN",
+            f"Durable job wrapper failed closed for CLI {operation}: {type(exc).__name__}",
+            "ERROR",
         )
-        return callback()
+        raise
+    finally:
+        service.close(wait=True)
 
 
 def _format_body_age_line(trend) -> str | None:

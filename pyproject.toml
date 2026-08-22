@@ -62,6 +62,10 @@ pete_e = [
     "templates/**/*.html",
     "static/**/*",
     "resources/**/*.json",
+    "resources/*.sh",
+    "resources/*.service",
+    "resources/*.sudoers",
+    "resources/peteeebot-dispatch-deploy",
 ]
 
 [tool.setuptools.data-files]

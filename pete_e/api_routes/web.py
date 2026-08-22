@@ -1685,16 +1685,16 @@ def console_run_deploy(request: Request, payload: dict[str, Any] | None = None):
 
     try:
         dependencies.enforce_command_rate_limit(request, command)
-        dependencies.get_job_service().enqueue_subprocess(
+        dependencies.get_job_service().dispatch_external(
             job_id=job_id,
             operation=command,
-            command=[str(dependencies.configured_deploy_script_path())],
+            dispatch_command=dependencies.configured_deploy_dispatch_command(job_id),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,
             request_summary=summary,
-            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
             auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            dispatch_timeout_seconds=dependencies.settings.PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS,
         )
     except Exception as exc:
         _audit_command_failure(request, command, exc)

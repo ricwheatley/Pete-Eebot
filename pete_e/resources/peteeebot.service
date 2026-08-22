@@ -1,0 +1,19 @@
+[Unit]
+Description=Pete-Eebot API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/myapp/current
+EnvironmentFile=/opt/myapp/shared/.env
+ExecStart=/opt/myapp/shared/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

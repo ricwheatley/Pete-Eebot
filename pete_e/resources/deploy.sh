@@ -129,10 +129,11 @@ log "Running read-only schema upgrade preflight..."
 "${PYTHON_BIN}" -m pete_e.cli.schema preflight
 
 if [[ "${SCHEMA_BACKUP_BEFORE_UPGRADE:-1}" == "1" ]]; then
-    [[ -x "${APP_ROOT}/scripts/backup_db.sh" ]] || fail "Database backup script is unavailable or not executable."
+    BACKUP_SCRIPT="${APP_ROOT}/scripts/backup_db.sh"
+    [[ -x "${BACKUP_SCRIPT}" ]] || fail "Database backup script is unavailable or not executable."
     log "Backing up PostgreSQL before schema upgrade..."
     PROJECT_ROOT="${PROJECT_ROOT}" APP_ROOT="${APP_ROOT}" ENV_FILE="${ENV_FILE}" \
-        "${APP_ROOT}/scripts/backup_db.sh"
+        "${BACKUP_SCRIPT}"
 else
     log "WARNING: Pre-migration backup explicitly disabled with SCHEMA_BACKUP_BEFORE_UPGRADE=0."
 fi

@@ -157,11 +157,17 @@ class Settings(BaseSettings):
     PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS: float = 1.0
     GITHUB_WEBHOOK_SECRET: SecretStr | None = None
     DEPLOY_SCRIPT_PATH: Path | None = None
+    PETEEEBOT_DEPLOY_UNIT_TEMPLATE: str = "peteeebot-deploy@.service"
+    PETEEEBOT_DEPLOY_DISPATCH_BIN: Path = Path("/usr/local/sbin/peteeebot-dispatch-deploy")
+    PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS: float = Field(30.0, ge=1, le=120)
     PETEEEBOT_CLI_BIN: Path | str | None = None
     PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS: int = 10
     PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS: float = 60.0
     PETEEEBOT_SYNC_TIMEOUT_SECONDS: float = 300.0
     PETEEEBOT_PROCESS_TIMEOUT_SECONDS: float = 900.0
+    PETEEEBOT_JOB_LEASE_SECONDS: float = Field(300.0, ge=5, le=3600)
+    PETEEEBOT_JOB_HEARTBEAT_SECONDS: float = Field(60.0, ge=1, le=1200)
+    PETEEEBOT_JOB_RECOVERY_SECONDS: float = Field(60.0, ge=1, le=1200)
     PETE_LOG_LEVEL: str = "INFO"
     PETE_LOG_FORMAT: str = "json"
     PETE_LOG_TO_CONSOLE: bool = True
@@ -234,6 +240,22 @@ class Settings(BaseSettings):
             and "APPLE_MAX_STALE_DAYS" in self.model_fields_set
         ):
             self.PETEEEBOT_STALE_INGEST_ALERT_DAYS = self.APPLE_MAX_STALE_DAYS
+        return self
+
+    @model_validator(mode="after")
+    def validate_job_lease_cadence(self) -> "Settings":
+        """Require enough heartbeat margin to fence work before lease expiry."""
+
+        if self.PETEEEBOT_JOB_HEARTBEAT_SECONDS >= self.PETEEEBOT_JOB_LEASE_SECONDS / 2:
+            raise ValueError(
+                "PETEEEBOT_JOB_HEARTBEAT_SECONDS must be less than half "
+                "PETEEEBOT_JOB_LEASE_SECONDS"
+            )
+        if self.PETEEEBOT_JOB_RECOVERY_SECONDS > self.PETEEEBOT_JOB_LEASE_SECONDS:
+            raise ValueError(
+                "PETEEEBOT_JOB_RECOVERY_SECONDS must not exceed "
+                "PETEEEBOT_JOB_LEASE_SECONDS"
+            )
         return self
 
     @model_validator(mode="after")

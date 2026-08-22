@@ -211,14 +211,17 @@ Current deploy chain in repo:
 1. Webhook hits `POST /webhook`, verifies `X-Hub-Signature-256` HMAC, and
    accepts only a non-deletion push to `refs/heads/main` with a valid commit SHA.
    Other signed deliveries are acknowledged as ignored without creating a job.
-2. API process launches external deploy script at `DEPLOY_SCRIPT_PATH` for an
-   accepted main-branch push.
-3. Stable wrapper script (`/opt/myapp/scripts/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
+2. API process creates a fenced durable job/lock and invokes the validated
+   `/usr/local/sbin/peteeebot-dispatch-deploy` helper.
+3. The helper starts `peteeebot-deploy@<job-id>.service`. This independent unit
+   takes over the claim and heartbeats while it runs `DEPLOY_SCRIPT_PATH`; it is
+   not part of the API unit's cgroup.
+4. Stable wrapper script (`/opt/myapp/scripts/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
    - `git fetch --all --prune`
    - `git reset --hard origin/main`
    - `git clean -fdx`
-4. Wrapper executes tracked deploy script `pete_e/resources/deploy.sh` with `SKIP_GIT_UPDATE=1`.
-5. Tracked deploy script does:
+5. Wrapper executes tracked deploy script `pete_e/resources/deploy.sh` with `SKIP_GIT_UPDATE=1`.
+6. Tracked deploy script does:
    - validates `.env`, venv, pinned uv, `pyproject.toml`, and `uv.lock`
    - rejects a stale `uv.lock`, then exact-syncs its frozen runtime subset into the shared venv with `--no-dev --no-editable`
    - checks the installed dependency graph with `uv pip check`
@@ -228,7 +231,26 @@ Current deploy chain in repo:
    - verifies head and essential schema through the runtime role
    - refreshes cron via `pete_e.infrastructure.cron_manager`
    - notifies Telegram
-   - restarts `peteeebot.service`
+    - restarts `peteeebot.service`
+7. The independent worker survives the restart, records success/failure, and
+   deletes its fenced operation lock atomically with the terminal transition.
+
+One-time systemd installation/validation:
+
+```bash
+sudo bash /opt/myapp/current/pete_e/resources/install-systemd-units.sh
+sudo systemd-analyze verify /etc/systemd/system/peteeebot.service \
+  /etc/systemd/system/peteeebot-deploy@.service
+sudo visudo -cf /etc/sudoers.d/peteeebot-deploy
+sudo systemctl enable --now peteeebot.service
+```
+
+The installer only reloads unit definitions; it does not start or restart a
+service. `peteeebot-deploy@.service` deliberately has no enablement target,
+`PartOf=`, or `BindsTo=` relationship.
+
+The first-rollout sequence, crash/retry policy, and exact controlled Ubuntu
+restart verification are in `docs/job_ownership_deployment_runbook.md`.
 
 ---
 

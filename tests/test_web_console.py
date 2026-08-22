@@ -372,6 +372,9 @@ class _JobService:
             request_summary=kwargs["request_summary"],
         )
 
+    def dispatch_external(self, **kwargs):
+        return self.enqueue_subprocess(**kwargs)
+
     def run_callback(self, **kwargs):
         self.enqueued.append(kwargs)
         return kwargs["callback"]()

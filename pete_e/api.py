@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 
@@ -18,6 +20,7 @@ from pete_e.api_routes.dependencies import (
     get_status_service,
     prepare_job_context,
     run_guarded_high_risk_operation,
+    shutdown_job_service,
     validate_api_key,
 )
 from pete_e.api_errors import install_api_error_handlers
@@ -64,7 +67,15 @@ __all__ = [
     "web_router",
 ]
 
-app = FastAPI(title="Pete-Eebot API")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    try:
+        yield
+    finally:
+        shutdown_job_service()
+
+
+app = FastAPI(title="Pete-Eebot API", lifespan=_lifespan)
 install_security_middleware(app)
 install_api_error_handlers(app)
 install_request_logging_middleware(app)

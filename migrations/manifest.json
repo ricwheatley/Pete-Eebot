@@ -133,6 +133,12 @@
       "filename": "20260822_reconcile_untracked_schema.sql",
       "sha256": "13aed6333e6305859fd7d5cfa5078852e107782b518b2dc168f7a864b280d9fd",
       "transactional": true
+    },
+    {
+      "revision": "20260822_safe_job_ownership",
+      "filename": "20260822_safe_job_ownership.sql",
+      "sha256": "1644a7e0bb27f13b47b3c5466e7aca1c57fb93bd5e70de916f517a5c5429439f",
+      "transactional": true
     }
   ]
 }

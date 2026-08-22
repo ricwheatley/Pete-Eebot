@@ -203,8 +203,10 @@ from pete_e.infrastructure.schema_migrations import head_revision
 module_path = Path(pete_e.__file__).resolve()
 assert Path({str(ROOT)!r}) not in module_path.parents, module_path
 assert (files('pete_e') / 'resources' / 'phrases_tagged.json').is_file()
+assert (files('pete_e') / 'resources' / 'peteeebot-deploy@.service').is_file()
+assert (files('pete_e') / 'resources' / 'peteeebot-dispatch-deploy').is_file()
 assert (files('pete_e') / 'templates' / 'console' / 'base.html').is_file()
-assert head_revision() == '20260822_reconcile_untracked_schema'
+assert head_revision() == '20260822_safe_job_ownership'
 
 schema = app.openapi()
 assert schema['info']['title'] == 'Pete-Eebot API'

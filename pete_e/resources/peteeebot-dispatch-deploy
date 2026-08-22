@@ -1,0 +1,10 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+if [[ "$#" -ne 1 || ! "$1" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    printf '%s\n' "Usage: peteeebot-dispatch-deploy SAFE_JOB_ID" >&2
+    exit 2
+fi
+
+readonly job_id="$1"
+exec /bin/systemctl start --no-block "peteeebot-deploy@${job_id}.service"

@@ -9,7 +9,7 @@ from fastapi import Header, HTTPException, Query, Request
 
 from pete_e.api_routes.dependencies import (
     audit_command_event,
-    configured_deploy_script_path,
+    configured_deploy_dispatch_command,
     configured_webhook_secret,
     enforce_command_rate_limit,
     get_job_service,
@@ -108,23 +108,16 @@ async def github_webhook(request: Request):
     audit_command_event(request, command="deploy", outcome="started", summary=summary)
     try:
         correlation_id = get_or_create_correlation_id(request)
-        get_job_service().enqueue_subprocess(
+        get_job_service().dispatch_external(
             job_id=job_id,
             operation="deploy",
-            command=[
-                "/usr/bin/env",
-                f"WEBHOOK_DELIVERY_ID={delivery_id or ''}",
-                f"GITHUB_EVENT_NAME={event_name or ''}",
-                f"GITHUB_COMMIT_SHA={commit_sha}",
-                f"GITHUB_REF={ref_name}",
-                str(configured_deploy_script_path()),
-            ],
+            dispatch_command=configured_deploy_dispatch_command(job_id),
             requester=None,
             request_id=correlation_id,
             correlation_id=correlation_id,
             request_summary=summary,
-            timeout_seconds=getattr(settings, "PETEEEBOT_PROCESS_TIMEOUT_SECONDS", None),
             auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            dispatch_timeout_seconds=settings.PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS,
         )
     except HTTPException as exc:
         detail = getattr(exc, "detail", {})

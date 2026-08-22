@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
 from psycopg.rows import dict_row
 from psycopg.types.json import Json
 from psycopg_pool import ConnectionPool
 
-from pete_e.domain.jobs import ApplicationJob, ApplicationOperationLock, CommandHistoryEntry, JOB_STATUS_QUEUED, JOB_STATUS_ABANDONED
+from pete_e.domain.jobs import (
+    ApplicationJob,
+    ApplicationOperationLock,
+    CommandHistoryEntry,
+    JOB_STATUS_ABANDONED,
+    JOB_STATUS_QUEUED,
+)
 from pete_e.infrastructure.postgres_dal import get_pool
 
 
@@ -70,6 +76,12 @@ class PostgresApplicationJobRepository:
             lock_name=str(row["lock_name"]),
             operation=str(row["operation"]),
             job_id=str(row["job_id"]) if row.get("job_id") is not None else None,
+            worker_id=row.get("worker_id"),
+            ownership_token=(
+                int(row["ownership_token"])
+                if row.get("ownership_token") is not None
+                else None
+            ),
             acquired_at=row.get("acquired_at"),
             expires_at=row.get("expires_at"),
         )
@@ -119,25 +131,128 @@ class PostgresApplicationJobRepository:
                 row = cur.fetchone()
         return self._job_from_row(row)
 
-    def mark_running(self, job_id: str, *, started_at: datetime) -> None:
+    def claim(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        lease_seconds: float,
+    ) -> ApplicationJob | None:
+        """Atomically claim a queued job or take over an expired running claim."""
+
         with self.pool.connection() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     """
                     UPDATE application_jobs
                     SET status = 'running',
-                        started_at = %s,
-                        worker_id = COALESCE(worker_id, %s),
-                        last_heartbeat_at = %s,
-                        lease_expires_at = %s,
-                        ownership_token = COALESCE(ownership_token, 0) + 1,
+                        started_at = COALESCE(started_at, now()),
+                        worker_id = %s,
+                        attempt_number = CASE
+                            WHEN status = 'queued' THEN attempt_number
+                            ELSE attempt_number + 1
+                        END,
+                        last_heartbeat_at = now(),
+                        lease_expires_at = now() + (%s || ' seconds')::interval,
+                        ownership_token = ownership_token + 1,
+                        abandon_reason = NULL,
                         updated_at = now()
                     WHERE id = %s
+                      AND (
+                          status = 'queued'
+                          OR (
+                              status = 'running'
+                              AND lease_expires_at IS NOT NULL
+                              AND lease_expires_at < now()
+                          )
+                      )
+                    RETURNING *
                     """,
-                    (started_at, "worker-local", started_at, started_at + timedelta(minutes=5), job_id),
+                    (worker_id, max(0.001, float(lease_seconds)), job_id),
                 )
+                row = cur.fetchone()
+        return self._job_from_row(row) if row else None
 
-    def heartbeat(self, *, job_id: str, worker_id: str, lease_seconds: float, progress: dict[str, Any] | None = None) -> bool:
+    def handoff_claim(
+        self,
+        job_id: str,
+        *,
+        from_worker_id: str,
+        from_ownership_token: int,
+        to_worker_id: str,
+        lease_seconds: float,
+    ) -> ApplicationJob | None:
+        """Transfer an active claim and its operation lock to another process."""
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """
+                    UPDATE application_jobs
+                    SET worker_id = %s,
+                        ownership_token = ownership_token + 1,
+                        last_heartbeat_at = now(),
+                        lease_expires_at = now() + (%s || ' seconds')::interval,
+                        progress_summary = COALESCE(progress_summary, '{}'::jsonb)
+                            || '{"phase":"running"}'::jsonb,
+                        updated_at = now()
+                    WHERE id = %s
+                      AND status = 'running'
+                      AND worker_id = %s
+                      AND ownership_token = %s
+                      AND lease_expires_at >= now()
+                      AND progress_summary ->> 'phase' = 'dispatching'
+                    RETURNING *
+                    """,
+                    (
+                        to_worker_id,
+                        max(0.001, float(lease_seconds)),
+                        job_id,
+                        from_worker_id,
+                        int(from_ownership_token),
+                    ),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                new_token = int(row["ownership_token"])
+                cur.execute(
+                    """
+                    UPDATE application_operation_locks
+                    SET worker_id = %s,
+                        ownership_token = %s,
+                        expires_at = now() + (%s || ' seconds')::interval,
+                        updated_at = now()
+                    WHERE lock_name = 'high_risk_operation'
+                      AND job_id = %s
+                      AND worker_id = %s
+                      AND ownership_token = %s
+                    """,
+                    (
+                        to_worker_id,
+                        new_token,
+                        max(0.001, float(lease_seconds)),
+                        job_id,
+                        from_worker_id,
+                        int(from_ownership_token),
+                    ),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    return None
+        return self._job_from_row(row)
+
+    def heartbeat(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        ownership_token: int,
+        lease_seconds: float,
+        progress: dict[str, Any] | None = None,
+    ) -> bool:
+        """Renew the job and matching operation lock, or renew neither."""
+
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -150,12 +265,49 @@ class PostgresApplicationJobRepository:
                     WHERE id = %s
                       AND status = 'running'
                       AND worker_id = %s
+                      AND ownership_token = %s
+                      AND lease_expires_at >= now()
                     """,
-                    (float(lease_seconds), Json(progress) if progress is not None else None, job_id, worker_id),
+                    (
+                        max(0.001, float(lease_seconds)),
+                        Json(progress) if progress is not None else None,
+                        job_id,
+                        worker_id,
+                        int(ownership_token),
+                    ),
                 )
-                return cur.rowcount > 0
+                if cur.rowcount != 1:
+                    return False
+                cur.execute(
+                    """
+                    UPDATE application_operation_locks
+                    SET expires_at = now() + (%s || ' seconds')::interval,
+                        updated_at = now()
+                    WHERE lock_name = 'high_risk_operation'
+                      AND job_id = %s
+                      AND worker_id = %s
+                      AND ownership_token = %s
+                    """,
+                    (
+                        max(0.001, float(lease_seconds)),
+                        job_id,
+                        worker_id,
+                        int(ownership_token),
+                    ),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    return False
+                return True
 
-    def recover_stale_operations(self, *, stale_before: datetime) -> int:
+    def recover_stale_operations(
+        self,
+        *,
+        stale_before: datetime,
+        queued_before: datetime | None = None,
+    ) -> int:
+        """Abandon expired work and prune only locks whose exact owner is stale."""
+
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -167,20 +319,49 @@ class PostgresApplicationJobRepository:
                         failure_reason = COALESCE(failure_reason, 'lease_expired'),
                         result_summary = COALESCE(result_summary, 'Operation abandoned after missed heartbeat.'),
                         updated_at = now()
-                    WHERE status IN ('queued', 'running')
-                      AND lease_expires_at IS NOT NULL
-                      AND lease_expires_at < %s
+                    WHERE (
+                        status = 'running'
+                        AND lease_expires_at IS NOT NULL
+                        AND lease_expires_at < LEAST(%s, now())
+                    ) OR (
+                        status = 'queued'
+                        AND created_at < LEAST(%s, now())
+                    )
                     """,
-                    (JOB_STATUS_ABANDONED, stale_before),
+                    (
+                        JOB_STATUS_ABANDONED,
+                        stale_before,
+                        queued_before or stale_before,
+                    ),
                 )
                 recovered = cur.rowcount
-                cur.execute("DELETE FROM application_operation_locks WHERE expires_at < now()")
+                cur.execute(
+                    """
+                    DELETE FROM application_operation_locks l
+                    WHERE l.lock_name = 'high_risk_operation'
+                      AND (
+                          l.expires_at < now()
+                          OR NOT EXISTS (
+                              SELECT 1
+                              FROM application_jobs j
+                              WHERE j.id = l.job_id
+                                AND j.status = 'running'
+                                AND j.worker_id = l.worker_id
+                                AND j.ownership_token = l.ownership_token
+                                AND j.lease_expires_at >= now()
+                          )
+                      )
+                    """
+                )
                 return recovered
 
     def complete(
         self,
         job_id: str,
         *,
+        worker_id: str,
+        ownership_token: int,
+        require_lock: bool = True,
         status: str,
         completed_at: datetime,
         exit_code: int | None,
@@ -188,7 +369,9 @@ class PostgresApplicationJobRepository:
         stdout_summary: str | None,
         stderr_summary: str | None,
         failure_reason: str | None,
-    ) -> None:
+    ) -> bool:
+        """Persist a terminal result and delete its matching lock atomically."""
+
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -203,6 +386,10 @@ class PostgresApplicationJobRepository:
                         stderr_summary = %s,
                         failure_reason = %s
                     WHERE id = %s
+                      AND status = 'running'
+                      AND worker_id = %s
+                      AND ownership_token = %s
+                      AND lease_expires_at >= now()
                     """,
                     (
                         status,
@@ -213,8 +400,26 @@ class PostgresApplicationJobRepository:
                         stderr_summary,
                         failure_reason,
                         job_id,
+                        worker_id,
+                        int(ownership_token),
                     ),
                 )
+                if cur.rowcount != 1:
+                    return False
+                cur.execute(
+                    """
+                    DELETE FROM application_operation_locks
+                    WHERE lock_name = 'high_risk_operation'
+                      AND job_id = %s
+                      AND worker_id = %s
+                      AND ownership_token = %s
+                    """,
+                    (job_id, worker_id, int(ownership_token)),
+                )
+                if require_lock and cur.rowcount != 1:
+                    conn.rollback()
+                    return False
+                return True
 
     def get(self, job_id: str) -> ApplicationJob | None:
         with self.pool.connection() as conn:
@@ -369,35 +574,60 @@ class PostgresApplicationJobRepository:
         *,
         operation: str,
         job_id: str,
+        worker_id: str,
+        ownership_token: int,
         lease_seconds: float,
     ) -> ApplicationOperationLock | None:
-        now = datetime.now(timezone.utc)
-        expires_at = now + timedelta(seconds=max(60.0, float(lease_seconds)))
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
-                self._prune_orphaned_high_risk_lock(cur)
-                cur.execute(
-                    """
-                    DELETE FROM application_operation_locks
-                    WHERE lock_name = 'high_risk_operation'
-                      AND expires_at IS NOT NULL
-                      AND expires_at < now()
-                    """
-                )
                 cur.execute(
                     """
                     INSERT INTO application_operation_locks (
                         lock_name,
                         operation,
                         job_id,
+                        worker_id,
+                        ownership_token,
                         acquired_at,
                         expires_at
                     )
-                    VALUES ('high_risk_operation', %s, %s, %s, %s)
-                    ON CONFLICT (lock_name) DO NOTHING
+                    SELECT 'high_risk_operation', %s, j.id, %s, %s,
+                           now(), now() + (%s || ' seconds')::interval
+                    FROM application_jobs j
+                    WHERE j.id = %s
+                      AND j.status = 'running'
+                      AND j.worker_id = %s
+                      AND j.ownership_token = %s
+                      AND j.lease_expires_at >= now()
+                    ON CONFLICT (lock_name) DO UPDATE
+                    SET operation = EXCLUDED.operation,
+                        job_id = EXCLUDED.job_id,
+                        worker_id = EXCLUDED.worker_id,
+                        ownership_token = EXCLUDED.ownership_token,
+                        acquired_at = EXCLUDED.acquired_at,
+                        expires_at = EXCLUDED.expires_at,
+                        updated_at = now()
+                    WHERE application_operation_locks.expires_at < now()
+                       OR NOT EXISTS (
+                           SELECT 1
+                           FROM application_jobs active_job
+                           WHERE active_job.id = application_operation_locks.job_id
+                             AND active_job.status = 'running'
+                             AND active_job.worker_id = application_operation_locks.worker_id
+                             AND active_job.ownership_token = application_operation_locks.ownership_token
+                             AND active_job.lease_expires_at >= now()
+                       )
                     RETURNING *
                     """,
-                    (operation, job_id, now, expires_at),
+                    (
+                        operation,
+                        worker_id,
+                        int(ownership_token),
+                        max(0.001, float(lease_seconds)),
+                        job_id,
+                        worker_id,
+                        int(ownership_token),
+                    ),
                 )
                 row = cur.fetchone()
         return self._lock_from_row(row) if row else None
@@ -413,12 +643,23 @@ class PostgresApplicationJobRepository:
                   SELECT 1
                   FROM application_jobs j
                   WHERE j.id = l.job_id
-                    AND j.status NOT IN ('queued', 'running')
+                    AND (
+                        j.status <> 'running'
+                        OR j.worker_id IS DISTINCT FROM l.worker_id
+                        OR j.ownership_token IS DISTINCT FROM l.ownership_token
+                        OR j.lease_expires_at < now()
+                    )
               )
             """
         )
 
-    def release_high_risk_operation_lock(self, *, job_id: str) -> None:
+    def release_high_risk_operation_lock(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        ownership_token: int,
+    ) -> bool:
         with self.pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -426,9 +667,12 @@ class PostgresApplicationJobRepository:
                     DELETE FROM application_operation_locks
                     WHERE lock_name = 'high_risk_operation'
                       AND job_id = %s
+                      AND worker_id = %s
+                      AND ownership_token = %s
                     """,
-                    (job_id,),
+                    (job_id, worker_id, int(ownership_token)),
                 )
+                return cur.rowcount == 1
 
     def get_active_high_risk_operation_lock(self) -> ApplicationOperationLock | None:
         with self.pool.connection() as conn:

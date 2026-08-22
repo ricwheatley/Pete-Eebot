@@ -224,31 +224,28 @@ Example layout:
     cloud-staging/
 ```
 
-The repository includes deploy scripts in `pete_e/resources/deploy-wrapper.sh` and `pete_e/resources/deploy.sh`. Their production defaults target `/opt/myapp`; override `PROJECT_ROOT`, `APP_ROOT`, `SHARED_ROOT`, `ENV_FILE`, and `VENV_ROOT` for a different Ubuntu layout.
+The repository includes deploy scripts and systemd definitions in `pete_e/resources/`.
+Their production defaults target `/opt/myapp`; override `PROJECT_ROOT`,
+`APP_ROOT`, `SHARED_ROOT`, `ENV_FILE`, and `VENV_ROOT` for a different Ubuntu
+layout.
 
 ### Application service
 
-Example `systemd` unit:
+Install the tracked API unit, independent deploy template, validated dispatch
+helper, and narrow sudoers rule:
 
-```ini
-[Unit]
-Description=Pete-Eebot API
-After=network-online.target docker.service
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=deploy
-Group=deploy
-WorkingDirectory=/opt/myapp/current
-EnvironmentFile=/opt/myapp/shared/.env
-ExecStart=/opt/myapp/shared/venv/bin/uvicorn pete_e.api:app --host 127.0.0.1 --port 8000
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
+```bash
+sudo bash /opt/myapp/current/pete_e/resources/install-systemd-units.sh
+sudo systemd-analyze verify \
+  /etc/systemd/system/peteeebot.service \
+  /etc/systemd/system/peteeebot-deploy@.service
+sudo visudo -cf /etc/sudoers.d/peteeebot-deploy
 ```
+
+`peteeebot.service` explicitly uses `KillMode=control-group`. Deployment does
+not run in that control group: each accepted job runs in
+`peteeebot-deploy@<job-id>.service`, which has no `PartOf=` or `BindsTo=` link to
+the API unit. Restarting the API therefore cannot kill the deployment worker.
 
 Install and start:
 
@@ -317,15 +314,23 @@ The active webhook deploy chain is:
 2. Pete-Eebot validates `GITHUB_WEBHOOK_SECRET`.
 3. The API accepts only a non-deletion `push` to `refs/heads/main` with a
    valid commit SHA; all other signed deliveries return `Webhook ignored`.
-4. The API launches `DEPLOY_SCRIPT_PATH`.
-5. The stable wrapper updates the Git checkout.
-6. The tracked deploy script installs the package, refreshes cron, sends a Telegram notification, and restarts `peteeebot.service`.
+4. The API creates and fences a durable job/operation lock, then asks the
+   root-owned dispatch helper to start `peteeebot-deploy@<job-id>.service`.
+5. The independent worker atomically takes ownership with a higher fencing
+   token and heartbeats the job and lock while it runs `DEPLOY_SCRIPT_PATH`.
+6. The stable wrapper updates the Git checkout.
+7. The tracked deploy script installs the package, refreshes cron, sends a
+   Telegram notification, and restarts `peteeebot.service`.
+8. The independent worker survives that restart, records the terminal result,
+   and removes exactly its own operation lock in the same database transaction.
 
 Required deploy environment:
 
 ```bash
 export GITHUB_WEBHOOK_SECRET="replace-with-shared-webhook-secret"
 export DEPLOY_SCRIPT_PATH="/opt/myapp/scripts/deploy.sh"
+export PETEEEBOT_DEPLOY_UNIT_TEMPLATE="peteeebot-deploy@.service"
+export PETEEEBOT_DEPLOY_DISPATCH_BIN="/usr/local/sbin/peteeebot-dispatch-deploy"
 ```
 
 Copy the wrapper outside the checkout:
@@ -593,7 +598,8 @@ Settings representations and must not be logged.
 | `PETEEEBOT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS`, `PETEEEBOT_LOGIN_RATE_LIMIT_WINDOW_SECONDS`, `PETEEEBOT_LOGIN_LOCKOUT_SECONDS`, `PETEEEBOT_LOGIN_BACKOFF_BASE_SECONDS` | Login throttling controls. |
 | `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS`, `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS` | Command endpoint rate limits. |
 | `PETEEEBOT_SYNC_TIMEOUT_SECONDS`, `PETEEEBOT_PROCESS_TIMEOUT_SECONDS` | Long-running command timeouts. |
-| `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, `PETEEEBOT_CLI_BIN` | GitHub webhook deploy configuration and absolute `pete` CLI path for subprocess jobs. |
+| `PETEEEBOT_JOB_LEASE_SECONDS`, `PETEEEBOT_JOB_HEARTBEAT_SECONDS`, `PETEEEBOT_JOB_RECOVERY_SECONDS` | Fenced job lease, heartbeat cadence (less than half the lease), and periodic recovery cadence. |
+| `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, `PETEEEBOT_DEPLOY_UNIT_TEMPLATE`, `PETEEEBOT_DEPLOY_DISPATCH_BIN`, `PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS`, `PETEEEBOT_CLI_BIN` | GitHub webhook deployment, independent systemd dispatch, and absolute `pete` CLI path. |
 
 ### Logging, alerting, and monitoring
 

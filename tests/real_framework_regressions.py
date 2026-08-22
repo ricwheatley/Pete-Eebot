@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from importlib.metadata import version
 import json
 import os
@@ -80,17 +80,52 @@ class _JobRepository:
             self.jobs[job.id] = job
         return job
 
-    def mark_running(self, job_id: str, *, started_at: datetime) -> None:
+    def claim(self, job_id: str, *, worker_id: str, lease_seconds: float):
         with self._mutex:
             current = self.jobs[job_id]
             self.jobs[job_id] = ApplicationJob(
-                **{**current.__dict__, "status": "running", "started_at": started_at}
+                **{
+                    **current.__dict__,
+                    "status": "running",
+                    "started_at": datetime.now(),
+                    "worker_id": worker_id,
+                    "ownership_token": (current.ownership_token or 0) + 1,
+                    "last_heartbeat_at": datetime.now(),
+                    "lease_expires_at": datetime.now() + timedelta(seconds=lease_seconds),
+                }
             )
+            return self.jobs[job_id]
 
-    def complete(self, job_id: str, **values) -> None:
+    def heartbeat(self, *, job_id: str, worker_id: str, ownership_token: int, lease_seconds: float, progress=None):
         with self._mutex:
             current = self.jobs[job_id]
+            if current.worker_id != worker_id or current.ownership_token != ownership_token:
+                return False
+            self.jobs[job_id] = ApplicationJob(
+                **{
+                    **current.__dict__,
+                    "last_heartbeat_at": datetime.now(),
+                    "lease_expires_at": datetime.now() + timedelta(seconds=lease_seconds),
+                    "progress_summary": progress,
+                }
+            )
+            return True
+
+    def complete(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        ownership_token: int,
+        require_lock: bool = True,  # noqa: ARG002
+        **values,
+    ) -> bool:
+        with self._mutex:
+            current = self.jobs[job_id]
+            if current.worker_id != worker_id or current.ownership_token != ownership_token:
+                return False
             self.jobs[job_id] = ApplicationJob(**{**current.__dict__, **values})
+            return True
 
     def get(self, job_id: str) -> ApplicationJob | None:
         with self._mutex:
@@ -108,18 +143,32 @@ class _JobRepository:
         *,
         operation: str,
         job_id: str,
+        worker_id: str,
+        ownership_token: int,
         lease_seconds: float,  # noqa: ARG002
     ):
         with self._mutex:
             if self.active_lock is not None:
                 return None
-            self.active_lock = SimpleNamespace(operation=operation, job_id=job_id)
+            self.active_lock = SimpleNamespace(
+                operation=operation,
+                job_id=job_id,
+                worker_id=worker_id,
+                ownership_token=ownership_token,
+            )
             return self.active_lock
 
-    def release_high_risk_operation_lock(self, *, job_id: str) -> None:
+    def release_high_risk_operation_lock(self, *, job_id: str, worker_id: str, ownership_token: int) -> bool:
         with self._mutex:
-            if self.active_lock is not None and self.active_lock.job_id == job_id:
+            if (
+                self.active_lock is not None
+                and self.active_lock.job_id == job_id
+                and self.active_lock.worker_id == worker_id
+                and self.active_lock.ownership_token == ownership_token
+            ):
                 self.active_lock = None
+                return True
+            return False
 
     def get_active_high_risk_operation_lock(self):
         with self._mutex:

@@ -95,6 +95,8 @@ class ApplicationOperationLock:
     lock_name: str
     operation: str
     job_id: str | None
+    worker_id: str | None = None
+    ownership_token: int | None = None
     acquired_at: datetime | None = None
     expires_at: datetime | None = None
 

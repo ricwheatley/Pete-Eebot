@@ -26,6 +26,7 @@ LEGACY_RESET_MISSING_REVISIONS = (
     "20260511_add_nutrition_log_extended_fields",
     "20260511_add_nutrition_log_updated_at",
     "20260516_add_job_leases_and_recovery",
+    "20260822_safe_job_ownership",
 )
 
 _TRANSACTION_CONTROL = re.compile(
@@ -313,6 +314,17 @@ SCHEMA_PROBES: tuple[SchemaProbe, ...] = (
                  AND table_name = 'training_plans'
                  AND column_name = 'metadata'
            )
+        """,
+    ),
+    SchemaProbe(
+        "20260822_safe_job_ownership",
+        "fenced application-job operation locks",
+        """
+        SELECT count(*) = 2
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'application_operation_locks'
+          AND column_name IN ('worker_id', 'ownership_token')
         """,
     ),
 )

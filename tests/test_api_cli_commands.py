@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -236,7 +236,7 @@ def test_webhook_enqueues_only_valid_main_branch_push(
     rate_limits: list[tuple[object, str]] = []
 
     class _DeployJobService:
-        def enqueue_subprocess(self, **kwargs):
+        def dispatch_external(self, **kwargs):
             enqueued.append(kwargs)
 
     monkeypatch.setattr(logs_webhooks, "configured_webhook_secret", lambda: _WEBHOOK_SECRET)
@@ -249,8 +249,8 @@ def test_webhook_enqueues_only_valid_main_branch_push(
     monkeypatch.setattr(logs_webhooks, "get_job_service", lambda: _DeployJobService())
     monkeypatch.setattr(
         logs_webhooks,
-        "configured_deploy_script_path",
-        lambda: Path("/opt/myapp/scripts/deploy.sh"),
+        "configured_deploy_dispatch_command",
+        lambda job_id: ["sudo", "-n", "/usr/local/sbin/peteeebot-dispatch-deploy", job_id],
     )
     monkeypatch.setattr(
         logs_webhooks,
@@ -272,8 +272,8 @@ def test_webhook_enqueues_only_valid_main_branch_push(
     assert len(enqueued) == 1
     assert rate_limits[0][1] == "deploy"
     assert enqueued[0]["request_summary"]["ref"] == "refs/heads/main"
-    assert f"GITHUB_COMMIT_SHA={_VALID_COMMIT_SHA}" in enqueued[0]["command"]
-    assert "GITHUB_REF=refs/heads/main" in enqueued[0]["command"]
+    assert enqueued[0]["dispatch_command"][-1] == "deploy-job"
+    assert enqueued[0]["request_summary"]["commit_sha"] == _VALID_COMMIT_SHA
 
 
 def test_webhook_rejects_invalid_signature_before_filtering(
@@ -299,6 +299,32 @@ def test_webhook_rejects_invalid_signature_before_filtering(
 
     assert response.status_code == 403
     assert response.json()["error"]["message"] == "Invalid signature"
+
+
+def test_deploy_dispatch_command_is_bounded_to_validated_helper_and_job_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dependencies, "configured_deploy_script_path", lambda: None)
+    monkeypatch.setattr(dependencies.settings, "SUDO_BIN", "/usr/bin/sudo")
+    monkeypatch.setattr(
+        dependencies.settings,
+        "PETEEEBOT_DEPLOY_DISPATCH_BIN",
+        "/usr/local/sbin/peteeebot-dispatch-deploy",
+    )
+    monkeypatch.setattr(
+        dependencies.settings,
+        "PETEEEBOT_DEPLOY_UNIT_TEMPLATE",
+        "peteeebot-deploy@.service",
+    )
+
+    assert dependencies.configured_deploy_dispatch_command("deploy-safe_123") == [
+        "/usr/bin/sudo",
+        "-n",
+        "/usr/local/sbin/peteeebot-dispatch-deploy",
+        "deploy-safe_123",
+    ]
+    with pytest.raises(HTTPException, match="systemd-safe"):
+        dependencies.configured_deploy_dispatch_command("deploy/unsafe")
 
 
 def test_sync_command_handles_data_access_error(monkeypatch: pytest.MonkeyPatch) -> None:

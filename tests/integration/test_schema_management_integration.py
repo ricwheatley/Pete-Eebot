@@ -196,10 +196,13 @@ def test_existing_installation_can_be_verified_baselined_without_replay(
         revision=previous,
         confirm_database=_database_name(dsn),
     )
+    baseline_count = next(
+        migration.position for migration in load_manifest() if migration.revision == previous
+    )
     with psycopg.connect(dsn) as connection:
         assert connection.execute(
             f"SELECT count(*) FROM {LEDGER_TABLE} WHERE baseline = true"
-        ).fetchone() == (len(load_manifest()) - 1,)
+        ).fetchone() == (baseline_count,)
         assert connection.execute(
             "SELECT count(*) FROM nutrition_log WHERE client_event_id = 'retained-event'"
         ).fetchone() == (1,)
@@ -419,3 +422,38 @@ def test_auth_jobs_profile_and_nutrition_repositories_smoke_at_head(
         assert nutrition["client_event_id"] == "repository-event"
     finally:
         pool.close()
+
+
+def test_job_ownership_migration_abandons_unowned_legacy_running_rows(
+    disposable_database_factory,
+) -> None:
+    dsn = disposable_database_factory("jobownership")
+    upgrade_database(dsn, target_revision=previous_release_revision())
+    with psycopg.connect(dsn) as connection:
+        connection.execute(
+            """
+            INSERT INTO application_jobs (
+                id, operation, status, request_id, correlation_id, request_summary
+            ) VALUES (
+                'legacy-unowned-running', 'sync', 'running',
+                'legacy-unowned-running', 'legacy-unowned-running', '{}'::jsonb
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO application_operation_locks (lock_name, operation, job_id)
+            VALUES ('high_risk_operation', 'sync', 'legacy-unowned-running')
+            """
+        )
+
+    assert upgrade_database(dsn).compatible is True
+    with psycopg.connect(dsn) as connection:
+        assert connection.execute(
+            "SELECT status, abandon_reason FROM application_jobs WHERE id = %s",
+            ("legacy-unowned-running",),
+        ).fetchone() == ("abandoned", "ownership_migration")
+        assert connection.execute(
+            "SELECT count(*) FROM application_operation_locks WHERE job_id = %s",
+            ("legacy-unowned-running",),
+        ).fetchone() == (0,)

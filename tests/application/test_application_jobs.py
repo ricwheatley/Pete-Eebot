@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -35,16 +35,50 @@ class _Repo:
         self.jobs[job.id] = job
         return job
 
-    def mark_running(self, job_id: str, *, started_at: datetime) -> None:
+    def claim(self, job_id: str, *, worker_id: str, lease_seconds: float):
         current = self.jobs[job_id]
         self.jobs[job_id] = ApplicationJob(
-            **{**current.__dict__, "status": "running", "started_at": started_at}
+            **{
+                **current.__dict__,
+                "status": "running",
+                "started_at": datetime.now(timezone.utc),
+                "worker_id": worker_id,
+                "ownership_token": (current.ownership_token or 0) + 1,
+                "lease_expires_at": datetime.now(timezone.utc) + timedelta(seconds=lease_seconds),
+                "last_heartbeat_at": datetime.now(timezone.utc),
+            }
         )
+        return self.jobs[job_id]
 
-    def complete(self, job_id: str, **kwargs) -> None:
+    def heartbeat(self, *, job_id: str, worker_id: str, ownership_token: int, lease_seconds: float, progress=None):
         current = self.jobs[job_id]
+        if current.worker_id != worker_id or current.ownership_token != ownership_token or current.status != "running":
+            return False
+        self.jobs[job_id] = ApplicationJob(
+            **{
+                **current.__dict__,
+                "lease_expires_at": datetime.now(timezone.utc) + timedelta(seconds=lease_seconds),
+                "last_heartbeat_at": datetime.now(timezone.utc),
+                "progress_summary": progress,
+            }
+        )
+        return True
+
+    def complete(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        ownership_token: int,
+        require_lock: bool = True,
+        **kwargs,
+    ) -> bool:
+        current = self.jobs[job_id]
+        if current.worker_id != worker_id or current.ownership_token != ownership_token or current.status != "running":
+            return False
         self.jobs[job_id] = ApplicationJob(**{**current.__dict__, **kwargs})
         self.completed.set()
+        return True
 
     def get(self, job_id: str):
         return self.jobs.get(job_id)
@@ -65,15 +99,29 @@ class _LockingRepo(_Repo):
         super().__init__()
         self.active_lock = None
 
-    def acquire_high_risk_operation_lock(self, *, operation: str, job_id: str, lease_seconds: float):
+    def acquire_high_risk_operation_lock(
+        self, *, operation: str, job_id: str, worker_id: str, ownership_token: int, lease_seconds: float
+    ):
         if self.active_lock is not None:
             return None
-        self.active_lock = SimpleNamespace(operation=operation, job_id=job_id)
+        self.active_lock = SimpleNamespace(
+            operation=operation,
+            job_id=job_id,
+            worker_id=worker_id,
+            ownership_token=ownership_token,
+        )
         return self.active_lock
 
-    def release_high_risk_operation_lock(self, *, job_id: str) -> None:
-        if self.active_lock is not None and self.active_lock.job_id == job_id:
+    def release_high_risk_operation_lock(self, *, job_id: str, worker_id: str, ownership_token: int) -> bool:
+        if (
+            self.active_lock is not None
+            and self.active_lock.job_id == job_id
+            and self.active_lock.worker_id == worker_id
+            and self.active_lock.ownership_token == ownership_token
+        ):
             self.active_lock = None
+            return True
+        return False
 
     def get_active_high_risk_operation_lock(self):
         return self.active_lock

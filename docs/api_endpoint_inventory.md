@@ -99,7 +99,13 @@ High-risk workflows are serialized with the database-backed `application_operati
 - `/console/operations/resend-message`
 - `pete sync`
 
-Overlap attempts return `409 Conflict` with the requested and currently active operation names in the shared error envelope. The durable lock is held for the full sync worker, and it remains held for plan, message resend, and deploy subprocesses until the spawned process exits or times out. Jobs are persisted in `application_jobs`; command responses include `job_id` and, where applicable, a `/console/jobs/<job_id>` URL.
+Overlap attempts return `409 Conflict` with the requested and currently active
+operation names in the shared error envelope. Every running job and lock carries
+the same process-unique worker ID and fencing token. Callback and subprocess
+heartbeats renew both leases; terminal state and exact lock deletion are one
+transaction. Deployments transfer ownership to an independent systemd unit
+before execution. Jobs are persisted in `application_jobs`; command responses
+include `job_id` and, where applicable, a `/console/jobs/<job_id>` URL.
 
 ## Command Protections
 

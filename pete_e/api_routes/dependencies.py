@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import hashlib
 import hmac
 import math
+import re
 import secrets
 from pathlib import Path
 import subprocess
@@ -86,6 +87,7 @@ _status_service: StatusService | None = None
 _user_service: UserService | None = None
 _profile_service: ProfileService | None = None
 _job_service: ApplicationJobService | None = None
+_job_service_lock = threading.Lock()
 _command_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="api-command",
@@ -276,6 +278,25 @@ def configured_deploy_script_path() -> Path:
     return deploy_path
 
 
+def configured_deploy_dispatch_command(job_id: str) -> list[str]:
+    """Build the bounded systemd command for an independent deployment unit."""
+
+    # Fail at request time if the independent worker would have no deploy entrypoint.
+    configured_deploy_script_path()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        raise HTTPException(status_code=500, detail="Generated deployment job ID is not systemd-safe")
+    template = str(getattr(settings, "PETEEEBOT_DEPLOY_UNIT_TEMPLATE", "") or "")
+    if template != "peteeebot-deploy@.service":
+        raise HTTPException(status_code=503, detail="PETEEEBOT_DEPLOY_UNIT_TEMPLATE is invalid")
+    dispatch_bin = str(settings.PETEEEBOT_DEPLOY_DISPATCH_BIN)
+    return [
+        str(getattr(settings, "SUDO_BIN", "sudo")),
+        "-n",
+        dispatch_bin,
+        job_id,
+    ]
+
+
 def configured_cli_bin() -> str:
     raw_path = get_env("PETEEEBOT_CLI_BIN", None)
     if raw_path:
@@ -341,9 +362,26 @@ def get_profile_service() -> ProfileService:
 def get_job_service() -> ApplicationJobService:
     global _job_service
     if _job_service is None:
-        dal = get_dal()
-        _job_service = ApplicationJobService(PostgresApplicationJobRepository(pool=dal.pool))
+        with _job_service_lock:
+            if _job_service is None:
+                dal = get_dal()
+                _job_service = ApplicationJobService(
+                    PostgresApplicationJobRepository(pool=dal.pool),
+                    lease_seconds=settings.PETEEEBOT_JOB_LEASE_SECONDS,
+                    heartbeat_interval_seconds=settings.PETEEEBOT_JOB_HEARTBEAT_SECONDS,
+                    recovery_interval_seconds=settings.PETEEEBOT_JOB_RECOVERY_SECONDS,
+                )
     return _job_service
+
+
+def shutdown_job_service() -> None:
+    """Stop the lazily-created background job service during API shutdown."""
+
+    global _job_service
+    with _job_service_lock:
+        if _job_service is not None:
+            _job_service.close(wait=False)
+            _job_service = None
 
 
 def _request_method(request: Request) -> str:

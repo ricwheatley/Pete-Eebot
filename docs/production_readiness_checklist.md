@@ -30,13 +30,15 @@ Severity guidance:
 | [ ] Application container image is not used as the production runtime unless a new supported Dockerfile/runbook has been created and reviewed. | Blocker | Deployment profile note. |
 | [ ] Production layout matches the runbook: `.env`, `venv`, `deploy.sh`, `app`, and backup directories live outside the Git cleanup boundary where expected. | Blocker | Path listing or operator confirmation. |
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
-| [ ] Required environment values are populated: Postgres, Dropbox, Withings, Telegram if enabled, wger if enabled, `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, and `DEPLOY_SCRIPT_PATH`. | Blocker | Redacted env inventory. |
+| [ ] Required environment values are populated: Postgres, Dropbox, Withings, Telegram if enabled, wger if enabled, `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, job lease/heartbeat/recovery cadence, and deploy dispatch helper/unit settings. | Blocker | Redacted env inventory. |
 | [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
 | [ ] `pete-schema preflight`, backup, `upgrade`, and runtime-role `verify` pass; the ledger equals manifest head with valid checksums. | Blocker | Redacted command output, backup artifact/checksum, head revision, and DB identity. |
 | [ ] Migration failure and restore paths are known before applying any migration that changes production data. | Blocker | Rollback section in release note and disposable restore rehearsal. |
 | [ ] `python -m scripts.check_auth` and `pete status` complete with expected provider status. | Blocker | Command output summary. |
 | [ ] Cron source of truth has been rendered/applied from `pete_e/resources/pete_crontab.csv`; disabled missing-script rows remain disabled. | High | Cron summary output. |
 | [ ] `peteeebot.service` exists, runs under the intended user, and is managed by systemd. | Blocker | `systemctl status` summary. |
+| [ ] `peteeebot-deploy@.service`, dispatch helper, and validated sudoers rule are installed; the deploy template has no lifecycle binding to `peteeebot.service`. | Blocker | `systemd-analyze verify`, `visudo -cf`, unit directives. |
+| [ ] The controlled restart test in `docs/job_ownership_deployment_runbook.md` proves a deploy worker remains active across API restart, reaches durable terminal state, and leaves no operation lock. | Blocker | Job ID, cgroups/PIDs, journals, terminal row, lock query. |
 | [ ] Deploy webhook runs the stable wrapper only for non-deletion pushes to `refs/heads/main`; feature pushes, deletions, pings, and other signed events are ignored. | High | Redacted `DEPLOY_SCRIPT_PATH`, accepted-main test, and ignored-deletion test. |
 | [ ] Post-deploy smoke checks from `docs/runtime_deploy_runbook.md` pass: CLI status, systemd active, sync dry run/short run, Telegram listener if enabled, local `/healthz`, local `/readyz`, local `/api/v1/status`, local `/api/v1/metrics`, public HTTPS `/healthz`, public HTTPS authenticated `/api/v1/status`, and direct public app-port denial. | Blocker | Smoke-check transcript or summary. |
 
