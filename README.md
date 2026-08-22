@@ -315,9 +315,11 @@ The active webhook deploy chain is:
 
 1. GitHub sends `POST /webhook` with `X-Hub-Signature-256`.
 2. Pete-Eebot validates `GITHUB_WEBHOOK_SECRET`.
-3. The API launches `DEPLOY_SCRIPT_PATH`.
-4. The stable wrapper updates the Git checkout.
-5. The tracked deploy script installs the package, refreshes cron, sends a Telegram notification, and restarts `peteeebot.service`.
+3. The API accepts only a non-deletion `push` to `refs/heads/main` with a
+   valid commit SHA; all other signed deliveries return `Webhook ignored`.
+4. The API launches `DEPLOY_SCRIPT_PATH`.
+5. The stable wrapper updates the Git checkout.
+6. The tracked deploy script installs the package, refreshes cron, sends a Telegram notification, and restarts `peteeebot.service`.
 
 Required deploy environment:
 

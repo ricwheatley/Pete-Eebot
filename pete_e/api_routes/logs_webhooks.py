@@ -2,6 +2,7 @@ import datetime
 import hashlib
 import hmac
 import json
+import re
 
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
@@ -19,6 +20,10 @@ from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.config import settings
 
 router = fastapi.APIRouter()
+
+DEPLOY_REF = "refs/heads/main"
+ZERO_COMMIT_SHA = "0" * 40
+COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
 def read_recent_log_lines(lines: int) -> dict[str, object]:
@@ -42,7 +47,6 @@ def logs(request: Request, x_api_key: str = Header(None), lines: int = Query(50,
 
 @router.post("/webhook")
 async def github_webhook(request: Request):
-    enforce_command_rate_limit(request, "deploy")
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256")
     if not signature:
@@ -65,13 +69,13 @@ async def github_webhook(request: Request):
     payload: dict[str, object] = {}
     if body:
         try:
-            payload = json.loads(body.decode("utf-8"))
+            decoded_payload = json.loads(body.decode("utf-8"))
+            if isinstance(decoded_payload, dict):
+                payload = decoded_payload
         except (UnicodeDecodeError, json.JSONDecodeError):
             payload = {}
-    commit_sha = str(payload.get("after") or payload.get("head_commit", {}).get("id") or "").strip()
+    commit_sha = str(payload.get("after") or "").strip().lower()
     ref_name = str(payload.get("ref") or "").strip()
-
-    job_id = prepare_job_context(request, "deploy")
     summary = {
         "source": "github_webhook",
         "delivery_id": delivery_id,
@@ -79,6 +83,28 @@ async def github_webhook(request: Request):
         "commit_sha": commit_sha,
         "ref": ref_name,
     }
+
+    deployable = (
+        event_name == "push"
+        and ref_name == DEPLOY_REF
+        and payload.get("deleted") is False
+        and commit_sha != ZERO_COMMIT_SHA
+        and COMMIT_SHA_PATTERN.fullmatch(commit_sha) is not None
+    )
+    if not deployable:
+        ignored = {
+            "status": "Webhook ignored",
+            "reason": f"Only non-deletion pushes to {DEPLOY_REF} trigger deployment.",
+            "delivery_id": delivery_id,
+            "event": event_name,
+            "commit_sha": commit_sha,
+            "ref": ref_name,
+        }
+        audit_command_event(request, command="deploy", outcome="succeeded", summary=ignored)
+        return ignored
+
+    enforce_command_rate_limit(request, "deploy")
+    job_id = prepare_job_context(request, "deploy")
     audit_command_event(request, command="deploy", outcome="started", summary=summary)
     try:
         correlation_id = get_or_create_correlation_id(request)

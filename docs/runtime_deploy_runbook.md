@@ -50,7 +50,10 @@ Not supported today:
 - Router composition happens in `pete_e/api.py`.
 - Webhook deploy trigger endpoint: `POST /webhook` in `pete_e/api_routes/logs_webhooks.py`.
 - Structured JSON log schema and request/job triage workflow: `docs/logging_observability.md`.
-- Webhook executes configured deploy script path with `subprocess.Popen([DEPLOY_SCRIPT_PATH])` after HMAC validation.
+- Webhook executes the configured deploy script only after HMAC validation and
+  only for a non-deletion `push` to `refs/heads/main` with a valid commit SHA.
+  Feature-branch pushes, branch deletions, pings, and other event types return a
+  successful `Webhook ignored` response without creating a deployment job.
 - Production startup should bind the app to localhost behind the TLS reverse
   proxy:
   - `uvicorn pete_e.api:app --host 127.0.0.1 --port 8000`
@@ -205,8 +208,11 @@ set -a && . /opt/myapp/shared/.env && set +a
 
 Current deploy chain in repo:
 
-1. Webhook hits `POST /webhook` and verifies `X-Hub-Signature-256` HMAC.
-2. API process launches external deploy script at `DEPLOY_SCRIPT_PATH`.
+1. Webhook hits `POST /webhook`, verifies `X-Hub-Signature-256` HMAC, and
+   accepts only a non-deletion push to `refs/heads/main` with a valid commit SHA.
+   Other signed deliveries are acknowledged as ignored without creating a job.
+2. API process launches external deploy script at `DEPLOY_SCRIPT_PATH` for an
+   accepted main-branch push.
 3. Stable wrapper script (`/opt/myapp/scripts/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
    - `git fetch --all --prune`
    - `git reset --hard origin/main`
