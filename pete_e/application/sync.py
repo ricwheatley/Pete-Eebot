@@ -33,6 +33,7 @@ DEFAULT_RETRY_DELAY_SECS = 60
 
 SUMMARY_FAILURE_NOTES = {
     "Withings": "Withings data unavailable {window}",
+    "Wger": "Wger workout logs unavailable {window}",
 }
 
 @dataclass

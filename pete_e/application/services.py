@@ -156,6 +156,18 @@ class PlanService:
                 f"{evaluation.lifts_updated} training max update(s) from strength test plan "
                 f"{evaluation.plan_id} before generating the next block."
             )
+        training_maxes = self.dal.get_latest_training_maxes()
+        missing_lifts = sorted(
+            lift_code
+            for lift_code in schedule_rules.LIFT_CODE_BY_ID.values()
+            if not training_maxes.get(lift_code)
+        )
+        if missing_lifts:
+            raise ValueError(
+                "Cannot generate a weighted 5/3/1 block: missing training maxes for "
+                + ", ".join(missing_lifts)
+                + ". Complete and sync the wger strength-test sets before retrying rollover."
+            )
         return self.create_and_persist_531_block(start_date)
 
 

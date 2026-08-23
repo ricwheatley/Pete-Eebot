@@ -127,6 +127,7 @@ def _register_defaults(container: Container) -> None:
             repository=c.resolve(PostgresDal),
             withings_source=c.resolve(WithingsClient),
             apple_ingestor=c.resolve(AppleHealthIngestor),
+            wger_client=c.resolve(WgerClient),
         ),
     )
     container.register(ValidationService, factory=lambda c: provide_validation_service(dal=c.resolve(PostgresDal)))

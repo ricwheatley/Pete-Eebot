@@ -39,9 +39,13 @@ class WeeklyCalibrationWorkflow:
 
         try:
             assess = getattr(self.validation_service, "assess_plan", None)
-            apply = getattr(self.validation_service, "apply_adjustment", None)
-            if callable(assess) and callable(apply):
-                validation_decision = apply(assess(next_monday))
+            if callable(assess):
+                # The active plan may end on Sunday (notably the one-week
+                # strength-test block), so its upcoming "week" does not
+                # necessarily exist yet.  Assessment is intentionally pure;
+                # the export workflow applies this decision to either the
+                # existing next week or the newly-created rollover plan.
+                validation_decision = assess(next_monday)
             else:  # Compatibility for application-owned test/adaptor ports.
                 validation_decision = self.validation_service.validate_and_adjust_plan(next_monday)
         except ApplicationError:

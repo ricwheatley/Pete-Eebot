@@ -7,6 +7,7 @@ import pytest
 
 from pete_e.application.services import PlanService
 from pete_e.application.strength_test import StrengthTestService
+from pete_e.application.wger_log_sync import WgerLogSyncService
 from pete_e.domain import schedule_rules
 
 
@@ -145,3 +146,56 @@ def test_create_next_plan_for_cycle_uses_refreshed_training_maxes(
     assert top_set["target_weight_kg"] == pytest.approx(expected_target)
     assert top_set["target_weight_kg"] > 80.0
     """Perform test create next plan for cycle uses refreshed training maxes."""
+
+
+def test_wger_log_sync_imports_nested_completed_sets() -> None:
+    saved: list[tuple[Any, ...]] = []
+
+    class Dal:
+        def save_wger_log(self, *args: Any) -> None:
+            saved.append(args)
+
+    class Client:
+        def get_workout_logs(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+            assert start_date == date(2024, 8, 5)
+            assert end_date == date(2024, 8, 11)
+            return [
+                {
+                    "date": "2024-08-05",
+                    "entries": [
+                        {
+                            "exercise": {"id": schedule_rules.BENCH_ID},
+                            "sets": [
+                                {"repetitions": 7, "weight": "92.5", "rir": "0"},
+                            ],
+                        }
+                    ],
+                }
+            ]
+
+    count = WgerLogSyncService(dal=Dal(), client=Client()).sync(
+        start_date=date(2024, 8, 5),
+        end_date=date(2024, 8, 11),
+    )
+
+    assert count == 1
+    assert saved == [(date(2024, 8, 5), schedule_rules.BENCH_ID, 1, 7, 92.5, 0.0)]
+
+
+def test_cycle_generation_refuses_to_export_unweighted_main_lifts() -> None:
+    dal = StrengthTestDal()
+    dal.training_maxes = {}
+    dal.load_lift_log = lambda *args, **kwargs: {}
+
+    with pytest.raises(ValueError, match="missing training maxes for bench, deadlift, ohp, squat"):
+        PlanService(dal=dal).create_next_plan_for_cycle(start_date=date(2024, 8, 12))
+
+
+def test_cycle_generation_reads_persisted_logs_without_polling_wger() -> None:
+    dal = StrengthTestDal()
+
+    service = PlanService(dal=dal)
+    plan_id = service.create_next_plan_for_cycle(start_date=date(2024, 8, 12))
+
+    assert plan_id == 42
+    assert len(dal.upserted_tms) == 4

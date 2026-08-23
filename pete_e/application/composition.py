@@ -7,6 +7,7 @@ from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.coach_voice import CoachVoiceService
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.services import PlanService, WgerExportService
+from pete_e.application.wger_log_sync import WgerLogSyncService
 from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
 from pete_e.config import settings
@@ -71,12 +72,17 @@ def provide_wger_export_service(*, dal: PostgresDal, wger_client: WgerClient) ->
 
 
 def provide_daily_sync_service(
-    *, repository: PostgresDal, withings_source: WithingsClient, apple_ingestor: AppleHealthIngestor
+    *,
+    repository: PostgresDal,
+    withings_source: WithingsClient,
+    apple_ingestor: AppleHealthIngestor,
+    wger_client: WgerClient,
 ) -> DailySyncService:
     return DailySyncService(
         repository=repository,
         withings_source=withings_source,
         apple_ingestor=apple_ingestor,
+        wger_ingestor=WgerLogSyncService(dal=repository, client=wger_client),
     )
 
 

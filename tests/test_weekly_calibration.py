@@ -59,5 +59,5 @@ def test_run_weekly_calibration_uses_next_monday(monkeypatch):
     orch.run_weekly_calibration(reference_date=date(2024, 3, 6))  # Wednesday
 
     assert validation_service.calls == [date(2024, 3, 11)]
-    assert len(validation_service.applied) == 1
+    assert validation_service.applied == []
     """Perform test run weekly calibration uses next monday."""

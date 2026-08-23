@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Mapping, Protocol, Sequence
 
 from pete_e.domain import logging as domain_logging
@@ -133,6 +133,13 @@ class AppleHealthIngestor(Protocol):
         """Return the timestamp of the most recent successful import, if known."""
 
 
+class WgerLogIngestor(Protocol):
+    """Contract for importing completed strength sets from wger."""
+
+    def sync(self, *, start_date: date, end_date: date) -> int:
+        """Persist workout logs in the inclusive date range and return the set count."""
+
+
 class DailySyncService:
     """Coordinates the daily synchronisation workflow in the domain layer."""
 
@@ -142,10 +149,12 @@ class DailySyncService:
         repository: DailyMetricsRepository,
         withings_source: WithingsDataSource,
         apple_ingestor: AppleHealthIngestor,
+        wger_ingestor: WgerLogIngestor,
     ) -> None:
         self._repository = repository
         self._withings = withings_source
         self._apple = apple_ingestor
+        self._wger = wger_ingestor
         """Initialize this object."""
 
     def run_full(self, *, days: int) -> DailySyncResult:
@@ -154,6 +163,7 @@ class DailySyncService:
         parts = [
             self._sync_withings(days=days),
             self._ingest_apple(),
+            self._ingest_wger(days=days),
             self._refresh_views(days=days, include_actual=True),
         ]
         return self._combine(parts)
@@ -238,6 +248,7 @@ class DailySyncService:
         """Perform refresh views."""
 
     def _ingest_apple(self) -> AppleHealthIngestResult:
+        """Import Apple Health data without aborting the remaining sources."""
         try:
             return self._apple.ingest()
         except Exception:
@@ -248,7 +259,27 @@ class DailySyncService:
                 statuses={"Apple Health": "failed"},
                 alerts=(),
             )
-        """Perform ingest apple."""
+
+    def _ingest_wger(self, *, days: int) -> DailySyncSourceResult:
+        """Import the same rolling window used by the other daily sources."""
+        end_date = date.today()
+        start_date = end_date - timedelta(days=max(days, 1) - 1)
+        try:
+            self._wger.sync(start_date=start_date, end_date=end_date)
+        except Exception as exc:
+            domain_logging.log_message(f"Wger workout-log sync failed: {exc}", "ERROR")
+            return DailySyncSourceResult(
+                success=False,
+                failures=("Wger",),
+                statuses={"Wger": "failed"},
+                alerts=(),
+            )
+        return DailySyncSourceResult(
+            success=True,
+            failures=(),
+            statuses={"Wger": "ok"},
+            alerts=(),
+        )
 
     def _combine(self, parts: Sequence[DailySyncSourceResult | AppleHealthIngestResult]) -> DailySyncResult:
         success = True
@@ -280,6 +311,6 @@ __all__ = [
     "DailySyncResult",
     "DailySyncService",
     "DailySyncSourceResult",
+    "WgerLogIngestor",
     "WithingsDataSource",
 ]
-
