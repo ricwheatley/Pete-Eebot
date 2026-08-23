@@ -119,12 +119,83 @@ files. The legacy repository-wide 227-file normalization remains separate.
 | Declared incremental mypy errors | no lane | 0 |
 | Full intended Ruff errors | 2 | 0 |
 
+## 2026-08-23: Apple Health parser decision stages
+
+### Selection and protected contract
+
+The tranche started from a clean `main` worktree at
+`b2faec278fe366ece6a2a3837c0a63ff62690a79`, tracking the same commit on
+`origin/main`. The parser was the next documented tranche because one 363-line,
+complexity-60 function coupled third-party shape checks, recursive coercion,
+eight stream policies, environmental conversion, ordering, and diagnostics.
+The writer and ingest coordinator both depend on its raw nine-key dictionary.
+
+`AppleHealthParser.parse(root)` remains the public adapter. It still returns, in
+order, `daily_metric_points`, `hr_summaries`, `sleep_summaries`,
+`workout_headers`, `workout_hr`, `workout_steps`, `workout_energy`,
+`workout_hr_recovery`, and `skipped_row_count`. The existing dataclass names and
+fields remain available from `apple_parser`. Missing and falsey timestamps remain
+skippable; a non-empty malformed timestamp still raises and aborts parsing. The
+adapter still emits at most one `WARN` summary with the same wording and stream
+order.
+
+Characterization also pins two surprising legacy decisions rather than repairing
+them here: a falsey top-level workout `distance` can fall through to
+`walkingRunningDistance`, and a blank source on the first dictionary row of the
+preferred workout series prevents later series from supplying a device name.
+
+### Internal boundary
+
+The adapter now delegates to three infrastructure-internal modules:
+
+- `apple_parser_normalization.py` owns strict raw-dictionary/list narrowing,
+  timestamp and recursive numeric coercion, unit extraction, heart-rate
+  normalisation, and workout environment precedence/conversion;
+- `apple_parser_stages.py` owns root recognition, metric/workout discrimination,
+  stream-specific row mapping, ordering, and typed outcome assembly; and
+- `apple_parser_types.py` owns the output dataclasses, the exact `TypedDict`
+  façade, per-stream skipped-row diagnostics, and immutable stage outcomes.
+
+The dependency direction is adapter -> stages -> normalization/types. The
+normalization and types modules have no project imports; none of the new modules
+imports the ingestor, writer, PostgreSQL, application, CLI, or API, and the graph
+is acyclic. Logging remains in the outer adapter.
+
+### Characterization and feedback ratchets
+
+Thirty-six adapter characterizations cover all nine keys, every output
+dataclass at value level, accepted and wrong container shapes, falsey versus
+malformed timestamps in all eight streams, aliases, recursive values, units,
+environment layouts, device selection, ordering, exact skip counts/warnings,
+dataclass module identity, and parse-to-writer row mapping. Forty-three direct stage tests cover the pure
+recognition, normalization, mapping, and error branches. A deterministic
+differential probe of 2,000 generated payloads against the exact pre-extraction
+parser found no output, warning, or exception differences.
+
+CI additively includes the three pure modules in strict mypy, checks formatting
+only for the existing tranche files and the six changed Apple Python files, and
+enforces 100% combined statement/branch coverage for the adapter and typed
+boundary. The repository coverage floor remains 66%; the measured unit/contract
+result increased without changing that floor.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Public adapter physical / lexical code lines | 666 / 597 | 81 / 70 |
+| Total typed Apple parsing boundary physical / lexical code lines | 666 / 597 | 1,237 / 1,008 |
+| `parse` physical span | 363 | 8 |
+| Configured C901 findings in parsing boundary | 4 (maximum 60) | 0 (maximum function complexity 6) |
+| Strict local parser errors | 22 | 0 |
+| Apple parser/boundary branch-aware coverage | 60.4488% | 100% (673 statements, 240 branches) |
+| Repository line/branch coverage | 66.2646% | 68.0018% (68% displayed) |
+| Unit/contract lane | 677 passed, 7 skipped | 756 passed, 7 skipped |
+
 ### Future tranche order
 
 Do not combine these into one change:
 
-1. Characterize and split `infrastructure/apple_parser.py::parse` (complexity
-   60, 60% module coverage) into record-recognition and mapping stages.
+1. Treat `AppleHealthDropboxIngestor._run_ingest` and its discovery, transaction,
+   checkpoint, equal-timestamp, retry, alert, and partial-file policies as a
+   separate future coordinator tranche; none of it moved with parser decisions.
 2. Extract the DAL plan-persistence slice behind its existing repository port,
    after raising PostgreSQL integration coverage around transaction rollback,
    active-plan invariants, and mapper failures.
@@ -136,7 +207,8 @@ Do not combine these into one change:
 5. Address the remaining narrative functions separately: trend computation,
    weekly workout formatting, then daily-from-days narrative construction.
 
-Residual risk remains in the untyped legacy payload entering the stable wrapper,
-the low-covered DAL/CLI hotspots, and the repository's other 38 C901 findings.
-The 66% repository floor is intentionally only a first ratchet and should rise
-when a later tranche measurably improves the full baseline.
+Residual risk remains in untyped ingestor/writer dictionary consumption outside
+the parsing boundary, the deferred ingest coordinator, the low-covered DAL/CLI
+hotspots, and the repository's other legacy C901 findings. The 66% repository
+floor is intentionally a non-regression floor and should rise only with a later
+remeasured repository baseline.

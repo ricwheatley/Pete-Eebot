@@ -48,8 +48,14 @@ jobs:
         run: >-
           .venv/bin/ruff format --check
           pete_e/domain/weekly_narrative.py
+          pete_e/infrastructure/apple_parser.py
+          pete_e/infrastructure/apple_parser_normalization.py
+          pete_e/infrastructure/apple_parser_stages.py
+          pete_e/infrastructure/apple_parser_types.py
           tests/domain/test_weekly_narrative_analysis.py
           tests/domain/test_weekly_narrative_characterization.py
+          tests/test_apple_parser_characterization.py
+          tests/test_apple_parser_stages.py
 
       - name: Check incremental typing boundary
         run: .venv/bin/mypy
@@ -67,6 +73,11 @@ jobs:
           .venv/bin/coverage run -m pytest -q -m "unit or contract"
           .venv/bin/coverage report
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
+          .venv/bin/coverage report --fail-under=100 \
+          pete_e/infrastructure/apple_parser.py \
+          pete_e/infrastructure/apple_parser_normalization.py \
+          pete_e/infrastructure/apple_parser_stages.py \
+          pete_e/infrastructure/apple_parser_types.py
 
   postgres-integration:
     runs-on: ubuntu-latest

@@ -124,7 +124,12 @@ show_missing = true
 skip_covered = true
 
 [tool.mypy]
-files = ["pete_e/domain/weekly_narrative.py"]
+files = [
+    "pete_e/domain/weekly_narrative.py",
+    "pete_e/infrastructure/apple_parser_types.py",
+    "pete_e/infrastructure/apple_parser_normalization.py",
+    "pete_e/infrastructure/apple_parser_stages.py",
+]
 python_version = "3.11"
 show_error_codes = true
 strict = true

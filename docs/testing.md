@@ -130,10 +130,17 @@ coverage erase
 coverage run -m pytest -q -m "unit or contract"
 coverage report
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
+coverage report --fail-under=100 \
+  pete_e/infrastructure/apple_parser.py \
+  pete_e/infrastructure/apple_parser_normalization.py \
+  pete_e/infrastructure/apple_parser_stages.py \
+  pete_e/infrastructure/apple_parser_types.py
 ```
 
-Static typing starts with one strict, explicit domain scope and should expand by
-completed tranche rather than suppressing the existing repository backlog:
+Static typing covers explicit completed-tranche scopes and should expand one
+boundary at a time rather than suppressing the existing repository backlog. The
+current strict scope is the weekly narrative module plus the three pure Apple
+parser boundary modules:
 
 ```bash
 mypy
@@ -147,8 +154,14 @@ changes with behavioral work:
 ruff check pete_e tests scripts
 ruff format --check \
   pete_e/domain/weekly_narrative.py \
+  pete_e/infrastructure/apple_parser.py \
+  pete_e/infrastructure/apple_parser_normalization.py \
+  pete_e/infrastructure/apple_parser_stages.py \
+  pete_e/infrastructure/apple_parser_types.py \
   tests/domain/test_weekly_narrative_analysis.py \
-  tests/domain/test_weekly_narrative_characterization.py
+  tests/domain/test_weekly_narrative_characterization.py \
+  tests/test_apple_parser_characterization.py \
+  tests/test_apple_parser_stages.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the
