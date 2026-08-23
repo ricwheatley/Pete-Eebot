@@ -15,7 +15,7 @@ Phase 1 introduces a versioned API namespace at `/api/v1` for the existing FastA
 - API-key protected routes now accept the key only via the `X-API-Key` header. `?api_key=...` query-string authentication is rejected.
 - API errors now use a shared `{ "error": { "code", "message", "correlation_id", "details?" } }` envelope.
 - Requests may supply `X-Correlation-ID` or `X-Request-ID`; responses include both headers. If absent, the API generates a correlation UUID.
-- Command routes now have process-local rate limits and practical execution timeouts.
+- Command routes now have PostgreSQL-backed shared rate limits and practical execution timeouts.
 - Key read-route wiring is covered by `tests/integration/test_api_contracts.py`.
 
 ## Client migration path

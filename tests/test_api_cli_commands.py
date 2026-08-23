@@ -15,12 +15,14 @@ from pete_e.application.exceptions import DataAccessError, ValidationError
 from pete_e.application.sync import SyncResult
 from pete_e.cli import messenger as cli
 from pete_e.cli.status import CheckResult
+from tests.edge_security_fakes import InMemoryEdgeSecurityRepository
 
 
 pytestmark = pytest.mark.contract
 
 _WEBHOOK_SECRET = b"test-webhook-secret"
 _VALID_COMMIT_SHA = "a" * 40
+_REPOSITORY_ID = 1044067254
 
 
 def _signed_webhook_request(
@@ -28,6 +30,7 @@ def _signed_webhook_request(
     *,
     event: str = "push",
 ) -> tuple[bytes, dict[str, str]]:
+    payload.setdefault("repository", {"id": _REPOSITORY_ID})
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     signature = hmac.new(_WEBHOOK_SECRET, body, hashlib.sha256).hexdigest()
     return body, {
@@ -40,7 +43,13 @@ def _signed_webhook_request(
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch):
+    edge_repository = InMemoryEdgeSecurityRepository()
     monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key")
+    monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", _REPOSITORY_ID)
+    monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_DEPLOY_REF", "refs/heads/main")
+    monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_WEBHOOK_MAX_BODY_BYTES", 262144)
+    monkeypatch.setattr(logs_webhooks, "get_edge_security_repository", lambda: edge_repository)
+    monkeypatch.setattr(status_sync, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
     with TestClient(api.app) as test_client:
         yield test_client
 
@@ -197,7 +206,7 @@ def test_logs_endpoint_returns_tail(
         ("ping", {"zen": "Keep it logically awesome."}),
     ],
 )
-def test_webhook_ignores_events_that_are_not_main_branch_pushes(
+def test_webhook_rejects_events_that_are_not_main_branch_pushes(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
     event: str,
@@ -221,11 +230,9 @@ def test_webhook_ignores_events_that_are_not_main_branch_pushes(
 
     response = client.post("/api/v1/webhook", content=body, headers=headers)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "Webhook ignored"
-    assert response.json()["event"] == event
-    assert audits[-1]["outcome"] == "succeeded"
-    assert audits[-1]["summary"]["status"] == "Webhook ignored"
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_webhook"
+    assert audits == []
 
 
 def test_webhook_enqueues_only_valid_main_branch_push(

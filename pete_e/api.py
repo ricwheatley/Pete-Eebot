@@ -111,11 +111,18 @@ mount_static_assets(app)
 def status(
     request: Request,
     x_api_key: str = Header(None),
-    timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1),
+    timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1, le=10.0),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
+    enforce_command_rate_limit(request, "deep_status")
     try:
-        results = get_status_service().run_checks(timeout=timeout)
+        service = get_status_service()
+        cached = getattr(service, "run_checks_cached", None)
+        results = (
+            cached(timeout, cache_seconds=settings.PETEEEBOT_DEEP_STATUS_CACHE_SECONDS)
+            if callable(cached)
+            else service.run_checks(timeout=timeout)
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

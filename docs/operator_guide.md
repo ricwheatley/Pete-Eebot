@@ -64,7 +64,9 @@ Copy `.env.sample` to `.env` and fill in:
 - Dropbox: `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`, `DROPBOX_HEALTH_METRICS_DIR`, `DROPBOX_WORKOUTS_DIR`
 - wger: `WGER_API_KEY`
 - Postgres: either `DATABASE_URL` alone or `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, optional `POSTGRES_PORT`, and `POSTGRES_DB`
-- API/Webhook if you use them: `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`
+- API/Webhook if you use them: `PETEEEBOT_API_KEY`, trusted-proxy CIDRs,
+  `GITHUB_WEBHOOK_SECRET`, immutable GitHub repository ID, exact deploy ref,
+  expected Git remote URL, webhook body bound, and `DEPLOY_SCRIPT_PATH`
 - Nutrition logging: `USER_TIMEZONE` controls local-date assignment when GPT macro logs omit a timestamp
 
 Notes:
@@ -73,7 +75,8 @@ Notes:
 - if both database sources are present they must describe the same decoded user, password, effective host, port, and database; partial or conflicting component configuration fails startup
 - `DB_HOST_OVERRIDE` is an optional typed replacement for `POSTGRES_HOST` in component mode
 - the API now fails closed if `PETEEEBOT_API_KEY` is not set
-- the webhook now refuses to run if `GITHUB_WEBHOOK_SECRET` or `DEPLOY_SCRIPT_PATH` are unset
+- the webhook/deployer fail closed if the HMAC secret, immutable repository ID,
+  expected remote URL, or deploy script is unset
 
 ### 2.2 Python Environment
 
@@ -930,15 +933,22 @@ Error responses use this envelope:
 }
 ```
 
-Command protection defaults:
+Command protection defaults (stored atomically in PostgreSQL and shared across
+workers/restarts):
 
 - command rate limit: `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS=10` per `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS=60`
+- broader per-operation limit multiplier: `PETEEEBOT_COMMAND_RATE_LIMIT_GLOBAL_MULTIPLIER=5`
 - sync timeout: `PETEEEBOT_SYNC_TIMEOUT_SECONDS=300`, also overridable per request with `POST /sync?...&timeout=300`
 - plan/deploy subprocess timeout: `PETEEEBOT_PROCESS_TIMEOUT_SECONDS=900`, with plan overridable per request using `timeout=`
 
 Webhook requirements:
 
 - `GITHUB_WEBHOOK_SECRET` must be configured
+- `PETEEEBOT_GITHUB_REPOSITORY_ID=1044067254` identifies this repository immutably
+- `PETEEEBOT_GITHUB_DEPLOY_REF=refs/heads/main` is the only allowed ref
+- `PETEEEBOT_DEPLOY_GIT_REMOTE_URL` must exactly match `git remote get-url origin`
+- `X-GitHub-Delivery` and the signed repository/event/ref/SHA identity are
+  persisted uniquely before job dispatch
 - `DEPLOY_SCRIPT_PATH` must point to an existing script
 - GitHub must send a valid `X-Hub-Signature-256`
 

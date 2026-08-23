@@ -206,7 +206,7 @@ assert (files('pete_e') / 'resources' / 'phrases_tagged.json').is_file()
 assert (files('pete_e') / 'resources' / 'peteeebot-deploy@.service').is_file()
 assert (files('pete_e') / 'resources' / 'peteeebot-dispatch-deploy').is_file()
 assert (files('pete_e') / 'templates' / 'console' / 'base.html').is_file()
-assert head_revision() == '20260822_safe_job_ownership'
+assert head_revision() == '20260822_trust_public_edge'
 
 schema = app.openapi()
 assert schema['info']['title'] == 'Pete-Eebot API'

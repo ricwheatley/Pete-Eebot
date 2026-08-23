@@ -12,6 +12,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 
 from pete_e.api_routes.logs_webhooks import read_recent_log_lines
+from pete_e.config import settings
 from pete_e.domain.auth import AuthenticatedPrincipal
 from pete_e.infrastructure.cron_manager import CRON_CSV
 
@@ -596,7 +597,12 @@ class WebConsoleReadModel:
         }
 
     def _health_checks(self, timeout: float) -> dict[str, Any]:
-        results = self._status_service.run_checks(timeout=timeout)
+        cached = getattr(self._status_service, "run_checks_cached", None)
+        results = (
+            cached(timeout, cache_seconds=settings.PETEEEBOT_DEEP_STATUS_CACHE_SECONDS)
+            if callable(cached)
+            else self._status_service.run_checks(timeout=timeout)
+        )
         checks = [
             {
                 "name": result.name,

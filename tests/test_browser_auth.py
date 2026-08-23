@@ -7,6 +7,7 @@ import pytest
 
 from pete_e.api_routes import auth, dependencies, nutrition
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_READ_ONLY, UserSession
+from tests.edge_security_fakes import InMemoryEdgeSecurityRepository
 
 
 class _Request:
@@ -82,7 +83,9 @@ class _NutritionService:
 
 
 @pytest.fixture(autouse=True)
-def reset_login_attempts():
+def reset_login_attempts(monkeypatch: pytest.MonkeyPatch):
+    repository = InMemoryEdgeSecurityRepository()
+    monkeypatch.setattr(dependencies, "get_edge_security_repository", lambda: repository)
     dependencies.reset_login_attempts()
     yield
     dependencies.reset_login_attempts()

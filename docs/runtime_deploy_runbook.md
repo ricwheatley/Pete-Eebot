@@ -1,6 +1,6 @@
 # Runtime & Deploy Runbook (Phase 0 Source of Truth)
 
-Last audited: 2026-08-20.
+Last audited: 2026-08-22.
 
 This runbook documents **what currently exists in this repository** for runtime, deploy, migrations, and ops checks.
 
@@ -50,10 +50,10 @@ Not supported today:
 - Router composition happens in `pete_e/api.py`.
 - Webhook deploy trigger endpoint: `POST /webhook` in `pete_e/api_routes/logs_webhooks.py`.
 - Structured JSON log schema and request/job triage workflow: `docs/logging_observability.md`.
-- Webhook executes the configured deploy script only after HMAC validation and
-  only for a non-deletion `push` to `refs/heads/main` with a valid commit SHA.
-  Feature-branch pushes, branch deletions, pings, and other event types return a
-  successful `Webhook ignored` response without creating a deployment job.
+- Webhook streams at most `PETEEEBOT_WEBHOOK_MAX_BODY_BYTES`, validates HMAC,
+  then requires a unique delivery ID, `push`, immutable configured repository
+  ID, exact `refs/heads/main`, non-deletion, and a valid `after` SHA. Invalid
+  signed semantics are rejected without creating a job.
 - Production startup should bind the app to localhost behind the TLS reverse
   proxy:
   - `uvicorn pete_e.api:app --host 127.0.0.1 --port 8000`
@@ -164,8 +164,11 @@ as Caddy or Nginx:
 - HSTS is enabled after HTTPS has been verified stable. Set
   `PETEEEBOT_ENABLE_HSTS=true` for app responses, or enforce an equivalent
   `Strict-Transport-Security` header at the proxy.
-- The proxy forwards `Host`, scheme/proto, and client IP headers so request logs
-  and redirects preserve the public request context.
+- The public-edge proxy overwrites XFF with `$remote_addr`; it does not append
+  attacker input. The reference app setting trusts only its loopback nginx peer:
+  `PETEEEBOT_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128`. With an upstream load
+  balancer, nginx must trust only that balancer via its real-IP module, resolve
+  recursively, and still send the resolved address as a newly constructed XFF.
 - `/readyz` is unauthenticated but returns only coarse local DB/schema readiness.
   It never calls external providers. Detailed operational dependency names and
   errors remain behind authenticated `/api/v1/status` and `/console/status`.
@@ -173,8 +176,9 @@ as Caddy or Nginx:
 Set conservative proxy limits. Use route-specific exceptions only when an
 operator workflow really needs them:
 
-- Request body size: default to `1m` for the API and webhook surface. Increase
-  only for a documented route that accepts larger payloads.
+- Request body size: default to `1m` generally and `256k` for both webhook route
+  aliases. The application independently enforces the same webhook bound before
+  buffering or parsing.
 - Request headers: cap total header size to a small operational value such as
   `8k` to `16k`.
 - Header/body receive timeouts: keep short, for example `10s`.
@@ -208,17 +212,20 @@ set -a && . /opt/myapp/shared/.env && set +a
 
 Current deploy chain in repo:
 
-1. Webhook hits `POST /webhook`, verifies `X-Hub-Signature-256` HMAC, and
-   accepts only a non-deletion push to `refs/heads/main` with a valid commit SHA.
-   Other signed deliveries are acknowledged as ignored without creating a job.
-2. API process creates a fenced durable job/lock and invokes the validated
+1. Webhook bounds the body, verifies HMAC, and requires the configured immutable
+   repository ID, exact main push semantics, delivery ID, and valid `after` SHA.
+2. API process atomically inserts the unique delivery ID and signed
+   repository/event/ref/SHA identity before it creates a fenced durable job/lock
+   and invokes the validated
    `/usr/local/sbin/peteeebot-dispatch-deploy` helper.
 3. The helper starts `peteeebot-deploy@<job-id>.service`. This independent unit
    takes over the claim and heartbeats while it runs `DEPLOY_SCRIPT_PATH`; it is
    not part of the API unit's cgroup.
 4. Stable wrapper script (`/opt/myapp/scripts/deploy.sh`, from `pete_e/resources/deploy-wrapper.sh`) does:
-   - `git fetch --all --prune`
-   - `git reset --hard origin/main`
+   - verifies `origin` has the configured expected repository URL
+   - fetches only `refs/heads/main` into the origin tracking ref
+   - verifies the signed SHA exists and is an ancestor of fetched main
+   - `git reset --hard "$GITHUB_COMMIT_SHA"`
    - `git clean -fdx`
 5. Wrapper executes tracked deploy script `pete_e/resources/deploy.sh` with `SKIP_GIT_UPDATE=1`.
 6. Tracked deploy script does:
@@ -234,6 +241,10 @@ Current deploy chain in repo:
     - restarts `peteeebot.service`
 7. The independent worker survives the restart, records success/failure, and
    deletes its fenced operation lock atomically with the terminal transition.
+
+This is an ancestry policy, not a mutable-tip policy: a later normal main update
+does not change the selected commit. A force-push that makes the signed SHA no
+longer reachable from fetched main causes deployment to fail closed.
 
 One-time systemd installation/validation:
 

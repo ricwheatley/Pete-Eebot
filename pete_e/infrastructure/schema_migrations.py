@@ -327,6 +327,14 @@ SCHEMA_PROBES: tuple[SchemaProbe, ...] = (
           AND column_name IN ('worker_id', 'ownership_token')
         """,
     ),
+    SchemaProbe(
+        "20260822_trust_public_edge",
+        "durable edge limits and GitHub delivery ledger",
+        """
+        SELECT to_regclass('public.edge_rate_limit_counters') IS NOT NULL
+           AND to_regclass('public.github_webhook_deliveries') IS NOT NULL
+        """,
+    ),
 )
 
 
@@ -659,6 +667,12 @@ def inspect_database(
     migrations = load_manifest(migrations_dir)
     head = migrations[-1].revision
     with _connect(database_url, timeout) as connection:
+        # Readiness calls this inspection path. Bound metadata/schema queries
+        # without imposing that short deadline on migration execution itself.
+        connection.execute(
+            "SET statement_timeout = %s",
+            (max(100, int(timeout * 1000)),),
+        )
         if not _ledger_exists(connection):
             state = "untracked" if _database_has_user_objects(connection) else "empty"
             return SchemaStatus(

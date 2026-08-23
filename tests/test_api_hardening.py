@@ -14,6 +14,7 @@ from pete_e import api_security
 from pete_e.api_routes import dependencies
 from pete_e.application.exceptions import ValidationError
 from pete_e.application.concurrency_guard import high_risk_operation_guard
+from tests.edge_security_fakes import InMemoryEdgeSecurityRepository
 
 
 pytestmark = pytest.mark.contract
@@ -59,7 +60,12 @@ def test_request_logging_middleware_emits_outcome(monkeypatch: pytest.MonkeyPatc
         request.state.auth_scheme = "api_key"
         return SimpleNamespace(headers={}, status_code=204)
 
-    request = _Request({api_errors.REQUEST_ID_HEADER: "req-structured-1"})
+    request = _Request(
+        {
+            api_errors.REQUEST_ID_HEADER: "req-structured-1",
+            "X-Forwarded-For": "198.51.100.77",
+        }
+    )
     request.method = "POST"
     request.scope = {"path": "/api/v1/sync"}
     response = asyncio.run(api_logging.request_logging_middleware(request, _call_next))
@@ -71,6 +77,7 @@ def test_request_logging_middleware_emits_outcome(monkeypatch: pytest.MonkeyPatc
     assert events[-1]["http_method"] == "POST"
     assert events[-1]["http_path"] == "/api/v1/sync"
     assert events[-1]["http_status"] == 204
+    assert events[-1]["client_ip"] == "127.0.0.1"
 
 
 def test_security_headers_middleware_applies_baseline_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,7 +148,9 @@ def test_error_handlers_share_consistent_schema_for_application_and_http_errors(
     assert _response_payload(app_response)["error"]["code"] == "validation_failed"
 
 
-def test_command_rate_limit_rejects_excess_requests() -> None:
+def test_command_rate_limit_rejects_excess_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    repository = InMemoryEdgeSecurityRepository()
+    monkeypatch.setattr(dependencies, "get_edge_security_repository", lambda: repository)
     dependencies.reset_command_rate_limits()
     request = _Request()
 

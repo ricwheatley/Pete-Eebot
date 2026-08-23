@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Callable, Iterable, List, Sequence
@@ -184,13 +185,32 @@ def run_status_checks(
             lambda: check_llm(timeout),
         )
 
-    return [check() for check in checks]
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=len(checks),
+        thread_name_prefix="status-check",
+    )
+    try:
+        futures = [executor.submit(check) for check in checks]
+        return [future.result() for future in futures]
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
 
 
 def run_readiness_checks(*, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> List[CheckResult]:
     """Check only local runtime prerequisites; never call external providers."""
 
-    return [check_database(timeout)]
+    executor = concurrent.futures.ThreadPoolExecutor(
+        max_workers=1,
+        thread_name_prefix="readiness-check",
+    )
+    future = executor.submit(check_database, timeout)
+    try:
+        return [future.result(timeout=timeout)]
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        return [CheckResult(name="DB", ok=False, detail="readiness deadline exceeded")]
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def render_results(results: Iterable[CheckResult]) -> str:

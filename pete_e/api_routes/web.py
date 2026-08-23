@@ -141,7 +141,7 @@ class ConsoleMessagePreviewResult:
 
 
 NAV_ITEMS: tuple[NavItem, ...] = (
-    NavItem("status", "Status", "/console/status", ROLE_READ_ONLY),
+    NavItem("status", "Status", "/console/status", ROLE_OPERATOR),
     NavItem("plan", "Plan", "/console/plan", ROLE_READ_ONLY),
     NavItem("trends", "Trends", "/console/trends", ROLE_READ_ONLY),
     NavItem("nutrition", "Nutrition", "/console/nutrition", ROLE_READ_ONLY),
@@ -919,17 +919,22 @@ def console_index(request: Request):
 
 @router.get("/console/status")
 def console_status(request: Request):
-    return _render_console(
-        request,
-        "status",
-        template_name="console/status.html",
-        context_loader=lambda user: {
+    def status_context(user: AuthUser) -> dict[str, object]:
+        dependencies.enforce_command_rate_limit(request, "deep_status")
+        return {
             "status_view": _console_read_model().status(
                 target_date=_operator_today(),
                 timeout=DEFAULT_TIMEOUT_SECONDS,
                 principal=AuthenticatedPrincipal.for_user(user),
             )
-        },
+        }
+
+    return _render_console(
+        request,
+        "status",
+        min_role=ROLE_OPERATOR,
+        template_name="console/status.html",
+        context_loader=status_context,
     )
 
 

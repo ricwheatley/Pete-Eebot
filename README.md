@@ -176,8 +176,11 @@ curl -fsS http://127.0.0.1:8000/readyz?timeout=5
 curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/status?timeout=5"
 ```
 
-`/readyz` checks only PostgreSQL schema compatibility and never calls external
-providers. Authenticated `/api/v1/status` retains the broader provider checks.
+`/healthz` is process-only. `/readyz` checks only PostgreSQL connectivity and
+authoritative schema compatibility (with a maximum five-second query timeout)
+and never calls external providers. `/api/v1/status` requires the machine key
+or an operator/owner session; its provider checks run in parallel, use a short
+TTL cache, and consume the shared PostgreSQL rate limit.
 
 Run tests:
 
@@ -296,13 +299,27 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # This nginx host is the public edge. Discard caller-supplied XFF.
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_connect_timeout 5s;
         proxy_read_timeout 60s;
         proxy_send_timeout 60s;
     }
 }
 ```
+
+Set `PETEEEBOT_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128` for this
+localhost proxy topology. With no trusted CIDRs, Pete-Eebot ignores forwarding
+headers. If a load balancer is added before nginx, configure nginx
+`set_real_ip_from` only for that balancer, select its documented real-IP header,
+enable `real_ip_recursive on`, and continue overwriting application XFF with the
+resolved `$remote_addr`. Do not restore `$proxy_add_x_forwarded_for` at the
+internet-facing edge.
+
+Set `client_max_body_size 256k` on both `/webhook` and `/api/v1/webhook`
+locations. The application independently enforces
+`PETEEEBOT_WEBHOOK_MAX_BODY_BYTES=262144` while streaming, so nginx is a first
+line rather than the only size control.
 
 Use route-specific longer timeouts only for trusted command endpoints that intentionally run long operations.
 
@@ -311,14 +328,20 @@ Use route-specific longer timeouts only for trusted command endpoints that inten
 The active webhook deploy chain is:
 
 1. GitHub sends `POST /webhook` with `X-Hub-Signature-256`.
-2. Pete-Eebot validates `GITHUB_WEBHOOK_SECRET`.
-3. The API accepts only a non-deletion `push` to `refs/heads/main` with a
-   valid commit SHA; all other signed deliveries return `Webhook ignored`.
+2. Pete-Eebot bounds the body, validates `GITHUB_WEBHOOK_SECRET`, then requires
+   `push`, repository ID `PETEEEBOT_GITHUB_REPOSITORY_ID`, exact configured
+   `refs/heads/main`, non-deletion, and a lowercase 40-hex `after` SHA.
+3. The API inserts `X-GitHub-Delivery` and a unique identity for the signed
+   repository/event/ref/SHA into the PostgreSQL delivery ledger before dispatch.
+   Replays return the existing job and never enqueue, even if the unsigned
+   delivery header is altered.
 4. The API creates and fences a durable job/operation lock, then asks the
    root-owned dispatch helper to start `peteeebot-deploy@<job-id>.service`.
 5. The independent worker atomically takes ownership with a higher fencing
    token and heartbeats the job and lock while it runs `DEPLOY_SCRIPT_PATH`.
-6. The stable wrapper updates the Git checkout.
+6. The stable wrapper verifies the configured origin URL, fetches only main,
+   requires the signed SHA to exist and be an ancestor of fetched main, and
+   resets the checkout to that exact SHA.
 7. The tracked deploy script installs the package, refreshes cron, sends a
    Telegram notification, and restarts `peteeebot.service`.
 8. The independent worker survives that restart, records the terminal result,
@@ -328,7 +351,12 @@ Required deploy environment:
 
 ```bash
 export GITHUB_WEBHOOK_SECRET="replace-with-shared-webhook-secret"
+export PETEEEBOT_GITHUB_REPOSITORY_ID="1044067254"
+export PETEEEBOT_GITHUB_DEPLOY_REF="refs/heads/main"
+export PETEEEBOT_WEBHOOK_MAX_BODY_BYTES="262144"
 export DEPLOY_SCRIPT_PATH="/opt/myapp/scripts/deploy.sh"
+export PETEEEBOT_DEPLOY_GIT_REMOTE="origin"
+export PETEEEBOT_DEPLOY_GIT_REMOTE_URL="https://github.com/ricwheatley/Pete-Eebot.git"
 export PETEEEBOT_DEPLOY_UNIT_TEMPLATE="peteeebot-deploy@.service"
 export PETEEEBOT_DEPLOY_DISPATCH_BIN="/usr/local/sbin/peteeebot-dispatch-deploy"
 ```
@@ -419,8 +447,8 @@ curl -fsS http://127.0.0.1:8000/readyz?timeout=5
 curl -fsS -H "X-API-Key: $PETEEEBOT_API_KEY" "http://127.0.0.1:8000/api/v1/status?timeout=5"
 ```
 
-`/readyz` is the local schema-revision gate; `/api/v1/status` is the detailed
-operational dependency view.
+`/readyz` is the cheap public PostgreSQL/schema gate; `/api/v1/status` is the
+operator-only cached and shared-rate-limited provider view.
 
 Service:
 

@@ -21,6 +21,19 @@ def test_deploy_never_logs_migrator_connection_string() -> None:
     assert "PETEEEBOT_MIGRATOR_DATABASE_URL" not in script
 
 
+def test_deploy_wrapper_selects_and_validates_exact_signed_sha() -> None:
+    wrapper = Path("pete_e/resources/deploy-wrapper.sh").read_text(encoding="utf-8")
+    tracked = Path("pete_e/resources/deploy.sh").read_text(encoding="utf-8")
+
+    assert 'git reset --hard "${GITHUB_COMMIT_SHA}"' in wrapper
+    assert 'git merge-base --is-ancestor "${GITHUB_COMMIT_SHA}"' in wrapper
+    assert 'git cat-file -e "${GITHUB_COMMIT_SHA}^{commit}"' in wrapper
+    assert 'ACTUAL_REMOTE_URL="$(git remote get-url "${DEPLOY_GIT_REMOTE}")"' in wrapper
+    assert "git reset --hard origin/main" not in wrapper
+    assert 'CURRENT_HEAD="$(git rev-parse HEAD)"' in tracked
+    assert '"${CURRENT_HEAD}" == "${GITHUB_COMMIT_SHA}"' in tracked
+
+
 def test_systemd_deployment_worker_is_independent_from_api_service() -> None:
     api_unit = Path("pete_e/resources/peteeebot.service").read_text(encoding="utf-8")
     deploy_unit = Path("pete_e/resources/peteeebot-deploy@.service").read_text(encoding="utf-8")

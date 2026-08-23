@@ -30,12 +30,12 @@ Classification definitions:
 | GET | `/plan_decision_trace?plan_id=N&week_number=N` | Read | Machine `X-API-Key` or browser session | `pete_e/api_routes/plan.py` | Planner decision trace for one plan week. |
 | POST | `/run_pete_plan_async?weeks=4&start_date=YYYY-MM-DD` | Command | Machine `X-API-Key` or `operator`/`owner` browser session | `pete_e/api_routes/plan.py` | Queues a durable `plan` job that starts `pete plan`; `weeks` defaults to the only supported value, `4`, and other values are rejected before job creation. Guarded as high-risk until the spawned process exits. |
 | GET | `/healthz` | Read | None | `pete_e/api_routes/status_sync.py` | Liveness probe; confirms the API process can serve requests without running dependency checks. |
-| GET | `/readyz?timeout=N` | Read | None | `pete_e/api_routes/status_sync.py` | Public readiness probe; runs DB and external dependency checks, returns only coarse `healthy`/`unhealthy` status, and returns `503` when any check fails. |
+| GET | `/readyz?timeout=N` | Read | None | `pete_e/api_routes/status_sync.py` | Public readiness probe; checks only PostgreSQL connectivity and authoritative schema compatibility, returns only coarse status, never calls providers, and returns `503` on failure. |
 | GET | `/metrics` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/status_sync.py` | Prometheus text metrics for guarded jobs, retries, failures, and dependency health. |
-| GET | `/status?timeout=N` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/status_sync.py` | Runs operational health checks. |
+| GET | `/status?timeout=N` | Admin | Machine `X-API-Key` or `operator`/`owner` browser session | `pete_e/api_routes/status_sync.py` | Runs parallel operational provider checks behind a TTL cache and shared PostgreSQL limit. |
 | POST | `/sync?days=N&retries=N` | Command | Machine `X-API-Key` or `operator`/`owner` browser session | `pete_e/api_routes/status_sync.py` | Runs sync as a durable `sync` job; guarded as high-risk until the sync worker finishes. |
 | GET | `/logs?lines=N` | Admin | Machine `X-API-Key` or browser session | `pete_e/api_routes/logs_webhooks.py` | Returns recent application log lines. |
-| POST | `/webhook` | Admin | GitHub HMAC | `pete_e/api_routes/logs_webhooks.py` | Queues a durable `deploy` job for the deploy script; guarded as high-risk until the deploy process exits. |
+| POST | `/webhook` | Admin | GitHub HMAC plus event/repository/ref/delivery validation | `pete_e/api_routes/logs_webhooks.py` | Size-bounds and validates a signed main push, uniquely claims the GitHub delivery, and queues the validated exact SHA; guarded as high-risk until deployment exits. |
 
 Protected machine routes reject `api_key` query parameters. Send the machine key only in the `X-API-Key` header so secrets do not leak into browser history, logs, or referrers. Browser-only auth/session routes do not accept the machine API key.
 
@@ -109,10 +109,14 @@ include `job_id` and, where applicable, a `/console/jobs/<job_id>` URL.
 
 ## Command Protections
 
-State-changing command routes have process-local throttling. Defaults are:
+Deep status and state-changing command routes use PostgreSQL-backed atomic
+fixed-window throttling shared by every worker and retained across API restarts.
+Dimensions include client identity, authenticated user/machine identity, and a
+broader per-operation bucket. Defaults are:
 
 - `PETEEEBOT_COMMAND_RATE_LIMIT_MAX_REQUESTS=10`
 - `PETEEEBOT_COMMAND_RATE_LIMIT_WINDOW_SECONDS=60`
+- `PETEEEBOT_COMMAND_RATE_LIMIT_GLOBAL_MULTIPLIER=5`
 
 When exceeded, the API returns `429` with `error.code=rate_limited` and a `Retry-After` header.
 

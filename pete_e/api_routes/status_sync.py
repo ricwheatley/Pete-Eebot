@@ -15,6 +15,7 @@ from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.application.sync import run_sync_with_retries
 from pete_e.application import alerts
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_readiness_checks
+from pete_e.config import settings
 from pete_e import observability
 from pete_e.domain.auth import ROLE_OPERATOR
 
@@ -43,7 +44,7 @@ def healthz():
 
 
 @router.get("/readyz")
-def readyz(timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1)):
+def readyz(timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1, le=5.0)):
     try:
         detailed_payload = _checks_payload(run_readiness_checks(timeout=timeout))
         ok = bool(detailed_payload["ok"])
@@ -64,11 +65,20 @@ def prometheus_metrics(request: Request, x_api_key: str = Header(None)):
 def status(
     request: Request,
     x_api_key: str = Header(None),
-    timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1),
+    timeout: float = Query(DEFAULT_TIMEOUT_SECONDS, ge=0.1, le=10.0),
 ):
-    validate_api_key(request, x_api_key)
+    validate_api_key(request, x_api_key, required_session_role=ROLE_OPERATOR)
+    enforce_command_rate_limit(request, "deep_status")
     try:
-        results = get_status_service().run_checks(timeout=timeout)
+        status_service = get_status_service()
+        cached = getattr(status_service, "run_checks_cached", None)
+        if callable(cached):
+            results = cached(
+                timeout,
+                cache_seconds=settings.PETEEEBOT_DEEP_STATUS_CACHE_SECONDS,
+            )
+        else:  # Compatibility for narrow service test doubles.
+            results = status_service.run_checks(timeout=timeout)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

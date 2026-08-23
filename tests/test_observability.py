@@ -178,6 +178,7 @@ def test_authenticated_status_keeps_dependency_details(monkeypatch) -> None:
             ]
 
     monkeypatch.setattr(status_sync, "get_status_service", lambda: _StatusService())
+    monkeypatch.setattr(status_sync, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
 
     payload = status_sync.status(request=_Request(), x_api_key="test-key", timeout=1.2)
 

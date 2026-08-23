@@ -21,20 +21,11 @@ from pete_e.api_routes.dependencies import (
 )
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_logging import session_fingerprint
+from pete_e.client_identity import client_identity
 from pete_e.infrastructure import log_utils
 from pete_e.domain.auth import AuthenticatedPrincipal
 
 router = fastapi.APIRouter()
-
-
-def _client_ip(request: Request) -> str | None:
-    headers = getattr(request, "headers", {}) or {}
-    forwarded_for = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None)
-    return str(host) if host else None
 
 
 def _user_agent(request: Request) -> str | None:
@@ -72,7 +63,7 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
             level="WARNING",
             outcome="failed",
             request_id=get_or_create_correlation_id(request),
-            client_ip=_client_ip(request),
+            client_ip=client_identity(request),
             login=str(login_value),
         )
         raise HTTPException(status_code=401, detail="Invalid login or password")
@@ -97,7 +88,7 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
                 level="WARNING",
                 outcome="failed",
                 request_id=get_or_create_correlation_id(request),
-                client_ip=_client_ip(request),
+                client_ip=client_identity(request),
                 login=str(login_value),
             )
             raise HTTPException(status_code=401, detail="Invalid MFA code")
@@ -105,7 +96,7 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
     record_login_success(request, str(login_value))
     created = get_user_service().create_session(
         user,
-        ip_address=_client_ip(request),
+        ip_address=client_identity(request),
         user_agent=_user_agent(request),
     )
     csrf_token = generate_csrf_token(created.token)
@@ -117,7 +108,7 @@ def login(request: Request, response: Response, payload: dict[str, Any] | None =
         tag="AUTH",
         outcome="succeeded",
         request_id=get_or_create_correlation_id(request),
-        client_ip=_client_ip(request),
+        client_ip=client_identity(request),
         user_id=user.id,
         username=user.username,
         roles=list(user.roles),

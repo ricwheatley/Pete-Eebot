@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from pete_e.api_errors import get_or_create_correlation_id
+from pete_e.client_identity import client_identity
 from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser
 from pete_e.infrastructure import log_utils
 from pete_e.logging_setup import bind_log_context, reset_log_context
@@ -30,16 +31,6 @@ def _request_path(request: Any) -> str:
 
 def _request_method(request: Any) -> str:
     return str(getattr(request, "method", "GET") or "GET").upper()
-
-
-def _client_ip(request: Any) -> str | None:
-    headers = getattr(request, "headers", {}) or {}
-    forwarded_for = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return str(forwarded_for).split(",", 1)[0].strip()
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None)
-    return str(host) if host else None
 
 
 def _session_token(request: Any) -> str | None:
@@ -91,7 +82,7 @@ async def request_logging_middleware(request: Any, call_next):
     request_id = get_or_create_correlation_id(request)
     method = _request_method(request)
     path = _request_path(request)
-    client_ip = _client_ip(request)
+    client_ip = client_identity(request)
     token = bind_log_context(
         request_id=request_id,
         correlation_id=request_id,

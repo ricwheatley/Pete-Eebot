@@ -6,6 +6,8 @@ from datetime import date, datetime, timedelta
 import json
 from decimal import Decimal
 import re
+import threading
+import time
 from typing import Any, Dict
 
 from pete_e.config import settings
@@ -593,6 +595,9 @@ class StatusService:
 
     def __init__(self, dal: PostgresDal):
         self._dal = dal
+        self._status_cache_lock = threading.Lock()
+        self._status_cache_expires_at = 0.0
+        self._status_cache_results = None
         """Initialize this object."""
 
     def run_checks(self, timeout: float):  # pragma: no cover - integration exercised elsewhere
@@ -601,6 +606,21 @@ class StatusService:
 
         return run_status_checks(timeout=timeout)
         """Perform run checks."""
+
+    def run_checks_cached(self, timeout: float, *, cache_seconds: float):
+        """Return a bounded TTL snapshot, with one provider refresh at a time."""
+
+        now = time.monotonic()
+        if self._status_cache_results is not None and now < self._status_cache_expires_at:
+            return list(self._status_cache_results)
+        with self._status_cache_lock:
+            now = time.monotonic()
+            if self._status_cache_results is not None and now < self._status_cache_expires_at:
+                return list(self._status_cache_results)
+            results = list(self.run_checks(timeout))
+            self._status_cache_results = tuple(results)
+            self._status_cache_expires_at = time.monotonic() + max(0.0, float(cache_seconds))
+            return results
 
     def last_sync_outcome(self, lines: int = 500) -> Dict[str, Any]:
         """Return the latest persisted sync summary from logs or durable sync jobs."""

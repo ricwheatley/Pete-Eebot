@@ -14,10 +14,14 @@ sudo bash /path/to/reviewed-candidate/pete_e/resources/install-systemd-units.sh 
   /path/to/reviewed-candidate/pete_e/resources
 sudo systemd-analyze verify /etc/systemd/system/peteeebot.service \
   /etc/systemd/system/peteeebot-deploy@.service
+BOOTSTRAP_SHA="$(git -C /path/to/reviewed-candidate rev-parse HEAD)"
 sudo systemd-run --unit=peteeebot-bootstrap-deploy --collect --wait \
   --property=User=deploy --property=Group=deploy \
   --property=WorkingDirectory=/opt/myapp/current \
   --property=EnvironmentFile=/opt/myapp/shared/.env \
+  --setenv=GITHUB_EVENT_NAME=push \
+  --setenv=GITHUB_REF=refs/heads/main \
+  --setenv=GITHUB_COMMIT_SHA="${BOOTSTRAP_SHA}" \
   /opt/myapp/scripts/deploy.sh
 ```
 

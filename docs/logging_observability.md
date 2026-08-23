@@ -33,7 +33,7 @@ HTTP request records use:
 | `http_path` | Path only, without query string. |
 | `http_status` | Response status code. |
 | `duration_ms` | Request duration in milliseconds. |
-| `client_ip` | Caller IP, preferring `X-Forwarded-For`. |
+| `client_ip` | Centralized caller identity. XFF is considered only when the immediate peer is in `PETEEEBOT_TRUSTED_PROXY_CIDRS`; otherwise the socket peer is used. |
 
 Durable command jobs are stored in `application_jobs`; the high-risk overlap lock is stored in `application_operation_locks`. Console operators can inspect current and recent rows at `/console/jobs`. Durable command audit rows are stored in `web_console_command_history` and are searchable from `/console/history`; structured logs remain the secondary diagnostic stream. Background job log records use:
 

@@ -12,6 +12,9 @@ ENV_FILE="${ENV_FILE:-${SHARED_ROOT}/.env}"
 LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
 LOCKFILE="${LOCKFILE:-/var/lock/pete_eebot-deploy.lock}"
 TRACKED_DEPLOY="${TRACKED_DEPLOY:-${APP_ROOT}/pete_e/resources/deploy.sh}"
+DEPLOY_GIT_REMOTE="${PETEEEBOT_DEPLOY_GIT_REMOTE:-origin}"
+EXPECTED_REMOTE_URL="${PETEEEBOT_DEPLOY_GIT_REMOTE_URL:-}"
+DEPLOY_REF="${PETEEEBOT_GITHUB_DEPLOY_REF:-refs/heads/main}"
 export ENV_FILE PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE}}"
 
 mkdir -p "$(dirname "${LOGFILE}")"
@@ -33,10 +36,42 @@ if [[ ! -d "${APP_ROOT}/.git" ]]; then
     exit 1
 fi
 
+if [[ ! "${DEPLOY_GIT_REMOTE}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf '%s\n' "ERROR: PETEEEBOT_DEPLOY_GIT_REMOTE is invalid."
+    exit 1
+fi
+if [[ -z "${EXPECTED_REMOTE_URL}" ]]; then
+    printf '%s\n' "ERROR: PETEEEBOT_DEPLOY_GIT_REMOTE_URL is not configured."
+    exit 1
+fi
+if [[ "${GITHUB_EVENT_NAME:-}" != "push" || "${GITHUB_REF:-}" != "${DEPLOY_REF}" || "${DEPLOY_REF}" != "refs/heads/main" ]]; then
+    printf '%s\n' "ERROR: Deployment metadata is not an allowed main-branch push."
+    exit 1
+fi
+if [[ ! "${GITHUB_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ || "${GITHUB_COMMIT_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+    printf '%s\n' "ERROR: GITHUB_COMMIT_SHA is not a valid deployable commit SHA."
+    exit 1
+fi
+
 cd "${APP_ROOT}"
-printf '%s\n' "Pulling latest code from ${APP_ROOT}..."
-git fetch --all --prune
-git reset --hard origin/main
+ACTUAL_REMOTE_URL="$(git remote get-url "${DEPLOY_GIT_REMOTE}")"
+if [[ "${ACTUAL_REMOTE_URL}" != "${EXPECTED_REMOTE_URL}" ]]; then
+    printf '%s\n' "ERROR: Configured Git remote URL does not match ${DEPLOY_GIT_REMOTE}."
+    exit 1
+fi
+REMOTE_TRACKING_REF="refs/remotes/${DEPLOY_GIT_REMOTE}/main"
+printf '%s\n' "Fetching the allowed main ref from ${DEPLOY_GIT_REMOTE}..."
+git fetch --prune "${DEPLOY_GIT_REMOTE}" "+${DEPLOY_REF}:${REMOTE_TRACKING_REF}"
+if ! git cat-file -e "${GITHUB_COMMIT_SHA}^{commit}"; then
+    printf '%s\n' "ERROR: Signed commit does not exist in the expected repository."
+    exit 1
+fi
+if ! git merge-base --is-ancestor "${GITHUB_COMMIT_SHA}" "${REMOTE_TRACKING_REF}"; then
+    printf '%s\n' "ERROR: Signed commit is not an ancestor of the fetched main ref."
+    exit 1
+fi
+printf '%s\n' "Selecting signed commit ${GITHUB_COMMIT_SHA}..."
+git reset --hard "${GITHUB_COMMIT_SHA}"
 git clean -fdx
 
 if [[ ! -f "${TRACKED_DEPLOY}" ]]; then
@@ -57,6 +92,9 @@ exec env \
     GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}" \
     GITHUB_COMMIT_SHA="${GITHUB_COMMIT_SHA:-}" \
     GITHUB_REF="${GITHUB_REF:-}" \
+    PETEEEBOT_DEPLOY_GIT_REMOTE="${DEPLOY_GIT_REMOTE}" \
+    PETEEEBOT_DEPLOY_GIT_REMOTE_URL="${EXPECTED_REMOTE_URL}" \
+    PETEEEBOT_GITHUB_DEPLOY_REF="${DEPLOY_REF}" \
     DEPLOY_LOG_ATTACHED=1 \
     SKIP_GIT_UPDATE=1 \
     bash "${TRACKED_DEPLOY}"

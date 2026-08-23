@@ -14,6 +14,7 @@ from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService
 from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser, ROLE_READ_ONLY, StoredUser, UserSession
 from pete_e.domain.profile import UserProfile
+from tests.edge_security_fakes import InMemoryEdgeSecurityRepository
 
 
 pytestmark = pytest.mark.contract
@@ -176,6 +177,8 @@ def contract_context(monkeypatch: pytest.MonkeyPatch):
     metrics_service = MetricsService(_MetricsDal(), profile_service=ProfileService(profile_repository))
 
     monkeypatch.setattr(dependencies, "get_user_service", lambda: user_service)
+    edge_repository = InMemoryEdgeSecurityRepository()
+    monkeypatch.setattr(dependencies, "get_edge_security_repository", lambda: edge_repository)
     monkeypatch.setattr(auth, "get_user_service", lambda: user_service)
     monkeypatch.setattr(metrics, "get_metrics_service", lambda: metrics_service)
     monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "profile-contract-key", raising=False)

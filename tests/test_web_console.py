@@ -474,6 +474,7 @@ def _install_console_services(monkeypatch: pytest.MonkeyPatch, user_service: _Us
     monkeypatch.setattr(dependencies, "get_plan_service", lambda: _PlanService())
     monkeypatch.setattr(dependencies, "get_nutrition_service", lambda: _NutritionService())
     monkeypatch.setattr(dependencies, "get_job_service", lambda: _JobService())
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
 
 
 def test_console_route_redirects_unauthenticated_browser_request() -> None:
@@ -510,13 +511,13 @@ def test_console_page_renders_authenticated_layout_with_read_only_nav(monkeypatc
     service = _UserService(_user(ROLE_READ_ONLY))
     _install_console_services(monkeypatch, service)
 
-    response = web.console_status(
-        _Request(path="/console/status", cookies={dependencies.session_cookie_name(): service.token})
+    response = web.console_plan(
+        _Request(path="/console/plan", cookies={dependencies.session_cookie_name(): service.token})
     )
 
     html = _body(response)
     assert response.status_code == 200
-    assert "System Status" in html
+    assert "Current Week Plan" in html
     assert "Pete-Eebot" in html
     assert 'href="/console/plan"' in html
     assert 'href="/console/logs"' in html
@@ -524,10 +525,22 @@ def test_console_page_renders_authenticated_layout_with_read_only_nav(monkeypatc
     assert 'href="/console/admin"' not in html
 
 
+def test_status_page_rejects_read_only_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _UserService(_user(ROLE_READ_ONLY))
+    _install_console_services(monkeypatch, service)
+
+    with pytest.raises(web.HTTPException) as exc:
+        web.console_status(
+            _Request(path="/console/status", cookies={dependencies.session_cookie_name(): service.token})
+        )
+
+    assert exc.value.status_code == 403
+
+
 def test_status_page_renders_health_checks_and_source_level_sync_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    service = _UserService(_user(ROLE_READ_ONLY))
+    service = _UserService(_user(ROLE_OPERATOR))
     _install_console_services(monkeypatch, service)
 
     response = web.console_status(

@@ -1,9 +1,7 @@
 import concurrent.futures
 import contextvars
-from dataclasses import dataclass, field
 import hashlib
 import hmac
-import math
 import re
 import secrets
 from pathlib import Path
@@ -17,6 +15,7 @@ from fastapi import Header, HTTPException, Request
 
 from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_logging import session_fingerprint
+from pete_e.client_identity import client_identity
 from pete_e.application.api_services import MetricsService, PlanService, StatusService
 from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
@@ -40,6 +39,11 @@ from pete_e.logging_setup import bind_log_context, reset_log_context
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.profile_repository import PostgresProfileRepository
 from pete_e.infrastructure.job_repository import PostgresApplicationJobRepository
+from pete_e.infrastructure.edge_security_repository import (
+    PostgresEdgeSecurityRepository,
+    RateLimitDecision,
+    RateLimitRule,
+)
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e import observability
 
@@ -87,26 +91,13 @@ _status_service: StatusService | None = None
 _user_service: UserService | None = None
 _profile_service: ProfileService | None = None
 _job_service: ApplicationJobService | None = None
+_edge_security_repository: PostgresEdgeSecurityRepository | None = None
 _job_service_lock = threading.Lock()
+_edge_security_repository_lock = threading.Lock()
 _command_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=4,
     thread_name_prefix="api-command",
 )
-_rate_limit_lock = threading.Lock()
-_rate_limit_events: dict[tuple[str, str], list[float]] = {}
-_login_attempt_lock = threading.Lock()
-
-
-@dataclass
-class _LoginAttemptState:
-    failures: list[float] = field(default_factory=list)
-    next_allowed_at: float = 0.0
-    locked_until: float = 0.0
-
-
-_login_attempts: dict[tuple[str, str], _LoginAttemptState] = {}
-
-
 def _http_exception(status_code: int, detail, headers: dict[str, str] | None = None) -> HTTPException:
     try:
         return HTTPException(status_code=status_code, detail=detail, headers=headers)
@@ -374,6 +365,16 @@ def get_job_service() -> ApplicationJobService:
     return _job_service
 
 
+def get_edge_security_repository() -> PostgresEdgeSecurityRepository:
+    global _edge_security_repository
+    if _edge_security_repository is None:
+        with _edge_security_repository_lock:
+            if _edge_security_repository is None:
+                dal = get_dal()
+                _edge_security_repository = PostgresEdgeSecurityRepository(pool=dal.pool)
+    return _edge_security_repository
+
+
 def shutdown_job_service() -> None:
     """Stop the lazily-created background job service during API shutdown."""
 
@@ -536,19 +537,44 @@ def validate_api_key(
 
 
 def reset_login_attempts() -> None:
-    with _login_attempt_lock:
-        _login_attempts.clear()
+    """Reset only the cached repository handle; durable state is never erased here."""
+
+    global _edge_security_repository
+    with _edge_security_repository_lock:
+        _edge_security_repository = None
 
 
-def _login_attempt_key(request: Request, login: str) -> tuple[str, str]:
-    return (normalize_login(login) or "<blank>", _client_identity(request))
-
-
-def _prune_login_failures(state: _LoginAttemptState, now: float, window_seconds: float) -> None:
-    state.failures = [timestamp for timestamp in state.failures if now - timestamp < window_seconds]
-    if not state.failures and state.locked_until <= now:
-        state.next_allowed_at = 0.0
-        state.locked_until = 0.0
+def _login_rate_limit_rules(request: Request, login: str) -> tuple[RateLimitRule, ...]:
+    normalized_login = normalize_login(login) or "<blank>"
+    client = client_identity(request)
+    max_attempts = DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+    common = {
+        "window_seconds": DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+        "lockout_seconds": DEFAULT_LOGIN_LOCKOUT_SECONDS,
+    }
+    return (
+        RateLimitRule(
+            scope="login:account",
+            subject=normalized_login,
+            max_requests=max_attempts,
+            backoff_base_seconds=DEFAULT_LOGIN_BACKOFF_BASE_SECONDS,
+            **common,
+        ),
+        RateLimitRule(
+            scope="login:account-client",
+            subject=f"{normalized_login}\0{client}",
+            max_requests=max_attempts,
+            backoff_base_seconds=DEFAULT_LOGIN_BACKOFF_BASE_SECONDS,
+            **common,
+        ),
+        RateLimitRule(
+            scope="login:client",
+            subject=client,
+            max_requests=max_attempts * 4,
+            backoff_base_seconds=0.0,
+            **common,
+        ),
+    )
 
 
 def _raise_login_throttle(code: str, message: str, retry_after: int) -> None:
@@ -563,69 +589,115 @@ def _raise_login_throttle(code: str, message: str, retry_after: int) -> None:
     )
 
 
+def _edge_repository_or_503() -> PostgresEdgeSecurityRepository:
+    try:
+        return get_edge_security_repository()
+    except Exception as exc:
+        raise _http_exception(
+            status_code=503,
+            detail={
+                "code": "security_control_unavailable",
+                "message": "Security control storage is unavailable",
+            },
+        ) from exc
+
+
+def _raise_rate_limit_decision(decision: RateLimitDecision, *, operation: str | None = None) -> None:
+    if decision.code == "login_locked":
+        _raise_login_throttle(
+            "login_locked",
+            "Login temporarily locked",
+            decision.retry_after_seconds,
+        )
+    if decision.code == "login_backoff":
+        _raise_login_throttle(
+            "login_backoff",
+            "Login retry backoff active",
+            decision.retry_after_seconds,
+        )
+    raise _http_exception(
+        status_code=429,
+        detail={
+            "code": "rate_limited",
+            "message": f"Rate limit exceeded for {operation or 'request'}",
+            "operation": operation,
+            "retry_after_seconds": decision.retry_after_seconds,
+        },
+        headers={"Retry-After": str(decision.retry_after_seconds)},
+    )
+
+
 def enforce_login_attempt_allowed(request: Request, login: str) -> None:
-    now = time.monotonic()
-    window_seconds = DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS
-    key = _login_attempt_key(request, login)
-    with _login_attempt_lock:
-        state = _login_attempts.get(key)
-        if state is None:
-            return
-        _prune_login_failures(state, now, window_seconds)
-        if state.locked_until > now:
-            retry_after = max(1, math.ceil(state.locked_until - now))
-            _raise_login_throttle("login_locked", "Login temporarily locked", retry_after)
-        if state.next_allowed_at > now:
-            retry_after = max(1, math.ceil(state.next_allowed_at - now))
-            _raise_login_throttle("login_backoff", "Login retry backoff active", retry_after)
+    try:
+        decision = _edge_repository_or_503().check_rate_limits(
+            _login_rate_limit_rules(request, login)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _http_exception(
+            503,
+            {"code": "security_control_unavailable", "message": "Security control storage is unavailable"},
+        ) from exc
+    if decision is not None:
+        _raise_rate_limit_decision(decision)
 
 
 def record_login_failure(request: Request, login: str) -> None:
-    now = time.monotonic()
-    max_attempts = DEFAULT_LOGIN_RATE_LIMIT_MAX_ATTEMPTS
-    window_seconds = DEFAULT_LOGIN_RATE_LIMIT_WINDOW_SECONDS
-    lockout_seconds = DEFAULT_LOGIN_LOCKOUT_SECONDS
-    backoff_base_seconds = DEFAULT_LOGIN_BACKOFF_BASE_SECONDS
-    if max_attempts <= 0 or window_seconds <= 0:
-        return
-
-    key = _login_attempt_key(request, login)
-    with _login_attempt_lock:
-        state = _login_attempts.setdefault(key, _LoginAttemptState())
-        _prune_login_failures(state, now, window_seconds)
-        state.failures.append(now)
-        if len(state.failures) >= max_attempts and lockout_seconds > 0:
-            state.locked_until = now + lockout_seconds
-            state.next_allowed_at = state.locked_until
-            retry_after = max(1, math.ceil(lockout_seconds))
-            _raise_login_throttle("login_locked", "Login temporarily locked", retry_after)
-        if backoff_base_seconds > 0:
-            backoff_seconds = min(
-                lockout_seconds if lockout_seconds > 0 else backoff_base_seconds * 16,
-                backoff_base_seconds * (2 ** max(0, len(state.failures) - 1)),
-            )
-            state.next_allowed_at = now + backoff_seconds
+    try:
+        decision = _edge_repository_or_503().record_failures(
+            _login_rate_limit_rules(request, login)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _http_exception(
+            503,
+            {"code": "security_control_unavailable", "message": "Security control storage is unavailable"},
+        ) from exc
+    if decision is not None:
+        _raise_rate_limit_decision(decision)
 
 
 def record_login_success(request: Request, login: str) -> None:
-    key = _login_attempt_key(request, login)
-    with _login_attempt_lock:
-        _login_attempts.pop(key, None)
+    rules = _login_rate_limit_rules(request, login)
+    try:
+        # Retain the broad client bucket so one valid account cannot erase abuse
+        # accumulated against many accounts from the same client.
+        _edge_repository_or_503().clear_rate_limits(rules[:2])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _http_exception(
+            503,
+            {"code": "security_control_unavailable", "message": "Security control storage is unavailable"},
+        ) from exc
 
 
 def _client_identity(request: Request) -> str:
-    headers = getattr(request, "headers", {}) or {}
-    forwarded_for = headers.get("x-forwarded-for") or headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    client = getattr(request, "client", None)
-    host = getattr(client, "host", None)
-    return str(host or "local")
+    """Compatibility alias for the centralized client-identity resolver."""
+
+    return client_identity(request)
 
 
 def reset_command_rate_limits() -> None:
-    with _rate_limit_lock:
-        _rate_limit_events.clear()
+    """Reset only the cached repository handle; durable counters remain intact."""
+
+    reset_login_attempts()
+
+
+def _authenticated_rate_limit_subject(request: Request) -> str:
+    state = getattr(request, "state", None)
+    user = getattr(state, "auth_user", None)
+    if isinstance(user, AuthUser):
+        return f"user:{user.id}"
+    scheme = str(getattr(state, "auth_scheme", "") or "")
+    if scheme == "api_key":
+        return "machine-api-key"
+    if scheme == "github_webhook_hmac":
+        repository_id = getattr(settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", None)
+        return f"github-repository:{repository_id or 'unconfigured'}"
+    return f"unauthenticated:{client_identity(request)}"
 
 
 def enforce_command_rate_limit(
@@ -638,25 +710,38 @@ def enforce_command_rate_limit(
     if max_requests <= 0 or window_seconds <= 0:
         return
 
-    now = time.monotonic()
-    key = (operation, _client_identity(request))
-    with _rate_limit_lock:
-        events = [timestamp for timestamp in _rate_limit_events.get(key, []) if now - timestamp < window_seconds]
-        if len(events) >= max_requests:
-            retry_after = max(1, math.ceil(window_seconds - (now - events[0])))
-            _rate_limit_events[key] = events
-            raise _http_exception(
-                status_code=429,
-                detail={
-                    "code": "rate_limited",
-                    "message": f"Rate limit exceeded for {operation}",
-                    "operation": operation,
-                    "retry_after_seconds": retry_after,
-                },
-                headers={"Retry-After": str(retry_after)},
-            )
-        events.append(now)
-        _rate_limit_events[key] = events
+    multiplier = int(getattr(settings, "PETEEEBOT_COMMAND_RATE_LIMIT_GLOBAL_MULTIPLIER", 5) or 5)
+    rules = (
+        RateLimitRule(
+            scope=f"command:{operation}:client",
+            subject=client_identity(request),
+            max_requests=max_requests,
+            window_seconds=window_seconds,
+        ),
+        RateLimitRule(
+            scope=f"command:{operation}:account",
+            subject=_authenticated_rate_limit_subject(request),
+            max_requests=max_requests,
+            window_seconds=window_seconds,
+        ),
+        RateLimitRule(
+            scope=f"command:{operation}:global",
+            subject="*",
+            max_requests=max_requests * max(1, multiplier),
+            window_seconds=window_seconds,
+        ),
+    )
+    try:
+        decision = _edge_repository_or_503().consume_rate_limits(rules)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _http_exception(
+            503,
+            {"code": "security_control_unavailable", "message": "Security control storage is unavailable"},
+        ) from exc
+    if decision is not None:
+        _raise_rate_limit_decision(decision, operation=operation)
 
 
 def audit_command_event(

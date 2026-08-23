@@ -139,6 +139,12 @@
       "filename": "20260822_safe_job_ownership.sql",
       "sha256": "1644a7e0bb27f13b47b3c5466e7aca1c57fb93bd5e70de916f517a5c5429439f",
       "transactional": true
+    },
+    {
+      "revision": "20260822_trust_public_edge",
+      "filename": "20260822_trust_public_edge.sql",
+      "sha256": "81161c114a565ded9098e33d0425369915492d161816db991d6bd81e427e189e",
+      "transactional": true
     }
   ]
 }

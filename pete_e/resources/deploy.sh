@@ -22,6 +22,9 @@ SERVICE_NAME="${SERVICE_NAME:-peteeebot.service}"
 LOGFILE="${LOGFILE:-/var/log/pete_eebot/deploy.log}"
 LOCKFILE="${LOCKFILE:-/var/lock/pete_eebot-deploy.lock}"
 SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-0}"
+DEPLOY_GIT_REMOTE="${PETEEEBOT_DEPLOY_GIT_REMOTE:-origin}"
+EXPECTED_REMOTE_URL="${PETEEEBOT_DEPLOY_GIT_REMOTE_URL:-}"
+DEPLOY_REF="${PETEEEBOT_GITHUB_DEPLOY_REF:-refs/heads/main}"
 export ENV_FILE PETEEEBOT_ENV_FILE="${PETEEEBOT_ENV_FILE:-${ENV_FILE}}"
 
 mkdir -p "$(dirname "${LOGFILE}")"
@@ -93,13 +96,32 @@ set -a
 source "${ENV_FILE}"
 set +a
 
+# Direct/manual invocations may receive these values from ENV_FILE rather than
+# the parent process, so resolve them again after sourcing it.
+DEPLOY_GIT_REMOTE="${PETEEEBOT_DEPLOY_GIT_REMOTE:-origin}"
+EXPECTED_REMOTE_URL="${PETEEEBOT_DEPLOY_GIT_REMOTE_URL:-}"
+DEPLOY_REF="${PETEEEBOT_GITHUB_DEPLOY_REF:-refs/heads/main}"
+
 cd "${APP_ROOT}"
+[[ "${DEPLOY_GIT_REMOTE}" =~ ^[A-Za-z0-9._-]+$ ]] || fail "PETEEEBOT_DEPLOY_GIT_REMOTE is invalid."
+[[ -n "${EXPECTED_REMOTE_URL}" ]] || fail "PETEEEBOT_DEPLOY_GIT_REMOTE_URL is not configured."
+[[ "${GITHUB_EVENT_NAME:-}" == "push" ]] || fail "GITHUB_EVENT_NAME must be push."
+[[ "${GITHUB_REF:-}" == "${DEPLOY_REF}" && "${DEPLOY_REF}" == "refs/heads/main" ]] || fail "GITHUB_REF is not the configured main ref."
+[[ "${GITHUB_COMMIT_SHA:-}" =~ ^[0-9a-f]{40}$ && "${GITHUB_COMMIT_SHA}" != "0000000000000000000000000000000000000000" ]] || fail "GITHUB_COMMIT_SHA is invalid."
+ACTUAL_REMOTE_URL="$(git remote get-url "${DEPLOY_GIT_REMOTE}")"
+[[ "${ACTUAL_REMOTE_URL}" == "${EXPECTED_REMOTE_URL}" ]] || fail "Configured Git remote URL does not match ${DEPLOY_GIT_REMOTE}."
+
 if [[ "${SKIP_GIT_UPDATE}" == "1" ]]; then
-    log "Skipping git update because SKIP_GIT_UPDATE=1."
+    CURRENT_HEAD="$(git rev-parse HEAD)"
+    [[ "${CURRENT_HEAD}" == "${GITHUB_COMMIT_SHA}" ]] || fail "Checkout HEAD does not match the validated signed SHA."
+    log "Git update already selected the validated signed SHA."
 else
-    log "Pulling latest code from ${APP_ROOT}..."
-    git fetch --all --prune
-    git reset --hard origin/main
+    REMOTE_TRACKING_REF="refs/remotes/${DEPLOY_GIT_REMOTE}/main"
+    log "Fetching the configured main ref from ${DEPLOY_GIT_REMOTE}..."
+    git fetch --prune "${DEPLOY_GIT_REMOTE}" "+${DEPLOY_REF}:${REMOTE_TRACKING_REF}"
+    git cat-file -e "${GITHUB_COMMIT_SHA}^{commit}" || fail "Signed commit does not exist in the expected repository."
+    git merge-base --is-ancestor "${GITHUB_COMMIT_SHA}" "${REMOTE_TRACKING_REF}" || fail "Signed commit is not an ancestor of fetched main."
+    git reset --hard "${GITHUB_COMMIT_SHA}"
     git clean -fdx
 fi
 

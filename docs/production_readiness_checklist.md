@@ -30,7 +30,7 @@ Severity guidance:
 | [ ] Application container image is not used as the production runtime unless a new supported Dockerfile/runbook has been created and reviewed. | Blocker | Deployment profile note. |
 | [ ] Production layout matches the runbook: `.env`, `venv`, `deploy.sh`, `app`, and backup directories live outside the Git cleanup boundary where expected. | Blocker | Path listing or operator confirmation. |
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
-| [ ] Required environment values are populated: Postgres, Dropbox, Withings, Telegram if enabled, wger if enabled, `PETEEEBOT_API_KEY`, `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, job lease/heartbeat/recovery cadence, and deploy dispatch helper/unit settings. | Blocker | Redacted env inventory. |
+| [ ] Required environment values are populated: providers, Postgres, `PETEEEBOT_API_KEY`, trusted proxy CIDRs, webhook secret/body bound/repository ID/main ref, expected Git remote URL, `DEPLOY_SCRIPT_PATH`, and job/dispatch settings. | Blocker | Redacted env inventory. |
 | [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
 | [ ] `pete-schema preflight`, backup, `upgrade`, and runtime-role `verify` pass; the ledger equals manifest head with valid checksums. | Blocker | Redacted command output, backup artifact/checksum, head revision, and DB identity. |
 | [ ] Migration failure and restore paths are known before applying any migration that changes production data. | Blocker | Rollback section in release note and disposable restore rehearsal. |
@@ -39,7 +39,7 @@ Severity guidance:
 | [ ] `peteeebot.service` exists, runs under the intended user, and is managed by systemd. | Blocker | `systemctl status` summary. |
 | [ ] `peteeebot-deploy@.service`, dispatch helper, and validated sudoers rule are installed; the deploy template has no lifecycle binding to `peteeebot.service`. | Blocker | `systemd-analyze verify`, `visudo -cf`, unit directives. |
 | [ ] The controlled restart test in `docs/job_ownership_deployment_runbook.md` proves a deploy worker remains active across API restart, reaches durable terminal state, and leaves no operation lock. | Blocker | Job ID, cgroups/PIDs, journals, terminal row, lock query. |
-| [ ] Deploy webhook runs the stable wrapper only for non-deletion pushes to `refs/heads/main`; feature pushes, deletions, pings, and other signed events are ignored. | High | Redacted `DEPLOY_SCRIPT_PATH`, accepted-main test, and ignored-deletion test. |
+| [ ] Deploy webhook rejects wrong event/repository/ref/deletion/SHA, uniquely persists delivery IDs and signed event identities, and the wrapper deploys the signed SHA only when it is reachable from configured origin/main. | Blocker | Negative webhook matrix, concurrent/altered-header replay results, and exact-SHA test. |
 | [ ] Post-deploy smoke checks from `docs/runtime_deploy_runbook.md` pass: CLI status, systemd active, sync dry run/short run, Telegram listener if enabled, local `/healthz`, local `/readyz`, local `/api/v1/status`, local `/api/v1/metrics`, public HTTPS `/healthz`, public HTTPS authenticated `/api/v1/status`, and direct public app-port denial. | Blocker | Smoke-check transcript or summary. |
 
 ## 2. TLS and Reverse Proxy Expectations
@@ -52,8 +52,8 @@ Severity guidance:
 | [ ] HTTP redirects to HTTPS. | Blocker | `curl -I http://...` result. |
 | [ ] Certificate automation and renewal monitoring are in place. | High | ACME/certbot/Caddy status and renewal date. |
 | [ ] HSTS is enabled for production once HTTPS is confirmed stable: `PETEEEBOT_ENABLE_HSTS=true`. | High | Response header evidence. |
-| [ ] Reverse proxy forwards `Host`, scheme, and client IP headers required for accurate request logging and secure redirects. | High | Proxy config excerpt. |
-| [ ] Request body size, header size, and upstream timeout limits are set to conservative values for the API and webhook surface. | High | Proxy limit values. |
+| [ ] Public-edge nginx overwrites XFF with `$remote_addr`; `PETEEEBOT_TRUSTED_PROXY_CIDRS` contains only actual immediate proxies. Any upstream LB is narrowly configured with nginx real-IP recursion. | Blocker | Proxy config, app env, and direct/spoof/multi-hop tests. |
+| [ ] Request body size, header size, and upstream timeout limits are conservative; both webhook aliases are at most `256k`, matching the application bound. | High | Proxy limit values. |
 | [ ] `/readyz` returns only coarse unauthenticated DB/schema readiness and does not call external providers; detailed dependency names/errors require authenticated `/api/v1/status` or `/console/status`. | High | Public `/readyz` sample plus authenticated status sample. |
 | [ ] `/api/v1/metrics` remains authenticated and is scraped with `X-API-Key` or a trusted authenticated session. | High | Scrape config. |
 | [ ] GitHub webhook route is reachable only as needed and still relies on `X-Hub-Signature-256` HMAC validation. | High | Webhook test result. |
@@ -67,6 +67,7 @@ Severity guidance:
 | [ ] First browser owner was created with `pete bootstrap-owner`; no password hash was hand-written and no public bootstrap route is exposed. | Blocker | Command transcript with secret redacted and owner username. |
 | [ ] Owner password recovery was tested with `pete reset-owner-password` or explicitly deferred with a named break-glass owner. | High | Reset test summary or deferred-risk note. |
 | [ ] Browser login is used for human users; machine API key is not accepted as a substitute for browser auth on auth/session routes. | High | Route inventory or test evidence. |
+| [ ] Login and command limits use the PostgreSQL backend and have account/client/broader dimensions; two-instance and restart persistence checks pass. | Blocker | Migration status and edge-security integration test result. |
 | [ ] Production session cookies are secure: `PETEEEBOT_SESSION_COOKIE_SECURE=true`, `PETEEEBOT_SESSION_COOKIE_SAMESITE=lax`, and no broad cookie domain unless required. | Blocker | Redacted env and response cookie evidence. |
 | [ ] State-changing browser requests require CSRF token validation. | Blocker | Manual or automated request evidence. |
 | [ ] Login rate limiting and lockout settings are configured and tested. | High | Failed-login test summary. |
