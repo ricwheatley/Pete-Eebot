@@ -35,7 +35,7 @@ Current structure reflects a layered design:
 - `pete_e/api_routes` + `pete_e/api.py`: HTTP transport.
 - `pete_e/cli`: Typer command surfaces.
 - `scripts/`: operator tooling (auth checks, backup, cron install, weekly workflows).
-- `migrations/manifest.json` + `pete-schema`: authoritative DB lifecycle.
+- `pete_e/migrations/manifest.json` + `pete-schema`: authoritative DB lifecycle.
 - `tests/`: layered tests (domain/application/integration/CLI).
 
 This is a solid basis for extension.

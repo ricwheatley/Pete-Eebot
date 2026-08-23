@@ -8,6 +8,7 @@ through a singleton `settings` object.
 
 import os
 from datetime import date
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 from urllib.parse import quote
@@ -15,6 +16,8 @@ from urllib.parse import quote
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from psycopg.conninfo import conninfo_to_dict
+
+from pete_e.package_resources import package_resource
 
 CONFIG_FILE = Path(__file__).resolve()
 
@@ -59,18 +62,6 @@ def _discover_project_root(config_file: Path) -> tuple[Path, Path]:
 PROJECT_ROOT, ENV_FILE_PATH = _discover_project_root(CONFIG_FILE)
 
 
-def _discover_app_root(project_root: Path) -> Path:
-    """Resolve the root used for locating bundled application resources."""
-
-    for candidate in (project_root / "app", project_root):
-        if (candidate / "pete_e").exists():
-            return candidate
-    return project_root
-
-
-APP_ROOT = _discover_app_root(PROJECT_ROOT)
-
-
 T = TypeVar("T")
 
 
@@ -87,6 +78,10 @@ class Settings(BaseSettings):
     # --- CORE APP SETTINGS ---
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
     PETEEEBOT_ENV_FILE: Path | None = None
+    PETEEEBOT_PHRASES_FILE: Path | None = None
+    PETEEEBOT_CRON_SOURCE: Path | None = None
+    PETEEEBOT_CRONTAB_OUTPUT: Path | None = None
+    PETEEEBOT_MIGRATIONS_DIR: Path | None = None
     ENVIRONMENT: str = "development"
     DATABASE_URL: SecretStr | None = Field(None, validate_default=True)
     PETEEEBOT_MIGRATOR_DATABASE_URL: SecretStr | None = None
@@ -361,10 +356,12 @@ class Settings(BaseSettings):
         """Perform resolve log path."""
 
     @property
-    def phrases_path(self) -> Path:
-        """Path to the tagged phrases resource file."""
+    def phrases_path(self) -> Traversable:
+        """Return an override or the bundled tagged-phrases resource."""
 
-        return APP_ROOT / "pete_e/resources/phrases_tagged.json"
+        if self.PETEEEBOT_PHRASES_FILE is not None:
+            return self.PETEEEBOT_PHRASES_FILE.expanduser()
+        return package_resource("resources", "phrases_tagged.json")
 
 
 def _secret_value(value: SecretStr | str | None) -> str | None:

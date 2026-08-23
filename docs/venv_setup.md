@@ -59,6 +59,12 @@ UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
   /opt/myapp/shared/uv-tool/bin/uv sync --frozen --no-dev --no-editable
 ```
 
+This command builds and installs a normal distribution into the external venv.
+Application resources are loaded from the installed package, not from
+`/opt/myapp/current` or the process working directory. The checkout remains
+required separately for reviewed deployment/systemd helpers and operational
+scripts; those files are intentionally not part of the wheel.
+
 The lock requires compatible artifacts for Linux `aarch64` and `x86_64` as
 well as Windows AMD64. A lock regeneration fails if a wheel-only dependency
 does not cover one of those supported environments.

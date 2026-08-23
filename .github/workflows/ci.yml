@@ -150,5 +150,5 @@ jobs:
           uv sync --frozen --no-editable
           .venv/bin/python -m pip check
 
-      - name: Build, install, and smoke the wheel outside the checkout
+      - name: Build and inspect wheel/sdist, then install and smoke the wheel
         run: .venv/bin/python -m pytest -q -m artifact

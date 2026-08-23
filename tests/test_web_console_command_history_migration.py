@@ -10,7 +10,7 @@ def _table_block(sql: str, table_name: str) -> str:
 
 
 def test_web_console_jobs_migration_defines_command_history_storage() -> None:
-    migration = Path("migrations/20260515_add_web_console_jobs.sql").read_text(encoding="utf-8")
+    migration = Path("pete_e/migrations/20260515_add_web_console_jobs.sql").read_text(encoding="utf-8")
     command_history = _table_block(migration, "web_console_command_history")
 
     assert "CREATE TABLE IF NOT EXISTS application_jobs" in migration
@@ -27,7 +27,7 @@ def test_web_console_jobs_migration_defines_command_history_storage() -> None:
 
 
 def test_authoritative_history_includes_web_console_command_history_tables() -> None:
-    schema = Path("migrations/20260515_add_web_console_jobs.sql").read_text(encoding="utf-8")
+    schema = Path("pete_e/migrations/20260515_add_web_console_jobs.sql").read_text(encoding="utf-8")
     command_history = _table_block(schema, "web_console_command_history")
 
     assert "DROP TABLE IF EXISTS web_console_command_history CASCADE" not in schema
@@ -38,7 +38,7 @@ def test_authoritative_history_includes_web_console_command_history_tables() -> 
 
 
 def test_command_history_job_fk_relaxation_migration_drops_blocking_constraint() -> None:
-    migration = Path("migrations/20260610_relax_command_history_job_fk.sql").read_text(encoding="utf-8")
+    migration = Path("pete_e/migrations/20260610_relax_command_history_job_fk.sql").read_text(encoding="utf-8")
 
     assert "ALTER TABLE IF EXISTS web_console_command_history" in migration
     assert "DROP CONSTRAINT IF EXISTS web_console_command_history_job_id_fkey" in migration

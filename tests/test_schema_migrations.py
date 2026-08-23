@@ -47,7 +47,7 @@ def test_initial_revision_is_non_destructive_and_runner_owns_transactions() -> N
 
 def test_modified_migration_is_rejected_by_checksum(tmp_path: Path) -> None:
     copied = tmp_path / "migrations"
-    shutil.copytree("migrations", copied)
+    shutil.copytree("pete_e/migrations", copied)
     target = copied / "20260511_add_nutrition_log.sql"
     target.write_text(target.read_text(encoding="utf-8") + "\n-- drift\n", encoding="utf-8")
 
@@ -57,7 +57,7 @@ def test_modified_migration_is_rejected_by_checksum(tmp_path: Path) -> None:
 
 def test_missing_and_reordered_manifest_entries_are_rejected(tmp_path: Path) -> None:
     copied = tmp_path / "migrations"
-    shutil.copytree("migrations", copied)
+    shutil.copytree("pete_e/migrations", copied)
     manifest_path = copied / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["migrations"][1], manifest["migrations"][2] = (

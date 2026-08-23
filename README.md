@@ -15,13 +15,13 @@ pete_e/
   infrastructure/    PostgreSQL, Dropbox, Withings, wger, Telegram, cron, adapters
   cli/               Typer command entrypoints exposed through the `pete` command
   api_routes/        FastAPI route modules and browser console surfaces
+  migrations/        Authoritative ordered SQL history and checksum manifest
 ```
 
 Supporting directories:
 
 ```text
 init-db/             Safety notice; executable bootstrap SQL is intentionally retired
-migrations/          Authoritative ordered SQL history and checksum manifest
 scripts/             Operational helpers for backup, auth checks, catalogue sync, reviews
 docs/                Operator, API, deployment, planner, and observability notes
 tests/               Unit, application, integration, and CLI coverage
@@ -76,6 +76,19 @@ uv pip check --python "$PWD/venv/bin/python"
 hashed, cross-platform lock. See
 [`docs/dependency_management.md`](docs/dependency_management.md) before changing
 either dependency constraints or the lock.
+
+`uv sync --no-editable` builds and installs the project as a normal distribution;
+runtime JSON, CSV, templates, static assets, and migrations are read from that
+installed package. To inspect the exact release artifacts directly:
+
+```bash
+uv build --out-dir dist
+python -m pytest -q -m artifact
+```
+
+The artifact lane inspects both wheel and sdist contents, installs the wheel in
+a temporary environment outside the checkout, changes to a non-repository
+working directory, and exercises the CLI, API, phrases, cron, and migrations.
 
 ### 2. Configure environment
 
@@ -228,6 +241,9 @@ Example layout:
 ```
 
 The repository includes deploy scripts and systemd definitions in `pete_e/resources/`.
+They are checkout-only operational artifacts and are intentionally not included
+in the Python wheel or sdist. The phrase JSON and cron CSV in the same source
+directory are allowlisted runtime package data.
 Their production defaults target `/opt/myapp`; override `PROJECT_ROOT`,
 `APP_ROOT`, `SHARED_ROOT`, `ENV_FILE`, and `VENV_ROOT` for a different Ubuntu
 layout.
@@ -628,6 +644,15 @@ Settings representations and must not be logged.
 | `PETEEEBOT_SYNC_TIMEOUT_SECONDS`, `PETEEEBOT_PROCESS_TIMEOUT_SECONDS` | Long-running command timeouts. |
 | `PETEEEBOT_JOB_LEASE_SECONDS`, `PETEEEBOT_JOB_HEARTBEAT_SECONDS`, `PETEEEBOT_JOB_RECOVERY_SECONDS` | Fenced job lease, heartbeat cadence (less than half the lease), and periodic recovery cadence. |
 | `GITHUB_WEBHOOK_SECRET`, `DEPLOY_SCRIPT_PATH`, `PETEEEBOT_DEPLOY_UNIT_TEMPLATE`, `PETEEEBOT_DEPLOY_DISPATCH_BIN`, `PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS`, `PETEEEBOT_CLI_BIN` | GitHub webhook deployment, independent systemd dispatch, and absolute `pete` CLI path. |
+
+### Runtime package data
+
+| Variable | Purpose |
+| --- | --- |
+| `PETEEEBOT_PHRASES_FILE` | Optional external phrase JSON override; the wheel-bundled JSON is the default. |
+| `PETEEEBOT_CRON_SOURCE` | Optional external cron CSV override; the wheel-bundled schedule is the default. |
+| `PETEEEBOT_CRONTAB_OUTPUT` | External generated-crontab target; defaults under the user's state directory. |
+| `PETEEEBOT_MIGRATIONS_DIR` | Optional reviewed external migration-set override; bundled authoritative migrations are the default. |
 
 ### Logging, alerting, and monitoring
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_profile_migration_defines_optional_profiles_and_assignments() -> None:
-    migration = Path("migrations/20260515_add_user_profiles.sql").read_text(encoding="utf-8")
+    migration = Path("pete_e/migrations/20260515_add_user_profiles.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS user_profiles" in migration
     assert "slug TEXT NOT NULL UNIQUE" in migration
@@ -16,7 +16,7 @@ def test_profile_migration_defines_optional_profiles_and_assignments() -> None:
 
 
 def test_authoritative_history_includes_profile_tables_for_new_databases() -> None:
-    schema = Path("migrations/20260515_add_user_profiles.sql").read_text(encoding="utf-8")
+    schema = Path("pete_e/migrations/20260515_add_user_profiles.sql").read_text(encoding="utf-8")
 
     for table_name in ("user_profiles", "auth_user_profiles"):
         assert f"CREATE TABLE IF NOT EXISTS {table_name}" in schema

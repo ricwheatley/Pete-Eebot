@@ -1,0 +1,35 @@
+include README.md
+include pyproject.toml
+recursive-include pete_e *.py
+
+prune .agents
+prune .eggs
+prune .github
+prune build
+prune dist
+prune docs
+prune env
+prune ENV
+prune init-db
+prune logs
+prune mocks
+prune patches
+prune scripts
+prune tests
+prune venv
+prune .venv
+prune pete_e/logs
+prune pete_e/resources
+prune pete_e/static
+prune pete_e/templates
+
+include pete_e/resources/phrases_tagged.json
+include pete_e/resources/pete_crontab.csv
+recursive-include pete_e/static *.css *.js
+recursive-include pete_e/templates *.html
+recursive-include pete_e/migrations *.sql
+include pete_e/migrations/manifest.json
+
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude .DS_Store

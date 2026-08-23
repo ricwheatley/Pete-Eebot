@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_auth_migration_defines_users_sessions_and_rbac_roles() -> None:
-    migration = Path("migrations/20260515_add_auth_users_sessions_rbac.sql").read_text(encoding="utf-8")
+    migration = Path("pete_e/migrations/20260515_add_auth_users_sessions_rbac.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS auth_roles" in migration
     assert "('owner'" in migration
@@ -18,7 +18,7 @@ def test_auth_migration_defines_users_sessions_and_rbac_roles() -> None:
 
 
 def test_authoritative_history_creates_auth_tables_for_new_databases() -> None:
-    schema = Path("migrations/20260515_add_auth_users_sessions_rbac.sql").read_text(encoding="utf-8")
+    schema = Path("pete_e/migrations/20260515_add_auth_users_sessions_rbac.sql").read_text(encoding="utf-8")
 
     for table_name in ("auth_roles", "auth_users", "auth_user_roles", "auth_sessions"):
         assert f"CREATE TABLE IF NOT EXISTS {table_name}" in schema

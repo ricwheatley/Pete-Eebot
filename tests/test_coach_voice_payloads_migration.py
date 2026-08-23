@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_coach_voice_payloads_migration_defines_full_payload_audit_table() -> None:
-    migration = Path("migrations/20260610_add_coach_voice_payloads.sql").read_text(encoding="utf-8")
+    migration = Path("pete_e/migrations/20260610_add_coach_voice_payloads.sql").read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS coach_voice_payloads" in migration
     assert "request_payload JSONB NOT NULL" in migration
@@ -13,7 +13,7 @@ def test_coach_voice_payloads_migration_defines_full_payload_audit_table() -> No
 
 
 def test_authoritative_history_includes_coach_voice_payloads_table() -> None:
-    schema = Path("migrations/20260610_add_coach_voice_payloads.sql").read_text(encoding="utf-8")
+    schema = Path("pete_e/migrations/20260610_add_coach_voice_payloads.sql").read_text(encoding="utf-8")
 
     assert "DROP TABLE IF EXISTS coach_voice_payloads CASCADE" not in schema
     assert "CREATE TABLE IF NOT EXISTS coach_voice_payloads" in schema

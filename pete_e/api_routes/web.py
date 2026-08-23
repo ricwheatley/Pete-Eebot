@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path
 import re
 import sys
 from typing import Any, Callable
@@ -11,7 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import fastapi
 from fastapi import HTTPException, Request
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, PackageLoader, select_autoescape
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from pete_e.api_routes import dependencies
@@ -31,11 +30,12 @@ from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
 from pete_e.config import settings
 from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
 from pete_e.domain.daily_sync import AppleHealthIngestResult
+from pete_e.package_resources import package_resource, package_resource_directory
 
 router = fastapi.APIRouter()
 
-TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
-STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+TEMPLATE_DIR = package_resource("templates")
+STATIC_DIR = package_resource_directory("static")
 COMMAND_CONFIRMATIONS = {
     "sync": "RUN SYNC",
     "withings_sync": "RUN WITHINGS SYNC",
@@ -98,7 +98,7 @@ def _safe_next_path(value: Any) -> str:
     """Perform safe next path."""
 
 _templates = Environment(
-    loader=FileSystemLoader(str(TEMPLATE_DIR)),
+    loader=PackageLoader("pete_e", "templates"),
     autoescape=select_autoescape(("html", "xml")),
 )
 _templates.filters["display_datetime"] = _display_datetime

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-MIGRATION = Path("migrations/20260820_add_readiness_adjustment_idempotency.sql")
+MIGRATION = Path("pete_e/migrations/20260820_add_readiness_adjustment_idempotency.sql")
 
 
 def test_authoritative_migration_distinguishes_baseline_and_effective_prescriptions() -> None:

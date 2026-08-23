@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Optional
 
 from pete_e.domain.planner_flags import PlannerFeatureFlags
 
@@ -21,7 +21,7 @@ class DomainSettings:
     global_backoff_factor: float = 0.90
     baseline_days: int = 28
     cycle_days: int = 28
-    phrases_path: Optional[Path] = None
+    phrases_path: Traversable | Path | None = None
     planner_feature_flags: PlannerFeatureFlags = field(default_factory=PlannerFeatureFlags)
 
 

@@ -90,13 +90,18 @@ a forced rollback transaction and verify that test rows are absent afterward.
 python -m pytest -q -m artifact
 ```
 
-This lane copies the current package sources to a clean temporary build tree,
-builds a wheel, creates a clean virtualenv outside the checkout, installs the
-runtime graph from `uv.lock`, and installs the wheel with dependency resolution
-disabled. It then smokes `pete --help`, `pete status --help`, a side-effect-free
-command, bundled templates/resources, API lifespan startup, and OpenAPI
-generation. It also asserts that the installed package did not resolve from the
-editable source checkout.
+This lane uses the pinned uv build tool to build both wheel and sdist from the
+repository, including with local environments and generated metadata present.
+It inspects both complete member lists and rejects tests, environments, scripts,
+docs, logs, caches, deployment helpers, or unrelated namespaces. It requires the
+allowlisted JSON, CSV, templates, static assets, and migrations.
+
+It then creates a clean virtualenv outside the checkout, installs the runtime
+graph from `uv.lock`, and installs the wheel with dependency resolution disabled.
+From a non-repository working directory it smokes `pete --help`, `pete status
+--help`, a side-effect-free command, actual phrase and cron loading, schema
+migrations, API lifespan startup, and OpenAPI generation. It also asserts that
+the installed package did not resolve from the source checkout.
 
 ## Wider validation
 

@@ -1,13 +1,33 @@
 import argparse
 import csv
+import os
 import subprocess
 import sys
 from datetime import datetime
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
-CRON_CSV = BASE_DIR.parent / "resources" / "pete_crontab.csv"
-CRON_TXT = BASE_DIR / "pete_crontab.txt"
+from pete_e.package_resources import package_resource
+
+
+def _cron_source() -> Traversable:
+    configured = os.getenv("PETEEEBOT_CRON_SOURCE")
+    if configured:
+        return Path(configured).expanduser()
+    return package_resource("resources", "pete_crontab.csv")
+
+
+def _crontab_output() -> Path:
+    configured = os.getenv("PETEEEBOT_CRONTAB_OUTPUT")
+    if configured:
+        return Path(configured).expanduser()
+    state_home = os.getenv("XDG_STATE_HOME")
+    root = Path(state_home).expanduser() if state_home else Path.home() / ".local" / "state"
+    return root / "pete_e" / "pete_crontab.txt"
+
+
+CRON_CSV = _cron_source()
+CRON_TXT = _crontab_output()
 BACKUP_DIR = Path.home() / "crontab_backups"
 
 
@@ -24,7 +44,7 @@ def _is_enabled_row(row: dict[str, str | None]) -> bool:
 
 def build_crontab_from_csv():
     """Convert CSV schedule into crontab text, or None if missing."""
-    if not CRON_CSV.exists():
+    if not CRON_CSV.is_file():
         print(f"WARNING: Crontab CSV not found at {CRON_CSV}, skipping.")
         return None
 
@@ -48,6 +68,7 @@ def save_crontab_file():
     if not text:
         print("WARNING: No jobs to save, leaving old crontab in place.")
         return None
+    CRON_TXT.parent.mkdir(parents=True, exist_ok=True)
     CRON_TXT.write_text(text, encoding="utf-8")
     print(f"Crontab file written to {CRON_TXT}")
     return CRON_TXT
@@ -77,7 +98,7 @@ def activate_crontab():
 
 
 def print_summary():
-    if not CRON_CSV.exists():
+    if not CRON_CSV.is_file():
         print("WARNING: No crontab CSV available, nothing to summarise.")
         return
     with CRON_CSV.open(encoding="utf-8") as handle:

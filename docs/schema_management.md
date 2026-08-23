@@ -1,6 +1,6 @@
 # Authoritative database schema management
 
-Pete-Eebot uses a PostgreSQL-specific ordered SQL runner. `migrations/manifest.json`
+Pete-Eebot uses a PostgreSQL-specific ordered SQL runner. `pete_e/migrations/manifest.json`
 is the authoritative order and checksum list, and `petee_schema_migrations` is the
 database-side revision ledger. Alembic was evaluated but not selected: the project
 has one linear, hand-written PostgreSQL SQL history and no ORM metadata, so Alembic
@@ -8,7 +8,7 @@ would add a dependency while still wrapping the same raw SQL. The smaller runner
 provides the required locking, transaction, checksum, adoption, and verification
 guarantees directly.
 
-Do not apply files in `migrations/` with `psql`. Do not edit an applied migration.
+Do not apply files in `pete_e/migrations/` with `psql`. Do not edit an applied migration.
 Add a new ordered SQL file and manifest entry instead.
 Checksums use UTF-8 SQL with line endings normalized to LF, so the same revision
 identity is preserved across Windows and Linux checkouts.
@@ -18,6 +18,9 @@ identity is preserved across Windows and Linux checkouts.
 All commands read the application target from the validated `DATABASE_URL` or
 `POSTGRES_*` settings. Write commands use `PETEEEBOT_MIGRATOR_DATABASE_URL` when
 it is set, allowing the runtime role to remain DML-only.
+Migrations load from the installed `pete_e` package by default. Set
+`PETEEEBOT_MIGRATIONS_DIR` only when deliberately validating or applying a
+reviewed external migration set.
 
 ```bash
 pete-schema status

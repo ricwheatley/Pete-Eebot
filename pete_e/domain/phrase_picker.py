@@ -2,10 +2,10 @@
 
 import json
 import random
-from pathlib import Path
 
 from pete_e.domain.configuration import get_settings
 from pete_e.domain.logging import log_message
+from pete_e.package_resources import package_resource
 
 # Global cache for phrases to avoid repeated file reads
 _all_phrases = None
@@ -16,11 +16,10 @@ def load_phrases():
     global _all_phrases
     if _all_phrases is None:
         settings = get_settings()
-        phrases_path: Path | None = settings.phrases_path
-        if phrases_path is None:
-            log_message("Domain settings missing phrases_path; no phrases loaded", "WARN")
-            return []
-        if not phrases_path.exists():
+        phrases_path = settings.phrases_path or package_resource(
+            "resources", "phrases_tagged.json"
+        )
+        if not phrases_path.is_file():
             log_message(f"Missing phrases file at {phrases_path}", "ERROR")
             # Return an empty list to prevent crashes, but log the error
             return []

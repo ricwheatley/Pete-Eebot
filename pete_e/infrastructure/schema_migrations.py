@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+from importlib.resources.abc import Traversable
 import json
 import os
 from pathlib import Path
 import re
-import sysconfig
 from time import perf_counter
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import psycopg
 from psycopg import ClientCursor
+
+from pete_e.package_resources import package_resource
 
 
 LEDGER_TABLE = "petee_schema_migrations"
@@ -64,7 +66,7 @@ class Migration:
     filename: str
     checksum: str
     position: int
-    path: Path
+    path: Traversable
     transactional: bool = True
 
 
@@ -338,31 +340,20 @@ SCHEMA_PROBES: tuple[SchemaProbe, ...] = (
 )
 
 
-def _candidate_migration_directories() -> Iterable[Path]:
-    configured = os.getenv("PETEEEBOT_MIGRATIONS_DIR")
-    if configured:
-        yield Path(configured).expanduser()
-    yield Path(__file__).resolve().parents[2] / "migrations"
-    yield Path.cwd() / "migrations"
-    yield Path(sysconfig.get_path("data")) / "share" / "pete_e" / "migrations"
-
-
-def migrations_directory(path: Path | str | None = None) -> Path:
+def migrations_directory(path: Path | str | None = None) -> Traversable:
     """Resolve the authoritative migration directory without database access."""
 
-    if path is not None:
-        candidate = Path(path).resolve()
+    configured = path if path is not None else os.getenv("PETEEEBOT_MIGRATIONS_DIR")
+    if configured is not None:
+        candidate = Path(configured).expanduser().resolve()
         if not (candidate / MANIFEST_FILENAME).is_file():
             raise ManifestError(f"Migration manifest not found in {candidate}")
         return candidate
 
-    checked: list[str] = []
-    for candidate in _candidate_migration_directories():
-        resolved = candidate.resolve()
-        checked.append(str(resolved))
-        if (resolved / MANIFEST_FILENAME).is_file():
-            return resolved
-    raise ManifestError("Migration manifest not found; checked: " + ", ".join(checked))
+    bundled = package_resource("migrations")
+    if not (bundled / MANIFEST_FILENAME).is_file():
+        raise ManifestError("Bundled migration manifest is missing from pete_e/migrations")
+    return bundled
 
 
 def load_manifest(path: Path | str | None = None) -> tuple[Migration, ...]:
@@ -393,7 +384,11 @@ def load_manifest(path: Path | str | None = None) -> tuple[Migration, ...]:
         raise ManifestError(f"First migration must be {INITIAL_REVISION}")
 
     tracked_files = set(filenames)
-    actual_files = {item.name for item in directory.glob("*.sql")}
+    actual_files = {
+        item.name
+        for item in directory.iterdir()
+        if item.is_file() and item.name.endswith(".sql")
+    }
     if tracked_files != actual_files:
         missing = sorted(tracked_files - actual_files)
         untracked = sorted(actual_files - tracked_files)
@@ -439,7 +434,7 @@ def previous_release_revision(path: Path | str | None = None) -> str:
     directory = migrations_directory(path)
     payload = json.loads((directory / MANIFEST_FILENAME).read_text(encoding="utf-8"))
     revision = str(payload.get("previous_release_revision") or "")
-    revisions = {migration.revision for migration in load_manifest(directory)}
+    revisions = {migration.revision for migration in load_manifest(path)}
     if revision not in revisions:
         raise ManifestError("previous_release_revision is not present in the migration manifest")
     return revision

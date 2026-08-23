@@ -310,7 +310,7 @@ def test_migration_backfills_existing_effective_values_as_initial_baseline(
     postgres_test_dsn: str,
 ) -> None:
     migration = Path(
-        "migrations/20260820_add_readiness_adjustment_idempotency.sql"
+        "pete_e/migrations/20260820_add_readiness_adjustment_idempotency.sql"
     ).read_text(encoding="utf-8")
     with psycopg.connect(postgres_test_dsn, autocommit=True) as connection:
         connection.execute("DELETE FROM training_plans")

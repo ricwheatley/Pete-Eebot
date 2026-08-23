@@ -541,6 +541,22 @@ def test_log_path_fallback_notice_is_consumed_once(
     assert settings_value.consume_log_path_notice() is None
 
 
+def test_phrase_resource_defaults_to_package_data_and_supports_override(
+    base_settings_data: dict[str, object], tmp_path: Path
+) -> None:
+    bundled = Settings(_env_file=None, **base_settings_data)
+    override_path = tmp_path / "phrases.json"
+    overridden = Settings(
+        _env_file=None,
+        **base_settings_data,
+        PETEEEBOT_PHRASES_FILE=override_path,
+    )
+
+    assert bundled.phrases_path.is_file()
+    assert bundled.phrases_path.name == "phrases_tagged.json"
+    assert overridden.phrases_path == override_path
+
+
 def test_operational_cron_and_backup_settings_are_accepted(base_settings_data: dict[str, object]) -> None:
     settings_value = Settings(
         _env_file=None,

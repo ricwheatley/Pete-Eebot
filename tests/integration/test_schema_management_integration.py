@@ -247,7 +247,7 @@ def test_failed_migration_rolls_back_schema_and_ledger_then_can_rerun(
     dsn = disposable_database_factory("failure")
     upgrade_database(dsn)
     copied = tmp_path / "migrations"
-    shutil.copytree("migrations", copied)
+    shutil.copytree("pete_e/migrations", copied)
     failing = copied / "99999999_failure_probe.sql"
     failing.write_text(
         "CREATE TABLE migration_failure_probe (id INTEGER PRIMARY KEY);\nSELECT 1 / 0;\n",

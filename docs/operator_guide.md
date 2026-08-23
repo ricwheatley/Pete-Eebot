@@ -760,7 +760,7 @@ The current `sp_metrics_overview` migration history hard-codes the existing big 
 If you replace those lifts system-wide and still want metrics output to show the new lifts, you must:
 
 1. add a new ordered migration that replaces `sp_metrics_overview`
-2. add its checksum and revision to `migrations/manifest.json`
+2. add its checksum and revision to `pete_e/migrations/manifest.json`
 3. test previous-to-head, then deploy through `pete-schema upgrade`
 
 Example deployment route:
@@ -1030,7 +1030,7 @@ Code files you will most likely touch:
 - `pete_e/application/orchestrator.py`
 - `pete_e/cli/messenger.py`
 - `pete_e/api.py`
-- `migrations/manifest.json`
+- `pete_e/migrations/manifest.json`
 - `docs/schema_management.md`
 
 DB tables you will most likely touch:

@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pete_e"
 version = "1.0.0"
 description = "Personal health and fitness orchestrator."
+readme = "README.md"
 requires-python = ">=3.11,<3.14"
 
 # Runtime dependency constraints are the authoritative human-edited input.
@@ -35,7 +36,7 @@ dev = [
     "pip-audit==2.10.1",
     "pytest>=9.0.3,<10",
     "setuptools==84.0.0",
-    "twine>=5.1,<6",
+    "twine==6.2.0",
     "ruff==0.5.0",
     "uv==0.12.5",
     "wheel==0.48.0",
@@ -55,21 +56,51 @@ pete-schema = "pete_e.cli.schema:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["pete_e*"]
+namespaces = true
+include = [
+    "pete_e",
+    "pete_e.api_routes",
+    "pete_e.application",
+    "pete_e.application.workflows",
+    "pete_e.cli",
+    "pete_e.config",
+    "pete_e.domain",
+    "pete_e.infrastructure",
+    "pete_e.infrastructure.mappers",
+    "pete_e.migrations",
+    "pete_e.utils",
+]
+exclude = [
+    "tests*",
+    "scripts*",
+    "docs*",
+    "venv*",
+    ".venv*",
+    "env*",
+    "ENV*",
+    "build*",
+    "dist*",
+    ".eggs*",
+    "*.egg-info*",
+    "logs*",
+    "mocks*",
+    "patches*",
+    "init-db*",
+    "pete_e.logs*",
+    "pete_e.resources*",
+    "pete_e.static*",
+    "pete_e.templates*",
+]
 
 [tool.setuptools.package-data]
 pete_e = [
     "templates/**/*.html",
-    "static/**/*",
-    "resources/**/*.json",
-    "resources/*.sh",
-    "resources/*.service",
-    "resources/*.sudoers",
-    "resources/peteeebot-dispatch-deploy",
+    "static/*.css",
+    "static/*.js",
+    "resources/phrases_tagged.json",
+    "resources/pete_crontab.csv",
 ]
-
-[tool.setuptools.data-files]
-"share/pete_e/migrations" = ["migrations/*.sql", "migrations/manifest.json"]
+"pete_e.migrations" = ["*.sql", "manifest.json"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

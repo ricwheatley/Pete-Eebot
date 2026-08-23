@@ -64,7 +64,7 @@ Not supported today:
 
 ### 1.4 DB migration path
 
-- `migrations/manifest.json` is the authoritative ordered/checksummed history.
+- `pete_e/migrations/manifest.json` is the authoritative ordered/checksummed history.
 - `petee_schema_migrations` is the database revision ledger.
 - `pete-schema status|preflight|upgrade|verify` is the only supported apply path.
 - `init-db/` intentionally has no executable SQL; development reset is a separately
@@ -566,7 +566,7 @@ rollback, and future profile-scoping guidance.
 - Removed the legacy app `Dockerfile`.
 - Removed the Compose `app` service that built the stale image and then idled with `tail -f /dev/null`.
 - Kept `docker-compose.yml` as the supported local Postgres helper.
-- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `uv.lock`, `pete_e/`, `scripts/`, and `migrations/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
+- If a containerized app profile is needed later, create a fresh Dockerfile around the packaged project (`pyproject.toml`, `uv.lock`, `pete_e/`, and `scripts/`) and define a real API/worker command instead of restoring the old migration-image assumptions.
 
 ### 8.2 Disabled/missing cron scripts
 

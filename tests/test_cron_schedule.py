@@ -4,17 +4,22 @@ import csv
 from pathlib import Path
 import re
 
-from pete_e.infrastructure.cron_manager import build_crontab_from_csv
+from pete_e.infrastructure import cron_manager
+from pete_e.infrastructure.cron_manager import CRON_CSV, build_crontab_from_csv
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CRON_CSV = REPO_ROOT / "pete_e" / "resources" / "pete_crontab.csv"
 
 
 def _load_rows() -> list[dict[str, str]]:
     with CRON_CSV.open(encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
     """Perform load rows."""
+
+
+def test_cron_source_is_a_bundled_resource() -> None:
+    assert CRON_CSV.is_file()
+    assert CRON_CSV.name == "pete_crontab.csv"
 
 
 def test_core_automation_jobs_are_present_and_enabled() -> None:
@@ -69,3 +74,14 @@ def test_rendered_crontab_includes_core_jobs_and_omits_disabled_entries() -> Non
     assert "scripts.log_rotate" not in crontab
     assert "scripts.check_for_updates" not in crontab
     """Perform test rendered crontab includes core jobs and omits disabled entries."""
+
+
+def test_generated_crontab_is_written_to_an_external_target(
+    monkeypatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "state" / "pete_crontab.txt"
+    monkeypatch.setattr(cron_manager, "CRON_TXT", output)
+
+    assert cron_manager.save_crontab_file() == output
+    assert output.is_file()
+    assert "pete morning-report --send" in output.read_text(encoding="utf-8")

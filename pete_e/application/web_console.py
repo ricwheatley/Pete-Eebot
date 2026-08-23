@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import re
 import csv
 from datetime import date, timedelta
-from pathlib import Path
+from importlib.util import find_spec
+import json
+import re
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -526,7 +526,7 @@ class WebConsoleReadModel:
 
     def scheduler(self) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
-        path = Path(CRON_CSV)
+        path = CRON_CSV
         try:
             with path.open(encoding="utf-8") as handle:
                 for row in csv.DictReader(handle):
@@ -638,8 +638,11 @@ def _alert_from_log_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _cron_command_target_missing(command: str) -> bool:
     module_names = re.findall(r"-m\s+([A-Za-z0-9_\.]+)", command or "")
-    repo_root = Path(__file__).resolve().parents[2]
     for module_name in module_names:
-        if not (repo_root / f"{module_name.replace('.', '/')}.py").exists():
+        try:
+            available = find_spec(module_name) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            available = False
+        if not available:
             return True
     return False

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
+import tarfile
 import venv
+import zipfile
 
 from click import unstyle
 import pytest
@@ -38,6 +39,12 @@ def _venv_schema_cli(venv_dir: Path) -> Path:
 def _artifact_environment(tmp_path: Path) -> dict[str, str]:
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
+    for name in (
+        "PETEEEBOT_CRON_SOURCE",
+        "PETEEBOT_MIGRATIONS_DIR",
+        "PETEEBOT_PHRASES_FILE",
+    ):
+        environment.pop(name, None)
     environment.update(
         {
             "ENVIRONMENT": "testing",
@@ -64,43 +71,152 @@ def _artifact_environment(tmp_path: Path) -> dict[str, str]:
             "POSTGRES_DB": "pete_e_test_artifact",
             "DATABASE_URL": "postgresql://pete_test:pete_test@127.0.0.1:1/pete_e_test_artifact",
             "PETEEEBOT_API_KEY": "artifact-api-key",
+            "PETEEEBOT_CRONTAB_OUTPUT": str(tmp_path / "state" / "pete_crontab.txt"),
             "PETE_LOG_TO_CONSOLE": "false",
         }
     )
     return environment
 
 
-def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> None:
-    build_source = tmp_path / "build-source"
-    build_source.mkdir()
-    shutil.copytree(
-        ROOT / "pete_e",
-        build_source / "pete_e",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-    shutil.copy2(ROOT / "pyproject.toml", build_source / "pyproject.toml")
-    shutil.copy2(ROOT / "README.md", build_source / "README.md")
-    shutil.copytree(ROOT / "migrations", build_source / "migrations")
+def _wheel_members(path: Path) -> set[str]:
+    with zipfile.ZipFile(path) as archive:
+        return set(archive.namelist())
 
-    wheel_dir = tmp_path / "wheelhouse"
-    wheel_dir.mkdir()
+
+def _sdist_members(path: Path) -> set[str]:
+    with tarfile.open(path, "r:gz") as archive:
+        names = {member.name for member in archive.getmembers() if member.isfile()}
+    roots = {name.split("/", 1)[0] for name in names}
+    assert len(roots) == 1, sorted(roots)
+    root = roots.pop()
+    return {name.removeprefix(f"{root}/") for name in names if name != root}
+
+
+def _assert_artifact_contents(members: set[str], *, wheel: bool) -> None:
+    required = {
+        "pete_e/resources/phrases_tagged.json",
+        "pete_e/resources/pete_crontab.csv",
+        "pete_e/static/operator_console.css",
+        "pete_e/static/operator_console.js",
+        "pete_e/templates/auth/login.html",
+        "pete_e/templates/console/base.html",
+        "pete_e/migrations/manifest.json",
+        "pete_e/migrations/00000000_initial_schema.sql",
+        "pete_e/migrations/20260822_trust_public_edge.sql",
+    }
+    assert required <= members, sorted(required - members)
+
+    expected_python_packages = {
+        "pete_e",
+        "pete_e.api_routes",
+        "pete_e.application",
+        "pete_e.application.workflows",
+        "pete_e.cli",
+        "pete_e.config",
+        "pete_e.domain",
+        "pete_e.infrastructure",
+        "pete_e.infrastructure.mappers",
+        "pete_e.migrations",
+        "pete_e.utils",
+    }
+    actual_python_packages = {
+        name.rsplit("/", 1)[0].replace("/", ".")
+        for name in members
+        if name.startswith("pete_e/") and name.endswith(".py")
+    }
+    assert actual_python_packages == expected_python_packages
+
+    forbidden_prefixes = (
+        ".agents/",
+        ".eggs/",
+        ".github/",
+        ".venv/",
+        "build/",
+        "dist/",
+        "docs/",
+        "env/",
+        "ENV/",
+        "init-db/",
+        "logs/",
+        "mocks/",
+        "patches/",
+        "scripts/",
+        "tests/",
+        "venv/",
+    )
+    relative_members = members if not wheel else {
+        name for name in members if not name.startswith("pete_e-1.0.0.dist-info/")
+    }
+    assert not {
+        name
+        for name in relative_members
+        if name.startswith(forbidden_prefixes)
+    }
+
+    checkout_only_resources = {
+        "pete_e/resources/531_Manual-DESKTOP-1FJ3ER8.pdf",
+        "pete_e/resources/deploy-wrapper.sh",
+        "pete_e/resources/deploy.sh",
+        "pete_e/resources/install-systemd-units.sh",
+        "pete_e/resources/peteeebot-deploy.sudoers",
+        "pete_e/resources/peteeebot-deploy@.service",
+        "pete_e/resources/peteeebot-dispatch-deploy",
+        "pete_e/resources/peteeebot.service",
+    }
+    assert not checkout_only_resources.intersection(members)
+
+
+def test_built_wheel_cli_api_and_resources_outside_checkout(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
     build = subprocess.run(
         [
             sys.executable,
-            "-c",
-            (
-                "from setuptools.build_meta import build_wheel; "
-                f"print(build_wheel({str(wheel_dir)!r}))"
-            ),
+            "-m",
+            "uv",
+            "build",
+            "--out-dir",
+            str(artifact_dir),
         ],
-        cwd=build_source,
+        cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=180,
     )
     assert build.returncode == 0, build.stdout + build.stderr
-    wheel = next(wheel_dir.glob("pete_e-*.whl"))
+    wheel = next(artifact_dir.glob("pete_e-*.whl"))
+    sdist = next(artifact_dir.glob("pete_e-*.tar.gz"))
+
+    metadata_check = subprocess.run(
+        [sys.executable, "-m", "twine", "check", str(wheel), str(sdist)],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert metadata_check.returncode == 0, metadata_check.stdout + metadata_check.stderr
+
+    wheel_members = _wheel_members(wheel)
+    sdist_members = _sdist_members(sdist)
+    _assert_artifact_contents(wheel_members, wheel=True)
+    _assert_artifact_contents(sdist_members, wheel=False)
+
+    metadata_name = next(
+        name for name in wheel_members if name.endswith(".dist-info/METADATA")
+    )
+    with zipfile.ZipFile(wheel) as archive:
+        metadata = archive.read(metadata_name).decode("utf-8")
+    requires_python = next(
+        line.partition(":")[2].strip()
+        for line in metadata.splitlines()
+        if line.startswith("Requires-Python:")
+    )
+    assert {item.strip() for item in requires_python.split(",")} == {
+        ">=3.11",
+        "<3.14",
+    }
 
     environment_dir = tmp_path / "installed-environment"
     venv.EnvBuilder(with_pip=True).create(environment_dir)
@@ -198,14 +314,24 @@ from pathlib import Path
 import pete_e
 from pete_e.api import app
 from pete_e.api_routes.status_sync import healthz
-from pete_e.infrastructure.schema_migrations import head_revision
+from pete_e.config import settings
+from pete_e.domain.phrase_picker import load_phrases
+from pete_e.infrastructure.cron_manager import CRON_CSV, CRON_TXT, build_crontab_from_csv
+from pete_e.infrastructure.schema_migrations import head_revision, migrations_directory
 
 module_path = Path(pete_e.__file__).resolve()
 assert Path({str(ROOT)!r}) not in module_path.parents, module_path
 assert (files('pete_e') / 'resources' / 'phrases_tagged.json').is_file()
-assert (files('pete_e') / 'resources' / 'peteeebot-deploy@.service').is_file()
-assert (files('pete_e') / 'resources' / 'peteeebot-dispatch-deploy').is_file()
+assert (files('pete_e') / 'resources' / 'pete_crontab.csv').is_file()
 assert (files('pete_e') / 'templates' / 'console' / 'base.html').is_file()
+assert (files('pete_e') / 'static' / 'operator_console.css').is_file()
+assert (files('pete_e') / 'migrations' / 'manifest.json').is_file()
+assert settings.phrases_path.is_file()
+assert len(load_phrases()) > 100
+assert CRON_CSV.is_file()
+assert 'pete morning-report --send' in build_crontab_from_csv()
+assert Path({str(ROOT)!r}) not in Path(CRON_TXT).resolve().parents
+assert Path({str(ROOT)!r}) not in Path(str(migrations_directory())).resolve().parents
 assert head_revision() == '20260822_trust_public_edge'
 
 schema = app.openapi()
