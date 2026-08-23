@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
+from urllib.parse import parse_qsl
 
 import fastapi
 from fastapi import HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 
 from pete_e.api_routes.dependencies import (
     clear_session_cookies,
@@ -27,6 +29,91 @@ from pete_e.domain.auth import AuthenticatedPrincipal
 
 router = fastapi.APIRouter()
 
+_LOGIN_REQUEST_BODY = {
+    "required": True,
+    "content": {
+        media_type: {
+            "schema": {
+                "type": "object",
+                "required": ["login", "password"],
+                "properties": {
+                    "login": {"type": "string"},
+                    "password": {"type": "string", "format": "password"},
+                    "mfa_code": {"type": "string"},
+                },
+            }
+        }
+        for media_type in ("application/json", "application/x-www-form-urlencoded")
+    },
+}
+
+
+def _request_validation_error(error_type: str, message: str) -> RequestValidationError:
+    return RequestValidationError(
+        [
+            {
+                "type": error_type,
+                "loc": ("body",),
+                "msg": message,
+            }
+        ]
+    )
+
+
+async def _login_payload(request: Request) -> dict[str, Any]:
+    """Parse only the two evidenced login media types without retaining raw credentials."""
+
+    content_type = str(request.headers.get("content-type") or "")
+    media_type = content_type.partition(";")[0].strip().lower()
+
+    if media_type == "application/x-www-form-urlencoded":
+        try:
+            encoded = (await request.body()).decode("utf-8", errors="strict")
+            return dict(
+                parse_qsl(
+                    encoded,
+                    keep_blank_values=True,
+                    strict_parsing=True,
+                    encoding="utf-8",
+                    errors="strict",
+                    max_num_fields=20,
+                )
+            )
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise _request_validation_error(
+                "form_parsing",
+                "Input should be valid URL-encoded form data",
+            ) from exc
+
+    if media_type == "application/json" or media_type.endswith("+json"):
+        try:
+            payload = await request.json()
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise _request_validation_error(
+                "json_invalid", "Invalid JSON body"
+            ) from exc
+        if payload is None:
+            return {}
+        if not isinstance(payload, dict):
+            raise _request_validation_error(
+                "dict_type", "Input should be a valid dictionary"
+            )
+        return payload
+
+    if not media_type and not await request.body():
+        return {}
+
+    raise HTTPException(
+        status_code=415,
+        detail={
+            "code": "unsupported_media_type",
+            "message": (
+                "Login requests require application/json or "
+                "application/x-www-form-urlencoded"
+            ),
+        },
+    )
+
 
 def _user_agent(request: Request) -> str | None:
     headers = getattr(request, "headers", {}) or {}
@@ -44,8 +131,12 @@ def _user_payload(user) -> dict[str, Any]:
     }
 
 
-@router.post("/auth/login")
-def login(request: Request, response: Response, payload: dict[str, Any] | None = None):
+@router.post("/auth/login", openapi_extra={"requestBody": _LOGIN_REQUEST_BODY})
+def login(
+    request: Request,
+    response: Response,
+    payload: Annotated[dict[str, Any], fastapi.Depends(_login_payload)],
+):
     payload = payload or {}
     login_value = payload.get("login") or payload.get("username") or payload.get("email")
     password = payload.get("password")

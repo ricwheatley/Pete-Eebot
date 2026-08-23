@@ -7,6 +7,7 @@ import threading
 import time
 
 import pytest
+from fastapi.exceptions import RequestValidationError
 
 from pete_e import api_logging
 from pete_e import api_errors
@@ -146,6 +147,83 @@ def test_error_handlers_share_consistent_schema_for_application_and_http_errors(
 
     assert _response_payload(http_response)["error"]["details"] == {"active_operation": "sync"}
     assert _response_payload(app_response)["error"]["code"] == "validation_failed"
+
+
+def test_validation_handler_redacts_non_json_request_input_and_credentials() -> None:
+    request = _Request({api_errors.REQUEST_ID_HEADER: "safe-validation-1"})
+    password = "validation-password-sentinel"
+    mfa_code = "validation-mfa-sentinel"
+    bearer = "validation-bearer-sentinel"
+    cookie = "validation-cookie-sentinel"
+    raw_body = (
+        f"login=synthetic-user&password={password}&mfa_code={mfa_code}"
+        f"&authorization={bearer}&cookie={cookie}"
+    ).encode()
+    exc = RequestValidationError(
+        [
+            {
+                "type": "dict_type",
+                "loc": ("body",),
+                "msg": "Input should be a valid dictionary",
+                "input": raw_body,
+                "ctx": {"error": ValueError(password)},
+            }
+        ]
+    )
+
+    response = asyncio.run(api_errors.validation_exception_handler(request, exc))
+
+    payload = _response_payload(response)
+    serialized = response.body.decode()
+    assert response.status_code == 422
+    assert payload["error"]["code"] == "validation_error"
+    assert payload["error"]["details"]["errors"][0]["input"] == "[REDACTED]"
+    assert payload["error"]["details"]["errors"][0]["ctx"] == "[REDACTED]"
+    for secret in (password, mfa_code, bearer, cookie, raw_body.decode()):
+        assert secret not in serialized
+
+
+def test_error_response_boundary_handles_arbitrary_non_json_values() -> None:
+    request = _Request()
+    secret = "object-repr-secret-sentinel"
+
+    class _UnsafeValue:
+        def __repr__(self) -> str:
+            return secret
+
+    cyclic: list[object] = []
+    cyclic.append(cyclic)
+    response = api_errors.build_error_response(
+        request,
+        status_code=422,
+        code="validation_error",
+        message="Request validation failed",
+        details={
+            "bytearray": bytearray(b"raw-byte-sentinel"),
+            "request_body": "password=body-password-sentinel",
+            "cookies": {"peteeebot_session": "cookie-session-sentinel"},
+            "password": "password-sentinel",
+            "token": "token-sentinel",
+            "unsafe": _UnsafeValue(),
+            "cyclic": cyclic,
+            "not_a_number": float("nan"),
+        },
+    )
+
+    serialized = response.body.decode()
+    payload = _response_payload(response)
+    assert response.status_code == 422
+    assert payload["error"]["details"]["password"] == "[REDACTED]"
+    assert payload["error"]["details"]["token"] == "[REDACTED]"
+    for unsafe in (
+        secret,
+        "body-password-sentinel",
+        "cookie-session-sentinel",
+        "raw-byte-sentinel",
+        "password-sentinel",
+        "token-sentinel",
+    ):
+        assert unsafe not in serialized
 
 
 def test_command_rate_limit_rejects_excess_requests(monkeypatch: pytest.MonkeyPatch) -> None:
