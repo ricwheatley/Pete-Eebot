@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def _table_block(sql: str, table_name: str) -> str:
-    start = sql.index(f"CREATE TABLE")
+    start = sql.index("CREATE TABLE")
     table_start = sql.index(table_name, start)
     return sql[table_start: sql.index(");", table_start)]
 

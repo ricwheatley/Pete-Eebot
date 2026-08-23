@@ -41,40 +41,32 @@ jobs:
       - name: Audit the locked dependency graph
         run: .venv/bin/python -m pip_audit --local --skip-editable
 
-      - name: Lint critical modules
-        run: |
-          .venv/bin/ruff check \
-            pete_e/api.py \
-            pete_e/api_errors.py \
-            pete_e/api_security.py \
-            pete_e/api_routes \
-            pete_e/application/orchestrator.py \
-            pete_e/application/plan_generation.py \
-            pete_e/application/sync.py \
-            pete_e/config/config.py \
-            pete_e/infrastructure/postgres_dal.py \
-            pete_e/infrastructure/schema_migrations.py \
-            pete_e/cli/schema.py \
-            pete_e/logging_setup.py \
-            tests/conftest.py \
-            tests/config/test_settings.py \
-            tests/integration/conftest.py \
-            tests/integration/test_api_contracts.py \
-            tests/integration/test_postgres_integration.py \
-            tests/integration/test_schema_management_integration.py \
-            tests/postgres_safety.py \
-            tests/test_api_cli_commands.py \
-            tests/test_dependency_imports.py \
-            tests/test_dependency_runtime_smokes.py \
-            tests/test_installed_artifact.py \
-            tests/test_postgres_safety.py \
-            tests/test_tenacity_contract.py
+      - name: Lint repository Python scope
+        run: .venv/bin/ruff check pete_e tests scripts
+
+      - name: Check tranche formatting scope
+        run: >-
+          .venv/bin/ruff format --check
+          pete_e/domain/weekly_narrative.py
+          tests/domain/test_weekly_narrative_analysis.py
+          tests/domain/test_weekly_narrative_characterization.py
+
+      - name: Check incremental typing boundary
+        run: .venv/bin/mypy
 
       - name: Run unit lane
         run: .venv/bin/python -m pytest -q -m unit
 
       - name: Run real-framework contract lane
         run: .venv/bin/python -m pytest -q -m contract
+
+      - name: Enforce measured branch-coverage ratchets
+        if: matrix.python-version == '3.11'
+        run: |
+          .venv/bin/coverage erase
+          .venv/bin/coverage run -m pytest -q -m "unit or contract"
+          .venv/bin/coverage report
+          .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 
   postgres-integration:
     runs-on: ubuntu-latest

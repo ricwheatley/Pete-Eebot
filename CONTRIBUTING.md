@@ -26,6 +26,10 @@ Install and run the real-dependency test lanes described in
 [`docs/testing.md`](docs/testing.md). Tests must fake application-owned ports
 locally; do not insert replacement third-party modules into `sys.modules`.
 PostgreSQL tests require the documented explicit disposable-database opt-in.
+Architecture refactors must follow the bounded, measured pattern in
+[`docs/maintainability_tranches.md`](docs/maintainability_tranches.md): preserve
+the external contract, characterize it first, and expand coverage and typing one
+explicit tranche at a time.
 
 ## Secret scanning
 

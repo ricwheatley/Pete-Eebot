@@ -3,13 +3,14 @@
 import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple
 
 from pete_e.domain import schedule_rules
 from pete_e.domain.phrase_picker import random_phrase as phrase_for
 from pete_e.domain import narrative_utils
 from pete_e.domain.configuration import get_settings
 from pete_e.domain.logging import log_message
+from pete_e.domain.weekly_narrative import analyze_weekly_metrics
 from pete_e.utils import converters, formatters, helpers
 
 
@@ -873,7 +874,12 @@ def _no_plan_message(week_number: int) -> str:
     )
     return message.render()
 
-def compare_text(current, previous, unit: str = "", context: str = "") -> str:
+def compare_text(
+    current: int | float,
+    previous: int | float | None,
+    unit: str = "",
+    context: str = "",
+) -> str:
     """Return chatty comparative text instead of robotic % changes."""
     if previous is None or previous == 0:
         return f"{current}{unit} {context}".strip()
@@ -1164,133 +1170,19 @@ def build_weekly_narrative(metrics: Dict[str, Any]) -> str:
         return "Howdy Ric 🤠\n\nNo logs found for last week. Rest week?"
 
     today = datetime.utcnow().date()
-    all_dates = sorted(days.keys())
-    sample_pairs: List[tuple[date, Dict[str, Any]]] = []
-    for iso_day in all_dates:
-        parsed_day = converters.to_date(iso_day)
-        if parsed_day is None:
-            continue
-        payload = days.get(iso_day)
-        if isinstance(payload, dict):
-            sample_pairs.append((parsed_day, payload))
-    sample_pairs.sort(key=lambda item: item[0])
-
-
-    last_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 8)]
-    prev_week = [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(8, 15)]
-
-    week_data = [days[d] for d in last_week if d in days]
-    prev_data = [days[d] for d in prev_week if d in days]
-
     greeting = random.choice([
         "Howdy Ric 🤠",
         "Ey up Ric 👋",
         "Another week down, mate!"
     ])
-
-    insights: List[str] = []
-
-    # Strength
-    total_vol = sum(ex["volume_kg"] for day in week_data for ex in day.get("strength", []))
-    prev_vol = sum(ex["volume_kg"] for day in prev_data for ex in day.get("strength", [])) if prev_data else None
-    if total_vol:
-        insights.append(f"Lifting volume hit {compare_text(int(total_vol), int(prev_vol) if prev_vol else None, 'kg')} this week.")
-
-    # Steps
-    total_steps = sum(day.get("activity", {}).get("steps", 0) for day in week_data)
-    prev_steps = sum(day.get("activity", {}).get("steps", 0) for day in prev_data) if prev_data else None
-    if total_steps:
-        insights.append(f"You clocked {compare_text(int(total_steps), prev_steps, 'steps', 'this week')}.")
-
-    # Sleep
-    sleep_minutes = [day.get("sleep", {}).get("asleep_minutes", 0) for day in week_data]
-    prev_sleep = [day.get("sleep", {}).get("asleep_minutes", 0) for day in prev_data] if prev_data else []
-    if sleep_minutes:
-        avg_sleep = round(sum(sleep_minutes) / len(sleep_minutes) / 60)
-        prev_avg = round(sum(prev_sleep) / len(prev_sleep) / 60) if prev_sleep else None
-        insights.append(f"Average sleep was {compare_text(avg_sleep, prev_avg, 'h', 'per night')}.")
-
-
-    # Body composition
-    def _extract_body_metric(day: Dict[str, Any], field: str) -> Optional[float]:
-        body_section = day.get("body")
-        if isinstance(body_section, dict):
-            value = body_section.get(field)
-        else:
-            value = None
-        if value is None:
-            value = day.get(field)
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    def _extract_body_age(day: Dict[str, Any]) -> Optional[float]:
-        return _extract_body_metric(day, "body_age_years")
-
-    muscle_week: List[float] = []
-    for day in week_data:
-        value = _extract_body_metric(day, "muscle_pct")
-        if value is not None:
-            muscle_week.append(value)
-
-    muscle_prev: List[float] = []
-    if prev_data:
-        for day in prev_data:
-            value = _extract_body_metric(day, "muscle_pct")
-            if value is not None:
-                muscle_prev.append(value)
-
-    if muscle_week:
-        avg_muscle = round(sum(muscle_week) / len(muscle_week), 1)
-        avg_muscle_prev = round(sum(muscle_prev) / len(muscle_prev), 1) if muscle_prev else None
-        if avg_muscle_prev is None:
-            insights.append(f"Muscle composition averaged {avg_muscle:.1f}% this week.")
-        else:
-            diff = round(avg_muscle - avg_muscle_prev, 1)
-            if abs(diff) >= 0.5:
-                direction = "up" if diff > 0 else "down"
-                insights.append(
-                    f"Muscle composition averaged {avg_muscle:.1f}% this week, {direction} {abs(diff):.1f}% from last week."
-                )
-
-    body_age_week: List[float] = []
-    for day in week_data:
-        value = _extract_body_age(day)
-        if value is not None:
-            body_age_week.append(value)
-
-    body_age_prev: List[float] = []
-    if prev_data:
-        for day in prev_data:
-            value = _extract_body_age(day)
-            if value is not None:
-                body_age_prev.append(value)
-
-    if body_age_week:
-        avg_current = round(sum(body_age_week) / len(body_age_week), 1)
-        avg_prev = round(sum(body_age_prev) / len(body_age_prev), 1) if body_age_prev else None
-        if avg_prev is None:
-            insights.append(f"Body Age averaged {avg_current:.1f}y this week.")
-        else:
-            diff = round(avg_current - avg_prev, 1)
-            if diff > 0:
-                insights.append(f"Body Age averaged {avg_current:.1f}y this week, up {abs(diff):.1f}y from last week.")
-            elif diff < 0:
-                insights.append(f"Body Age averaged {avg_current:.1f}y this week, down {abs(diff):.1f}y from last week.")
-            else:
-                insights.append(f"Body Age averaged {avg_current:.1f}y this week, matching last week.")
-
-    trend_lines: List[str] = []
-    if sample_pairs:
-        trend_as_of = min(today - timedelta(days=1), sample_pairs[-1][0])
-        trend_lines = compute_trend_lines(sample_pairs, as_of=trend_as_of, limit=2)
-    if trend_lines:
-        first_line, *extra_lines = trend_lines
-        insights.append(f"Momentum backdrop - {first_line}")
-        insights.extend(extra_lines)
+    analysis = analyze_weekly_metrics(
+        days,
+        today=today,
+        compare=compare_text,
+        trends=compute_trend_lines,
+        parse_date=converters.to_date,
+    )
+    insights = list(analysis.insights)
 
     if not insights:
         return f"{greeting}\n\nQuiet week logged — recovery matters too."

@@ -31,7 +31,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "coverage>=7.10,<8",
     "httpx2>=2.12,<3",
+    "mypy>=2.3,<3",
     "pip==26.2.1",
     "pip-audit==2.10.1",
     "pytest>=9.0.3,<10",
@@ -111,3 +113,18 @@ markers = [
     "integration: tests requiring an explicitly opted-in disposable PostgreSQL database",
     "artifact: tests that build and install the wheel outside the source checkout",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["pete_e"]
+
+[tool.coverage.report]
+fail_under = 66
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+files = ["pete_e/domain/weekly_narrative.py"]
+python_version = "3.11"
+show_error_codes = true
+strict = true

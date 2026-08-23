@@ -118,3 +118,38 @@ it, the integration test is skipped by design:
 ```bash
 python -m pytest -q
 ```
+
+## Maintainability feedback ratchets
+
+The repository measures combined line and branch coverage for the real-framework
+unit/contract lanes. The 66% floor is the measured non-regression baseline from
+the first maintainability tranche; do not lower it to accommodate a change.
+
+```bash
+coverage erase
+coverage run -m pytest -q -m "unit or contract"
+coverage report
+coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
+```
+
+Static typing starts with one strict, explicit domain scope and should expand by
+completed tranche rather than suppressing the existing repository backlog:
+
+```bash
+mypy
+```
+
+Ruff's intended lint scope is repository-wide Python. Formatting remains a
+staged ratchet because a full pass would currently mix hundreds of mechanical
+changes with behavioral work:
+
+```bash
+ruff check pete_e tests scripts
+ruff format --check \
+  pete_e/domain/weekly_narrative.py \
+  tests/domain/test_weekly_narrative_analysis.py \
+  tests/domain/test_weekly_narrative_characterization.py
+```
+
+See [Incremental maintainability tranches](maintainability_tranches.md) for the
+selected boundary, before/after measurements, and future tranche order.

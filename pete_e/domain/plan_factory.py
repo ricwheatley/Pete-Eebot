@@ -14,7 +14,7 @@ from pete_e.domain.planner_flags import PlannerFeatureFlags
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.running_planner import RunningGoal, RunningPlanner
-from pete_e.domain.unified_load_coordinator import GlobalTrainingContext, SessionConstraintSet, UnifiedLoadCoordinator, WeeklyStressBudget
+from pete_e.domain.unified_load_coordinator import GlobalTrainingContext, SessionConstraintSet, UnifiedLoadCoordinator
 
 class PlanFactory:
     """Creates structured, in-memory representations of training plans."""
