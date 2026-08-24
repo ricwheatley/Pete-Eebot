@@ -29,6 +29,7 @@ LEGACY_RESET_MISSING_REVISIONS = (
     "20260511_add_nutrition_log_updated_at",
     "20260516_add_job_leases_and_recovery",
     "20260822_safe_job_ownership",
+    "20260823_restore_wger_workout_ingest",
 )
 
 _TRANSACTION_CONTROL = re.compile(
@@ -335,6 +336,18 @@ SCHEMA_PROBES: tuple[SchemaProbe, ...] = (
         """
         SELECT to_regclass('public.edge_rate_limit_counters') IS NOT NULL
            AND to_regclass('public.github_webhook_deliveries') IS NOT NULL
+        """,
+    ),
+    SchemaProbe(
+        "20260823_restore_wger_workout_ingest",
+        "stable Wger workout-log source identity",
+        """
+        SELECT count(*) = 3
+           AND to_regclass('public.ux_wger_logs_source_id') IS NOT NULL
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'wger_logs'
+          AND column_name IN ('wger_log_id', 'wger_session_id', 'performed_at')
         """,
     ),
 )

@@ -145,6 +145,12 @@
       "filename": "20260822_trust_public_edge.sql",
       "sha256": "81161c114a565ded9098e33d0425369915492d161816db991d6bd81e427e189e",
       "transactional": true
+    },
+    {
+      "revision": "20260823_restore_wger_workout_ingest",
+      "filename": "20260823_restore_wger_workout_ingest.sql",
+      "sha256": "4c1eeb5a72e986e1a7866ecc91822f8bc3d5d61f1fc95a0acbd245a74601125d",
+      "transactional": true
     }
   ]
 }

@@ -19,6 +19,7 @@ from pete_e.application.composition import (
     provide_validation_service,
     provide_wger_client,
     provide_wger_export_service,
+    provide_wger_workout_ingestor,
     provide_withings_client,
 )
 from pete_e.application.adapter_contracts import NotificationChannel
@@ -30,6 +31,7 @@ from pete_e.domain.configuration import DomainSettings, configure as configure_d
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.domain.planner_flags import parse_planner_feature_flags
+from pete_e.domain.wger_workouts import WgerWorkoutIngestor
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.postgres_dal import PostgresDal
 from pete_e.infrastructure.telegram_client import TelegramClient
@@ -122,11 +124,19 @@ def _register_defaults(container: Container) -> None:
         ),
     )
     container.register(
+        WgerWorkoutIngestor,
+        factory=lambda c: provide_wger_workout_ingestor(
+            repository=c.resolve(PostgresDal),
+            wger_client=c.resolve(WgerClient),
+        ),
+    )
+    container.register(
         DailySyncService,
         factory=lambda c: provide_daily_sync_service(
             repository=c.resolve(PostgresDal),
             withings_source=c.resolve(WithingsClient),
             apple_ingestor=c.resolve(AppleHealthIngestor),
+            wger_ingestor=c.resolve(WgerWorkoutIngestor),
         ),
     )
     container.register(ValidationService, factory=lambda c: provide_validation_service(dal=c.resolve(PostgresDal)))

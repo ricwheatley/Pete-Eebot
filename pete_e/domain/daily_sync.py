@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
-from typing import Any, Mapping, Protocol, Sequence
+from datetime import date, datetime, timedelta
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from pete_e.domain import logging as domain_logging
+from pete_e.domain.wger_workouts import WgerWorkoutIngestResult, WgerWorkoutIngestor
+
+
+WGER_SYNC_WINDOW_DAYS = 8
 
 
 @dataclass(frozen=True)
@@ -142,20 +146,44 @@ class DailySyncService:
         repository: DailyMetricsRepository,
         withings_source: WithingsDataSource,
         apple_ingestor: AppleHealthIngestor,
+        wger_ingestor: WgerWorkoutIngestor,
+        clock: Callable[[], date] | None = None,
+        wger_window_days: int = WGER_SYNC_WINDOW_DAYS,
     ) -> None:
+        if wger_window_days < 1:
+            raise ValueError("wger_window_days must be at least 1")
         self._repository = repository
         self._withings = withings_source
         self._apple = apple_ingestor
+        self._wger = wger_ingestor
+        self._clock = clock or date.today
+        self._wger_window_days = wger_window_days
         """Initialize this object."""
 
     def run_full(self, *, days: int) -> DailySyncResult:
         """Run the full multi-source sync."""
 
-        parts = [
+        parts: list[DailySyncSourceResult | AppleHealthIngestResult | WgerWorkoutIngestResult] = [
             self._sync_withings(days=days),
             self._ingest_apple(),
-            self._refresh_views(days=days, include_actual=True),
         ]
+        wger_result = self._ingest_wger()
+        parts.append(wger_result)
+        if wger_result.success:
+            parts.append(
+                self._refresh_views(
+                    days=days,
+                    include_actual=True,
+                    minimum_refresh_days=self._wger_window_days - 1,
+                )
+            )
+        else:
+            parts.append(
+                DailySyncSourceResult(
+                    success=True,
+                    statuses={"Database": "skipped"},
+                )
+            )
         return self._combine(parts)
 
     def run_withings_only(self, *, days: int) -> DailySyncResult:
@@ -214,9 +242,17 @@ class DailySyncService:
         )
         """Perform sync withings."""
 
-    def _refresh_views(self, *, days: int, include_actual: bool) -> DailySyncSourceResult:
+    def _refresh_views(
+        self,
+        *,
+        days: int,
+        include_actual: bool,
+        minimum_refresh_days: int = 0,
+    ) -> DailySyncSourceResult:
         try:
-            self._repository.refresh_daily_summary(days=days + 1)
+            self._repository.refresh_daily_summary(
+                days=max(days + 1, minimum_refresh_days)
+            )
             if include_actual:
                 self._repository.refresh_actual_view()
         except Exception:
@@ -250,7 +286,30 @@ class DailySyncService:
             )
         """Perform ingest apple."""
 
-    def _combine(self, parts: Sequence[DailySyncSourceResult | AppleHealthIngestResult]) -> DailySyncResult:
+    def _ingest_wger(self) -> WgerWorkoutIngestResult:
+        end_date = self._clock()
+        start_date = end_date - timedelta(days=self._wger_window_days - 1)
+        try:
+            return self._wger.ingest(
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except Exception as exc:
+            domain_logging.log_message(f"Wger sync failed: {exc}", "ERROR")
+            return WgerWorkoutIngestResult(
+                success=False,
+                failures=("Wger",),
+                statuses={"Wger": "failed"},
+                alerts=(),
+                error=str(exc),
+            )
+
+    def _combine(
+        self,
+        parts: Sequence[
+            DailySyncSourceResult | AppleHealthIngestResult | WgerWorkoutIngestResult
+        ],
+    ) -> DailySyncResult:
         success = True
         failures: list[str] = []
         statuses: dict[str, str] = {}
@@ -280,6 +339,7 @@ __all__ = [
     "DailySyncResult",
     "DailySyncService",
     "DailySyncSourceResult",
+    "WGER_SYNC_WINDOW_DAYS",
     "WithingsDataSource",
 ]
 

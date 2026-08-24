@@ -1,11 +1,85 @@
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from unittest.mock import patch, MagicMock
 
 # Assuming your DAL is in this structure
 from pete_e.infrastructure.postgres_dal import PostgresDal
+from pete_e.domain.wger_workouts import WgerWorkoutSet
 
 class TestPostgresDal(unittest.TestCase):
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_reconcile_wger_logs_replaces_only_requested_window(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = [{"id": 615}]
+
+        dal = PostgresDal()
+        workout_set = WgerWorkoutSet(
+            source_id="log-uuid",
+            session_id="session-uuid",
+            performed_at=datetime(2026, 8, 17, 8, tzinfo=timezone.utc),
+            day=date(2026, 8, 17),
+            exercise_id=615,
+            set_number=1,
+            reps=5,
+            weight_kg=Decimal("100.000"),
+            rir=2.0,
+        )
+
+        stored = dal.reconcile_wger_logs(
+            start_date=date(2026, 8, 17),
+            end_date=date(2026, 8, 23),
+            workout_sets=[workout_set],
+        )
+
+        self.assertEqual(stored, 1)
+        self.assertEqual(mock_cur.execute.call_args_list[1].args, (
+            "DELETE FROM wger_logs WHERE date BETWEEN %s AND %s;",
+            (date(2026, 8, 17), date(2026, 8, 23)),
+        ))
+        insert_sql, rows = mock_cur.executemany.call_args.args
+        self.assertIn("wger_log_id", insert_sql)
+        self.assertEqual(rows[0][0], date(2026, 8, 17))
+        self.assertEqual(rows[0][6], "log-uuid")
+        self.assertEqual(rows[0][7], "session-uuid")
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_reconcile_wger_logs_validates_catalogue_before_delete(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        mock_cur.fetchall.return_value = []
+        dal = PostgresDal()
+        workout_set = WgerWorkoutSet(
+            source_id="log-uuid",
+            session_id=None,
+            performed_at=datetime(2026, 8, 17, 8, tzinfo=timezone.utc),
+            day=date(2026, 8, 17),
+            exercise_id=9999,
+            set_number=1,
+            reps=5,
+            weight_kg=None,
+            rir=None,
+        )
+
+        with self.assertRaisesRegex(ValueError, "catalogue is missing exercise"):
+            dal.reconcile_wger_logs(
+                start_date=date(2026, 8, 17),
+                end_date=date(2026, 8, 23),
+                workout_sets=[workout_set],
+            )
+
+        self.assertEqual(mock_cur.execute.call_count, 1)
+        mock_cur.executemany.assert_not_called()
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_save_withings_daily(self, mock_get_pool):

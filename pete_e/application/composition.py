@@ -13,6 +13,7 @@ from pete_e.config import settings
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.domain.narrative_builder import NarrativeBuilder
+from pete_e.domain.wger_workouts import WgerWorkoutIngestor
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.ollama_client import OllamaChatClient
@@ -23,6 +24,7 @@ from pete_e.infrastructure.telegram_notification_channel import TelegramNotifica
 from pete_e.infrastructure.user_repository import PostgresUserRepository
 from pete_e.infrastructure.token_storage import JsonFileTokenStorage
 from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.wger_workout_ingestor import WgerWorkoutLogIngestor
 from pete_e.infrastructure.withings_client import WithingsClient, configured_withings_token_file
 
 
@@ -70,13 +72,29 @@ def provide_wger_export_service(*, dal: PostgresDal, wger_client: WgerClient) ->
     return WgerExportService(dal=dal, wger_client=wger_client)
 
 
+def provide_wger_workout_ingestor(
+    *,
+    repository: PostgresDal,
+    wger_client: WgerClient,
+) -> WgerWorkoutIngestor:
+    return WgerWorkoutLogIngestor(
+        repository=repository,
+        client=wger_client,
+    )
+
+
 def provide_daily_sync_service(
-    *, repository: PostgresDal, withings_source: WithingsClient, apple_ingestor: AppleHealthIngestor
+    *,
+    repository: PostgresDal,
+    withings_source: WithingsClient,
+    apple_ingestor: AppleHealthIngestor,
+    wger_ingestor: WgerWorkoutIngestor,
 ) -> DailySyncService:
     return DailySyncService(
         repository=repository,
         withings_source=withings_source,
         apple_ingestor=apple_ingestor,
+        wger_ingestor=wger_ingestor,
     )
 
 

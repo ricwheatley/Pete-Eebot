@@ -189,6 +189,10 @@ Desktop.ini
 
 *.logs
 
+# Local database safety copies
+backups/
+*.dump
+
 
 
 # The knowledge/ and docs/ directories should NOT be ignored in your

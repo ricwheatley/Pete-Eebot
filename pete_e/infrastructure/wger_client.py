@@ -5,9 +5,10 @@ both API key and username/password authentication flows.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -263,14 +264,37 @@ class WgerClient:
 
     # --- Catalog & Log Reading ---
     def get_workout_logs(self, start_date: date, end_date: date) -> List[Dict[str, Any]]:
-        """Fetches workout logs within a date range."""
+        """Fetch workout logs covering an inclusive local-date range."""
+
+        if start_date > end_date:
+            raise ValueError("start_date must be on or before end_date")
+
+        local_timezone = ZoneInfo(str(getattr(settings, "USER_TIMEZONE", "Europe/London")))
+        start_at = datetime.combine(start_date, time.min, tzinfo=local_timezone).astimezone(
+            timezone.utc
+        )
+        end_before = datetime.combine(
+            end_date + timedelta(days=1),
+            time.min,
+            tzinfo=local_timezone,
+        ).astimezone(timezone.utc)
         params = {
-            "ordering": "date",
+            "ordering": "date,id",
             "limit": 200,  # Max limit for wger
-            "date__gte": start_date.isoformat(),
-            "date__lte": end_date.isoformat(),
+            "date__gte": start_at.isoformat(),
+            "date__lt": end_before.isoformat(),
         }
         return self.get_all_pages("/workoutlog/", params=params)
+
+    def get_weight_units(self) -> List[Dict[str, Any]]:
+        """Return the configured routine weight-unit catalogue."""
+
+        return self.get_all_pages("/setting-weightunit/", params={"ordering": "id"})
+
+    def get_repetition_units(self) -> List[Dict[str, Any]]:
+        """Return units that distinguish repetitions from time and distance."""
+
+        return self.get_all_pages("/setting-repetitionunit/", params={"ordering": "id"})
 
     # --- Routine Writing ---
     def find_or_create_routine(self, name: str, description: str, start: date, end: date) -> Dict[str, Any]:

@@ -1,10 +1,51 @@
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
 
 from pete_e.infrastructure.wger_client import WgerClient, WgerError
+
+
+def test_get_workout_logs_uses_inclusive_local_date_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pete_e.infrastructure.wger_client.settings",
+        SimpleNamespace(
+            WGER_BASE_URL="https://wger.de/api/v2",
+            WGER_API_KEY="dummy-key",
+            WGER_USERNAME=None,
+            WGER_PASSWORD=None,
+            WGER_TIMEOUT=5.0,
+            WGER_MAX_RETRIES=3,
+            WGER_BACKOFF_BASE=0.5,
+            USER_TIMEZONE="Europe/London",
+            DEBUG_API=False,
+        ),
+    )
+    client = WgerClient(timeout=2.5)
+    calls: list[tuple[str, dict]] = []
+
+    def fake_get_all_pages(path: str, params=None):
+        calls.append((path, dict(params or {})))
+        return []
+
+    monkeypatch.setattr(client, "get_all_pages", fake_get_all_pages)
+
+    assert client.get_workout_logs(date(2026, 8, 17), date(2026, 8, 23)) == []
+    assert calls == [
+        (
+            "/workoutlog/",
+            {
+                "ordering": "date,id",
+                "limit": 200,
+                "date__gte": "2026-08-16T23:00:00+00:00",
+                "date__lt": "2026-08-23T23:00:00+00:00",
+            },
+        )
+    ]
 
 
 def test_ping_checks_authenticated_endpoint_and_reports_host(monkeypatch: pytest.MonkeyPatch) -> None:

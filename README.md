@@ -399,6 +399,8 @@ UV_BIN=/opt/myapp/shared/uv-tool/bin/uv
 
 ```bash
 pete sync --days 3 --retries 3
+pete wger-sync --from-date 2026-08-17 --to-date 2026-08-23 --dry-run
+pete wger-sync --from-date 2026-08-17 --to-date 2026-08-23
 pete morning-report --send
 pete message --summary --send
 pete message --trainer --send

@@ -98,6 +98,7 @@ from pete_e.application.plan_duration import (
 from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
+from pete_e.application.wger_workout_sync import run_wger_workout_sync
 from pete_e.domain import body_age, narrative_builder
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
@@ -863,6 +864,83 @@ def withings_sync(
         typer.echo("Withings-only sync completed. Summary written to logs/pete_history.log.")
         raise typer.Exit(code=0)
     typer.echo("Withings-only sync finished with errors. Check logs/pete_history.log for details.")
+    raise typer.Exit(code=1)
+
+
+@app.command(name="wger-sync")
+def wger_sync(
+    from_date: Annotated[
+        Optional[str],
+        Option("--from-date", help="First local workout date to reconcile (YYYY-MM-DD)."),
+    ] = None,
+    to_date: Annotated[
+        Optional[str],
+        Option("--to-date", help="Last local workout date to reconcile (YYYY-MM-DD)."),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        Option("--dry-run", help="Fetch and validate without changing workout data."),
+    ] = False,
+) -> None:
+    """Reconcile a bounded Wger workout-log window and refresh its read models."""
+
+    def _parse(value: str | None, label: str) -> date | None:
+        if value is None:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            _echo_error(f"Invalid {label}: {value}. Use YYYY-MM-DD.")
+            raise typer.Exit(code=2)
+
+    resolved_end = _parse(to_date, "--to-date") or date.today()
+    resolved_start = _parse(from_date, "--from-date") or (
+        resolved_end - timedelta(days=7)
+    )
+    if resolved_start > resolved_end:
+        _echo_error("--from-date must be on or before --to-date.")
+        raise typer.Exit(code=2)
+
+    operation = "wger_sync_dry_run" if dry_run else "wger_sync"
+    log_utils.log_message(
+        (
+            f"Starting Wger {'dry run' if dry_run else 'sync'} for "
+            f"{resolved_start.isoformat()} through {resolved_end.isoformat()}."
+        ),
+        "INFO",
+    )
+    try:
+        def callback():
+            return run_wger_workout_sync(
+                start_date=resolved_start,
+                end_date=resolved_end,
+                dry_run=dry_run,
+            )
+
+        if dry_run:
+            result = callback()
+        else:
+            result = _run_cli_application_job(
+                operation=operation,
+                callback=callback,
+                request_summary={
+                    "from_date": resolved_start.isoformat(),
+                    "to_date": resolved_end.isoformat(),
+                    "dry_run": dry_run,
+                    "source": "cli",
+                },
+                result_summary_builder=lambda sync_result: sync_result.summary_line(),
+            )
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Wger workout sync")
+    except Exception as exc:  # pragma: no cover - defensive CLI boundary
+        log_utils.log_message(f"Wger workout sync failed: {exc}", "ERROR")
+        _echo_error(f"Wger workout sync failed: {exc}")
+        raise typer.Exit(code=1)
+
+    typer.echo(result.summary_line())
+    if result.success:
+        raise typer.Exit(code=0)
     raise typer.Exit(code=1)
 
 

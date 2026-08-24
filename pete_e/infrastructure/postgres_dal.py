@@ -10,7 +10,7 @@ import hashlib
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from psycopg import sql
 from psycopg.rows import dict_row
@@ -23,6 +23,7 @@ from pete_e.infrastructure import log_utils
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
+from pete_e.domain.wger_workouts import WgerWorkoutSet
 
 # --- Connection Pool Management ---
 _pool: ConnectionPool | None = None
@@ -1556,6 +1557,92 @@ class PostgresDal(PlanRepository):
         with self._get_cursor() as cur:
             cur.execute(sql, (day, exercise_id, set_number, reps, weight_kg, rir))
         """Perform save wger log."""
+
+    @staticmethod
+    def _missing_wger_exercise_ids(cur, exercise_ids: List[int]) -> List[int]:
+        if not exercise_ids:
+            return []
+        cur.execute(
+            "SELECT id FROM wger_exercise WHERE id = ANY(%s);",
+            (exercise_ids,),
+        )
+        present = {
+            int(row["id"] if isinstance(row, dict) else row[0])
+            for row in cur.fetchall()
+        }
+        return sorted(set(exercise_ids) - present)
+
+    def validate_wger_exercise_ids(self, exercise_ids: Sequence[int]) -> None:
+        """Ensure every workout-log exercise exists in the local catalogue."""
+
+        normalized = sorted({int(exercise_id) for exercise_id in exercise_ids})
+        with self._get_cursor() as cur:
+            missing = self._missing_wger_exercise_ids(cur, normalized)
+        if missing:
+            missing_text = ", ".join(str(exercise_id) for exercise_id in missing)
+            raise ValueError(
+                "Wger catalogue is missing exercise id(s): "
+                f"{missing_text}. Run the Wger catalogue sync first."
+            )
+
+    def reconcile_wger_logs(
+        self,
+        *,
+        start_date: date,
+        end_date: date,
+        workout_sets: Sequence[WgerWorkoutSet],
+    ) -> int:
+        """Atomically replace one inclusive Wger source window."""
+
+        if start_date > end_date:
+            raise ValueError("start_date must be on or before end_date")
+
+        exercise_ids = sorted({item.exercise_id for item in workout_sets})
+        values = [
+            (
+                item.day,
+                item.exercise_id,
+                item.set_number,
+                item.reps,
+                item.weight_kg,
+                item.rir,
+                item.source_id,
+                item.session_id,
+                item.performed_at,
+            )
+            for item in workout_sets
+        ]
+        insert_sql = """
+            INSERT INTO wger_logs (
+                date,
+                exercise_id,
+                set_number,
+                reps,
+                weight_kg,
+                rir,
+                wger_log_id,
+                wger_session_id,
+                performed_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+
+        with self.pool.connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cur:
+                missing = self._missing_wger_exercise_ids(cur, exercise_ids)
+                if missing:
+                    missing_text = ", ".join(str(exercise_id) for exercise_id in missing)
+                    raise ValueError(
+                        "Wger catalogue is missing exercise id(s): "
+                        f"{missing_text}. Run the Wger catalogue sync first."
+                    )
+                cur.execute(
+                    "DELETE FROM wger_logs WHERE date BETWEEN %s AND %s;",
+                    (start_date, end_date),
+                )
+                if values:
+                    cur.executemany(insert_sql, values)
+        return len(values)
 
     def load_lift_log(self, exercise_ids: List[int], start_date: Optional[date] = None, end_date: Optional[date] = None) -> Dict[str, Any]:
         out: Dict[str, List[Dict[str, Any]]] = {}
