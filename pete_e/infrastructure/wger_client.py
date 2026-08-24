@@ -297,12 +297,31 @@ class WgerClient:
         return self.get_all_pages("/setting-repetitionunit/", params={"ordering": "id"})
 
     # --- Routine Writing ---
+    def find_routine(self, name: str, start: date) -> Dict[str, Any] | None:
+        """Return the exact routine for ``name`` and ``start``, if it exists."""
+
+        start_text = start.isoformat()
+        response = self._request(
+            "GET",
+            "/routine/",
+            params={"name": name, "start": start_text},
+        )
+        results = response.get("results", []) if isinstance(response, dict) else []
+        for routine in results:
+            if not isinstance(routine, dict):
+                continue
+            if str(routine.get("name") or "") != name:
+                continue
+            if str(routine.get("start") or "")[:10] != start_text:
+                continue
+            return routine
+        return None
+
     def find_or_create_routine(self, name: str, description: str, start: date, end: date) -> Dict[str, Any]:
         """Finds a routine by name and start date, creating it if it doesn't exist."""
-        params = {"name": name, "start": start.isoformat()}
-        existing = self._request("GET", "/routine/", params=params)
-        if existing and existing.get("results"):
-            return existing["results"][0]
+        existing = self.find_routine(name, start)
+        if existing is not None:
+            return existing
 
         payload = {"name": name, "description": description, "start": start.isoformat(), "end": end.isoformat()}
         return self._request("POST", "/routine/", json=payload)

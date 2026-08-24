@@ -10,6 +10,33 @@ from pete_e.domain.wger_workouts import WgerWorkoutSet
 class TestPostgresDal(unittest.TestCase):
 
     @patch('pete_e.infrastructure.postgres_dal.get_pool')
+    def test_get_plan_week_reference_is_an_exact_read_only_lookup(self, mock_get_pool):
+        mock_pool = MagicMock()
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_get_pool.return_value = mock_pool
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cur
+        expected = {
+            "plan_id": 17,
+            "week_number": 2,
+            "week_start": date(2026, 8, 24),
+        }
+        mock_cur.fetchone.return_value = expected
+        dal = PostgresDal()
+
+        result = dal.get_plan_week_reference(date(2026, 8, 24))
+
+        self.assertEqual(result, expected)
+        mock_cur.execute.assert_called_once()
+        sql_text, params = mock_cur.execute.call_args.args
+        self.assertIn("JOIN training_plan_weeks", sql_text)
+        self.assertIn("ORDER BY tp.is_active DESC", sql_text)
+        self.assertNotIn("UPDATE", sql_text.upper())
+        self.assertNotIn("DELETE", sql_text.upper())
+        self.assertEqual(params, (date(2026, 8, 24),))
+
+    @patch('pete_e.infrastructure.postgres_dal.get_pool')
     def test_reconcile_wger_logs_replaces_only_requested_window(self, mock_get_pool):
         mock_pool = MagicMock()
         mock_conn = MagicMock()

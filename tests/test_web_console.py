@@ -1039,6 +1039,8 @@ def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.
     assert "Run Sync" in html
     assert "Withings Sync" in html
     assert "Apple Ingest" in html
+    assert "Delete and Resend wger Week" in html
+    assert "never regenerates, replaces, or adjusts the Pete-E plan" in html
     assert "Generate Plan" in html
     assert "fixed 4-week 5/3/1 block" in html
     assert 'name="weeks"' in html
@@ -1055,6 +1057,7 @@ def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.
     assert "RUN SYNC" in html
     assert "RUN WITHINGS SYNC" in html
     assert "RUN APPLE INGEST" in html
+    assert "REPLACE WGER WEEK" in html
     assert "GENERATE PLAN" in html
     assert "RUN SUNDAY REVIEW" in html
     assert "BEGIN STRENGTH TEST" in html
@@ -1068,6 +1071,7 @@ def test_operations_page_renders_confirmed_command_controls(monkeypatch: pytest.
     assert 'data-endpoint="/console/operations/run-sync"' in html
     assert 'data-endpoint="/console/operations/run-withings-sync"' in html
     assert 'data-endpoint="/console/operations/ingest-apple"' in html
+    assert 'data-endpoint="/console/operations/replace-wger-week"' in html
     assert 'data-endpoint="/console/operations/run-sunday-review"' in html
     assert 'data-endpoint="/console/operations/lets-begin"' in html
     assert 'data-endpoint="/console/operations/preview-message"' in html
@@ -1441,6 +1445,89 @@ def test_apple_ingest_partial_result_exposes_safe_failure_details() -> None:
             "modified_at": modified_at.isoformat(),
         }
     ]
+
+
+def test_console_replace_wger_week_queues_guarded_stored_plan_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    job_service = _JobService()
+    audit_events: list[dict] = []
+    captured: list[date] = []
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
+    monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "wger-repair-job")
+    monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
+    monkeypatch.setattr(
+        dependencies,
+        "audit_command_event",
+        lambda request, **event: audit_events.append(event),
+    )
+
+    def _replace(*, week_start: date):
+        captured.append(week_start)
+        return SimpleNamespace(summary_line=lambda: "Stored week replaced.")
+
+    monkeypatch.setattr(web, "run_wger_week_replacement", _replace)
+    response = web.console_replace_wger_week(
+        _Request(
+            path="/console/operations/replace-wger-week",
+            method="POST",
+            headers={dependencies.CSRF_HEADER_NAME: csrf_token, "X-Request-ID": "req-wger-repair"},
+            cookies={
+                dependencies.session_cookie_name(): service.token,
+                dependencies.csrf_cookie_name(): csrf_token,
+            },
+        ),
+        payload={"confirmation": "REPLACE WGER WEEK", "week_start": "2026-08-24"},
+    )
+
+    queued = job_service.enqueued[0]
+    result = queued["callback"]()
+    assert captured == [date(2026, 8, 24)]
+    assert queued["operation"] == "wger_week_replace"
+    assert queued["request_summary"] == {
+        "week_start": "2026-08-24",
+        "source": "stored_plan_week",
+        "plan_mutation": False,
+    }
+    assert queued["result_summary_builder"](result) == "Stored week replaced."
+    assert response["status"] == "queued"
+    assert response["job_id"] == "wger-repair-job"
+    assert response["plan_mutation"] is False
+    assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]
+
+
+def test_console_replace_wger_week_rejects_non_monday_before_job_creation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _UserService(_user(ROLE_OPERATOR))
+    csrf_token = dependencies.generate_csrf_token(service.token)
+    monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
+    monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
+    monkeypatch.setattr(
+        dependencies,
+        "prepare_job_context",
+        lambda request, operation: pytest.fail("invalid week start created a job"),
+    )
+
+    with pytest.raises(web.HTTPException) as exc_info:
+        web.console_replace_wger_week(
+            _Request(
+                path="/console/operations/replace-wger-week",
+                method="POST",
+                headers={dependencies.CSRF_HEADER_NAME: csrf_token},
+                cookies={
+                    dependencies.session_cookie_name(): service.token,
+                    dependencies.csrf_cookie_name(): csrf_token,
+                },
+            ),
+            payload={"confirmation": "REPLACE WGER WEEK", "week_start": "2026-08-25"},
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "invalid_week_start"
 
 
 def test_console_plan_and_resend_commands_start_expected_processes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2045,6 +2132,7 @@ def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:
     assert ("POST", "/console/operations/run-sync") in mounted_routes
     assert ("POST", "/console/operations/run-withings-sync") in mounted_routes
     assert ("POST", "/console/operations/ingest-apple") in mounted_routes
+    assert ("POST", "/console/operations/replace-wger-week") in mounted_routes
     assert ("POST", "/console/operations/run-sunday-review") in mounted_routes
     assert ("POST", "/console/operations/lets-begin") in mounted_routes
     assert ("POST", "/console/operations/preview-message") in mounted_routes

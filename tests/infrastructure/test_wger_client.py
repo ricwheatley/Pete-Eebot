@@ -123,6 +123,53 @@ def test_delete_all_days_ignores_stale_404(monkeypatch: pytest.MonkeyPatch) -> N
     """Perform test delete all days ignores stale 404."""
 
 
+def test_find_routine_returns_only_an_exact_name_and_start_match(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pete_e.infrastructure.wger_client.settings",
+        SimpleNamespace(
+            WGER_BASE_URL="https://wger.de/api/v2",
+            WGER_API_KEY="dummy-key",
+            WGER_USERNAME=None,
+            WGER_PASSWORD=None,
+            WGER_TIMEOUT=5.0,
+            WGER_MAX_RETRIES=3,
+            WGER_BACKOFF_BASE=0.5,
+            DEBUG_API=False,
+        ),
+    )
+    client = WgerClient(timeout=2.5)
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method: str, path: str, **kwargs):
+        calls.append((method, path, kwargs))
+        return {
+            "results": [
+                {"id": 1, "name": "Pete-E Week 2026-08-17", "start": "2026-08-24"},
+                {"id": 2, "name": "Pete-E Week 2026-08-24", "start": "2026-08-17"},
+                {"id": 3, "name": "Pete-E Week 2026-08-24", "start": "2026-08-24"},
+            ]
+        }
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    routine = client.find_routine("Pete-E Week 2026-08-24", date(2026, 8, 24))
+
+    assert routine == {
+        "id": 3,
+        "name": "Pete-E Week 2026-08-24",
+        "start": "2026-08-24",
+    }
+    assert calls == [
+        (
+            "GET",
+            "/routine/",
+            {"params": {"name": "Pete-E Week 2026-08-24", "start": "2026-08-24"}},
+        )
+    ]
+
+
 def test_ensure_custom_exercise_reuses_existing_translation(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "pete_e.infrastructure.wger_client.settings",

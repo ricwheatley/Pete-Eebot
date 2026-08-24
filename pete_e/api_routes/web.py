@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import re
 import sys
 from typing import Any, Callable
@@ -26,6 +26,7 @@ from pete_e.application.plan_duration import (
 )
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.web_console import WebConsoleReadModel
+from pete_e.application.wger_week_replacement import run_wger_week_replacement
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS
 from pete_e.config import settings
 from pete_e.domain.auth import AuthenticatedPrincipal, AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY, RoleName
@@ -40,6 +41,7 @@ COMMAND_CONFIRMATIONS = {
     "sync": "RUN SYNC",
     "withings_sync": "RUN WITHINGS SYNC",
     "apple_ingest": "RUN APPLE INGEST",
+    "wger_week_replace": "REPLACE WGER WEEK",
     "plan": "GENERATE PLAN",
     "message_resend": "RESEND MESSAGE",
     "morning_report_send": "SEND MORNING REPORT",
@@ -352,6 +354,7 @@ def _operator_reference_links(user: AuthUser) -> tuple[dict[str, str], ...]:
 
 
 def _command_cards(today: date) -> list[dict[str, object]]:
+    current_week_start = today - timedelta(days=today.weekday())
     return [
         {
             "key": "sync",
@@ -381,6 +384,27 @@ def _command_cards(today: date) -> list[dict[str, object]]:
             "body": "Ingest only Apple Health exports from Dropbox.",
             "endpoint": "/console/operations/ingest-apple",
             "confirmation": COMMAND_CONFIRMATIONS["apple_ingest"],
+        },
+        {
+            "key": "wger_week_replace",
+            "title": "Delete and Resend wger Week",
+            "body": (
+                "Repair a corrupted wger workout week from the existing stored plan. "
+                "This deletes matching wger routine days only if present, then resends them; "
+                "it never regenerates, replaces, or adjusts the Pete-E plan."
+            ),
+            "endpoint": "/console/operations/replace-wger-week",
+            "confirmation": COMMAND_CONFIRMATIONS["wger_week_replace"],
+            "fields": [
+                {
+                    "name": "week_start",
+                    "label": "Week starting (Monday)",
+                    "type": "date",
+                    "value": current_week_start.isoformat(),
+                    "required": True,
+                    "help": "The date must match an existing stored plan week exactly.",
+                },
+            ],
         },
         {
             "key": "plan",
@@ -1295,6 +1319,65 @@ def console_ingest_apple(request: Request, payload: dict[str, Any] | None = None
     }
     _audit_command_success(request, command, payload_out)
     return payload_out
+
+
+@router.post("/console/operations/replace-wger-week")
+def console_replace_wger_week(request: Request, payload: dict[str, Any] | None = None):
+    command = "wger_week_replace"
+    user = _require_operator_command_user(request, command)
+    _require_command_confirmation(request, command, payload)
+    week_start = _payload_required_date(payload, "week_start")
+    if week_start.weekday() != 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_week_start",
+                "message": "week_start must be a Monday.",
+                "field": "week_start",
+            },
+        )
+
+    summary = {
+        "week_start": week_start.isoformat(),
+        "source": "stored_plan_week",
+        "plan_mutation": False,
+    }
+    job_id = dependencies.prepare_job_context(request, command)
+    correlation_id = get_or_create_correlation_id(request)
+    _audit_command_start(request, command, summary)
+    try:
+        dependencies.enforce_command_rate_limit(request, command)
+        dependencies.get_job_service().enqueue_callback(
+            job_id=job_id,
+            operation=command,
+            callback=lambda: run_wger_week_replacement(week_start=week_start),
+            requester=user,
+            request_id=correlation_id,
+            correlation_id=correlation_id,
+            request_summary=summary,
+            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
+            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
+            result_summary_builder=lambda result: result.summary_line(),
+        )
+    except Exception as exc:
+        _audit_command_failure(request, command, exc)
+        raise
+
+    response = {
+        "status": "queued",
+        "command": command,
+        "success": True,
+        "summary": (
+            f"wger week replacement queued for {week_start.isoformat()} from the stored plan."
+        ),
+        "job_id": job_id,
+        "request_id": correlation_id,
+        "status_url": f"/console/jobs/{job_id}",
+        "status_api_url": f"/console/jobs/{job_id}/status",
+        **summary,
+    }
+    _audit_command_success(request, command, response)
+    return response
 
 
 @router.post("/console/operations/generate-plan")

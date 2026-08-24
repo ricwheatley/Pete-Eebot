@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 import json
 
+from pete_e.application.exceptions import ConflictError
 from pete_e.application.validation_service import ValidationService
 from pete_e.application.strength_test import StrengthTestService
 from pete_e.domain.validation import ValidationDecision
@@ -322,6 +323,93 @@ class WgerExportService:
         )
         return {"status": "exported", "routine_id": routine_id}
 
+    def replace_stored_plan_week(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        start_date: date,
+    ) -> Dict[str, Any]:
+        """Delete a matching wger week if present and resend stored plan rows.
+
+        This repair path deliberately bypasses readiness assessment and every
+        plan-writing service. The effective rows already stored for the week
+        are the sole source for the replacement payload.
+        """
+
+        correlation = {
+            "workflow": "wger_week_replace",
+            "plan_id": plan_id,
+            "week_number": week_number,
+            "start_date": start_date.isoformat(),
+        }
+        log_utils.log_checkpoint(
+            checkpoint="replace",
+            outcome="started",
+            correlation=correlation,
+            summary={"source": "stored_plan_rows"},
+        )
+
+        week_rows = self.dal.get_plan_week_rows(plan_id, week_number)
+        if not week_rows:
+            raise ConflictError(
+                (
+                    f"Stored plan {plan_id} week {week_number} has no workout rows; "
+                    "refusing to delete anything in wger."
+                ),
+                code="empty_stored_plan_week",
+            )
+
+        normalized_rows = self._normalize_week_rows(week_rows, week_number=week_number)
+        payload = self._assemble_payload(
+            plan_id=plan_id,
+            week_number=week_number,
+            rows=normalized_rows,
+            plan_start_date=start_date,
+        )
+        self._annotate_and_enrich_payload(
+            payload=payload,
+            plan_id=plan_id,
+            week_number=week_number,
+            rows=normalized_rows,
+            decision=None,
+            daily_adjustment=None,
+        )
+        self._resolve_export_ids(payload)
+
+        routine_id, api_trace, replaced_existing = self._replace_payload_in_api(
+            payload=payload,
+            start_date=start_date,
+        )
+        self.dal.record_wger_export(
+            plan_id,
+            week_number,
+            payload,
+            response={
+                "routine_id": routine_id,
+                "days": api_trace,
+                "replacement": True,
+                "deleted_existing": replaced_existing,
+            },
+            routine_id=routine_id,
+        )
+        log_utils.log_checkpoint(
+            checkpoint="replace",
+            outcome="completed",
+            correlation={**correlation, "routine_id": routine_id},
+            summary={
+                "days": len(api_trace),
+                "deleted_existing": replaced_existing,
+                "source": "stored_plan_rows",
+            },
+        )
+        return {
+            "status": "replaced" if replaced_existing else "exported",
+            "routine_id": routine_id,
+            "deleted_existing": replaced_existing,
+            "days": len(api_trace),
+        }
+
     @staticmethod
     def _fallback_routine_name(base_name: str) -> str:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -629,6 +717,59 @@ class WgerExportService:
                 )
                 routine_id = routine["id"]
 
+        api_trace = self._write_payload_days(
+            payload=payload,
+            start_date=start_date,
+            routine_id=routine_id,
+        )
+        return routine_id, api_trace
+
+    def _replace_payload_in_api(
+        self,
+        *,
+        payload: Dict[str, Any],
+        start_date: date,
+    ) -> tuple[int, list[dict[str, Any]], bool]:
+        """Strictly replace the exact weekly routine, without fallback copies."""
+
+        routine_name = f"Pete-E Week {start_date.strftime('%Y-%m-%d')}"
+        finder = getattr(self.client, "find_routine", None)
+        if not callable(finder):
+            raise RuntimeError(
+                "The configured wger client cannot safely find an exact routine for replacement."
+            )
+
+        routine = finder(routine_name, start_date)
+        replaced_existing = routine is not None
+        if routine is None:
+            routine = self.client.find_or_create_routine(
+                name=routine_name,
+                description=f"Automated plan for week starting {start_date.isoformat()}",
+                start=start_date,
+                end=start_date + timedelta(days=6),
+            )
+
+        routine_id = int(routine["id"])
+        if replaced_existing:
+            # Unlike the general force-overwrite path, repair must not create a
+            # fallback copy when cleanup fails. A retry can safely finish
+            # deleting any remaining days before the resend begins.
+            self.client.delete_all_days_in_routine(routine_id)
+
+        api_trace = self._write_payload_days(
+            payload=payload,
+            start_date=start_date,
+            routine_id=routine_id,
+        )
+        return routine_id, api_trace, replaced_existing
+
+    def _write_payload_days(
+        self,
+        *,
+        payload: Dict[str, Any],
+        start_date: date,
+        routine_id: int,
+    ) -> list[dict[str, Any]]:
         api_trace: list[dict[str, Any]] = []
         supports_full_export = all(
             hasattr(self.client, attr)
@@ -638,7 +779,7 @@ class WgerExportService:
             log_utils.warn(
                 "Wger client stub missing export endpoints; skipping API push but recording payload."
             )
-            return routine_id, api_trace
+            return api_trace
 
         for order, day_payload in enumerate(payload.get("days", []), start=1):
             day_number_raw = day_payload.get("day_of_week")
@@ -694,7 +835,7 @@ class WgerExportService:
                 "slots": slot_summaries,
             })
 
-        return routine_id, api_trace
+        return api_trace
 
     def _build_payload_from_rows(
         self,

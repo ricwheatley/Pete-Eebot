@@ -776,6 +776,28 @@ class PostgresDal(PlanRepository):
             return cur.fetchone()
         """Perform get active plan."""
 
+    def get_plan_week_reference(self, week_start: date) -> Optional[Dict[str, Any]]:
+        """Resolve an existing stored plan week without changing plan state."""
+
+        sql = """
+            SELECT
+                tp.id AS plan_id,
+                tp.start_date AS plan_start_date,
+                tp.weeks,
+                tp.is_active,
+                tw.id AS week_id,
+                tw.week_number,
+                (tp.start_date + ((tw.week_number - 1) * INTERVAL '7 days'))::date AS week_start
+            FROM training_plans tp
+            JOIN training_plan_weeks tw ON tw.plan_id = tp.id
+            WHERE (tp.start_date + ((tw.week_number - 1) * INTERVAL '7 days'))::date = %s
+            ORDER BY tp.is_active DESC, tp.id DESC
+            LIMIT 1;
+        """
+        with self._get_cursor() as cur:
+            cur.execute(sql, (week_start,))
+            return cur.fetchone()
+
     def get_plan_week_rows(self, plan_id: int, week_number: int) -> List[Dict[str, Any]]:
         main_lift_ids = ", ".join(str(exercise_id) for exercise_id in schedule_rules.MAIN_LIFT_IDS)
         sql = f"""
