@@ -7,7 +7,6 @@ import json
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from itertools import groupby
 from typing import Dict, Optional
 
 from pete_e.domain.daily_sync import (
@@ -18,7 +17,21 @@ from pete_e.domain.daily_sync import (
 )
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
-from pete_e.infrastructure.apple_parser import AppleHealthParser
+from pete_e.infrastructure.apple_ingest_coordinator import (
+    AppleFileOutcome,
+    AppleIngestDecision,
+    AppleIngestSource,
+    AppleTimestampGroup,
+    AppleTimestampGroupOutcome,
+    decide_ingest,
+    failed_ingest_decision,
+    failure_alert,
+    group_discovered_files,
+    normalise_failure_reason,
+    normalise_timestamp,
+    safe_exception_reason,
+)
+from pete_e.infrastructure.apple_parser import AppleHealthParser, AppleParseResult
 from pete_e.infrastructure.apple_writer import AppleHealthWriter
 from pete_e.infrastructure.postgres_dal import PostgresDal
 
@@ -122,248 +135,227 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
         return timestamp
         """Perform get last import timestamp."""
 
-    # The heavy lifting lives in a helper to keep exception boundaries tight.
     def _run_ingest(self) -> AppleHealthIngestResult:
-        all_processed_files: list[str] = []
-        file_failures: list[AppleHealthIngestFailure] = []
-        total_workouts = 0
-        total_daily_points = 0
-
         try:
             connection_context = self._dal.connection()
         except Exception as exc:
             raise AppleIngestError(stage="connection", reason=str(exc)) from exc
 
         with connection_context as conn:
-            try:
-                writer = self._writer_factory(conn)
-            except Exception as exc:
-                raise AppleIngestError(stage="initialise_writer", reason=str(exc)) from exc
-
-            try:
-                last_import_time = self._normalise_timestamp(
-                    writer.get_last_import_timestamp()
-                    or datetime(1970, 1, 1, tzinfo=timezone.utc)
-                )
-            except Exception as exc:
-                raise AppleIngestError(stage="checkpoint", reason=str(exc)) from exc
-
-            try:
-                new_health_files = self._client.find_new_export_files(
-                    self._client.health_metrics_path,
-                    last_import_time,
-                )
-                new_workout_files = self._client.find_new_export_files(
-                    self._client.workouts_path,
-                    last_import_time,
-                )
-            except Exception as exc:
-                raise AppleIngestError(stage="discover_exports", reason=str(exc)) from exc
-
-            all_new_files = [
-                (self._normalise_timestamp(modified_at), str(file_path))
-                for modified_at, file_path in new_health_files + new_workout_files
-            ]
-            all_new_files.sort(key=lambda item: (item[0], item[1].casefold(), item[1]))
-
-            if not all_new_files:
+            writer = self._create_writer(conn)
+            last_import_time = self._read_checkpoint(writer)
+            groups = self._discover_groups(last_import_time)
+            if not groups:
                 log_utils.info("No new files to import.")
-                summary = AppleHealthImportSummary(
-                    sources=[],
-                    workouts=0,
-                    daily_points=0,
-                    hr_days=0,
-                    sleep_days=0,
-                )
-                return AppleHealthIngestResult(
-                    success=True,
-                    summary=summary,
-                    failures=(),
-                    statuses={"Apple Health": "ok"},
-                    alerts=(),
-                )
+            else:
+                file_count = sum(len(group.sources) for group in groups)
+                log_utils.info(f"Found {file_count} new file(s) to process.")
+            group_outcomes = tuple(
+                self._process_group(writer, group) for group in groups
+            )
+            decision = decide_ingest(last_import_time, group_outcomes)
+            self._apply_transaction_decision(conn, writer, decision)
 
-            log_utils.info(f"Found {len(all_new_files)} new file(s) to process.")
-
-            safe_watermark = last_import_time
-            watermark_blocked = False
-
-            # The persisted checkpoint contains only a timestamp and discovery
-            # is exclusive (client_modified > checkpoint). Treat every equal-
-            # timestamp group as indivisible so a collision cannot hide a
-            # failed peer. Later successes may be committed, but remain
-            # replayable until the earlier failure is corrected.
-            for file_modified_time, timestamp_group in groupby(
-                all_new_files,
-                key=lambda item: item[0],
-            ):
-                group_failed = False
-                for _, file_path in timestamp_group:
-                    log_utils.info(
-                        f"Processing file: {file_path} (modified: {file_modified_time})"
-                    )
-
-                    try:
-                        content = self._download_file(file_path)
-                    except AppleIngestError as exc:
-                        failure = self._failure_from_error(
-                            exc,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-                        continue
-
-                    try:
-                        json_data = _get_json_from_content(file_path, content)
-                    except Exception as exc:  # pragma: no cover - defensive extraction boundary
-                        failure = AppleHealthIngestFailure(
-                            stage="extract",
-                            reason=self._safe_reason(exc),
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-                        continue
-
-                    if json_data is None or not isinstance(json_data, dict):
-                        failure = AppleHealthIngestFailure(
-                            stage="extract",
-                            reason="no extractable JSON object",
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-                        continue
-
-                    json_root = json_data.get("data", {})
-                    if not isinstance(json_root, dict):
-                        failure = AppleHealthIngestFailure(
-                            stage="extract",
-                            reason="JSON data field is not an object",
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-                        continue
-
-                    root = {
-                        "data": {
-                            "metrics": json_root.get("metrics", []),
-                            "workouts": json_root.get("workouts", []),
-                        }
-                    }
-
-                    try:
-                        parsed = self._parser.parse(root)
-                    except Exception as exc:
-                        failure = AppleHealthIngestFailure(
-                            stage="parse",
-                            reason=self._safe_reason(exc),
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-                        continue
-
-                    skipped_row_count = int(parsed.get("skipped_row_count", 0) or 0)
-                    if skipped_row_count:
-                        failure = AppleHealthIngestFailure(
-                            stage="parse",
-                            reason=f"parser skipped {skipped_row_count} invalid row(s)",
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        )
-                        file_failures.append(failure)
-                        self._log_failure(failure)
-                        group_failed = True
-
-                    try:
-                        writer.upsert_all(parsed)
-                    except Exception as exc:
-                        # A PostgreSQL statement error aborts the transaction,
-                        # so the only safe response is to roll back this entire
-                        # run rather than continue with later files.
-                        raise AppleIngestError(
-                            stage="write",
-                            reason=self._safe_reason(exc),
-                            file_path=file_path,
-                            modified_at=file_modified_time,
-                        ) from exc
-
-                    all_processed_files.append(file_path)
-                    total_workouts += len(parsed.get("workout_headers", []))
-                    total_daily_points += len(parsed.get("daily_metric_points", []))
-
-                if group_failed:
-                    watermark_blocked = True
-                elif not watermark_blocked:
-                    safe_watermark = file_modified_time
-
-            if safe_watermark > last_import_time:
-                try:
-                    writer.save_last_import_timestamp(safe_watermark)
-                except Exception as exc:
-                    raise AppleIngestError(
-                        stage="checkpoint",
-                        reason=self._safe_reason(exc),
-                    ) from exc
-
-            if all_processed_files or safe_watermark > last_import_time:
-                try:
-                    conn.commit()
-                except Exception as exc:
-                    raise AppleIngestError(stage="commit", reason=str(exc)) from exc
-
-        summary = AppleHealthImportSummary(
-            sources=tuple(all_processed_files),
-            workouts=total_workouts,
-            daily_points=total_daily_points,
-            hr_days=0,
-            sleep_days=0,
-        )
-
-        partial = bool(file_failures and all_processed_files)
-        return AppleHealthIngestResult(
-            success=not file_failures,
-            summary=summary,
-            failures=("Apple Health",) if file_failures else (),
-            statuses={
-                "Apple Health": "partial" if partial else "failed" if file_failures else "ok"
-            },
-            alerts=(self._file_failure_alert(file_failures, partial=partial),)
-            if file_failures
-            else (),
-            failure_details=tuple(file_failures),
-        )
+        return self._result_from_decision(decision)
         """Perform run ingest."""
+
+    def _create_writer(self, conn) -> AppleHealthWriter:
+        try:
+            return self._writer_factory(conn)
+        except Exception as exc:
+            raise AppleIngestError(stage="initialise_writer", reason=str(exc)) from exc
+
+    def _read_checkpoint(self, writer: AppleHealthWriter) -> datetime:
+        try:
+            checkpoint = writer.get_last_import_timestamp() or datetime(
+                1970, 1, 1, tzinfo=timezone.utc
+            )
+            return self._normalise_timestamp(checkpoint)
+        except Exception as exc:
+            raise AppleIngestError(stage="checkpoint", reason=str(exc)) from exc
+
+    def _discover_groups(
+        self,
+        last_import_time: datetime,
+    ) -> tuple[AppleTimestampGroup, ...]:
+        try:
+            health_files = self._client.find_new_export_files(
+                self._client.health_metrics_path,
+                last_import_time,
+            )
+            workout_files = self._client.find_new_export_files(
+                self._client.workouts_path,
+                last_import_time,
+            )
+        except Exception as exc:
+            raise AppleIngestError(stage="discover_exports", reason=str(exc)) from exc
+        return group_discovered_files(health_files, workout_files)
+
+    def _process_group(
+        self,
+        writer: AppleHealthWriter,
+        group: AppleTimestampGroup,
+    ) -> AppleTimestampGroupOutcome:
+        outcomes: list[AppleFileOutcome] = []
+        for source in group.sources:
+            log_utils.info(
+                f"Processing file: {source.path} (modified: {source.modified_at})"
+            )
+            outcomes.append(self._process_file(writer, source))
+        return AppleTimestampGroupOutcome(group.modified_at, tuple(outcomes))
+
+    def _process_file(
+        self,
+        writer: AppleHealthWriter,
+        source: AppleIngestSource,
+    ) -> AppleFileOutcome:
+        try:
+            root = self._extract_source(source)
+            parsed, failure = self._parse_source(source, root)
+        except AppleIngestError as exc:
+            failure = self._failure_from_error(exc, modified_at=source.modified_at)
+            self._log_failure(failure)
+            return AppleFileOutcome(source=source, processed=False, failure=failure)
+
+        if failure is not None:
+            self._log_failure(failure)
+        self._write_source(writer, source, parsed)
+        return AppleFileOutcome(
+            source=source,
+            processed=True,
+            workouts=len(parsed.get("workout_headers", [])),
+            daily_points=len(parsed.get("daily_metric_points", [])),
+            failure=failure,
+        )
+
+    def _extract_source(self, source: AppleIngestSource) -> dict[str, object]:
+        content = self._download_file(source.path)
+        try:
+            json_data = _get_json_from_content(source.path, content)
+        except Exception as exc:  # pragma: no cover - defensive extraction boundary
+            raise AppleIngestError(
+                stage="extract",
+                reason=self._safe_reason(exc),
+                file_path=source.path,
+            ) from exc
+
+        if json_data is None or not isinstance(json_data, dict):
+            raise AppleIngestError(
+                stage="extract",
+                reason="no extractable JSON object",
+                file_path=source.path,
+            )
+        json_root = json_data.get("data", {})
+        if not isinstance(json_root, dict):
+            raise AppleIngestError(
+                stage="extract",
+                reason="JSON data field is not an object",
+                file_path=source.path,
+            )
+        return {
+            "data": {
+                "metrics": json_root.get("metrics", []),
+                "workouts": json_root.get("workouts", []),
+            }
+        }
+
+    def _parse_source(
+        self,
+        source: AppleIngestSource,
+        root: object,
+    ) -> tuple[AppleParseResult, AppleHealthIngestFailure | None]:
+        try:
+            parsed = self._parser.parse(root)
+        except Exception as exc:
+            raise AppleIngestError(
+                stage="parse",
+                reason=self._safe_reason(exc),
+                file_path=source.path,
+            ) from exc
+
+        skipped_row_count = int(parsed.get("skipped_row_count", 0) or 0)
+        failure = None
+        if skipped_row_count:
+            failure = AppleHealthIngestFailure(
+                stage="parse",
+                reason=f"parser skipped {skipped_row_count} invalid row(s)",
+                file_path=source.path,
+                modified_at=source.modified_at,
+            )
+        return parsed, failure
+
+    def _write_source(
+        self,
+        writer: AppleHealthWriter,
+        source: AppleIngestSource,
+        parsed: AppleParseResult,
+    ) -> None:
+        try:
+            writer.upsert_all(parsed)
+        except Exception as exc:
+            # A PostgreSQL statement error aborts the transaction, so the only
+            # safe response is to roll back this run rather than continue.
+            raise AppleIngestError(
+                stage="write",
+                reason=self._safe_reason(exc),
+                file_path=source.path,
+                modified_at=source.modified_at,
+            ) from exc
+
+    def _apply_transaction_decision(
+        self,
+        conn,
+        writer: AppleHealthWriter,
+        decision: AppleIngestDecision,
+    ) -> None:
+        if decision.checkpoint_to_save is not None:
+            try:
+                writer.save_last_import_timestamp(decision.checkpoint_to_save)
+            except Exception as exc:
+                raise AppleIngestError(
+                    stage="checkpoint",
+                    reason=self._safe_reason(exc),
+                ) from exc
+        if decision.commit_required:
+            try:
+                conn.commit()
+            except Exception as exc:
+                raise AppleIngestError(stage="commit", reason=str(exc)) from exc
+
+    @staticmethod
+    def _result_from_decision(decision: AppleIngestDecision) -> AppleHealthIngestResult:
+        sources = [] if decision.is_no_work else decision.processed_sources
+        return AppleHealthIngestResult(
+            success=decision.success,
+            summary=AppleHealthImportSummary(
+                sources=sources,
+                workouts=decision.workouts,
+                daily_points=decision.daily_points,
+                hr_days=0,
+                sleep_days=0,
+            ),
+            failures=decision.source_failures,
+            statuses={"Apple Health": decision.status},
+            alerts=decision.alerts,
+            failure_details=decision.failure_details,
+        )
 
     def _download_file(self, path: str) -> bytes:
         try:
             return self._client.download_as_bytes(path)
         except Exception as exc:
-            raise AppleIngestError(stage="download", reason=str(exc), file_path=path) from exc
+            raise AppleIngestError(
+                stage="download", reason=str(exc), file_path=path
+            ) from exc
         """Perform download file."""
 
     @staticmethod
     def _normalise_timestamp(timestamp: datetime) -> datetime:
-        if timestamp.tzinfo is None:
-            return timestamp.replace(tzinfo=timezone.utc)
-        return timestamp.astimezone(timezone.utc)
+        return normalise_timestamp(timestamp)
 
     @staticmethod
     def _safe_reason(exc: BaseException) -> str:
-        reason = " ".join(str(exc).split()) or type(exc).__name__
-        return reason[:240]
+        return safe_exception_reason(exc)
 
     @classmethod
     def _failure_from_error(
@@ -374,7 +366,7 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
     ) -> AppleHealthIngestFailure:
         return AppleHealthIngestFailure(
             stage=error.stage,
-            reason=" ".join(error.reason.split())[:240] or error.stage,
+            reason=normalise_failure_reason(error.reason, fallback=error.stage),
             file_path=error.file_path,
             modified_at=modified_at or error.modified_at,
         )
@@ -392,33 +384,14 @@ class AppleHealthDropboxIngestor(AppleHealthIngestor):
         *,
         partial: bool,
     ) -> str:
-        first = failures[0]
-        identity = first.file_path or "ingest run"
-        outcome = "partially completed" if partial else "failed"
-        return (
-            f"Apple Health ingest {outcome}; {len(failures)} failure(s) remain retryable. "
-            f"First failure: {identity} at {first.stage} ({first.reason})."
-        )
+        return failure_alert(failures, partial=partial)
 
     @classmethod
     def _failed_result(
         cls,
         failure: AppleHealthIngestFailure,
     ) -> AppleHealthIngestResult:
-        return AppleHealthIngestResult(
-            success=False,
-            summary=AppleHealthImportSummary(
-                sources=(),
-                workouts=0,
-                daily_points=0,
-                hr_days=0,
-                sleep_days=0,
-            ),
-            failures=("Apple Health",),
-            statuses={"Apple Health": "failed"},
-            alerts=(cls._file_failure_alert([failure], partial=False),),
-            failure_details=(failure,),
-        )
+        return cls._result_from_decision(failed_ingest_decision(failure))
 
 
 def build_ingestor(
@@ -448,4 +421,3 @@ __all__ = [
     "_get_json_from_content",
     "build_ingestor",
 ]
-

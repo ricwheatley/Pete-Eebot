@@ -135,12 +135,15 @@ coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
   pete_e/infrastructure/apple_parser_types.py
+coverage report --fail-under=100 \
+  pete_e/infrastructure/apple_ingest_coordinator.py
 ```
 
 Static typing covers explicit completed-tranche scopes and should expand one
 boundary at a time rather than suppressing the existing repository backlog. The
-current strict scope is the weekly narrative module plus the three pure Apple
-parser boundary modules:
+current strict scope is the weekly narrative module, the three pure Apple
+parser boundary modules, and the pure Apple ingest outcome/checkpoint
+coordinator:
 
 ```bash
 mypy
@@ -158,8 +161,12 @@ ruff format --check \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
   pete_e/infrastructure/apple_parser_types.py \
+  pete_e/infrastructure/apple_health_ingestor.py \
+  pete_e/infrastructure/apple_ingest_coordinator.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
+  tests/test_apple_ingest_adapter_contract.py \
+  tests/test_apple_ingest_coordinator.py \
   tests/test_apple_parser_characterization.py \
   tests/test_apple_parser_stages.py
 ```

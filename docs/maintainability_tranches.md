@@ -193,9 +193,10 @@ result increased without changing that floor.
 
 Do not combine these into one change:
 
-1. Treat `AppleHealthDropboxIngestor._run_ingest` and its discovery, transaction,
-   checkpoint, equal-timestamp, retry, alert, and partial-file policies as a
-   separate future coordinator tranche; none of it moved with parser decisions.
+1. Completed 2026-08-25: treat `AppleHealthDropboxIngestor._run_ingest` and its
+   discovery, transaction, checkpoint, equal-timestamp, retry, alert, and
+   partial-file policies as a separate coordinator tranche; none of it moved
+   with parser decisions. The measured result is recorded below.
 2. Extract the DAL plan-persistence slice behind its existing repository port,
    after raising PostgreSQL integration coverage around transaction rollback,
    active-plan invariants, and mapper failures.
@@ -212,3 +213,78 @@ the parsing boundary, the deferred ingest coordinator, the low-covered DAL/CLI
 hotspots, and the repository's other legacy C901 findings. The 66% repository
 floor is intentionally a non-regression floor and should rise only with a later
 remeasured repository baseline.
+
+## 2026-08-25: Apple Health ingest outcome and checkpoint coordination
+
+### Baseline and protected contract
+
+The tranche started from a clean `main` worktree at
+`233757d3f242d759b0f5100570a8a85ecadc5708`, tracking the same commit on
+`origin/main`. On that branch, the ingestor remained 451 physical lines and
+`_run_ingest` remained a 223-line, complexity-21 function. It coupled connection
+and writer creation, two Dropbox listings, checkpoint reads, timestamp/path
+ordering, equal-timestamp grouping, file IO, parsing, writing, recoverable versus
+transaction-fatal failure handling, safe-watermark advancement, commit,
+result/alert construction, and logging. Its branch-aware coverage was
+85.407725%; the repository unit/contract lane passed 803 tests with 7 skips at
+68.662492% coverage.
+
+The public `AppleHealthDropboxIngestor.ingest()` and
+`get_last_import_timestamp()` interfaces and the existing domain result/failure
+dataclasses remain unchanged. Characterization pins construction before
+discovery, both Dropbox listings, exclusive checkpoint boundaries, UTC
+normalisation, timestamp then case-insensitive/path ordering, indivisible
+equal-timestamp groups, partial-row accounting, safe-watermark blocking, exact
+failure stages/reasons and alerts, and the existing transaction distinction:
+recoverable file failures may coexist with committed later successes, while a
+write, checkpoint-save, or commit failure rolls back the run and returns the
+stable empty failed result.
+
+### Typed policy boundary
+
+`infrastructure.apple_ingest_coordinator` now owns frozen source, timestamp-group,
+file-outcome, group-outcome, and final-decision facts. Its pure functions merge
+and order discovery facts, aggregate failures and row counts, block unsafe
+watermarks, and decide checkpoint-save, commit, status, source-failure, and alert
+values. The module opens no connection, calls no Dropbox or parser implementation,
+writes no rows or checkpoints, logs nothing, sends no alert, and imports no
+application, CLI, or API module.
+
+The outer ingestor still owns collaborator construction and every side effect.
+It executes one source at a time, records an immutable outcome, asks the pure
+policy for the final decision, then performs checkpoint persistence and commit
+inside the existing connection context. The dependency direction remains
+acyclic: adapter -> coordinator -> domain result type.
+
+### Characterization and feedback ratchets
+
+Seventeen pre-extraction adapter characterizations passed against the original
+coordinator. The final focused lane has 53 tests covering no work, checkpoint
+filtering, both listings, naive/aware timestamps, path ties, every recoverable
+file stage, partial rows, mixed equal-timestamp groups, later success after an
+unsafe failure, connection/writer/checkpoint/discovery failures, write/checkpoint/
+commit rollback, exact result/alert fields, safe-reason quirks, and event order.
+Twelve pure tests cover every line and branch in the decision module. Existing
+guarded real-PostgreSQL tests continue to cover checkpoint persistence/replay and
+rollback of a health write when checkpoint persistence fails.
+
+CI additively includes the coordinator in strict mypy and its own 100% branch
+coverage ratchet. Formatting remains limited to the four changed Apple source/
+test files. The repository-wide 233-file formatting delta remains separate, and
+the 66% repository coverage floor is unchanged.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `_run_ingest` physical span / complexity | 223 / 21 | 23 / 3 |
+| New/extracted helper maximum complexity | n/a | 5 |
+| Repository C901 findings | 39 | 38 |
+| Ingestor physical lines | 451 | 424 |
+| Ingestor branch-aware coverage | 85.407725% | 96.313364% |
+| Pure coordinator branch-aware coverage | n/a | 100% (86 statements, 12 branches) |
+| Repository line/branch coverage | 68.662492% | 68.886482% |
+| Unit/contract lane | 803 passed, 7 skipped | 838 passed, 7 skipped |
+| Declared incremental mypy errors | 0 in 4 files | 0 in 5 files |
+
+The Apple parser's record recognition and nine-key mapping contract, Apple writer
+SQL, PostgreSQL schema/DAL work, retry design, and unrelated application/CLI/web
+hotspots remain explicitly outside this tranche.
