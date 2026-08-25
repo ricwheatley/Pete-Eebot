@@ -151,6 +151,12 @@
       "filename": "20260823_restore_wger_workout_ingest.sql",
       "sha256": "4c1eeb5a72e986e1a7866ecc91822f8bc3d5d61f1fc95a0acbd245a74601125d",
       "transactional": true
+    },
+    {
+      "revision": "20260825_require_percentage_targets",
+      "filename": "20260825_require_percentage_targets.sql",
+      "sha256": "8a44d6d12bbf5a42d0e9a8fc7847b3563f09bbb5bca972988f91894db4c2ef57",
+      "transactional": true
     }
   ]
 }

@@ -22,7 +22,7 @@ def test_manifest_is_complete_ordered_transactional_and_checksum_valid() -> None
 
     assert migrations[0].revision == INITIAL_REVISION
     assert migrations[-1].revision == head_revision()
-    assert len(migrations) == 25
+    assert len(migrations) == 26
     assert [migration.filename for migration in migrations] == sorted(
         migration.filename for migration in migrations
     )

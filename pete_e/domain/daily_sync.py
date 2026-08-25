@@ -195,6 +195,32 @@ class DailySyncService:
         ]
         return self._combine(parts)
 
+    def run_wger_only(self, *, start_date: date, end_date: date) -> DailySyncResult:
+        """Reconcile one explicit Wger window and refresh dependent read models."""
+
+        if start_date > end_date:
+            raise ValueError("start_date must be on or before end_date")
+        wger_result = self._ingest_wger_window(
+            start_date=start_date,
+            end_date=end_date,
+        )
+        parts: list[WgerWorkoutIngestResult | DailySyncSourceResult] = [wger_result]
+        if wger_result.success:
+            parts.append(
+                self._refresh_views(
+                    days=(end_date - start_date).days + 1,
+                    include_actual=True,
+                )
+            )
+        else:
+            parts.append(
+                DailySyncSourceResult(
+                    success=True,
+                    statuses={"Database": "skipped"},
+                )
+            )
+        return self._combine(parts)
+
     def _sync_withings(self, *, days: int) -> DailySyncSourceResult:
         try:
             for offset in range(days):
@@ -289,6 +315,14 @@ class DailySyncService:
     def _ingest_wger(self) -> WgerWorkoutIngestResult:
         end_date = self._clock()
         start_date = end_date - timedelta(days=self._wger_window_days - 1)
+        return self._ingest_wger_window(start_date=start_date, end_date=end_date)
+
+    def _ingest_wger_window(
+        self,
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> WgerWorkoutIngestResult:
         try:
             return self._wger.ingest(
                 start_date=start_date,

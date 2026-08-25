@@ -30,6 +30,7 @@ LEGACY_RESET_MISSING_REVISIONS = (
     "20260516_add_job_leases_and_recovery",
     "20260822_safe_job_ownership",
     "20260823_restore_wger_workout_ingest",
+    "20260825_require_percentage_targets",
 )
 
 _TRANSACTION_CONTROL = re.compile(
@@ -348,6 +349,18 @@ SCHEMA_PROBES: tuple[SchemaProbe, ...] = (
         WHERE table_schema = 'public'
           AND table_name = 'wger_logs'
           AND column_name IN ('wger_log_id', 'wger_session_id', 'performed_at')
+        """,
+    ),
+    SchemaProbe(
+        "20260825_require_percentage_targets",
+        "positive percentage-based strength targets",
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_constraint
+            WHERE conname = 'training_plan_workouts_percentage_target_positive'
+              AND conrelid = 'public.training_plan_workouts'::regclass
+        )
         """,
     ),
 )

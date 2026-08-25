@@ -66,6 +66,17 @@ class _WgerClient:
         self.calls.append(("find_or_create_routine", kwargs))
         return {"id": 43, "name": kwargs["name"], "start": kwargs["start"].isoformat()}
 
+    def create_routine(self, **kwargs):
+        self.calls.append(("create_routine", kwargs))
+        return {"id": 43, "name": kwargs["name"], "start": kwargs["start"].isoformat()}
+
+    def update_routine(self, routine_id: int, **kwargs):
+        self.calls.append(("update_routine", routine_id, kwargs))
+        return {"id": routine_id, **kwargs}
+
+    def delete_routine(self, routine_id: int):
+        self.calls.append(("delete_routine", routine_id))
+
     def delete_all_days_in_routine(self, routine_id: int):
         self.calls.append(("delete_all_days_in_routine", routine_id))
 
@@ -128,7 +139,7 @@ def _service(*, dal: _StoredWeekDal, client: _WgerClient) -> WgerWeekReplacement
     )
 
 
-def test_replacement_deletes_existing_wger_days_and_resends_unchanged_stored_rows() -> None:
+def test_replacement_stages_then_promotes_unchanged_stored_rows() -> None:
     week_start = date(2026, 8, 24)
     rows = [_stored_row()]
     original_rows = deepcopy(rows)
@@ -147,12 +158,14 @@ def test_replacement_deletes_existing_wger_days_and_resends_unchanged_stored_row
     assert rows == original_rows
     assert dal.reference_calls == [week_start]
     assert dal.row_calls == [(17, 2)]
-    assert dal.recorded[0]["routine_id"] == 42
+    assert dal.recorded[0]["routine_id"] == 43
     assert dal.recorded[0]["response"]["replacement"] is True
     assert dal.recorded[0]["response"]["deleted_existing"] is True
     assert client.calls[0][0] == "find_routine"
-    assert client.calls[1] == ("delete_all_days_in_routine", 42)
+    assert client.calls[1][0] == "create_routine"
     assert any(call[0] == "create_day" for call in client.calls)
+    assert ("delete_routine", 42) in client.calls
+    assert any(call[0] == "update_routine" and call[1] == 43 for call in client.calls)
     assert not any(call[0] == "find_or_create_routine" for call in client.calls)
 
 
@@ -168,11 +181,12 @@ def test_replacement_creates_and_sends_when_wger_week_is_absent_without_deleting
 
     assert result.deleted_existing is False
     assert result.routine_id == 43
-    assert any(call[0] == "find_or_create_routine" for call in client.calls)
-    assert not any(call[0] == "delete_all_days_in_routine" for call in client.calls)
+    assert any(call[0] == "create_routine" for call in client.calls)
+    assert any(call[0] == "update_routine" for call in client.calls)
+    assert not any(call == ("delete_routine", 42) for call in client.calls)
 
 
-def test_replacement_does_not_create_a_fallback_copy_when_cleanup_fails() -> None:
+def test_replacement_preserves_existing_routine_when_staging_write_fails() -> None:
     week_start = date(2026, 8, 24)
     dal = _StoredWeekDal(
         reference={"plan_id": 17, "week_number": 2, "week_start": week_start},
@@ -180,18 +194,18 @@ def test_replacement_does_not_create_a_fallback_copy_when_cleanup_fails() -> Non
     )
     client = _WgerClient(existing=True)
 
-    def _fail_cleanup(routine_id: int) -> None:
-        client.calls.append(("delete_all_days_in_routine", routine_id))
-        raise RuntimeError("wger cleanup failed")
+    def _fail_staging_write(routine_id: int, order: int, name: str):
+        client.calls.append(("create_day", routine_id, order, name))
+        raise RuntimeError("wger staging write failed")
 
-    client.delete_all_days_in_routine = _fail_cleanup  # type: ignore[method-assign]
+    client.create_day = _fail_staging_write  # type: ignore[method-assign]
 
-    with pytest.raises(RuntimeError, match="cleanup failed"):
+    with pytest.raises(RuntimeError, match="staging write failed"):
         _service(dal=dal, client=client).replace_week(week_start)
 
-    assert client.calls[-1] == ("delete_all_days_in_routine", 42)
-    assert not any(call[0] == "find_or_create_routine" for call in client.calls)
-    assert not any(call[0] == "create_day" for call in client.calls)
+    assert ("delete_routine", 43) in client.calls
+    assert ("delete_routine", 42) not in client.calls
+    assert not any(call[0] == "update_routine" for call in client.calls)
     assert dal.recorded == []
 
 

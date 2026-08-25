@@ -107,3 +107,26 @@ def test_full_sync_does_not_refresh_derived_views_after_wger_failure() -> None:
     assert result.statuses["Database"] == "skipped"
     assert repository.refresh_days == []
     assert repository.actual_refreshes == 0
+
+
+def test_wger_only_sync_uses_explicit_window_before_refreshing_views() -> None:
+    repository = _Repository()
+    wger = _Wger()
+    service = DailySyncService(
+        repository=repository,
+        withings_source=_Withings(),
+        apple_ingestor=_Apple(),
+        wger_ingestor=wger,
+        clock=lambda: date(2026, 8, 23),
+    )
+
+    result = service.run_wger_only(
+        start_date=date(2026, 8, 17),
+        end_date=date(2026, 8, 23),
+    )
+
+    assert result.success is True
+    assert wger.calls == [(date(2026, 8, 17), date(2026, 8, 23), False)]
+    assert repository.refresh_days == [8]
+    assert repository.actual_refreshes == 1
+    assert result.statuses == {"Wger": "ok", "Database": "ok"}

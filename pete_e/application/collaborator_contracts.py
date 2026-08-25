@@ -31,6 +31,14 @@ class PlanGenerationContract(Protocol):
 
     def create_and_persist_strength_test_week(self, start_date: date) -> int: ...
 
+    def repair_missing_percentage_targets(
+        self,
+        *,
+        plan_id: int,
+        weeks: int,
+        recalibrate_training_maxes: bool = True,
+    ) -> Dict[str, Any]: ...
+
 
 class ExportContract(Protocol):
     def export_plan_week(
@@ -44,11 +52,21 @@ class ExportContract(Protocol):
         daily_adjustment: Any | None = None,
     ) -> None: ...
 
+    def replace_stored_plan_week(
+        self,
+        *,
+        plan_id: int,
+        week_number: int,
+        start_date: date,
+    ) -> Dict[str, Any]: ...
+
 
 class SyncContract(Protocol):
     def run_full(self, *, days: int) -> Any: ...
 
     def run_withings_only(self, *, days: int) -> Any: ...
+
+    def run_wger_only(self, *, start_date: date, end_date: date) -> Any: ...
 
 
 class MessagingContract(Protocol):

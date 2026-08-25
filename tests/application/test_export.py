@@ -11,6 +11,7 @@ from pete_e.application.orchestrator import Orchestrator
 from pete_e.application.services import WgerExportService
 from pete_e.domain import schedule_rules
 from pete_e.domain.morning_coach import DailyWgerAdjustment
+from pete_e.domain.prescription_validation import PrescriptionValidationError
 from pete_e.domain.validation import (
     BackoffRecommendation,
     ReadinessSummary,
@@ -352,6 +353,51 @@ def test_export_plan_week_applies_daily_strength_adjustment_only_to_scoped_day()
     assert day_two["sets"] == 5
     assert day_two["rir"] == pytest.approx(1.0)
     """Perform test export plan week applies daily strength adjustment only to scoped day."""
+
+
+def test_daily_strength_adjustment_skips_when_no_value_can_change() -> None:
+    class StubDal:
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 1,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "exercise_name": "Bench Press",
+                    "sets": 1,
+                    "reps": 5,
+                    "rir": None,
+                    "percent_1rm": 65.0,
+                    "target_weight_kg": 80.0,
+                    "is_cardio": False,
+                    "details": {},
+                }
+            ]
+
+    service = WgerExportService(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        validation_service=SimpleNamespace(),
+    )
+
+    result = service.export_plan_week(
+        plan_id=10,
+        week_number=1,
+        start_date=date(2024, 6, 3),
+        force_overwrite=True,
+        validation_decision=_make_validation_decision(),
+        daily_adjustment=DailyWgerAdjustment(
+            day_of_week=1,
+            severity="mild",
+            weight_multiplier=1.0,
+            set_multiplier=0.95,
+            rir_increment=1,
+            adjust_strength=True,
+        ),
+    )
+
+    assert result == {"status": "skipped", "reason": "no-adjustable-values"}
 
 
 def test_export_plan_week_scopes_daily_run_backoff_to_today() -> None:
@@ -870,7 +916,9 @@ def test_build_payload_expands_stretch_routines_when_enabled(monkeypatch: pytest
     """Perform test build payload expands stretch routines when enabled."""
 
 
-def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_export_plan_week_refuses_main_lift_without_target_before_wger_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     warnings: list[str] = []
 
     class StubDal:
@@ -942,16 +990,16 @@ def test_export_plan_week_warns_when_main_lift_has_no_target_weight(monkeypatch:
         ),
     )
 
-    result = service.export_plan_week(
-        plan_id=72,
-        week_number=1,
-        start_date=date(2026, 4, 20),
-        force_overwrite=False,
-    )
+    with pytest.raises(PrescriptionValidationError, match="missing or invalid target weight"):
+        service.export_plan_week(
+            plan_id=72,
+            week_number=1,
+            start_date=date(2026, 4, 20),
+            force_overwrite=False,
+        )
 
-    assert result["status"] == "exported"
-    assert any("Skipping weight config for main lift due to missing target weight" in message for message in warnings)
-    """Perform test export plan week warns when main lift has no target weight."""
+    assert warnings == []
+    """Perform test export plan week refuses missing main-lift targets."""
 
 
 def test_run_end_to_end_week_passes_cached_validation() -> None:

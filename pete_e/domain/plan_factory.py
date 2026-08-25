@@ -13,6 +13,7 @@ from pete_e.domain.configuration import get_settings
 from pete_e.domain.planner_flags import PlannerFeatureFlags
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
+from pete_e.domain.prescription_validation import calculate_target_weight
 from pete_e.domain.running_planner import RunningGoal, RunningPlanner
 from pete_e.domain.unified_load_coordinator import GlobalTrainingContext, SessionConstraintSet, UnifiedLoadCoordinator
 
@@ -59,7 +60,7 @@ class PlanFactory:
         if training_max is None:
             return None
             
-        return self._round_to_2p5(training_max * percent / 100.0)
+        return calculate_target_weight(training_max, percent)
 
     def _workout_sort_key(self, workout: Dict[str, Any]) -> tuple[int, int, str]:
         details = workout.get("details")

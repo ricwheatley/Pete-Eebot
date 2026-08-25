@@ -46,6 +46,7 @@ class _NoopDailySyncService:
     def __init__(self) -> None:
         self.full_calls: list[int] = []
         self.withings_calls: list[int] = []
+        self.wger_calls: list[tuple[Any, Any]] = []
         """Initialize this object."""
 
     def run_full(self, *, days: int) -> DailySyncResult:
@@ -57,6 +58,15 @@ class _NoopDailySyncService:
         self.withings_calls.append(days)
         return DailySyncResult(success=True, failures=(), statuses={}, alerts=())
         """Perform run withings only."""
+
+    def run_wger_only(self, *, start_date, end_date) -> DailySyncResult:
+        self.wger_calls.append((start_date, end_date))
+        return DailySyncResult(
+            success=True,
+            failures=(),
+            statuses={"Wger": "ok", "Database": "ok"},
+            alerts=(),
+        )
     """Represent NoopDailySyncService."""
 
 

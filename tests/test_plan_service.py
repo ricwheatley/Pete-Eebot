@@ -9,6 +9,7 @@ from pete_e.application.services import PlanService
 from pete_e.domain.plan_factory import PlanFactory
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
+from pete_e.domain.prescription_validation import PrescriptionValidationError
 
 
 class StubPlanRepository(PlanRepository):
@@ -152,6 +153,132 @@ def test_plan_service_persists_full_plan(monkeypatch: pytest.MonkeyPatch) -> Non
     assert saved_payload["weeks"] == 4
     assert len(saved_payload["plan_weeks"]) == 4
     """Perform test plan service persists full plan."""
+
+
+def test_plan_service_refuses_to_persist_when_a_training_max_is_missing() -> None:
+    class StubDal(StubPlanRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.saved = False
+
+        def get_latest_training_maxes(self) -> Dict[str, float]:
+            values = _training_maxes()
+            values.pop("deadlift")
+            return values
+
+        def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
+            self.saved = True
+            return 42
+
+    dal = StubDal()
+
+    with pytest.raises(PrescriptionValidationError, match="deadlift"):
+        PlanService(dal=dal).create_and_persist_531_block(start_date=date(2024, 1, 1))
+
+    assert dal.saved is False
+
+
+def test_plan_service_repairs_missing_percentage_targets_as_one_bulk_update() -> None:
+    class RepairDal(StubPlanRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.updates: list[dict[str, Any]] = []
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            assert (plan_id, week_number) == (7, 1)
+            return [
+                {
+                    "id": 101,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "exercise_name": "Bench Press",
+                    "sets": 1,
+                    "reps": 5,
+                    "percent_1rm": 85.0,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                },
+                {
+                    "id": 102,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": 301,
+                    "exercise_name": "Assistance",
+                    "sets": 3,
+                    "reps": 10,
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                },
+            ]
+
+        def update_workout_targets(self, updates):
+            self.updates.extend(updates)
+
+    dal = RepairDal()
+    result = PlanService(dal=dal).repair_missing_percentage_targets(
+        plan_id=7,
+        weeks=1,
+        recalibrate_training_maxes=False,
+    )
+
+    assert dal.updates == [{"workout_id": 101, "target_weight_kg": 102.5}]
+    assert result == {
+        "plan_id": 7,
+        "weeks_checked": 1,
+        "workouts_updated": 1,
+        "lifts_repaired": ["bench"],
+    }
+
+
+def test_plan_service_does_not_write_a_partial_target_repair() -> None:
+    class InvalidRepairDal(StubPlanRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.updates: list[dict[str, Any]] = []
+
+        def get_plan_week_rows(self, plan_id: int, week_number: int):
+            return [
+                {
+                    "id": 201,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": schedule_rules.BENCH_ID,
+                    "exercise_name": "Bench Press",
+                    "sets": 1,
+                    "reps": 5,
+                    "percent_1rm": 85.0,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                },
+                {
+                    "id": 202,
+                    "week_number": 1,
+                    "day_of_week": 1,
+                    "exercise_id": 301,
+                    "exercise_name": "Broken Assistance",
+                    "sets": None,
+                    "reps": 10,
+                    "percent_1rm": None,
+                    "target_weight_kg": None,
+                    "is_cardio": False,
+                },
+            ]
+
+        def update_workout_targets(self, updates):
+            self.updates.extend(updates)
+
+    dal = InvalidRepairDal()
+
+    with pytest.raises(PrescriptionValidationError, match="invalid sets"):
+        PlanService(dal=dal).repair_missing_percentage_targets(
+            plan_id=7,
+            weeks=1,
+            recalibrate_training_maxes=False,
+        )
+
+    assert dal.updates == []
 
 
 def test_plan_service_audits_planner_feature_flag_effects(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -100,6 +100,7 @@ from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.wger_workout_sync import run_wger_workout_sync
 from pete_e.domain import body_age, narrative_builder
+from pete_e.domain.prescription_validation import PrescriptionValidationError
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.user_repository import PostgresUserRepository
@@ -1042,6 +1043,68 @@ def plan(
         raise typer.Exit(code=0)
     log_utils.log_message("Failed to deploy new plan.", "ERROR")
     raise typer.Exit(code=1)
+
+
+@app.command("repair-plan-targets")
+def repair_plan_targets(
+    reference_date: Annotated[
+        Optional[str],
+        Option(
+            "--reference-date",
+            help="Date whose active-plan week should be republished (YYYY-MM-DD).",
+        ),
+    ] = None,
+    confirmed: Annotated[
+        bool,
+        Option(
+            "--yes",
+            help="Confirm the stored-plan repair and Wger week replacement.",
+        ),
+    ] = False,
+) -> None:
+    """Repair missing lift targets in the active plan and safely republish Wger."""
+
+    if not confirmed:
+        _echo_error("Refusing plan repair without explicit --yes confirmation.")
+        raise typer.Exit(code=2)
+
+    try:
+        resolved_date = date.fromisoformat(reference_date) if reference_date else date.today()
+    except ValueError:
+        _echo_error(f"Invalid --reference-date: {reference_date}. Use YYYY-MM-DD.")
+        raise typer.Exit(code=2)
+
+    orchestrator = _build_orchestrator()
+    try:
+        result = _run_cli_application_job(
+            operation="repair_plan_targets",
+            callback=lambda: orchestrator.repair_active_plan_targets(resolved_date),
+            request_summary={
+                "reference_date": resolved_date.isoformat(),
+                "source": "cli",
+            },
+            result_summary_builder=lambda repair: (
+                f"plan_id={repair.get('plan_id')}, "
+                f"workouts_updated={repair.get('workouts_updated', 0)}"
+            ),
+        )
+    except ApplicationError as exc:
+        _exit_for_application_error(exc, context="Plan target repair")
+    except PrescriptionValidationError as exc:
+        log_utils.log_message(f"Plan target repair failed validation: {exc}", "ERROR")
+        _echo_error(f"Plan target repair failed validation: {exc}")
+        raise typer.Exit(code=2)
+    finally:
+        closer = getattr(orchestrator, "close", None)
+        if callable(closer):
+            closer()
+
+    replacement = result.get("replacement") or {}
+    typer.echo(
+        "Plan target repair completed: "
+        f"{result.get('workouts_updated', 0)} workout target(s) repaired; "
+        f"Wger routine {replacement.get('routine_id', 'not-required')} published."
+    )
 
 
 @app.command("lets-begin")

@@ -104,6 +104,7 @@ def _assert_artifact_contents(members: set[str], *, wheel: bool) -> None:
         "pete_e/migrations/00000000_initial_schema.sql",
         "pete_e/migrations/20260822_trust_public_edge.sql",
         "pete_e/migrations/20260823_restore_wger_workout_ingest.sql",
+        "pete_e/migrations/20260825_require_percentage_targets.sql",
     }
     assert required <= members, sorted(required - members)
 
@@ -333,7 +334,7 @@ assert CRON_CSV.is_file()
 assert 'pete morning-report --send' in build_crontab_from_csv()
 assert Path({str(ROOT)!r}) not in Path(CRON_TXT).resolve().parents
 assert Path({str(ROOT)!r}) not in Path(str(migrations_directory())).resolve().parents
-assert head_revision() == '20260823_restore_wger_workout_ingest'
+assert head_revision() == '20260825_require_percentage_targets'
 
 schema = app.openapi()
 assert schema['info']['title'] == 'Pete-Eebot API'

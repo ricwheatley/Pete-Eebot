@@ -14,6 +14,7 @@ from pete_e.application.exceptions import (
     ApplicationError,
     DataAccessError,
     PlanRolloverError,
+    ServiceUnavailableError,
 )
 from pete_e.application.composition import (
     provide_coach_voice_service,
@@ -50,6 +51,7 @@ from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.morning_coach import build_morning_training_adjustment
 from pete_e.domain.narrative_builder import NarrativeBuilder, build_daily_narrative
+from pete_e.domain.prescription_validation import PrescriptionValidationError
 from pete_e.domain.validation import ValidationDecision
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import Container, get_container
@@ -215,6 +217,8 @@ class Orchestrator:
                 f"anchoring cadence checks to Sunday {review_anchor.isoformat()}."
             )
 
+        self._sync_wger_before_weekly_review(review_anchor)
+
         # Run calibration on the upcoming week
         calibration_result = self.run_weekly_calibration(review_anchor)
         validation_decision = calibration_result.validation
@@ -265,6 +269,149 @@ class Orchestrator:
             rollover=rollover_result,
             rollover_triggered=rollover_triggered
         )
+
+    def _sync_wger_before_weekly_review(self, review_anchor: date) -> None:
+        """Refresh the completed training week before calibration or rollover."""
+
+        start_date = review_anchor - timedelta(days=6)
+        sync = getattr(self.daily_sync_service, "run_wger_only", None)
+        if not callable(sync):
+            raise ServiceUnavailableError(
+                "Sunday review cannot continue because Wger-only sync is unavailable.",
+                code="weekly_wger_sync_unavailable",
+            )
+
+        log_utils.log_checkpoint(
+            checkpoint="weekly_wger_sync",
+            outcome="started",
+            correlation={
+                "workflow": "sunday_review",
+                "start_date": start_date.isoformat(),
+                "end_date": review_anchor.isoformat(),
+            },
+            summary={},
+        )
+        try:
+            result = sync(start_date=start_date, end_date=review_anchor)
+        except Exception as exc:
+            message = (
+                "Sunday review aborted because Wger workout sync failed for "
+                f"{start_date.isoformat()} through {review_anchor.isoformat()}: {exc}"
+            )
+            log_utils.error(message, "ERROR")
+            raise ServiceUnavailableError(
+                message,
+                code="weekly_wger_sync_failed",
+            ) from exc
+
+        if not bool(getattr(result, "success", False)):
+            failures = list(getattr(result, "failures", ()) or ())
+            message = (
+                "Sunday review aborted because Wger workout sync did not complete "
+                f"successfully for {start_date.isoformat()} through {review_anchor.isoformat()}"
+            )
+            if failures:
+                message += f" (failures: {', '.join(str(item) for item in failures)})"
+            log_utils.error(message, "ERROR")
+            raise ServiceUnavailableError(
+                message,
+                code="weekly_wger_sync_failed",
+            )
+
+        log_utils.log_checkpoint(
+            checkpoint="weekly_wger_sync",
+            outcome="completed",
+            correlation={
+                "workflow": "sunday_review",
+                "start_date": start_date.isoformat(),
+                "end_date": review_anchor.isoformat(),
+            },
+            summary={"statuses": dict(getattr(result, "statuses", {}) or {})},
+        )
+
+    def repair_active_plan_targets(
+        self,
+        reference_date: date | None = None,
+    ) -> Dict[str, Any]:
+        """Repair an active plan's missing targets and republish its effective week.
+
+        This is an explicit recovery operation. It first refreshes Wger logs so
+        strength-test recalibration cannot run against stale local data.
+        """
+
+        run_date = reference_date or date.today()
+        active_plan = self.dal.get_active_plan()
+        if not active_plan:
+            raise PlanRolloverError(
+                "No active plan is available for target repair.",
+                code="active_plan_not_found",
+            )
+
+        plan_id = self._coerce_positive_int(active_plan.get("id"))
+        plan_weeks = self._coerce_positive_int(active_plan.get("weeks"))
+        plan_start = self._coerce_date(active_plan.get("start_date"))
+        if plan_id is None or plan_weeks is None or plan_start is None:
+            raise PlanRolloverError(
+                "The active plan metadata is incomplete; no repair was attempted.",
+                code="invalid_active_plan",
+            )
+
+        sync_start = run_date - timedelta(days=13)
+        sync = getattr(self.daily_sync_service, "run_wger_only", None)
+        if not callable(sync):
+            raise ServiceUnavailableError(
+                "Plan repair cannot continue because Wger-only sync is unavailable.",
+                code="plan_repair_wger_sync_unavailable",
+            )
+        try:
+            sync_result = sync(start_date=sync_start, end_date=run_date)
+        except Exception as exc:
+            raise ServiceUnavailableError(
+                "Plan repair aborted because Wger workout sync failed.",
+                code="plan_repair_wger_sync_failed",
+            ) from exc
+        if not bool(getattr(sync_result, "success", False)):
+            raise ServiceUnavailableError(
+                "Plan repair aborted because Wger workout sync did not complete successfully.",
+                code="plan_repair_wger_sync_failed",
+            )
+
+        with self._hold_plan_generation_lock():
+            repair = self.plan_service.repair_missing_percentage_targets(
+                plan_id=plan_id,
+                weeks=plan_weeks,
+                recalibrate_training_maxes=True,
+            )
+
+            calculated_week = self._plan_week_index(plan_start, run_date)
+            if calculated_week is None:
+                calculated_week = 1
+            replacement: Dict[str, Any] | None = None
+            if calculated_week <= plan_weeks:
+                week_start = plan_start + timedelta(days=(calculated_week - 1) * 7)
+                replacement = self.export_service.replace_stored_plan_week(
+                    plan_id=plan_id,
+                    week_number=calculated_week,
+                    start_date=week_start,
+                )
+
+        outcome = {
+            **repair,
+            "wger_sync_start": sync_start,
+            "wger_sync_end": run_date,
+            "replacement": replacement,
+        }
+        log_utils.log_checkpoint(
+            checkpoint="active_plan_target_repair",
+            outcome="completed",
+            correlation={"workflow": "plan_repair", "plan_id": plan_id},
+            summary={
+                "workouts_updated": repair.get("workouts_updated", 0),
+                "replaced_week": calculated_week if replacement is not None else None,
+            },
+            tag="AUDIT",
+        )
+        return outcome
         
     def run_daily_sync(self, days: int):
         """Orchestrates the daily sync of all data sources."""
@@ -856,6 +1003,16 @@ class Orchestrator:
             )
             if status == "updated":
                 message = f"{message}\n\nI've sent the updates to Wger for you."
+            elif status == "no-adjustable-values":
+                message = (
+                    f"{message} Wger was left unchanged because today's session "
+                    "has no adjustable prescription values."
+                )
+            elif status == "invalid-prescription":
+                message = (
+                    f"{message} Wger was left unchanged because the stored plan "
+                    "is missing a required lift target; apply this manually today."
+                )
             elif status == "unavailable":
                 message = f"{message} Wger update unavailable; apply this manually today."
             else:
@@ -943,7 +1100,7 @@ class Orchestrator:
             return "unavailable"
 
         try:
-            self.export_service.export_plan_week(
+            result = self.export_service.export_plan_week(
                 plan_id=export_context["plan_id"],
                 week_number=export_context["week_number"],
                 start_date=export_context["week_start"],
@@ -951,6 +1108,9 @@ class Orchestrator:
                 validation_decision=validation_decision,
                 daily_adjustment=wger_adjustment,
             )
+        except PrescriptionValidationError as exc:
+            log_utils.warn(f"Morning Wger update blocked by invalid prescription: {exc}")
+            return "invalid-prescription"
         except TypeError as exc:
             log_utils.warn(
                 "Morning Wger update could not be applied because the export service "
@@ -960,6 +1120,10 @@ class Orchestrator:
         except Exception as exc:  # pragma: no cover - external API guard
             log_utils.warn(f"Morning Wger update failed: {exc}")
             return "failed"
+        if isinstance(result, dict) and result.get("status") == "skipped":
+            if result.get("reason") == "no-adjustable-values":
+                return "no-adjustable-values"
+            return "unavailable"
         return "updated"
 
     # ------------------------------------------------------------------

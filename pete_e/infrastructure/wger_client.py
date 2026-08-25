@@ -323,8 +323,48 @@ class WgerClient:
         if existing is not None:
             return existing
 
+        return self.create_routine(
+            name=name,
+            description=description,
+            start=start,
+            end=end,
+        )
+
+    def create_routine(self, name: str, description: str, start: date, end: date) -> Dict[str, Any]:
+        """Create a new routine without reusing an existing name/date match."""
+
         payload = {"name": name, "description": description, "start": start.isoformat(), "end": end.isoformat()}
         return self._request("POST", "/routine/", json=payload)
+
+    def update_routine(
+        self,
+        routine_id: int,
+        *,
+        name: str,
+        description: str,
+        start: date,
+        end: date,
+    ) -> Dict[str, Any]:
+        """Promote a fully-written staging routine to its canonical identity."""
+
+        payload = {
+            "name": name,
+            "description": description,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        }
+        return self._request("PATCH", f"/routine/{routine_id}/", json=payload)
+
+    def delete_routine(self, routine_id: int) -> None:
+        """Delete a complete routine, tolerating an already-removed object."""
+
+        try:
+            self._request("DELETE", f"/routine/{routine_id}/")
+        except WgerError as exc:
+            if exc.status_code == 404:
+                log_utils.warn(f"Skipping stale wger routine {routine_id}: already deleted.")
+                return
+            raise
 
     def delete_all_days_in_routine(self, routine_id: int):
         """Wipes all Day objects associated with a routine."""

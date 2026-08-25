@@ -317,7 +317,12 @@ def _is_strength(item: _PlanItem) -> bool:
         return False
     if _session_type(item) == schedule_rules.STRETCH_SESSION_TYPE:
         return False
-    return item.sets is not None or item.reps is not None or item.target_weight_kg is not None
+    return (
+        item.exercise_id is not None
+        or item.sets is not None
+        or item.reps is not None
+        or item.target_weight_kg is not None
+    )
 
 
 def _session_type(item: _PlanItem) -> str:

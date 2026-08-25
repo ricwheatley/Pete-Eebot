@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List
 import json
+import math
 
 from pete_e.application.exceptions import ConflictError
 from pete_e.application.validation_service import ValidationService
@@ -16,6 +17,13 @@ from pete_e.domain.validation import ValidationDecision
 from pete_e.domain.entities import Plan, Week
 from pete_e.domain.morning_coach import DailyWgerAdjustment
 from pete_e.domain.plan_factory import PlanFactory
+from pete_e.domain.prescription_validation import (
+    PrescriptionValidationError,
+    calculate_target_weight,
+    validate_plan_prescriptions,
+    validate_training_maxes,
+    validate_wger_payload_prescriptions,
+)
 from pete_e.domain.running_planner import RunningGoal
 from pete_e.domain import schedule_rules
 from pete_e.config import settings
@@ -42,6 +50,7 @@ class PlanService:
         log_utils.info(f"Creating new 5/3/1 block starting {start_date.isoformat()}...")
         # 1. Get latest TMs from DAL
         tms = self.dal.get_latest_training_maxes()
+        validate_training_maxes(tms)
         health_metrics = self._load_recent_health_metrics()
         recent_runs = self._load_recent_running_workouts(end_date=start_date - timedelta(days=1))
         running_goal = self._running_goal_from_settings()
@@ -56,6 +65,7 @@ class PlanService:
         )
         self._audit_planner_feature_flag_effects(plan_dict, start_date=start_date)
         plan_entity = self.plan_mapper.from_dict(plan_dict)
+        validate_plan_prescriptions(plan_entity)
         payload = self.plan_mapper.to_persistence_payload(plan_entity)
 
         # 3. Persist the plan using the DAL
@@ -122,6 +132,7 @@ class PlanService:
         """Creates and persists a new 1-week strength test plan."""
         log_utils.info(f"Creating new strength test week starting {start_date.isoformat()}...")
         tms = self.dal.get_latest_training_maxes()
+        validate_training_maxes(tms)
         health_metrics = self._load_recent_health_metrics()
         recent_runs = self._load_recent_running_workouts(end_date=start_date - timedelta(days=1))
         running_goal = self._running_goal_from_settings()
@@ -133,6 +144,7 @@ class PlanService:
             recent_runs=recent_runs,
         )
         plan_entity = self.plan_mapper.from_dict(plan_dict)
+        validate_plan_prescriptions(plan_entity)
         payload = self.plan_mapper.to_persistence_payload(plan_entity)
         plan_id = self.dal.save_full_plan(payload)
         log_utils.info(f"Successfully created and persisted strength test plan_id: {plan_id}")
@@ -158,6 +170,98 @@ class PlanService:
                 f"{evaluation.plan_id} before generating the next block."
             )
         return self.create_and_persist_531_block(start_date)
+
+    def repair_missing_percentage_targets(
+        self,
+        *,
+        plan_id: int,
+        weeks: int,
+        recalibrate_training_maxes: bool = True,
+    ) -> Dict[str, Any]:
+        """Repair missing percentage targets without regenerating a stored plan.
+
+        The complete prospective plan is validated before the DAL receives a
+        single bulk update, so an unrepairable row cannot leave a partial fix.
+        """
+
+        if plan_id < 1 or weeks < 1:
+            raise PrescriptionValidationError(
+                ["plan_id and weeks must both be positive integers"]
+            )
+
+        if recalibrate_training_maxes:
+            self.strength_test_service.evaluate_latest_test_week_and_update_tms()
+
+        training_maxes = self.dal.get_latest_training_maxes()
+        validate_training_maxes(training_maxes)
+
+        prospective_rows: List[Dict[str, Any]] = []
+        updates: List[Dict[str, Any]] = []
+        repaired_lifts: set[str] = set()
+
+        for week_number in range(1, weeks + 1):
+            for original in self.dal.get_plan_week_rows(plan_id, week_number):
+                row = dict(original)
+                prospective_rows.append(row)
+                percent = row.get("percent_1rm")
+                if percent is None or bool(row.get("is_cardio")):
+                    continue
+
+                try:
+                    current_target = float(row.get("target_weight_kg"))
+                except (TypeError, ValueError):
+                    current_target = 0.0
+                if math.isfinite(current_target) and current_target > 0:
+                    continue
+
+                try:
+                    exercise_id = int(row["exercise_id"])
+                    workout_id = int(row["id"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise PrescriptionValidationError(
+                        [
+                            f"week {week_number}: percentage row is missing a valid "
+                            "exercise or workout id"
+                        ]
+                    ) from exc
+
+                lift_code = schedule_rules.LIFT_CODE_BY_ID.get(exercise_id)
+                if lift_code is None:
+                    raise PrescriptionValidationError(
+                        [
+                            f"week {week_number}, workout {workout_id}: cannot map "
+                            f"exercise {exercise_id} to a training max"
+                        ]
+                    )
+
+                target = calculate_target_weight(training_maxes[lift_code], percent)
+                row["target_weight_kg"] = target
+                updates.append(
+                    {"workout_id": workout_id, "target_weight_kg": target}
+                )
+                repaired_lifts.add(lift_code)
+
+        prospective_plan = self.plan_mapper.from_rows(
+            {"start_date": None},
+            prospective_rows,
+        )
+        validate_plan_prescriptions(prospective_plan)
+        self.dal.update_workout_targets(updates)
+
+        result = {
+            "plan_id": plan_id,
+            "weeks_checked": weeks,
+            "workouts_updated": len(updates),
+            "lifts_repaired": sorted(repaired_lifts),
+        }
+        log_utils.log_checkpoint(
+            checkpoint="plan_target_repair",
+            outcome="completed",
+            correlation={"workflow": "plan_repair", "plan_id": plan_id},
+            summary=result,
+            tag="AUDIT",
+        )
+        return result
 
 
 class WgerExportService:
@@ -218,6 +322,21 @@ class WgerExportService:
             )
             return {"status": "skipped", "reason": "already-exported"}
 
+        # Refuse malformed stored prescriptions before readiness can mutate the
+        # database or any remote Wger resource can be touched.
+        initial_rows = self.dal.get_plan_week_rows(plan_id, week_number)
+        initial_normalized_rows = self._normalize_week_rows(
+            initial_rows,
+            week_number=week_number,
+        )
+        initial_payload = self._assemble_payload(
+            plan_id=plan_id,
+            week_number=week_number,
+            rows=initial_normalized_rows,
+            plan_start_date=start_date,
+        )
+        validate_wger_payload_prescriptions(initial_payload)
+
         # Force overwrite means reassess idempotently and resend to wger. It does
         # not mean applying another delta to the effective prescription.
         if validation_decision is None:
@@ -265,7 +384,7 @@ class WgerExportService:
             rows=normalized_rows,
             plan_start_date=start_date,
         )
-        self._annotate_and_enrich_payload(
+        daily_changes = self._annotate_and_enrich_payload(
             payload=payload,
             plan_id=plan_id,
             week_number=week_number,
@@ -273,6 +392,20 @@ class WgerExportService:
             decision=decision,
             daily_adjustment=daily_adjustment,
         )
+
+        validate_wger_payload_prescriptions(payload)
+        if daily_adjustment is not None and daily_changes == 0:
+            log_utils.warn(
+                "Skipping morning Wger update because today's prescription has "
+                "no adjustable values."
+            )
+            log_utils.log_checkpoint(
+                checkpoint="export",
+                outcome="skipped",
+                correlation=correlation,
+                summary={"reason": "no-adjustable-values"},
+            )
+            return {"status": "skipped", "reason": "no-adjustable-values"}
 
         if dry_run:
             log_utils.info(f"[DRY RUN] Would export payload: {json.dumps(payload, indent=2)}")
@@ -375,6 +508,7 @@ class WgerExportService:
             decision=None,
             daily_adjustment=None,
         )
+        validate_wger_payload_prescriptions(payload)
         self._resolve_export_ids(payload)
 
         routine_id, api_trace, replaced_existing = self._replace_payload_in_api(
@@ -416,17 +550,24 @@ class WgerExportService:
         return f"{base_name} retry {stamp}"
         """Perform fallback routine name."""
 
+    @staticmethod
+    def _staging_routine_name(base_name: str) -> str:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        return f"{base_name} staging {stamp}"
+
     def _apply_running_backoff_to_payload(
         self,
         payload: Dict[str, Any],
         decision: ValidationDecision | None,
         *,
         only_day_of_week: int | None = None,
-    ) -> None:
+    ) -> int:
         """Downgrade run intensity in the exported week when readiness is poor."""
 
         if decision is None or not decision.needs_backoff:
-            return
+            return 0
+
+        changes = 0
 
         readiness = getattr(decision, "readiness", None)
         severity = str(getattr(readiness, "severity", "") or "mild").lower()
@@ -466,6 +607,7 @@ class WgerExportService:
                     )
                     entry["entry_comment"] = entry["comment"]
                     entry["recovery_focused"] = True
+                    changes += 1
                     continue
 
                 if session_type in {"easy", "recovery"} and severity in {"moderate", "severe"}:
@@ -483,6 +625,7 @@ class WgerExportService:
                     )
                     entry["entry_comment"] = entry["comment"]
                     entry["recovery_focused"] = True
+                    changes += 1
                     continue
 
                 if session_type == "long_run" and severity in {"moderate", "severe"}:
@@ -506,6 +649,10 @@ class WgerExportService:
                     )
                     entry["entry_comment"] = entry["comment"]
                     entry["recovery_focused"] = True
+
+                    changes += 1
+
+        return changes
 
     def _normalize_week_rows(
         self,
@@ -539,29 +686,38 @@ class WgerExportService:
         rows: List[Dict[str, Any]],
         decision: ValidationDecision | None,
         daily_adjustment: DailyWgerAdjustment | None = None,
-    ) -> None:
+    ) -> int:
         is_test_week = any(bool(row.get("is_test")) for row in rows)
         self._annotate_week_payload(payload, week_number, is_test=is_test_week)
         if bool(getattr(settings, "WGER_EXPAND_STRETCH_ROUTINES", False)):
             self._expand_stretch_routines_for_export(payload)
+        daily_changes = 0
         if daily_adjustment is None or daily_adjustment.adjust_runs:
-            self._apply_running_backoff_to_payload(
+            run_changes = self._apply_running_backoff_to_payload(
                 payload,
                 decision,
                 only_day_of_week=daily_adjustment.day_of_week if daily_adjustment else None,
             )
-        self._apply_daily_strength_adjustment_to_payload(payload, daily_adjustment)
+            if daily_adjustment is not None:
+                daily_changes += run_changes
+        daily_changes += self._apply_daily_strength_adjustment_to_payload(
+            payload,
+            daily_adjustment,
+        )
         self._annotate_adjustments_from_trace(payload=payload, plan_id=plan_id, week_number=week_number)
+        return daily_changes
 
     def _apply_daily_strength_adjustment_to_payload(
         self,
         payload: Dict[str, Any],
         adjustment: DailyWgerAdjustment | None,
-    ) -> None:
+    ) -> int:
         """Apply today's readiness reduction to strength entries before wger export."""
 
         if adjustment is None or not adjustment.adjust_strength:
-            return
+            return 0
+
+        changes = 0
 
         for day in payload.get("days", []):
             try:
@@ -581,6 +737,7 @@ class WgerExportService:
                     adjusted_weight = self._round_weight(target_weight * adjustment.weight_multiplier)
                     if abs(adjusted_weight - target_weight) >= 0.01:
                         entry["target_weight_kg"] = adjusted_weight
+                        changes += 1
                         notes.append(
                             f"{self._format_weight(target_weight)} -> {self._format_weight(adjusted_weight)}"
                         )
@@ -590,20 +747,25 @@ class WgerExportService:
                     adjusted_sets = max(1, int(round(sets * adjustment.set_multiplier)))
                     if adjusted_sets < sets:
                         entry["sets"] = adjusted_sets
+                        changes += 1
                         notes.append(f"sets {sets} -> {adjusted_sets}")
 
                 if adjustment.rir_increment:
-                    current_rir = self._to_float(entry.get("rir")) or 0.0
-                    entry["rir"] = round(current_rir + adjustment.rir_increment, 1)
-                    notes.append(f"RIR +{adjustment.rir_increment}")
+                    current_rir = self._to_float(entry.get("rir"))
+                    if current_rir is not None:
+                        entry["rir"] = round(current_rir + adjustment.rir_increment, 1)
+                        notes.append(f"RIR +{adjustment.rir_increment}")
+                        changes += 1
 
                 if not notes:
-                    notes.append("keep submaximal")
+                    continue
 
                 entry["recovery_focused"] = True
                 note = f"Today readiness back-off: {', '.join(notes[:3])}"
                 entry["comment"] = self._append_comment(entry.get("comment"), note)
                 entry["entry_comment"] = entry["comment"]
+
+        return changes
 
     @staticmethod
     def _is_non_strength_payload_entry(entry: Dict[str, Any]) -> bool:
@@ -688,9 +850,20 @@ class WgerExportService:
         force_overwrite: bool,
     ) -> tuple[int, list[dict[str, Any]]]:
         routine_name = f"Pete-E Week {start_date.strftime('%Y-%m-%d')}"
+        description = f"Automated plan for week starting {start_date.isoformat()}"
+        if force_overwrite and self._supports_staged_routine_publish():
+            existing = self.client.find_routine(routine_name, start_date)
+            return self._publish_payload_staged(
+                payload=payload,
+                start_date=start_date,
+                routine_name=routine_name,
+                description=description,
+                existing_routine=existing,
+            )
+
         routine = self.client.find_or_create_routine(
             name=routine_name,
-            description=f"Automated plan for week starting {start_date.isoformat()}",
+            description=description,
             start=start_date,
             end=start_date + timedelta(days=6),
         )
@@ -741,10 +914,21 @@ class WgerExportService:
 
         routine = finder(routine_name, start_date)
         replaced_existing = routine is not None
+        description = f"Automated plan for week starting {start_date.isoformat()}"
+        if self._supports_staged_routine_publish():
+            routine_id, api_trace = self._publish_payload_staged(
+                payload=payload,
+                start_date=start_date,
+                routine_name=routine_name,
+                description=description,
+                existing_routine=routine,
+            )
+            return routine_id, api_trace, replaced_existing
+
         if routine is None:
             routine = self.client.find_or_create_routine(
                 name=routine_name,
-                description=f"Automated plan for week starting {start_date.isoformat()}",
+                description=description,
                 start=start_date,
                 end=start_date + timedelta(days=6),
             )
@@ -762,6 +946,117 @@ class WgerExportService:
             routine_id=routine_id,
         )
         return routine_id, api_trace, replaced_existing
+
+    def _supports_staged_routine_publish(self) -> bool:
+        return all(
+            callable(getattr(self.client, method, None))
+            for method in (
+                "find_routine",
+                "create_routine",
+                "update_routine",
+                "delete_routine",
+            )
+        )
+
+    def _publish_payload_staged(
+        self,
+        *,
+        payload: Dict[str, Any],
+        start_date: date,
+        routine_name: str,
+        description: str,
+        existing_routine: Dict[str, Any] | None,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Write and verify a candidate routine before retiring the live one."""
+
+        staging_name = self._staging_routine_name(routine_name)
+        staging = self.client.create_routine(
+            name=staging_name,
+            description=f"{description} (staging)",
+            start=start_date,
+            end=start_date + timedelta(days=6),
+        )
+        staging_id = int(staging["id"])
+        try:
+            api_trace = self._write_payload_days(
+                payload=payload,
+                start_date=start_date,
+                routine_id=staging_id,
+            )
+            self._verify_written_payload(payload=payload, api_trace=api_trace)
+        except Exception:
+            try:
+                self.client.delete_routine(staging_id)
+            except Exception as cleanup_exc:  # pragma: no cover - remote cleanup guard
+                log_utils.warn(
+                    f"Failed to remove incomplete Wger staging routine {staging_id}: {cleanup_exc}"
+                )
+            raise
+
+        existing_id = None
+        if existing_routine is not None:
+            existing_id = int(existing_routine["id"])
+            try:
+                self.client.delete_routine(existing_id)
+            except Exception:
+                try:
+                    self.client.delete_routine(staging_id)
+                except Exception as cleanup_exc:  # pragma: no cover - remote cleanup guard
+                    log_utils.warn(
+                        f"Failed to remove Wger staging routine {staging_id}: {cleanup_exc}"
+                    )
+                raise
+
+        try:
+            self.client.update_routine(
+                staging_id,
+                name=routine_name,
+                description=description,
+                start=start_date,
+                end=start_date + timedelta(days=6),
+            )
+        except Exception as exc:
+            # The fully-written staging routine deliberately remains available.
+            # If the old routine was already retired, deleting staging here would
+            # recreate the original partial/empty-week failure mode.
+            log_utils.error(
+                "Wger staging routine was written but could not be promoted: "
+                f"staging_id={staging_id}, replaced_routine_id={existing_id}, error={exc}",
+                "ERROR",
+            )
+            raise RuntimeError(
+                f"Wger routine promotion failed; complete staging routine {staging_id} was retained"
+            ) from exc
+
+        return staging_id, api_trace
+
+    @staticmethod
+    def _verify_written_payload(
+        *,
+        payload: Dict[str, Any],
+        api_trace: list[dict[str, Any]],
+    ) -> None:
+        expected_days = payload.get("days", [])
+        if len(api_trace) != len(expected_days):
+            raise RuntimeError(
+                f"Wger staging verification failed: expected {len(expected_days)} days, "
+                f"wrote {len(api_trace)}"
+            )
+        for expected_day, written_day in zip(expected_days, api_trace):
+            expected_exercises = expected_day.get("exercises", [])
+            written_slots = written_day.get("slots", [])
+            if len(written_slots) != len(expected_exercises):
+                raise RuntimeError(
+                    "Wger staging verification failed: "
+                    f"day {expected_day.get('day_of_week')} expected "
+                    f"{len(expected_exercises)} slots, wrote {len(written_slots)}"
+                )
+            for expected_entry, written_slot in zip(expected_exercises, written_slots):
+                if expected_entry.get("exercise") and written_slot.get("entry_id") is None:
+                    raise RuntimeError(
+                        "Wger staging verification failed: slot entry missing for "
+                        f"exercise {expected_entry.get('exercise')}"
+                    )
 
     def _write_payload_days(
         self,

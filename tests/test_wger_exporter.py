@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from pete_e.infrastructure.wger_client import WgerClient
 
 
@@ -76,3 +78,54 @@ def test_set_config_posts_rest_payload(monkeypatch):
     assert payload["slot_entry"] == 987
     assert payload["value"] == 150
     """Perform test set config posts rest payload."""
+
+
+def test_routine_lifecycle_methods_use_canonical_api_resources(monkeypatch):
+    captured: list[tuple[str, str, dict[str, object]]] = []
+
+    def fake_request(self, method, path, **kwargs):
+        captured.append((method, path, kwargs))
+        return {"id": 44}
+
+    monkeypatch.setattr(WgerClient, "_request", fake_request)
+    client = WgerClient()
+    start = date(2026, 8, 24)
+    end = date(2026, 8, 30)
+
+    assert client.create_routine("staging", "desc", start, end) == {"id": 44}
+    assert client.update_routine(
+        44,
+        name="canonical",
+        description="desc",
+        start=start,
+        end=end,
+    ) == {"id": 44}
+    client.delete_routine(44)
+
+    assert captured == [
+        (
+            "POST",
+            "/routine/",
+            {
+                "json": {
+                    "name": "staging",
+                    "description": "desc",
+                    "start": "2026-08-24",
+                    "end": "2026-08-30",
+                }
+            },
+        ),
+        (
+            "PATCH",
+            "/routine/44/",
+            {
+                "json": {
+                    "name": "canonical",
+                    "description": "desc",
+                    "start": "2026-08-24",
+                    "end": "2026-08-30",
+                }
+            },
+        ),
+        ("DELETE", "/routine/44/", {}),
+    ]

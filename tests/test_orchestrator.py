@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pete_e.application.exceptions import ValidationError
+from pete_e.application.exceptions import ServiceUnavailableError, ValidationError
 from pete_e.application.orchestrator import Orchestrator
 from pete_e.domain.daily_sync import DailySyncResult
 from tests.di_utils import build_stub_container
@@ -104,6 +104,138 @@ def test_run_end_to_end_week_triggers_rollover(monkeypatch: pytest.MonkeyPatch):
     assert plan_service_calls == [date(2024, 4, 29)]
     assert export_calls == [(11, 1, date(2024, 4, 29), None)]
     """Perform test run end to end week triggers rollover."""
+
+
+def test_run_end_to_end_week_syncs_completed_week_before_calibration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[str, object]] = []
+
+    class SyncService:
+        def run_wger_only(self, *, start_date: date, end_date: date) -> DailySyncResult:
+            events.append(("sync", (start_date, end_date)))
+            return DailySyncResult(True, (), {"Wger": "ok"}, ())
+
+    container = build_stub_container(
+        dal=StubDal(active_plan={"id": 13, "start_date": date(2024, 4, 22), "weeks": 4}),
+        wger_client=SimpleNamespace(),
+        plan_service=SimpleNamespace(create_next_plan_for_cycle=lambda start_date: 99),
+        export_service=SimpleNamespace(
+            export_plan_week=lambda **kwargs: events.append(("export", kwargs))
+        ),
+        daily_sync_service=SyncService(),
+    )
+    orch = Orchestrator(container=container)
+    monkeypatch.setattr(
+        Orchestrator,
+        "run_weekly_calibration",
+        lambda self, reference_date: events.append(("calibrate", reference_date))
+        or SimpleNamespace(message="ok", validation=None),
+    )
+
+    orch.run_end_to_end_week(reference_date=date(2024, 4, 28))
+
+    assert events[0] == (
+        "sync",
+        (date(2024, 4, 22), date(2024, 4, 28)),
+    )
+    assert events[1] == ("calibrate", date(2024, 4, 28))
+    assert events[2][0] == "export"
+
+
+def test_run_end_to_end_week_aborts_before_calibration_when_wger_sync_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class FailingSyncService:
+        def run_wger_only(self, *, start_date: date, end_date: date) -> DailySyncResult:
+            events.append(f"sync:{start_date}:{end_date}")
+            return DailySyncResult(False, ("Wger",), {"Wger": "failed"}, ())
+
+    container = build_stub_container(
+        dal=StubDal(),
+        wger_client=SimpleNamespace(),
+        plan_service=SimpleNamespace(
+            create_next_plan_for_cycle=lambda start_date: events.append("plan")
+        ),
+        export_service=SimpleNamespace(
+            export_plan_week=lambda **kwargs: events.append("export")
+        ),
+        daily_sync_service=FailingSyncService(),
+    )
+    orch = Orchestrator(container=container)
+    monkeypatch.setattr(
+        Orchestrator,
+        "run_weekly_calibration",
+        lambda self, reference_date: events.append("calibrate"),
+    )
+
+    with pytest.raises(ServiceUnavailableError) as exc_info:
+        orch.run_end_to_end_week(reference_date=date(2024, 4, 28))
+
+    assert exc_info.value.code == "weekly_wger_sync_failed"
+    assert events == ["sync:2024-04-22:2024-04-28"]
+
+
+def test_repair_active_plan_syncs_recalculates_repairs_and_republishes() -> None:
+    events: list[tuple[str, object]] = []
+
+    class SyncService:
+        def run_wger_only(self, *, start_date: date, end_date: date) -> DailySyncResult:
+            events.append(("sync", (start_date, end_date)))
+            return DailySyncResult(True, (), {"Wger": "ok"}, ())
+
+    plan_service = SimpleNamespace(
+        repair_missing_percentage_targets=lambda **kwargs: events.append(
+            ("repair", kwargs)
+        )
+        or {
+            "plan_id": 17,
+            "weeks_checked": 4,
+            "workouts_updated": 6,
+            "lifts_repaired": ["bench"],
+        }
+    )
+    export_service = SimpleNamespace(
+        replace_stored_plan_week=lambda **kwargs: events.append(("replace", kwargs))
+        or {"routine_id": 43, "status": "replaced"}
+    )
+    container = build_stub_container(
+        dal=StubDal(
+            active_plan={"id": 17, "start_date": date(2026, 8, 24), "weeks": 4}
+        ),
+        wger_client=SimpleNamespace(),
+        plan_service=plan_service,
+        export_service=export_service,
+        daily_sync_service=SyncService(),
+    )
+
+    result = Orchestrator(container=container).repair_active_plan_targets(
+        date(2026, 8, 25)
+    )
+
+    assert events == [
+        ("sync", (date(2026, 8, 12), date(2026, 8, 25))),
+        (
+            "repair",
+            {
+                "plan_id": 17,
+                "weeks": 4,
+                "recalibrate_training_maxes": True,
+            },
+        ),
+        (
+            "replace",
+            {
+                "plan_id": 17,
+                "week_number": 1,
+                "start_date": date(2026, 8, 24),
+            },
+        ),
+    ]
+    assert result["workouts_updated"] == 6
+    assert result["replacement"] == {"routine_id": 43, "status": "replaced"}
 
 
 def test_run_end_to_end_week_exports_when_rollover_skipped(monkeypatch: pytest.MonkeyPatch):
