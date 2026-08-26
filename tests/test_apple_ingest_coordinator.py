@@ -120,9 +120,7 @@ def test_no_work_decision_is_successful_and_side_effect_free() -> None:
     assert decision.is_no_work is True
 
 
-def test_all_successful_groups_advance_to_latest_timestamp_and_aggregate_counts() -> (
-    None
-):
+def test_successful_groups_advance_latest_and_aggregate_counts() -> None:
     first = _source(2, "/first.json")
     second = _source(3, "/second.json")
 
@@ -144,9 +142,7 @@ def test_all_successful_groups_advance_to_latest_timestamp_and_aggregate_counts(
     assert decision.is_no_work is False
 
 
-def test_failed_earlier_group_blocks_watermark_but_later_success_still_commits() -> (
-    None
-):
+def test_earlier_failure_blocks_watermark_but_later_success_commits() -> None:
     failed = _source(2, "/failed.json")
     later = _source(3, "/later.json")
 

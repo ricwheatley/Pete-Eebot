@@ -219,9 +219,12 @@ def _ingestor(scenario: _Scenario) -> AppleHealthDropboxIngestor:
     ],
 )
 def test_no_work_preserves_initialisation_discovery_and_transaction_order(
+    monkeypatch: pytest.MonkeyPatch,
     checkpoint: datetime | None,
     expected_since: datetime,
 ) -> None:
+    info_messages: list[str] = []
+    monkeypatch.setattr(log_utils, "info", info_messages.append)
     scenario = _Scenario(
         store=_Store(checkpoint=checkpoint),
         listings={
@@ -240,6 +243,7 @@ def test_no_work_preserves_initialisation_discovery_and_transaction_order(
     assert result.summary.sources == []
     assert result.statuses == {"Apple Health": "ok"}
     assert result.alerts == ()
+    assert info_messages == ["No new files to import."]
     assert scenario.events == [
         "dal.connection",
         "connection.enter",
@@ -251,9 +255,11 @@ def test_no_work_preserves_initialisation_discovery_and_transaction_order(
     ]
 
 
-def test_two_listing_results_are_normalised_then_ordered_by_timestamp_and_path() -> (
-    None
-):
+def test_two_listing_results_are_normalised_then_ordered_by_timestamp_and_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    info_messages: list[str] = []
+    monkeypatch.setattr(log_utils, "info", info_messages.append)
     ten_utc = datetime(2024, 1, 2, 10, tzinfo=UTC)
     noon_naive = datetime(2024, 1, 2, 12)
     scenario = _Scenario(
@@ -302,6 +308,11 @@ def test_two_listing_results_are_normalised_then_ordered_by_timestamp_and_path()
         "checkpoint.save:2024-01-02T12:00:00+00:00",
         "commit",
         "connection.exit:none",
+    ]
+    assert info_messages[0] == "Found 5 new file(s) to process."
+    assert info_messages[1:3] == [
+        "Processing file: /b.json (modified: 2024-01-02 10:00:00+00:00)",
+        "Parsing raw JSON file: /b.json",
     ]
 
 
@@ -365,9 +376,9 @@ def test_recoverable_file_failures_return_safe_retryable_details_without_commit(
     assert scenario.events[-1] == "connection.exit:none"
 
 
-def test_partial_rows_and_later_success_commit_but_unsafe_group_blocks_checkpoint() -> (
-    None
-):
+def test_partial_rows_and_later_success_commit_but_unsafe_group_blocks_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     first = datetime(2024, 1, 2, tzinfo=UTC)
     later = datetime(2024, 1, 3, tzinfo=UTC)
     partial_path = "/a-partial.json"
@@ -389,6 +400,11 @@ def test_partial_rows_and_later_success_commit_but_unsafe_group_blocks_checkpoin
         },
         parse_outcomes={"partial": _parsed("partial", skipped=2)},
     )
+    monkeypatch.setattr(
+        log_utils,
+        "error",
+        lambda message: scenario.events.append(f"error:{message}"),
+    )
 
     result = _ingestor(scenario).ingest()
 
@@ -405,6 +421,11 @@ def test_partial_rows_and_later_success_commit_but_unsafe_group_blocks_checkpoin
     assert result.failure_details[0].reason == "parser skipped 2 invalid row(s)"
     assert scenario.store.checkpoint == INITIAL_CHECKPOINT
     assert scenario.store.writes == ["partial", "later"]
+    partial_log = (
+        "error:Apple Health ingest failure at parse for /a-partial.json: "
+        "parser skipped 2 invalid row(s)"
+    )
+    assert scenario.events.index(partial_log) < scenario.events.index("write:partial")
     assert "commit" in scenario.events
     assert not any(event.startswith("checkpoint.save:") for event in scenario.events)
     assert result.alerts == (
