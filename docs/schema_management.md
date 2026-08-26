@@ -118,7 +118,10 @@ clone; do not weaken the checks or guess a stamp.
 
 The runtime account needs normal application DML and `SELECT` on
 `public.petee_schema_migrations`; it does not need schema `CREATE` or unrestricted
-DDL. The migrator account must own the migrated objects, or be a member of the
+DDL. Full-plan persistence relies on the migration-owned
+`ux_training_plans_single_active` index and performs only `UPDATE`/`INSERT`
+statements across the three plan tables. The migrator account must own the
+migrated objects, or be a member of the
 role that owns them, because PostgreSQL requires ownership for `ALTER TABLE` and
 function replacement. A typical installation uses a non-login schema-owner role,
 a login migrator that can assume it, and a separate runtime login.

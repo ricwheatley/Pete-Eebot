@@ -14,7 +14,11 @@ class PlanRepository(ABC):
 
     @abstractmethod
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
-        """Persist a plan and return its identifier."""
+        """Atomically replace the active plan and return the new integer ID.
+
+        Implementations preserve the legacy plan dictionary contract and
+        propagate validation, mapping, and persistence failures to the caller.
+        """
 
     @abstractmethod
     def get_assistance_pool_for(self, main_lift_id: int) -> List[int]:
@@ -24,7 +28,9 @@ class PlanRepository(ABC):
     def get_core_pool_ids(self) -> List[int]:
         """Return IDs of available core exercises."""
 
-    def get_exercise_difficulty_cap(self, as_of_date: date | None = None) -> Dict[str, Any]:
+    def get_exercise_difficulty_cap(
+        self, as_of_date: date | None = None
+    ) -> Dict[str, Any]:
         """Return the currently allowed exercise difficulty cap."""
 
         return {

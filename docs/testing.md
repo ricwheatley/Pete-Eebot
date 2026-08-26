@@ -137,13 +137,16 @@ coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser_types.py
 coverage report --fail-under=100 \
   pete_e/infrastructure/apple_ingest_coordinator.py
+coverage report --fail-under=100 \
+  pete_e/infrastructure/plan_persistence.py
 ```
 
 Static typing covers explicit completed-tranche scopes and should expand one
 boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope is the weekly narrative module, the three pure Apple
 parser boundary modules, and the pure Apple ingest outcome/checkpoint
-coordinator:
+coordinator. It also covers the domain-owned plan repository port and typed
+full-plan normalization/cursor-writer boundary:
 
 ```bash
 mypy
@@ -156,6 +159,7 @@ changes with behavioral work:
 ```bash
 ruff check pete_e tests scripts
 ruff format --check \
+  pete_e/domain/repositories.py \
   pete_e/domain/weekly_narrative.py \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
@@ -163,12 +167,17 @@ ruff format --check \
   pete_e/infrastructure/apple_parser_types.py \
   pete_e/infrastructure/apple_health_ingestor.py \
   pete_e/infrastructure/apple_ingest_coordinator.py \
+  pete_e/infrastructure/plan_persistence.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
   tests/test_apple_ingest_adapter_contract.py \
   tests/test_apple_ingest_coordinator.py \
   tests/test_apple_parser_characterization.py \
-  tests/test_apple_parser_stages.py
+  tests/test_apple_parser_stages.py \
+  tests/infrastructure/test_plan_persistence.py \
+  tests/infrastructure/test_plan_save_mapper_contract.py \
+  tests/integration/test_plan_persistence_integration.py \
+  tests/test_plan_persistence_characterization.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the

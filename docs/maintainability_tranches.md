@@ -288,3 +288,102 @@ the 66% repository coverage floor is unchanged.
 The Apple parser's record recognition and nine-key mapping contract, Apple writer
 SQL, PostgreSQL schema/DAL work, retry design, and unrelated application/CLI/web
 hotspots remain explicitly outside this tranche.
+
+## 2026-08-26: atomic PostgreSQL full-plan persistence
+
+### Baseline and selected boundary
+
+The tranche started from a clean `main` worktree at
+`0dcdd2bef926f5e724464707ebec844f86304821`, aligned with `origin/main`.
+`postgres_dal.py` had grown to 2,355 physical lines; `save_full_plan` remained a
+152-line, complexity-24 method, and the DAL still had three C901 findings with a
+maximum of 24. The remeasured unit/contract lane passed 838 tests with 7 skips at
+69% displayed branch-aware repository coverage; the DAL measured 34%, with the
+entire save span uncovered. A narrow strict probe found 30 errors in the legacy
+DAL, while the configured five-file strict scope remained clean.
+
+The method coupled raw payload validation, raw week ordering, workout coercion,
+JSON adaptation, runtime index assurance, active-plan transition, three-table
+inserts, baseline duplication, commit/rollback, logging, and ID extraction. The
+normal runtime path first repaired active rows and ran `CREATE UNIQUE INDEX IF
+NOT EXISTS`, although migration `20260401_harden_plan_generation` already owns
+that invariant. A real DML-only role could update and insert the plan tables but
+failed the old save at that runtime DDL statement.
+
+### Payload-to-row contract
+
+The characterization suite pins this mapping before and after extraction:
+
+| Payload source | Normalization/default/order | Persisted destination |
+| --- | --- | --- |
+| `start_date` | required non-`None`; otherwise passed through | `training_plans.start_date` |
+| `weeks` | any `int`, including `bool`; otherwise `len(plan_weeks)` | `training_plans.weeks` |
+| `metadata` | `Json` only when non-`None` | `training_plans.metadata` |
+| `plan_weeks` | required non-empty `list`; stable sort by raw `week_number` | insertion order in `training_plan_weeks` |
+| week `week_number` / `is_test` | legacy integer coercion / `bool`, default false | `week_number` / `is_test` |
+| week `workouts` | falsey means empty; any iterable otherwise; input order retained; each item must be a `dict` | insertion order in `training_plan_workouts` |
+| workout IDs/counts | integer coercion for `day_of_week`, `exercise_id`, `sets`, `reps`, and `programmed_difficulty`; only day is payload-required | same-named columns |
+| `sets` | one effective value, duplicated at creation | `sets` and `baseline_sets` |
+| `rir` / `rir_cue` | raw `rir`; cue falls back to `rir` only when cue is `None` | `rir`, duplicate `baseline_rir`, and independent `rir_cue` |
+| `scheduled_time` / `slot` | valid time from `scheduled_time`, else valid time from `slot`, else `NULL` | `scheduled_time` |
+| cardio/comment/options | legacy truthiness; optional/recovery default false | `is_cardio`, `comment`, `optional`, `recovery_focused` |
+| `details` | `Json` only when non-`None` | `details` |
+| numeric targets | passed through for psycopg/PostgreSQL adaptation | `percent_1rm`, `target_weight_kg` |
+
+Mapper-only `id`, exercise name, workout type, intensity, and muscle group remain
+outside the writer's consumed shape. Mapper characterization separately pins
+scheduled-time precedence, RIR precedence, metadata/details, optional/recovery,
+difficulty, test-week, cardio, and comment-only behavior.
+
+### Typed normal form and atomic writer
+
+`infrastructure.plan_persistence` owns frozen plan/week/workout write facts, pure
+normalization helpers, and a writer that receives an explicit cursor. The writer
+acquires no pool, commits nothing, runs no migration or schema assurance, and
+imports no application, CLI, or API code. `PostgresDal.save_full_plan` remains
+the public compatibility and transaction facade: normalize, acquire one
+connection/cursor, disable autocommit, write, commit, log, and return; every
+writer or commit exception is rolled back and re-raised.
+
+The normal SQL sequence is now DML-only: deactivate the old active plan, insert
+the new active plan, insert its ordered weeks, and insert each ordered workout.
+The partial unique index continues to enforce one active plan and is verified by
+the migration/readiness schema gate. `PlanRepository` remains domain-owned and
+infrastructure-free, with its existing dictionary-in/integer-ID-out signature.
+
+### Characterization and feedback ratchets
+
+The focused unit suite covers outer and nested validation, fallback/default
+branches, generator and ordering behavior, all consumed columns, missing IDs,
+JSON/SQL/cursor/commit errors, rollback, logging, the mapper/service boundary,
+and DML-only statement inspection. The normalization/writer module has 100%
+combined statement/branch coverage and zero strict-mypy errors together with the
+existing repository port. Formatting checks pass for the six new/minimally
+changed Python files; the read-only repository-wide baseline still reports 231
+legacy files that would be reformatted, including `postgres_dal.py`.
+
+Guarded PostgreSQL 15 tests verify complete values in all three tables, JSONB,
+raw week and workout ordering, null exercise IDs, baseline/effective equality,
+sequential activation, and rollback after plan insert, injected week insert,
+workout FK/check/JSON adaptation, and deferred commit failures. A role with only
+schema usage, plan-table DML, and plan-sequence privileges successfully saves on
+the already migrated schema and has no schema `CREATE` privilege.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `save_full_plan` physical span / complexity | 152 / 24 | 16 / 2 |
+| DAL C901 findings / maximum | 3 / 24 | 2 / 16 |
+| New helper maximum complexity | n/a | 5 |
+| `postgres_dal.py` physical lines | 2,355 | 2,220 |
+| DAL unit/contract branch-aware coverage | 34% displayed | 38.583411% |
+| DAL combined unit/contract/PostgreSQL coverage | not measured | 40.913327% |
+| Typed plan-persistence branch-aware coverage | n/a | 100% (120 statements, 36 branches) |
+| Repository unit/contract branch-aware coverage | 69% displayed | 69.550367% (70% displayed) |
+| Unit/contract lane | 838 passed, 7 skipped | 883 passed, 7 skipped |
+| PostgreSQL schema/application lanes | no plan-save cases | 10 + 25 passed |
+| Strict local legacy-DAL probe | 30 errors | 29 errors |
+| Strict errors in repository port/new boundary | no declared scope | 0 |
+
+Plan reads, the two unused legacy writers, readiness/difficulty methods, pool
+ownership, strength-test persistence, Wger, nutrition, profiles, jobs, and all
+other DAL families remain explicitly deferred.

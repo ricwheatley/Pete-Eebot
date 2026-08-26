@@ -9,7 +9,7 @@ import json
 import hashlib
 import threading
 from contextlib import contextmanager
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from psycopg import sql
@@ -20,6 +20,7 @@ from psycopg_pool import ConnectionPool
 from pete_e.config import settings
 from pete_e.infrastructure.db_conn import get_database_url
 from pete_e.infrastructure import log_utils
+from pete_e.infrastructure.plan_persistence import normalize_full_plan, write_full_plan
 from pete_e.domain import schedule_rules
 from pete_e.domain.repositories import PlanRepository
 from pete_e.domain.validation import MAX_BASELINE_WINDOW_DAYS
@@ -186,151 +187,15 @@ class PostgresDal(PlanRepository):
     # --- Plan & Block Management ---
     # ----------------------------------------------
     def save_full_plan(self, plan_dict: Dict[str, Any]) -> int:
-        if not isinstance(plan_dict, dict):
-            raise TypeError("plan_dict must be a mapping")
-
-        plan_weeks = plan_dict.get("plan_weeks")
-        if not isinstance(plan_weeks, list) or not plan_weeks:
-            raise ValueError("plan_dict must include a non-empty 'plan_weeks' list")
-
-        start_date = plan_dict.get("start_date")
-        if start_date is None:
-            raise ValueError("plan_dict must include a 'start_date'")
-
-        total_weeks = plan_dict.get("weeks")
-        if not isinstance(total_weeks, int):
-            total_weeks = len(plan_weeks)
-
-        def _coerce_int(value: Any) -> Optional[int]:
-            if value is None:
-                return None
-            if isinstance(value, bool):
-                return int(value)
-            if isinstance(value, int):
-                return value
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return None
-            """Perform coerce int."""
-
-        def _coerce_scheduled_time(value: Any) -> time | None:
-            if value is None:
-                return None
-            if isinstance(value, time):
-                return value
-            text = str(value).strip()
-            if not text:
-                return None
-            try:
-                return time.fromisoformat(text)
-            except ValueError:
-                return None
-            """Perform coerce scheduled time."""
-
-        def _persist_workout(cur, week_id: int, payload: Dict[str, Any]) -> None:
-            day_of_week = _coerce_int(payload.get("day_of_week"))
-            if day_of_week is None:
-                raise ValueError("workout payload missing day_of_week")
-
-            exercise_id = _coerce_int(payload.get("exercise_id"))
-            sets = _coerce_int(payload.get("sets"))
-            reps = _coerce_int(payload.get("reps"))
-            rir = payload.get("rir")
-            rir_cue = payload.get("rir_cue")
-            if rir_cue is None:
-                rir_cue = rir
-            percent_1rm = payload.get("percent_1rm")
-            target_weight = payload.get("target_weight_kg")
-            scheduled_time = _coerce_scheduled_time(payload.get("scheduled_time"))
-            if scheduled_time is None:
-                scheduled_time = _coerce_scheduled_time(payload.get("slot"))
-            is_cardio = bool(payload.get("is_cardio"))
-            comment = payload.get("comment")
-            optional = bool(payload.get("optional", False))
-            recovery_focused = bool(payload.get("recovery_focused", False))
-            details = payload.get("details")
-            programmed_difficulty = _coerce_int(payload.get("programmed_difficulty"))
-
-            cur.execute(
-                """
-                INSERT INTO training_plan_workouts (
-                    week_id,
-                    day_of_week,
-                    exercise_id,
-                    sets,
-                    baseline_sets,
-                    reps,
-                    rir,
-                    baseline_rir,
-                    percent_1rm,
-                    target_weight_kg,
-                    rir_cue,
-                    scheduled_time,
-                    is_cardio,
-                    comment,
-                    optional,
-                    recovery_focused,
-                    details,
-                    programmed_difficulty
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    week_id,
-                    day_of_week,
-                    exercise_id,
-                    sets,
-                    sets,
-                    reps,
-                    rir,
-                    rir,
-                    percent_1rm,
-                    target_weight,
-                    rir_cue,
-                    scheduled_time,
-                    is_cardio,
-                    comment,
-                    optional,
-                    recovery_focused,
-                    Json(details) if details is not None else None,
-                    programmed_difficulty,
-                ),
-            )
-            """Perform persist workout."""
-
+        plan = normalize_full_plan(plan_dict)
         with self.pool.connection() as conn:
             with conn.cursor(row_factory=None) as cur:
                 try:
                     conn.autocommit = False
-                    self._ensure_single_active_plan_invariant(cur)
-                    cur.execute("UPDATE training_plans SET is_active = false WHERE is_active = true;")
-                    cur.execute(
-                        "INSERT INTO training_plans (start_date, weeks, is_active, metadata) VALUES (%s, %s, true, %s) RETURNING id;",
-                        (start_date, total_weeks, Json(plan_dict.get("metadata")) if plan_dict.get("metadata") is not None else None),
-                    )
-                    plan_id = cur.fetchone()[0]
-
-                    for week_payload in sorted(plan_weeks, key=lambda item: item.get("week_number", 0)):
-                        week_number = _coerce_int(week_payload.get("week_number"))
-                        if week_number is None:
-                            raise ValueError("week payload missing week_number")
-                        is_test = bool(week_payload.get("is_test", False))
-                        cur.execute(
-                            "INSERT INTO training_plan_weeks (plan_id, week_number, is_test) VALUES (%s, %s, %s) RETURNING id;",
-                            (plan_id, week_number, is_test),
-                        )
-                        week_id = cur.fetchone()[0]
-
-                        workouts = week_payload.get("workouts") or []
-                        for workout in workouts:
-                            if not isinstance(workout, dict):
-                                raise TypeError("workouts must be mappings")
-                            _persist_workout(cur, week_id, workout)
-
+                    plan_id = write_full_plan(cur, plan)
                     conn.commit()
                     log_utils.info(
-                        f"Persisted training plan {plan_id} starting {start_date} spanning {total_weeks} week(s)."
+                        f"Persisted training plan {plan_id} starting {plan.start_date} spanning {plan.total_weeks} week(s)."
                     )
                     return plan_id
                 except Exception:
