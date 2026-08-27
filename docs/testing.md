@@ -133,6 +133,7 @@ coverage report --fail-under=100 \
   pete_e/domain/body_age_history.py \
   pete_e/domain/body_age_trend.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
+coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
 coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
@@ -147,10 +148,10 @@ coverage report --fail-under=100 \
 Static typing covers explicit completed-tranche scopes and should expand one
 boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope includes the typed body-age history reader and pure trend
-analyzer, the weekly narrative module, the three pure Apple parser boundary
-modules, and the pure Apple ingest outcome/checkpoint coordinator. It also
-covers the domain-owned plan repository port and typed full-plan
-normalization/cursor-writer boundary:
+analyzer, the weekly narrative module, the typed weekly-plan presentation
+boundary, the three pure Apple parser boundary modules, and the pure Apple
+ingest outcome/checkpoint coordinator. It also covers the domain-owned plan
+repository port and typed full-plan normalization/cursor-writer boundary:
 
 ```bash
 mypy
@@ -167,6 +168,7 @@ ruff format --check \
   pete_e/domain/body_age_history.py \
   pete_e/domain/body_age_trend.py \
   pete_e/domain/weekly_narrative.py \
+  pete_e/domain/weekly_plan_presentation.py \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
@@ -179,6 +181,7 @@ ruff format --check \
   tests/application/test_body_age_trend_consumers.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
+  tests/domain/test_weekly_plan_presentation.py \
   tests/test_apple_ingest_adapter_contract.py \
   tests/test_apple_ingest_coordinator.py \
   tests/test_apple_parser_characterization.py \
@@ -186,7 +189,8 @@ ruff format --check \
   tests/infrastructure/test_plan_persistence.py \
   tests/infrastructure/test_plan_save_mapper_contract.py \
   tests/integration/test_plan_persistence_integration.py \
-  tests/test_plan_persistence_characterization.py
+  tests/test_plan_persistence_characterization.py \
+  tests/test_weekly_plan_message.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the

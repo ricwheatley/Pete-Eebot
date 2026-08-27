@@ -558,3 +558,82 @@ and no DAL query, migration, SQL scoring rule, schema, ingestion path, CLI or
 Telegram wording, or daily-summary formatting policy changed. Calculator
 parity, daily-summary consolidation, and the remaining trend/data-shape quirks
 remain separate decisions.
+
+## 2026-08-27: typed weekly workout presentation
+
+### Baseline and selected boundary
+
+The tranche started from a clean `main` worktree at
+`fedd90c3ff7d1ccaceb20d6021c233331dee66d6`, aligned with `origin/main`.
+`narrative_builder.py` had 1,405 physical lines and three C901 findings.
+`_format_weekly_workouts` spanned 54 lines at complexity 14, while the 32-line,
+complexity-8 `build_weekly_plan_summary` parsed the helper's `"- Day: a | b"`
+strings back into days and sessions. The unit/contract lane passed 1,061 tests
+with 7 skips at 70.536402% branch-aware repository coverage. The isolated
+strict legacy-module probe reported 10 errors.
+
+Characterization pinned the raw-row mapping before extraction:
+
+| Raw branch or field | Name/details behavior | Ordering behavior |
+| --- | --- | --- |
+| `day_of_week` | `int` coercion; missing, invalid, and values outside 1-7 are omitted | Days render Monday through Sunday |
+| mapping `details` | `comment`, then `exercise_name`, then `Run`; an empty mapping still selects this naming branch | Existing `workout_display_order` receives the mapping |
+| non-mapping `details` | `exercise_name`, then `Exercise {exercise_id}` | Existing policy receives `details=None` |
+| recognized treadmill steps | Exact interval, tempo, easy, steady, recovery, and long-run instructions | Run session types precede strength |
+| stretch routine steps | Display-name fallback; malformed steps skipped; isometric/dynamic/hold wording retained | Stretch/mobility follows strength |
+| `sets` and `reps` | Render together only when both are non-`None` and no instruction rendered | Does not affect ordering |
+| `target_weight_kg` / `weight_kg` | Truthy target wins; a zero target falls back to current weight; shown only for falsey `details` payloads | Does not affect ordering |
+| `rir` / `optional` | RIR is shown only for falsey `details`; any truthy optional value adds the marker | Does not affect ordering |
+| order ties | Session text is otherwise unchanged | Original input position is the stable tie-breaker |
+
+### Typed boundary and compatibility
+
+`domain.weekly_plan_presentation` now owns frozen session, day, and complete
+seven-day presentation values. Separate functions normalize one row, render
+treadmill/stretch instructions, group and stably order sessions, and perform
+final text layout. The ordering callable and stretch session identifier are
+explicit inputs; the module imports only the standard library and has no CLI,
+application, infrastructure, framework, phrase, or mutable-global dependency.
+
+The public raw-list facade and both compatibility facades are unchanged. The
+public path is now raw rows -> typed sessions/days -> final text. It never
+creates or reparses day bullet strings. `_format_weekly_workouts` remains a
+private compatibility adapter over the typed model. A named final-layout rule
+deliberately preserves the old defect where `|` inside a session name/comment
+creates another output line; `: ` remains ordinary text. Non-empty
+`week_start` remains ignored. Empty days remain available as typed rest
+metadata, while public output still discards them.
+
+### Characterization and feedback ratchets
+
+Twenty-six facade/real-Typer characterizations and 17 direct pure tests cover
+empty and all-seven-day layouts, invalid/coerced days, stable ties, structured
+and legacy naming, zero/falsey/detail precedence, every treadmill family,
+short/malformed nested steps, stretch styles and malformed steps, duplicate and
+delimiter sessions, ignored `week_start`, computed rest days, generators,
+non-mapping row errors, exact whitespace, print/send output, and Telegram send
+failure. The exact characterizations passed both before and after extraction.
+Related schedule/export and plan-mapper tests also remained green.
+
+CI additively includes the pure module in strict mypy, enforces its 100%
+statement/branch coverage, and format-checks only the weekly tranche files in
+addition to the prior ratchet. The repository floor remains 66%.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `_format_weekly_workouts` physical span / complexity | 54 / 14 | 3 / 1 |
+| `build_weekly_plan_summary` physical span / complexity | 32 / 8 | 14 / 2 |
+| Narrative-builder C901 findings | 3 | 2 |
+| Repository C901 findings | 35 | 34 |
+| New helper maximum complexity | n/a | 5 |
+| `narrative_builder.py` physical lines | 1,405 | 1,253 |
+| New presentation branch-aware coverage | n/a | 100% (197 statements, 66 branches) |
+| Combined narrative/presentation coverage | 70% legacy module | 75.845791% |
+| Repository unit/contract branch-aware coverage | 70.536402% | 70.846850% |
+| Unit/contract lane | 1,061 passed, 7 skipped | 1,104 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 10 files | 0 errors in 11 files |
+| Isolated legacy-module strict probe | 10 errors | 9 errors when the new typed module is explicit |
+
+CLI weekly-plan selection, voice composition and delivery orchestration, plan
+generation/persistence/mappers, schedule policy, weekly metric analysis, trend
+analysis, and every daily/cycle narrative remain explicitly deferred.
