@@ -48,6 +48,8 @@ jobs:
         run: >-
           .venv/bin/ruff format --check
           pete_e/domain/repositories.py
+          pete_e/domain/body_age_history.py
+          pete_e/domain/body_age_trend.py
           pete_e/domain/weekly_narrative.py
           pete_e/application/github_deploy_webhook.py
           pete_e/infrastructure/apple_parser.py
@@ -59,6 +61,9 @@ jobs:
           pete_e/infrastructure/plan_persistence.py
           tests/domain/test_weekly_narrative_analysis.py
           tests/domain/test_weekly_narrative_characterization.py
+          tests/domain/test_body_age_trend_analysis.py
+          tests/domain/test_body_age_trend_characterization.py
+          tests/application/test_body_age_trend_consumers.py
           tests/test_github_deploy_webhook.py
           tests/test_github_webhook_contract.py
           tests/test_apple_ingest_adapter_contract.py
@@ -85,6 +90,9 @@ jobs:
           .venv/bin/coverage erase
           .venv/bin/coverage run -m pytest -q -m "unit or contract"
           .venv/bin/coverage report
+          .venv/bin/coverage report --fail-under=100 \
+          pete_e/domain/body_age_history.py \
+          pete_e/domain/body_age_trend.py
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
           .venv/bin/coverage report --fail-under=100 \
           pete_e/application/github_deploy_webhook.py

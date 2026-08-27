@@ -491,3 +491,70 @@ The repository floor remains 66%.
 GET `/logs`, deployment worker/ownership, rate-limit policy, edge-security schema,
 other API and web-console routes, plan persistence, Apple ingestion, narrative,
 CLI behavior, and all unrelated families remain explicitly deferred.
+
+## 2026-08-27: typed body-age history and trend analysis
+
+### Baseline and selected boundary
+
+The tranche started from a clean `main` worktree at
+`6f60ce626411e28ba04db6e87c3598c57de97136`, aligned with `origin/main`. The
+repository had advanced beyond the supplied `b2faec2` measurement. On the
+current commit, `body_age.py` remained 413 physical / 334 nonblank,
+non-comment lines. `get_body_age_trend` was a 69-line, complexity-20 function;
+`calculate_body_age` remained a 203-line, complexity-24 function. The module's
+unit/contract branch-aware coverage was 66.451613%, and the repository measured
+70.203819% with 1,005 passing tests and 7 skips. The isolated strict probe
+reported six errors.
+
+The trend function mixed two optional DAL capabilities, exception and iterable
+compatibility, arbitrary persistence shapes, conversion, window filtering,
+stable duplicate ordering, latest-point selection, exact-date comparison, and
+rounding. It was selected as a bounded read-side seam with two production
+summary consumers. The exploratory Python calculator and authoritative
+PostgreSQL `sp_upsert_body_age` calculation were explicitly excluded.
+
+### Typed history port and pure decision boundary
+
+`domain.body_age_history` now owns `BodyAgeHistoryRow`, the structural
+`BodyAgeHistoryReader` protocol, and `LegacyBodyAgeHistoryReader`. The adapter
+preserves range-method preference, the eight-row fallback only when the range
+method is unavailable, broad synchronous loader-error suppression, eager
+materialization of non-list iterables, and propagated iteration/materialization
+errors.
+
+`domain.body_age_trend.analyze_body_age_trend` owns conversion, the inclusive
+eight-date window, stable ordering, latest-point selection, exact
+`target_date - 7 days` comparison, duplicate behavior, and one-decimal output.
+It imports only the domain-owned row type; neither new module imports
+application, infrastructure, CLI, API, framework, or PostgreSQL code. The
+compatibility facade keeps the existing `get_body_age_trend(dal,
+target_date=None)` interface and re-exports `BodyAgeTrend` from
+`domain.body_age`.
+
+Fifty-six new tests cover the pure boundary, adapter/facade characterization,
+and both summary consumers. Characterization pins missing/non-callable/both
+capabilities, synchronous versus iterator errors, `None`/list/tuple/generator
+and malformed results, the default clock, flat/nested/falsey values, converter
+quirks, every accepted and invalid date form, window edges, unordered and
+duplicate dates, exact versus nearby comparisons, and positive/negative
+rounding behavior.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `get_body_age_trend` physical span / complexity | 69 / 20 | 12 / 3 |
+| `body_age.py` physical / nonblank non-comment lines | 413 / 334 | 353 / 283 |
+| New helper maximum complexity | n/a | 8 |
+| Repository C901 findings | 36 | 35 |
+| Legacy module branch-aware coverage | 66.451613% | 70.044053% |
+| New history/analyzer branch-aware coverage | n/a | 100% (116 statements, 40 branches) |
+| Combined body-age module/boundary coverage | 66.451613% | 82% displayed |
+| Repository unit/contract branch-aware coverage | 70.203819% | 70.536402% (71% displayed) |
+| Unit/contract lane | 1,005 passed, 7 skipped | 1,061 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 8 files | 0 errors in 10 files |
+| Isolated legacy-module strict errors | 6 | 5, all in deferred calculator support/calculation code |
+
+`calculate_body_age` is byte-for-byte unchanged at the function-source level,
+and no DAL query, migration, SQL scoring rule, schema, ingestion path, CLI or
+Telegram wording, or daily-summary formatting policy changed. Calculator
+parity, daily-summary consolidation, and the remaining trend/data-shape quirks
+remain separate decisions.

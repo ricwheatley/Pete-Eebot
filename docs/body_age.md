@@ -11,7 +11,29 @@
   * `vo2_max`
   * `hrv_sdnn_ms`
   * Withings body composition: `body_fat_pct`, plus `visceral_fat_index` and `muscle_pct` when a usable Body Comp window is available.
-* The procedure mirrors the Python helper in `pete_e/domain/body_age.py`. The helper is not part of the production flow but can be used in notebooks for exploratory analysis.
+* The procedure is the production calculation source of truth. The separate
+  `calculate_body_age` helper in `pete_e/domain/body_age.py` is exploratory and
+  is not guaranteed to have identical time-window or fallback semantics.
+
+## Seven-Day History Trend
+
+The read-side Body Age trend does not calculate Body Age. It compares body-age
+values already present in history rows:
+
+* `get_body_age_trend(dal, target_date=None)` remains the compatibility facade
+  used by the CLI messenger and application orchestrator.
+* `BodyAgeHistoryReader` owns the narrow, infrastructure-free row contract.
+  The legacy adapter prefers `get_historical_data(start, target)` and uses
+  `get_historical_metrics(8)` only when the range capability is absent or not
+  callable.
+* `analyze_body_age_trend(rows, target_date)` is the pure normalization and
+  decision boundary. It selects the latest valid sample in the inclusive
+  `target_date - 7 days` through `target_date` window, and calculates a delta
+  only when a sample exists on the exact seven-day comparison date.
+
+These trend semantics are intentionally independent of the SQL procedure's
+seven-day scoring window. Changing the trend does not change
+`sp_upsert_body_age`, and changing the calculator does not redefine the trend.
 
 ## Enriched Withings Body Comp
 

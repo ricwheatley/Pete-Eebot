@@ -129,6 +129,9 @@ the first maintainability tranche; do not lower it to accommodate a change.
 coverage erase
 coverage run -m pytest -q -m "unit or contract"
 coverage report
+coverage report --fail-under=100 \
+  pete_e/domain/body_age_history.py \
+  pete_e/domain/body_age_trend.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser.py \
@@ -143,10 +146,11 @@ coverage report --fail-under=100 \
 
 Static typing covers explicit completed-tranche scopes and should expand one
 boundary at a time rather than suppressing the existing repository backlog. The
-current strict scope is the weekly narrative module, the three pure Apple
-parser boundary modules, and the pure Apple ingest outcome/checkpoint
-coordinator. It also covers the domain-owned plan repository port and typed
-full-plan normalization/cursor-writer boundary:
+current strict scope includes the typed body-age history reader and pure trend
+analyzer, the weekly narrative module, the three pure Apple parser boundary
+modules, and the pure Apple ingest outcome/checkpoint coordinator. It also
+covers the domain-owned plan repository port and typed full-plan
+normalization/cursor-writer boundary:
 
 ```bash
 mypy
@@ -160,6 +164,8 @@ changes with behavioral work:
 ruff check pete_e tests scripts
 ruff format --check \
   pete_e/domain/repositories.py \
+  pete_e/domain/body_age_history.py \
+  pete_e/domain/body_age_trend.py \
   pete_e/domain/weekly_narrative.py \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
@@ -168,6 +174,9 @@ ruff format --check \
   pete_e/infrastructure/apple_health_ingestor.py \
   pete_e/infrastructure/apple_ingest_coordinator.py \
   pete_e/infrastructure/plan_persistence.py \
+  tests/domain/test_body_age_trend_analysis.py \
+  tests/domain/test_body_age_trend_characterization.py \
+  tests/application/test_body_age_trend_consumers.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
   tests/test_apple_ingest_adapter_contract.py \
