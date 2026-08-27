@@ -249,7 +249,7 @@ def webhook_boundary(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", _REPOSITORY_ID)
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_DEPLOY_REF", "refs/heads/main")
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_WEBHOOK_MAX_BODY_BYTES", 4096)
-    monkeypatch.setattr(logs_webhooks, "get_edge_security_repository", lambda: repository)
+    monkeypatch.setattr(logs_webhooks, "get_github_delivery_ledger", lambda: repository)
     monkeypatch.setattr(logs_webhooks, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(logs_webhooks, "prepare_job_context", lambda *_args: "deploy-edge-job")
     monkeypatch.setattr(logs_webhooks, "get_job_service", lambda: JobService())

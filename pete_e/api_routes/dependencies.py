@@ -20,6 +20,7 @@ from pete_e.application.api_services import MetricsService, PlanService, StatusS
 from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.jobs import ApplicationJobService
+from pete_e.application.github_deploy_webhook import GitHubDeliveryLedger
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService, normalize_login
@@ -373,6 +374,12 @@ def get_edge_security_repository() -> PostgresEdgeSecurityRepository:
                 dal = get_dal()
                 _edge_security_repository = PostgresEdgeSecurityRepository(pool=dal.pool)
     return _edge_security_repository
+
+
+def get_github_delivery_ledger() -> GitHubDeliveryLedger:
+    """Compose the GitHub delivery application port with PostgreSQL persistence."""
+
+    return get_edge_security_repository()
 
 
 def shutdown_job_service() -> None:

@@ -1,18 +1,32 @@
 import datetime
-import hashlib
-import hmac
-import json
-import re
+from typing import NoReturn
 
 import fastapi
 from fastapi import Header, HTTPException, Query, Request
 
+from pete_e.application.github_deploy_webhook import (
+    DeliveryLedgerUnavailable,
+    DispatchHTTPFailure,
+    GitHubDeliveryLedger,
+    GitHubDeployCoordinator,
+    GitHubPushCandidate,
+    GitHubVerificationFailure,
+    ParsedGitHubSignature,
+    VerificationFailureCategory,
+    VerifiedGitHubPush,
+    authenticate_body,
+    configured_deploy_ref,
+    configured_repository_id,
+    parse_push_candidate,
+    parse_signature_header,
+    verify_push_candidate,
+)
 from pete_e.api_routes.dependencies import (
     audit_command_event,
     configured_deploy_dispatch_command,
     configured_webhook_secret,
     enforce_command_rate_limit,
-    get_edge_security_repository,
+    get_github_delivery_ledger,
     get_job_service,
     prepare_job_context,
     validate_api_key,
@@ -22,23 +36,23 @@ from pete_e.config import settings
 
 router = fastapi.APIRouter()
 
-ZERO_COMMIT_SHA = "0" * 40
-COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
-DELIVERY_ID_PATTERN = re.compile(r"[A-Za-z0-9-]{1,128}")
-
 
 def _configured_repository_id() -> int:
-    repository_id = getattr(settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", None)
-    if repository_id is None or int(repository_id) <= 0:
-        raise HTTPException(status_code=503, detail="PETEEEBOT_GITHUB_REPOSITORY_ID is not configured")
-    return int(repository_id)
+    try:
+        return configured_repository_id(
+            getattr(settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", None)
+        )
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
 
 
 def _configured_deploy_ref() -> str:
-    deploy_ref = str(getattr(settings, "PETEEEBOT_GITHUB_DEPLOY_REF", "") or "").strip()
-    if deploy_ref != "refs/heads/main":
-        raise HTTPException(status_code=503, detail="PETEEEBOT_GITHUB_DEPLOY_REF must be refs/heads/main")
-    return deploy_ref
+    try:
+        return configured_deploy_ref(
+            getattr(settings, "PETEEEBOT_GITHUB_DEPLOY_REF", "")
+        )
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
 
 
 async def _read_bounded_body(request: Request) -> bytes:
@@ -62,11 +76,153 @@ async def _read_bounded_body(request: Request) -> bytes:
     return bytes(body)
 
 
-def _reject_webhook(message: str) -> None:
+def _reject_webhook(message: str) -> NoReturn:
     raise HTTPException(
         status_code=422,
         detail={"code": "invalid_webhook", "message": message},
     )
+
+
+def _raise_verification_failure(failure: GitHubVerificationFailure) -> NoReturn:
+    if failure.category is VerificationFailureCategory.POLICY:
+        _reject_webhook(failure.message)
+    status_code = {
+        VerificationFailureCategory.AUTHENTICATION: 403,
+        VerificationFailureCategory.PAYLOAD: 400,
+        VerificationFailureCategory.CONFIGURATION: 503,
+    }[failure.category]
+    raise HTTPException(status_code=status_code, detail=failure.message) from failure
+
+
+def _parse_signature(signature: str | None) -> ParsedGitHubSignature:
+    try:
+        return parse_signature_header(signature)
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
+
+
+def _authenticate_signature(
+    signature: ParsedGitHubSignature,
+    body: bytes,
+) -> None:
+    try:
+        authenticate_body(signature, body, configured_webhook_secret())
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
+
+
+def _parse_candidate(request: Request, body: bytes) -> GitHubPushCandidate:
+    try:
+        return parse_push_candidate(
+            body,
+            event_name=str(request.headers.get("X-GitHub-Event") or ""),
+            delivery_id=str(request.headers.get("X-GitHub-Delivery") or ""),
+        )
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
+
+
+def _verify_candidate(candidate: GitHubPushCandidate) -> VerifiedGitHubPush:
+    repository_id = _configured_repository_id()
+    deploy_ref = _configured_deploy_ref()
+    try:
+        return verify_push_candidate(
+            candidate,
+            expected_repository_id=repository_id,
+            deploy_ref=deploy_ref,
+        )
+    except GitHubVerificationFailure as exc:
+        _raise_verification_failure(exc)
+
+
+def _delivery_ledger() -> GitHubDeliveryLedger:
+    try:
+        return get_github_delivery_ledger()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook delivery ledger is unavailable",
+        ) from exc
+
+
+def _utc_timestamp() -> str:
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+class _RequestDeployCollaborators:
+    def __init__(self, request: Request, job_id: str) -> None:
+        self.request = request
+        self.job_id = job_id
+
+    def rate_check(self) -> None:
+        enforce_command_rate_limit(self.request, "deploy")
+
+    def dispatch(self, summary: dict[str, object]) -> None:
+        try:
+            correlation_id = get_or_create_correlation_id(self.request)
+            get_job_service().dispatch_external(
+                job_id=self.job_id,
+                operation="deploy",
+                dispatch_command=configured_deploy_dispatch_command(self.job_id),
+                requester=None,
+                request_id=correlation_id,
+                correlation_id=correlation_id,
+                request_summary=summary,
+                auth_scheme=getattr(
+                    getattr(self.request, "state", None),
+                    "auth_scheme",
+                    None,
+                ),
+                dispatch_timeout_seconds=settings.PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS,
+            )
+        except HTTPException as exc:
+            raise DispatchHTTPFailure(
+                status_code=getattr(exc, "status_code", 500),
+                detail=getattr(exc, "detail", {}),
+                original=exc,
+            ) from exc
+
+    def audit(
+        self,
+        outcome: str,
+        summary: dict[str, object],
+        level: str,
+    ) -> None:
+        audit_command_event(
+            self.request,
+            command="deploy",
+            outcome=outcome,
+            summary=summary,
+            level=level,
+        )
+
+
+def _coordinate_delivery(
+    request: Request,
+    delivery: VerifiedGitHubPush,
+    job_id: str,
+) -> dict[str, object]:
+    collaborators = _RequestDeployCollaborators(request, job_id)
+    coordinator = GitHubDeployCoordinator(
+        ledger=_delivery_ledger(),
+        rate_check=collaborators.rate_check,
+        dispatch=collaborators.dispatch,
+        audit=collaborators.audit,
+        timestamp=_utc_timestamp,
+    )
+    try:
+        return coordinator.coordinate(delivery, job_id=job_id).response
+    except DeliveryLedgerUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook delivery ledger is unavailable",
+        ) from exc
+    except DispatchHTTPFailure as exc:
+        raise exc.original
 
 
 def read_recent_log_lines(lines: int) -> dict[str, object]:
@@ -89,158 +245,12 @@ def logs(request: Request, x_api_key: str = Header(None), lines: int = Query(50,
 
 
 @router.post("/webhook")
-async def github_webhook(request: Request):
-    signature = request.headers.get("X-Hub-Signature-256")
-    if not signature:
-        raise HTTPException(status_code=403, detail="Missing signature")
-    try:
-        sha_name, sig = signature.split("=")
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Bad signature format")
-    if sha_name != "sha256":
-        raise HTTPException(status_code=403, detail="Unsupported signature type")
-
+async def github_webhook(request: Request) -> dict[str, object]:
+    signature = _parse_signature(request.headers.get("X-Hub-Signature-256"))
     body = await _read_bounded_body(request)
-    mac = hmac.new(configured_webhook_secret(), msg=body, digestmod=hashlib.sha256)
-    if not hmac.compare_digest(mac.hexdigest(), sig):
-        raise HTTPException(status_code=403, detail="Invalid signature")
-
+    _authenticate_signature(signature, body)
     if getattr(request, "state", None) is not None:
         setattr(request.state, "auth_scheme", "github_webhook_hmac")
-    event_name = str(request.headers.get("X-GitHub-Event") or "")
-    delivery_id = str(request.headers.get("X-GitHub-Delivery") or "")
-    if DELIVERY_ID_PATTERN.fullmatch(delivery_id) is None:
-        _reject_webhook("Missing or invalid X-GitHub-Delivery")
-    try:
-        decoded_payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
-    if not isinstance(decoded_payload, dict):
-        raise HTTPException(status_code=400, detail="JSON payload must be an object")
-    payload: dict[str, object] = decoded_payload
-
-    expected_repository_id = _configured_repository_id()
-    deploy_ref = _configured_deploy_ref()
-    repository = payload.get("repository")
-    repository_id = repository.get("id") if isinstance(repository, dict) else None
-    commit_sha = payload.get("after")
-    ref_name = payload.get("ref")
-
-    if event_name != "push":
-        _reject_webhook("X-GitHub-Event must be push")
-    if type(repository_id) is not int or repository_id != expected_repository_id:
-        _reject_webhook("Webhook repository identity does not match")
-    if not isinstance(ref_name, str) or ref_name != deploy_ref:
-        _reject_webhook(f"Webhook ref must be {deploy_ref}")
-    if payload.get("deleted") is not False:
-        _reject_webhook("Deleted refs cannot trigger deployment")
-    if (
-        not isinstance(commit_sha, str)
-        or commit_sha == ZERO_COMMIT_SHA
-        or COMMIT_SHA_PATTERN.fullmatch(commit_sha) is None
-    ):
-        _reject_webhook("Webhook after must be a non-zero lowercase 40-hex commit SHA")
-
-    summary = {
-        "source": "github_webhook",
-        "delivery_id": delivery_id,
-        "event": event_name,
-        "repository_id": repository_id,
-        "commit_sha": commit_sha,
-        "ref": ref_name,
-    }
+    delivery = _verify_candidate(_parse_candidate(request, body))
     job_id = prepare_job_context(request, "deploy")
-    try:
-        delivery_claim = get_edge_security_repository().claim_github_delivery(
-            delivery_id=delivery_id,
-            repository_id=expected_repository_id,
-            event_name=event_name,
-            ref_name=ref_name,
-            commit_sha=commit_sha,
-            job_id=job_id,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Webhook delivery ledger is unavailable") from exc
-    if not delivery_claim.accepted:
-        response = {
-            "status": "Webhook delivery already processed",
-            "delivery_id": delivery_id,
-            "job_id": delivery_claim.job_id,
-            "delivery_status": delivery_claim.status,
-        }
-        audit_command_event(request, command="deploy", outcome="succeeded", summary=response)
-        return response
-
-    try:
-        enforce_command_rate_limit(request, "deploy")
-    except Exception as exc:
-        get_edge_security_repository().mark_github_delivery(
-            delivery_id,
-            status="failed",
-            failure_reason=str(getattr(exc, "detail", exc))[:1000],
-        )
-        raise
-    audit_command_event(request, command="deploy", outcome="started", summary=summary)
-    try:
-        correlation_id = get_or_create_correlation_id(request)
-        get_job_service().dispatch_external(
-            job_id=job_id,
-            operation="deploy",
-            dispatch_command=configured_deploy_dispatch_command(job_id),
-            requester=None,
-            request_id=correlation_id,
-            correlation_id=correlation_id,
-            request_summary=summary,
-            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
-            dispatch_timeout_seconds=settings.PETEEEBOT_DEPLOY_DISPATCH_TIMEOUT_SECONDS,
-        )
-    except HTTPException as exc:
-        detail = getattr(exc, "detail", {})
-        if getattr(exc, "status_code", None) == 409 and isinstance(detail, dict) and detail.get("code") == "operation_in_progress":
-            ignored = {
-                "status": "Deployment already in progress; webhook delivery ignored.",
-                "job_id": job_id,
-                "delivery_id": delivery_id,
-                "commit_sha": commit_sha,
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
-            }
-            get_edge_security_repository().mark_github_delivery(delivery_id, status="ignored")
-            audit_command_event(request, command="deploy", outcome="succeeded", summary=ignored)
-            return ignored
-        get_edge_security_repository().mark_github_delivery(
-            delivery_id,
-            status="failed",
-            failure_reason=str(getattr(exc, "detail", exc))[:1000],
-        )
-        audit_command_event(
-            request,
-            command="deploy",
-            outcome="failed",
-            summary={"status_code": getattr(exc, "status_code", 500), "error": str(getattr(exc, "detail", exc))},
-            level="ERROR",
-        )
-        raise
-    except Exception as exc:
-        get_edge_security_repository().mark_github_delivery(
-            delivery_id,
-            status="failed",
-            failure_reason=str(exc)[:1000],
-        )
-        audit_command_event(
-            request,
-            command="deploy",
-            outcome="failed",
-            summary={"status_code": getattr(exc, "status_code", 500), "error": str(getattr(exc, "detail", exc))},
-            level="ERROR",
-        )
-        raise
-
-    get_edge_security_repository().mark_github_delivery(delivery_id, status="dispatched")
-    response = {
-        "status": "Deployment triggered",
-        "job_id": job_id,
-        "status_url": f"/console/jobs/{job_id}",
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
-    }
-    audit_command_event(request, command="deploy", outcome="succeeded", summary=response)
-    return response
+    return _coordinate_delivery(request, delivery, job_id)

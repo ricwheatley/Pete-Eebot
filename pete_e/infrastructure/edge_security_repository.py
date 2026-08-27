@@ -11,6 +11,7 @@ from typing import Iterable
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from pete_e.application.github_deploy_webhook import DeliveryClaim
 from pete_e.infrastructure.postgres_dal import get_pool
 
 
@@ -28,14 +29,6 @@ class RateLimitRule:
 class RateLimitDecision:
     code: str
     retry_after_seconds: int
-
-
-@dataclass(frozen=True)
-class DeliveryClaim:
-    accepted: bool
-    delivery_id: str
-    job_id: str
-    status: str
 
 
 def _subject_hash(scope: str, subject: str) -> str:

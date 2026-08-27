@@ -387,3 +387,107 @@ the already migrated schema and has no schema `CREATE` privilege.
 Plan reads, the two unused legacy writers, readiness/difficulty methods, pool
 ownership, strength-test persistence, Wger, nutrition, profiles, jobs, and all
 other DAL families remain explicitly deferred.
+
+## 2026-08-27: verified GitHub push and replay-safe deploy dispatch
+
+### Baseline and selected boundary
+
+The tranche started from a clean `main` worktree at
+`69ff9f50824960ba5788306931574f2a7cfece47`, aligned with `origin/main`; the
+repository had advanced six commits beyond the supplied `b2faec2` measurement.
+`api_routes/logs_webhooks.py` still had 246 physical lines and one C901 finding:
+the 155-line `github_webhook` handler had complexity 20. The file imported three
+project modules, and a strict isolated adapter probe reported the four known
+FastAPI-decorator/return-annotation errors. The configured seven-file strict
+scope remained clean.
+
+The handler coupled exact-body HMAC authentication, JSON and push-policy trust,
+job allocation, replay-ledger ownership, rate limiting, audit, correlation,
+durable dispatch, ledger transitions, timestamping, and HTTP serialization. The
+security risk was temporal rather than algorithmic: moving claim after rate,
+auditing before a failed mark, or treating any 409 as ignored would change replay
+or deployment behavior.
+
+### Ordered delivery contract
+
+Pre-extraction real-ASGI characterization pinned the coordinator order:
+
+| State | Required order and outcome |
+| --- | --- |
+| Unauthenticated or malformed body | signature shape, bounded raw body, secret/HMAC, then authentication state; no signed-body decoding or trust filtering before valid HMAC |
+| Invalid signed push/configuration | delivery ID, UTF-8/JSON/object, configuration, then event/repository/ref/deleted/commit policy; no job, claim, rate, audit, or dispatch |
+| Accepted claim | allocate job, claim ledger, rate check, started audit, correlation/command/dispatch |
+| Replayed claim | claim, succeeded audit, exact stored job/status response; no rate or dispatch |
+| Rate failure | claim, rate, failed mark with 1,000-character reason, re-raise; no audit or dispatch |
+| Ignored conflict | started audit, dispatch HTTP 409 with dictionary code `operation_in_progress`, timestamp, ignored mark, succeeded audit |
+| Other HTTP/general failure | failed mark, exact failed audit at `ERROR`, then re-raise; collaborator failures replace the earlier error at the same legacy point |
+| Success | dispatch, dispatched mark, UTC-Z timestamp, succeeded audit, response |
+
+`application.github_deploy_webhook` now owns the frozen verified push, typed
+verification failures, application-owned delivery claim/ledger protocol, explicit
+replayed/ignored/dispatched outcomes, and coordinator. Verification is pure over
+explicit header/body/secret/config inputs. The coordinator receives ledger,
+rate, dispatch, audit, and clock ports and imports no FastAPI, Starlette,
+PostgreSQL, API route, CLI, configuration, or composition module.
+
+The FastAPI adapter retains exact streaming/body bounds, header extraction,
+authentication state, request-based rate checks, correlation metadata, job
+service dispatch, and HTTP/error serialization. Dependency composition exposes a
+narrow `GitHubDeliveryLedger` while continuing to return the existing
+`PostgresEdgeSecurityRepository`; the repository imports and returns the
+application-owned `DeliveryClaim`. No migration, transaction, worker, command,
+rate-limit, or trust-policy rule changed.
+
+### Characterization and feedback ratchets
+
+Seventy-two genuine TestClient cases cover signature shape and HMAC ordering,
+explicit and chunked content lengths at/over the boundary, UTF-8/JSON/object
+failures, configuration conversion, all push-policy branches, delivery-ID
+boundaries, every stored replay state, rate failure/truncation, exact dispatch
+metadata, the sole ignored conflict, other HTTP/general failures, and mark/audit/
+correlation/command/clock propagation points. Fifty direct unit cases give the
+pure verifier/coordinator 100% combined statement/branch coverage. Existing
+concurrent TestClient replay tests continue to prove one dispatch and original
+job reuse for both same-delivery and altered-delivery replays.
+
+One legacy configuration ambiguity is deliberately unchanged: a non-numeric
+repository ID raises `ValueError` and is serialized as the generic 500 envelope,
+whereas missing or non-positive values receive the documented 503 response.
+
+Guarded PostgreSQL 15 tests add dispatched/ignored/failed mark visibility and a
+real-ASGI handler-to-real-ledger accepted/replay path with an owned fake external
+dispatcher. The existing concurrent two-repository claim test still proves one
+accepted winner and one job ID. Schema and job-ownership lanes passed before the
+disposable container was removed.
+
+The pre-extraction 36% route coverage was an instrumentation defect, not an ASGI
+execution gap. Coverage 7.15.4 recorded `github_webhook` through its first body
+await and then emitted the function-exit arc even while `sys.gettrace()` and the
+live caller frame both held the same C tracer and the request completed with
+ledger/dispatch side effects. Canonical source paths ruled out aliasing;
+`--concurrency=thread` was unchanged, and the Python `--timid` tracer failed
+inside coverage's async stack tracking. This matches open coverage.py issue
+[#2245](https://github.com/coveragepy/coveragepy/issues/2245). Extraction makes all
+security decisions independently creditable and raises the route report to 85%;
+the remaining uncredited webhook lines are exactly 251-256 after the same await.
+The repository floor remains 66%.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `github_webhook` physical span / complexity | 155 / 20 | 9 / 2 |
+| Adapter/new-boundary maximum complexity | 20 | 7 / 4 |
+| `logs_webhooks.py` physical lines / statements | 246 / 139 | 256 / 120 |
+| Route project-module imports | 3 | 4 (one explicit application boundary) |
+| Pure boundary framework/project imports | n/a | 0 |
+| `logs_webhooks.py` branch-aware coverage | 36% | 85% |
+| Verifier/coordinator branch-aware coverage | n/a | 100% (194 statements, 28 branches) |
+| Combined route/boundary branch-aware coverage | n/a | 94% |
+| Repository unit/contract branch-aware coverage | 69.550367% | 70.203819% |
+| Unit/contract lane | 883 passed, 7 skipped | 1,005 passed, 7 skipped |
+| Guarded PostgreSQL schema / edge / job lanes | existing controls | 10 / 7 / 5 passed |
+| Configured strict mypy scope | 0 errors in 7 files | 0 errors in 8 files |
+| Isolated adapter errors | 4 | 3 (remaining FastAPI decorators plus out-of-scope GET return) |
+
+GET `/logs`, deployment worker/ownership, rate-limit policy, edge-security schema,
+other API and web-console routes, plan persistence, Apple ingestion, narrative,
+CLI behavior, and all unrelated families remain explicitly deferred.

@@ -48,7 +48,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_REPOSITORY_ID", _REPOSITORY_ID)
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_GITHUB_DEPLOY_REF", "refs/heads/main")
     monkeypatch.setattr(logs_webhooks.settings, "PETEEEBOT_WEBHOOK_MAX_BODY_BYTES", 262144)
-    monkeypatch.setattr(logs_webhooks, "get_edge_security_repository", lambda: edge_repository)
+    monkeypatch.setattr(logs_webhooks, "get_github_delivery_ledger", lambda: edge_repository)
     monkeypatch.setattr(status_sync, "enforce_command_rate_limit", lambda *_args, **_kwargs: None)
     with TestClient(api.app) as test_client:
         yield test_client
