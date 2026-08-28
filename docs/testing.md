@@ -132,6 +132,7 @@ coverage report
 coverage report --fail-under=100 \
   pete_e/domain/body_age_history.py \
   pete_e/domain/body_age_trend.py
+coverage report --fail-under=100 pete_e/domain/metric_trends.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
 coverage report --fail-under=100 \
@@ -148,7 +149,8 @@ coverage report --fail-under=100 \
 Static typing covers explicit completed-tranche scopes and should expand one
 boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope includes the typed body-age history reader and pure trend
-analyzer, the weekly narrative module, the typed weekly-plan presentation
+analyzer, the Steps/Sleep metric-trend boundary, the weekly narrative module,
+the typed weekly-plan presentation
 boundary, the three pure Apple parser boundary modules, and the pure Apple
 ingest outcome/checkpoint coordinator. It also covers the domain-owned plan
 repository port and typed full-plan normalization/cursor-writer boundary:
@@ -167,6 +169,7 @@ ruff format --check \
   pete_e/domain/repositories.py \
   pete_e/domain/body_age_history.py \
   pete_e/domain/body_age_trend.py \
+  pete_e/domain/metric_trends.py \
   pete_e/domain/weekly_narrative.py \
   pete_e/domain/weekly_plan_presentation.py \
   pete_e/infrastructure/apple_parser.py \
@@ -178,6 +181,9 @@ ruff format --check \
   pete_e/infrastructure/plan_persistence.py \
   tests/domain/test_body_age_trend_analysis.py \
   tests/domain/test_body_age_trend_characterization.py \
+  tests/domain/test_metric_trends.py \
+  tests/domain/test_metric_trend_characterization.py \
+  tests/application/test_metric_trend_consumers.py \
   tests/application/test_body_age_trend_consumers.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \

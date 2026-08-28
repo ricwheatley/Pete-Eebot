@@ -3,9 +3,9 @@
 import random
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence
 
-from pete_e.domain import schedule_rules, weekly_plan_presentation
+from pete_e.domain import metric_trends, schedule_rules, weekly_plan_presentation
 from pete_e.domain.phrase_picker import random_phrase as phrase_for
 from pete_e.domain import narrative_utils
 from pete_e.domain.configuration import get_settings
@@ -102,201 +102,19 @@ def _closing_phrases(
             closers.append(secondary)
     return closers
 
-@dataclass(frozen=True)
-class _TrendMetric:
-    name: str
-    paths: Tuple[Tuple[str, ...], ...]
-    format_value: Callable[[float], str]
-    format_delta: Callable[[float], str]
-    significance: float
-    min_week_samples: int = 4
-    min_month_samples: int = 20
-    min_baseline_samples: int = 21
-    include_zero: bool = False
-
-
-def _trend_steps_value(value: float) -> str:
-    return f"{value:,.0f} steps/day"
-
-
-def _trend_steps_delta(value: float) -> str:
-    return f"{value:,.0f} steps"
-
-
-def _trend_sleep_value(value: float) -> str:
-    hours = value / 60.0
-    return f"{hours:.1f} h/night"
-
-
-def _trend_sleep_delta(value: float) -> str:
-    hours = value / 60.0
-    return f"{hours:.1f} h"
-
-
-_TREND_METRICS: Tuple[_TrendMetric, ...] = (
-    _TrendMetric(
-        name="Steps",
-        paths=(("activity", "steps"), ("steps",)),
-        format_value=_trend_steps_value,
-        format_delta=_trend_steps_delta,
-        significance=400.0,
-    ),
-    _TrendMetric(
-        name="Sleep",
-        paths=(("sleep", "asleep_minutes"), ("sleep_asleep_minutes",)),
-        format_value=_trend_sleep_value,
-        format_delta=_trend_sleep_delta,
-        significance=6.0,
-    ),
-)
-
-
-def _resolve_metric_value(payload: Mapping[str, Any], metric: _TrendMetric) -> float | None:
-    for path in metric.paths:
-        current: Any = payload
-        for key in path:
-            if not isinstance(current, Mapping):
-                current = None
-                break
-            current = current.get(key)
-        if current is None:
-            continue
-        value = _to_float(current)
-        if value is None:
-            continue
-        if value <= 0 and not metric.include_zero:
-            continue
-        return value
-    return None
-
-
-def _collect_trend_series(
-    metric: _TrendMetric,
-    samples: Sequence[tuple[date | datetime, Mapping[str, Any]]],
-) -> List[tuple[date, float]]:
-    collected: List[tuple[date, float]] = []
-    for sample_date, payload in samples:
-        day = sample_date
-        if isinstance(day, datetime):
-            day = day.date()
-        elif not isinstance(day, date):
-            day = converters.to_date(day)
-        if not isinstance(day, date):
-            continue
-        if not isinstance(payload, Mapping):
-            continue
-        value = _resolve_metric_value(payload, metric)
-        if value is None:
-            continue
-        collected.append((day, float(value)))
-    collected.sort(key=lambda item: item[0])
-    return collected
-
-
-def _mean(values: Sequence[float]) -> float | None:
-    if not values:
-        return None
-    return sum(values) / len(values)
-
-
-def _build_trend_line(
-    metric: _TrendMetric,
-    samples: Sequence[tuple[date | datetime, Mapping[str, Any]]],
-    target_day: date,
-) -> str:
-    series = _collect_trend_series(metric, samples)
-    if not series:
-        return f"{metric.name} trend: no data logged yet."
-    filtered = [(day, value) for day, value in series if day <= target_day]
-    if not filtered:
-        return f"{metric.name} trend: no data logged yet."
-
-    week_start = target_day - timedelta(days=6)
-    month_start = target_day - timedelta(days=29)
-    baseline_start = target_day - timedelta(days=89)
-    baseline_end = month_start - timedelta(days=1)
-
-    week_values = [value for day, value in filtered if week_start <= day <= target_day]
-    month_values = [value for day, value in filtered if month_start <= day <= target_day]
-    baseline_values = [value for day, value in filtered if baseline_start <= day <= baseline_end]
-
-    if len(week_values) < metric.min_week_samples or len(month_values) < metric.min_month_samples:
-        logged_days = len(month_values) or len(filtered)
-        return f"{metric.name} trend: need more data logged (only {logged_days} days in last 30d)."
-
-    week_avg = _mean(week_values)
-    month_avg = _mean(month_values)
-    if week_avg is None or month_avg is None:
-        return f"{metric.name} trend: need more data logged."
-
-    delta = week_avg - month_avg
-    month_text = metric.format_value(month_avg)
-    if abs(delta) >= metric.significance:
-        direction = "up" if delta > 0 else "down"
-        delta_text = f"{direction} {metric.format_delta(abs(delta))} vs 30d avg {month_text}"
-    else:
-        delta_text = f"steady vs 30d avg {month_text}"
-
-    if len(baseline_values) >= metric.min_baseline_samples:
-        baseline_avg = _mean(baseline_values)
-    else:
-        baseline_avg = None
-
-    if baseline_avg is None:
-        baseline_clause = "60d base still forming"
-    else:
-        baseline_delta = month_avg - baseline_avg
-        baseline_diff = abs(baseline_delta) if baseline_delta is not None else None
-        if baseline_diff is not None and baseline_diff >= (metric.significance / 2):
-            baseline_direction = "up" if baseline_delta > 0 else "down"
-            baseline_clause = (
-                f"{baseline_direction} {metric.format_delta(baseline_diff)} vs 60d base "
-                f"{metric.format_value(baseline_avg)}"
-            )
-        else:
-            baseline_clause = f"60d base {metric.format_value(baseline_avg)}"
-
-    week_text = metric.format_value(week_avg)
-    return f"{metric.name} trend: {week_text} ({delta_text}; {baseline_clause})."
-
-
 def compute_trend_lines(
     samples: Sequence[tuple[date | datetime, Mapping[str, Any]]],
     *,
     as_of: date | None = None,
     limit: int | None = None,
 ) -> List[str]:
-    if not samples:
-        return []
-
-    normalized: List[tuple[date, Mapping[str, Any]]] = []
-    for sample_date, payload in samples:
-        day = sample_date
-        if isinstance(day, datetime):
-            day = day.date()
-        elif not isinstance(day, date):
-            day = converters.to_date(day)
-        if not isinstance(day, date):
-            continue
-        if not isinstance(payload, Mapping):
-            continue
-        normalized.append((day, payload))
-
-    if not normalized:
-        return []
-
-    normalized.sort(key=lambda item: item[0])
-    target_day = as_of or normalized[-1][0]
-
-    lines: List[str] = []
-    for metric in _TREND_METRICS:
-        line = _build_trend_line(metric, normalized, target_day)
-        if line:
-            lines.append(formatters.ensure_sentence(line))
-
-    if limit is not None:
-        lines = lines[:limit]
-    return lines
+    return metric_trends.compute_trend_lines(
+        samples,
+        as_of=as_of,
+        limit=limit,
+        parse_date=converters.to_date,
+        normalize_sentence=formatters.ensure_sentence,
+    )
 
 
 def _to_float(value: Any) -> float | None:

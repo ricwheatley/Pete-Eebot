@@ -637,3 +637,106 @@ addition to the prior ratchet. The repository floor remains 66%.
 CLI weekly-plan selection, voice composition and delivery orchestration, plan
 generation/persistence/mappers, schedule policy, weekly metric analysis, trend
 analysis, and every daily/cycle narrative remain explicitly deferred.
+
+## 2026-08-27: typed Steps/Sleep metric trends
+
+### Baseline and selected boundary
+
+The tranche started from a clean `main` worktree at
+`d3675ea320586802df0ce2b067c0bf779cb2ed1e`, aligned with `origin/main`. This
+was seven commits beyond the supplied `b2faec2` measurement and already
+included the completed weekly workout presentation boundary.
+`narrative_builder.py` measured 1,253 physical / 1,002 token-bearing lines and
+had two C901 findings: the 37-line, complexity-11 `compute_trend_lines` and the
+deferred complexity-12 daily-from-days builder. The trend helper maximum was 9,
+and the repository had 34 C901 findings. The unit/contract lane passed 1,104
+tests with 7 skips at 70.846850% branch-aware repository coverage; the legacy
+narrative module displayed 70% coverage. An isolated strict probe reported no
+local narrative-builder errors and 19 followed-import errors, while the
+configured 11-file strict scope was clean.
+
+The trend path coupled accepted-row recognition, date and numeric conversion,
+raw dictionary precedence, three windows, duplicate sample counting, minimums,
+significance decisions, formatting, and final prose. It was selected because
+the weekly narrative, CLI summary, and application Orchestrator all depend on
+its exact two-line result, while the calculation itself is a bounded pure
+Steps/Sleep policy.
+
+### Preserved metric and window policy
+
+| Metric | Raw paths in precedence order | Eligible value | Value / delta format | Current significance |
+| --- | --- | --- | --- | ---: |
+| Steps | `activity.steps`, then `steps` | first convertible value greater than zero | comma-grouped zero-decimal `steps/day` / `steps` | 400 steps |
+| Sleep | `sleep.asleep_minutes`, then `sleep_asleep_minutes` | first convertible value greater than zero | minutes converted to one-decimal `h/night` / `h` | 6 minutes |
+
+Both metrics retain minimums of 4 samples in the inclusive target-6 through
+target week, 20 samples in target-29 through target month, and 21 samples in
+the target-89 through target-30 baseline. Duplicate-day rows remain separate
+samples and remain described as logged "days." Current significance is
+inclusive at the metric threshold; baseline significance is inclusive at half
+that threshold. Steps always render before Sleep. The latest accepted row still
+sets the default target date, explicit targets still exclude future values, and
+`limit` still applies as a Python slice only after both lines are rendered and
+sentence-normalized.
+
+### Typed boundary and compatibility facade
+
+`domain.metric_trends` now owns frozen metric definitions, normalized
+Steps/Sleep samples, per-window count/mean statistics, typed availability,
+direction and baseline states, policy decisions, and exact rendering. Date
+parsing and sentence normalization are explicit collaborators supplied by the
+legacy facade, preserving `converters.to_date` and `formatters.ensure_sentence`
+without creating a project dependency in the pure module. The module has no
+project, application, CLI, API, infrastructure, framework, filesystem, or
+mutable-global import, so the dependency remains acyclic.
+
+`narrative_builder.compute_trend_lines` keeps its existing signature and is a
+13-line compatibility delegate. The weekly analyzer still receives that facade
+as its trend collaborator. The CLI and Orchestrator retain their independent
+sample loaders and paragraph ownership; none of the three consumers changed.
+
+### Characterization and feedback ratchets
+
+Sixty-two facade characterizations passed against the original implementation
+before extraction and after delegation; the final facade suite has 72 cases
+after adding symmetric negative-threshold and non-finite conversion cases. They cover empty/all-invalid rows,
+non-mappings, invalid and converted dates, datetimes, ordering, duplicates,
+future rows, default/explicit targets, every window edge, both schema paths and
+fallback precedence, numeric strings, zero/negative/invalid values, sample
+counts immediately below/at/above 4, 20, and 21, current thresholds immediately
+below/at/above 400 and 6 in both directions, baseline half-thresholds and every
+state, exact rounding/punctuation, sentence normalization, and `None`, zero,
+positive, oversized, and negative limits. Forty-five direct pure cases assert
+normalized facts, statistics, typed decisions, rendering, invalid fallbacks,
+and immutability independently. Three compatibility tests exercise exact output
+through the weekly narrative, CLI summary, and application Orchestrator.
+
+CI additively includes the pure module in strict mypy, gives it a 100%
+statement/branch coverage ratchet, and format-checks only the four new source/
+test files. The legacy narrative-builder formatting backlog remains untouched.
+The repository coverage floor remains 66%.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `compute_trend_lines` physical span / complexity | 37 / 11 | 13 / 2 |
+| Narrative-builder C901 findings | 2 | 1 (deferred daily-from-days only) |
+| Repository C901 findings | 34 | 33 |
+| New helper maximum complexity | n/a | 5 |
+| `narrative_builder.py` physical / token-bearing lines | 1,253 / 1,002 | 1,071 / 853 |
+| Typed boundary physical / token-bearing lines | n/a | 456 / 364 |
+| Typed boundary branch-aware coverage | n/a | 100% (219 statements, 66 branches) |
+| Narrative builder / typed boundary combined coverage | 70% legacy module | 75.746606% |
+| Repository unit/contract branch-aware coverage | 70.846850% | 71.132837% |
+| Unit/contract lane | 1,104 passed, 7 skipped | 1,224 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 11 files | 0 errors in 12 files |
+| Isolated new-boundary strict errors | n/a | 0 |
+
+The statistical oddities are deliberately unchanged: duplicate rows inflate
+sample counts, the 30-day comparison contains the 7-day window, sparse fallback
+can report all older filtered samples when the current month is empty, and
+non-finite float inputs retain Python's existing arithmetic/formatting behavior.
+Changing those product rules requires a separate decision. Daily-summary
+paragraph consolidation, body-age trends, weekly metric/workout analysis,
+daily-from-days narrative construction, body age calculation, cycle narrative,
+Apple ingestion, PostgreSQL/DAL work, CLI commands, and Orchestrator behavior
+remain explicitly deferred.
