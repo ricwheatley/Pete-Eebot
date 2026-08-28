@@ -137,6 +137,10 @@ coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
 coverage report --fail-under=100 pete_e/application/daily_summary.py
 coverage report --fail-under=100 \
+  pete_e/application/coach_voice_types.py \
+  pete_e/application/weekly_plan_context.py \
+  pete_e/application/weekly_plan_message.py
+coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
@@ -152,7 +156,9 @@ boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope includes the typed body-age history reader and pure trend
 analyzer, the Steps/Sleep metric-trend boundary, the weekly narrative module,
 the typed weekly-plan presentation
-boundary, the application-owned daily-summary construction boundary, the three
+boundary, the application-owned daily-summary construction boundary, the
+framework-free coach-voice request values, the weekly-plan message decision
+boundary, the three
 pure Apple parser boundary modules, and the pure Apple
 ingest outcome/checkpoint coordinator. It also covers the domain-owned plan
 repository port and typed full-plan normalization/cursor-writer boundary:
@@ -174,7 +180,10 @@ ruff format --check \
   pete_e/domain/metric_trends.py \
   pete_e/domain/weekly_narrative.py \
   pete_e/domain/weekly_plan_presentation.py \
+  pete_e/application/coach_voice_types.py \
   pete_e/application/daily_summary.py \
+  pete_e/application/weekly_plan_context.py \
+  pete_e/application/weekly_plan_message.py \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
@@ -193,6 +202,10 @@ ruff format --check \
   tests/application/test_daily_summary_dependencies.py \
   tests/application/test_daily_summary_orchestrator_contract.py \
   tests/application/test_daily_sync_workflow_characterization.py \
+  tests/application/test_coach_voice_types.py \
+  tests/application/test_weekly_plan_application.py \
+  tests/application/test_weekly_plan_message_dependencies.py \
+  tests/application/test_weekly_plan_orchestrator_contract.py \
   tests/cli/test_daily_summary_cli.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
@@ -205,7 +218,8 @@ ruff format --check \
   tests/infrastructure/test_plan_save_mapper_contract.py \
   tests/integration/test_plan_persistence_integration.py \
   tests/test_plan_persistence_characterization.py \
-  tests/test_weekly_plan_message.py
+  tests/test_weekly_plan_message.py \
+  tests/test_weekly_plan_message_characterization.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the

@@ -21,6 +21,7 @@ from pete_e.application.composition import (
     provide_cycle_service,
     provide_narrative_builder,
     provide_validation_service,
+    provide_weekly_plan_message_builder,
 )
 from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest, CoachVoiceService
 from pete_e.application.daily_summary import (
@@ -42,6 +43,8 @@ from pete_e.application.plan_duration import DEFAULT_PLAN_WEEKS, validate_plan_w
 from pete_e.application.plan_read_model import PlanReadModel
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.validation_service import ValidationService
+from pete_e.application.weekly_plan_context import provide_weekly_plan_coach_state
+from pete_e.application.weekly_plan_message import WeeklyPlanMessageBuilder
 from pete_e.application.workflows import (
     CycleRolloverWorkflow,
     DailySyncWorkflow,
@@ -118,6 +121,7 @@ class Orchestrator:
         export_service: ExportContract | None = None,
         daily_sync_service: SyncContract | None = None,
         voice_service: CoachVoiceService | None = None,
+        weekly_plan_message_builder: WeeklyPlanMessageBuilder | None = None,
     ):
         """Initialize orchestrator dependencies."""
         container = container or get_container()
@@ -144,6 +148,15 @@ class Orchestrator:
         payload_recorder = getattr(self.dal, "record_coach_voice_payload", None)
         self.voice_service = voice_service or provide_coach_voice_service(
             payload_recorder=payload_recorder if callable(payload_recorder) else None
+        )
+        self.weekly_plan_message_builder = (
+            weekly_plan_message_builder
+            or provide_weekly_plan_message_builder(
+                reader_source=self.dal,
+                renderer=self.narrative_builder,
+                voice_source=self.voice_service,
+                coach_state_provider=provide_weekly_plan_coach_state(self.dal),
+            )
         )
 
         self.weekly_calibration_workflow = WeeklyCalibrationWorkflow(self.validation_service)
@@ -525,6 +538,19 @@ class Orchestrator:
         if callable(composer):
             return composer(request, fallback_message=draft.fallback_message)
         return self.voice_service.rewrite(draft.fallback_message)
+
+    def build_weekly_plan_message(
+        self,
+        *,
+        target_date: date | None = None,
+        current_date: date | None = None,
+    ) -> str:
+        """Return the Telegram-ready weekly plan through the application port."""
+
+        return self.weekly_plan_message_builder.build_message(
+            target_date=target_date,
+            current_date=current_date,
+        )
 
     def _build_daily_summary_draft(self, target_date: date | None = None) -> _DailySummaryDraft:
         """Build deterministic daily summary content and structured context."""

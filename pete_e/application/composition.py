@@ -1,7 +1,7 @@
 """Application dependency composition roots and provider helpers."""
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, cast
 
 from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.coach_voice import CoachVoiceService
@@ -9,11 +9,20 @@ from pete_e.application.profile_service import ProfileService
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.user_service import UserService
 from pete_e.application.validation_service import ValidationService
+from pete_e.application.weekly_plan_message import (
+    WeeklyPlanCoachStateProvider,
+    WeeklyPlanMessageBuilder,
+    WeeklyPlanPresentationService,
+    WeeklyPlanRenderer,
+    select_legacy_weekly_plan_reader,
+    select_legacy_weekly_plan_voice,
+)
 from pete_e.config import settings
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import AppleHealthIngestor, DailySyncService
 from pete_e.domain.narrative_builder import NarrativeBuilder
 from pete_e.domain.wger_workouts import WgerWorkoutIngestor
+from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
 from pete_e.infrastructure.apple_health_ingestor import AppleHealthDropboxIngestor
 from pete_e.infrastructure.ollama_client import OllamaChatClient
@@ -125,6 +134,25 @@ def provide_coach_voice_service(*, payload_recorder=None) -> CoachVoiceService:
         client=client,
         model_name=str(getattr(settings, "PETEEEBOT_LLM_MODEL", "qwen2.5:1.5b")),
         payload_recorder=payload_recorder,
+    )
+
+
+def provide_weekly_plan_message_builder(
+    *,
+    reader_source: object | None,
+    renderer: object | None,
+    voice_source: object | None,
+    coach_state_provider: WeeklyPlanCoachStateProvider | None = None,
+) -> WeeklyPlanMessageBuilder:
+    """Compose the application weekly-plan port from legacy runtime collaborators."""
+
+    resolved_renderer = renderer if renderer is not None else provide_narrative_builder()
+    return WeeklyPlanPresentationService(
+        reader=select_legacy_weekly_plan_reader(reader_source),
+        renderer=cast(WeeklyPlanRenderer, resolved_renderer),
+        voice_composer=select_legacy_weekly_plan_voice(voice_source),
+        coach_state_provider=coach_state_provider,
+        logger=log_utils.log_message,
     )
 
 

@@ -95,7 +95,9 @@ from pete_e.application.plan_duration import (
     SUPPORTED_PLAN_WEEKS,
     validate_plan_weeks,
 )
-from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest
+from pete_e.application.weekly_plan_context import (
+    select_compatible_weekly_plan_message_builder,
+)
 from pete_e.application.daily_summary import (
     HRV_METRIC_KEYS,
     CompatibleDailySummaryMessageBuilder,
@@ -407,202 +409,19 @@ def send_trainer_summary(
 
     return summary_str
 
+
 def build_weekly_plan_overview(
     *,
     orchestrator: "OrchestratorType | None" = None,
     target_date: date | None = None,
 ) -> str:
-    """Build a weekly plan overview with key workouts and a motivational tip."""
+    """Return the application-owned weekly plan message."""
     orch = orchestrator or _build_orchestrator()
-    today = date.today()
-    target = target_date or (today + timedelta(days=1) if today.isoweekday() == 7 else today)
-
-    dal = getattr(orch, "dal", None)
-    get_active_plan = getattr(dal, "get_active_plan", None) if dal is not None else None
-    load_plan_week = None
-    if dal is not None:
-        for candidate_name in ("get_plan_week", "get_plan_week_rows"):
-            candidate = getattr(dal, candidate_name, None)
-            if callable(candidate):
-                load_plan_week = candidate
-                break
-
-    if not callable(get_active_plan) or not callable(load_plan_week):
-        return "Training plan data source is not available."
-
-    try:
-        active_plan = get_active_plan()
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log_utils.log_message(f"Failed to load active plan: {exc}", "ERROR")
-        return "Failed to load the active training plan."
-
-    if not active_plan:
-        return "There is no active training plan in the database."
-
-    start_value = active_plan.get("start_date")
-    if isinstance(start_value, datetime):
-        start_date = start_value.date()
-    elif isinstance(start_value, date):
-        start_date = start_value
-    elif isinstance(start_value, str):
-        try:
-            start_date = date.fromisoformat(start_value)
-        except ValueError:
-            log_utils.log_message("Active plan start date could not be parsed.", "ERROR")
-            return "The active training plan has an invalid start date."
-    else:
-        return "The active training plan has an invalid start date."
-
-    days_since_start = (target - start_date).days
-    if days_since_start < 0:
-        return f"The active training plan starts on {start_date.isoformat()}."
-
-    try:
-        total_weeks = int(active_plan.get("weeks") or 0)
-    except (TypeError, ValueError):
-        total_weeks = 0
-    if total_weeks <= 0:
-        return "The active training plan is missing its duration."
-
-    week_number = (days_since_start // 7) + 1
-    if week_number > total_weeks:
-        return "The current training plan has finished. Time to generate a new one!"
-
-    plan_id = active_plan.get("id")
-    if plan_id is None:
-        return "The active training plan is missing its identifier."
-
-    try:
-        plan_week_rows = load_plan_week(plan_id, week_number)
-    except Exception as exc:
-        log_utils.log_message(f"Failed to load plan week data: {exc}", "ERROR")
-        return f"Could not retrieve workouts for Plan ID {plan_id}, Week {week_number}."
-
-    if not plan_week_rows:
-        return f"Could not find workout data for Plan ID {plan_id}, Week {week_number}."
-
-    week_start = start_date + timedelta(days=(week_number - 1) * 7)
-    builder = getattr(orch, "narrative_builder", None)
-    if builder is None:
-        from pete_e.domain.narrative_builder import NarrativeBuilder  # local import to avoid cycles
-
-        builder = NarrativeBuilder()
-
-    fallback = builder.build_weekly_plan(
-        plan_week_rows,
-        week_number,
-        week_start=week_start,
-    )
-    return _compose_weekly_plan_voice(
-        orch=orch,
-        fallback=fallback,
-        target=target,
-        week_start=week_start,
-        week_number=week_number,
-        active_plan=active_plan,
-        plan_week_rows=list(plan_week_rows),
+    return select_compatible_weekly_plan_message_builder(orch).build_message(
+        target_date=target_date,
+        current_date=date.today(),
     )
 
-
-def _compose_weekly_plan_voice(
-    *,
-    orch: "OrchestratorType",
-    fallback: str,
-    target: date,
-    week_start: date,
-    week_number: int,
-    active_plan: dict[str, Any],
-    plan_week_rows: list[dict[str, Any]],
-) -> str:
-    voice_service = getattr(orch, "voice_service", None)
-    composer = getattr(voice_service, "compose", None)
-    if not callable(composer):
-        return fallback
-
-    coach_state = _load_voice_coach_state(getattr(orch, "dal", None), target)
-    profile = coach_state.get("profile") if isinstance(coach_state, dict) else {}
-    if not isinstance(profile, dict):
-        profile = {}
-
-    required_terms = [str(week_number)]
-    required_terms.extend(_weekly_plan_required_terms(plan_week_rows))
-    facts = [
-        CoachVoiceFact(
-            id="weekly_plan_schedule",
-            text=fallback,
-            source="training_plan",
-            required=True,
-            required_terms=tuple(required_terms),
-        )
-    ]
-    request = CoachVoiceRequest(
-        message_type="weekly_plan",
-        intent="weekly training plan overview",
-        audience={
-            "name": profile.get("display_name") or "Ric",
-            "timezone": profile.get("timezone") or "Europe/London",
-        },
-        dates={
-            "target_date": target.isoformat(),
-            "week_start": week_start.isoformat(),
-            "week_end": (week_start + timedelta(days=6)).isoformat(),
-        },
-        metrics_report={},
-        coach_state=coach_state,
-        goals=coach_state.get("goal_state", {}) if isinstance(coach_state, dict) else {},
-        recent_context={
-            "active_plan": active_plan,
-            "plan_week_rows": plan_week_rows,
-            "plan_context": coach_state.get("plan_context", {}) if isinstance(coach_state, dict) else {},
-            "recent_workouts": coach_state.get("recent_workouts", {}) if isinstance(coach_state, dict) else {},
-        },
-        deterministic_decisions={
-            "week_number": week_number,
-            "week_start": week_start.isoformat(),
-            "exact_schedule_must_be_preserved": True,
-        },
-        constraints_and_warnings=list(
-            coach_state.get("coaching_notes", []) if isinstance(coach_state, dict) else []
-        ),
-        must_include_facts=facts,
-        style={
-            "channel": "telegram",
-            "voice": "Pete",
-            "tone": "clear, personal, trainer-like, practical",
-            "max_words": 260,
-            "format": "compact weekly schedule with exact sessions preserved",
-        },
-    )
-    return composer(request, fallback_message=fallback)
-
-
-def _load_voice_coach_state(dal: Any, target: date) -> dict[str, Any]:
-    if dal is None:
-        return {}
-    try:
-        from pete_e.application.api_services import MetricsService
-        from pete_e.domain.auth import trusted_profile_reader
-
-        return MetricsService(dal).coach_state(
-            target.isoformat(),
-            principal=trusted_profile_reader("local-cli", auth_scheme="cli"),
-        )
-    except Exception as exc:
-        log_utils.log_message(f"Failed to load structured coach state for weekly voice context: {exc}", "WARN")
-        return {}
-
-
-def _weekly_plan_required_terms(rows: list[dict[str, Any]]) -> list[str]:
-    terms: list[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        name = str(row.get("exercise_name") or "").strip()
-        if name and name not in terms:
-            terms.append(name)
-        if len(terms) >= 10:
-            break
-    return terms
 
 # Create the Typer application object
 app = typer.Typer(

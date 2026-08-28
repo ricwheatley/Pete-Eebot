@@ -849,3 +849,79 @@ infrastructure DI, and the Telegram notification channel. The unrelated
 `application.api_services` to `cli.status` edge also remains. Web
 morning-report and generic-message routes continue to use the compatibility CLI
 facade and are deferred, as are trainer summaries and weekly-plan presentation.
+
+## 2026-08-28: application-owned weekly-plan presentation
+
+### Baseline and protected contract
+
+This tranche started from a clean `main` worktree at
+`c9e1e452ef13d59f17cdd4a1f8f51668353b6fff`, aligned with `origin/main`.
+The completed typed workout renderer and atomic plan-write tranches were
+verified first; neither was expanded. `messenger.py` measured 1,557 physical /
+1,319 token-bearing lines. `build_weekly_plan_overview` still spanned 95 lines
+at complexity 19, the CLI had five C901 findings, and its documented
+unit/contract branch-aware coverage was 49.215247%. The configured strict scope
+was clean in 13 files.
+
+Pre-extraction characterizations pinned all plan-source capability combinations,
+`get_plan_week` preference, lifecycle/date/duration/identifier boundaries,
+falsey and generator row behavior, renderer failure behavior, exact error/log
+text, structured coach state and trusted `local-cli` principal, every voice
+request field, required-term uniqueness/cap, composer quirks, and genuine
+Typer print/send/empty/error/multi-flag behavior. They also retain the surprising
+generator rule: rendering may consume a one-shot iterable before voice context
+is materialized.
+
+### Typed reader and presentation boundary
+
+`application.weekly_plan_message` now owns the structural `WeeklyPlanReader`,
+renderer, coach-state, voice-composer, logger, and message-builder ports plus the
+date/week lifecycle and exact voice-request construction. The compatibility
+reader adapter performs legacy capability discovery once and preserves
+`get_plan_week` preference over `get_plan_week_rows`. The decision service has no
+CLI, concrete DAL, PostgreSQL, Typer, FastAPI, or infrastructure import, and no
+dynamic collaborator discovery.
+
+`application.weekly_plan_context` supplies the established `MetricsService`
+coach state under the same trusted CLI principal and adapts legacy duck-typed
+orchestrators at composition time. Orchestrator exposes and accepts the message
+builder port. The CLI wrapper now selects that port, supplies its local clock,
+and returns the message; `message --plan` retains only heading, terminal output,
+empty guarding, logging, and Telegram delivery.
+
+Coach voice request values moved unchanged into the framework-free
+`application.coach_voice_types` module so the new application boundary can join
+the additive strict-mypy scope without pulling the legacy logging/configuration
+graph into that gate. `application.coach_voice` continues to re-export the same
+classes and its service behavior is unchanged.
+
+### Characterization and feedback ratchets
+
+The focused application/domain/voice/Typer suite passes 130 tests. The complete
+unit/contract lane passes 1,386 tests with 7 skips, and repository branch-aware
+coverage is 72.739558%. The three new typed request/context/decision modules have
+100% combined statement/branch coverage. CI additively enforces that result,
+strict-checks the request values and decision service, and format-checks only the
+new tranche files. No PostgreSQL adapter changed, so guarded database integration
+was not run.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `build_weekly_plan_overview` physical span / complexity | 95 / 19 | 11 / 1 |
+| Messenger C901 findings | 5 | 4 (all unrelated to weekly-plan selection) |
+| Repository C901 findings | 29 | 28 |
+| New decision helper maximum complexity | n/a | 6 |
+| `messenger.py` physical / token-bearing lines | 1,557 / 1,319 | 1,376 / 1,159 |
+| New typed request/context/decision modules physical / token-bearing lines | n/a | 629 / 521 |
+| Messenger direct project-module fan-out | 21 | 21 |
+| New decision-service adapter/framework imports | n/a | 0 |
+| New typed boundary branch-aware coverage | n/a | 100% (265 statements, 78 branches) |
+| Messenger branch-aware coverage | 49.215247% | 46.174142% after covered decisions moved out |
+| Repository unit/contract branch-aware coverage | 72.329850% | 72.739558% |
+| Unit/contract lane | 1,326 passed, 7 skipped | 1,386 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 13 files | 0 errors in 15 files |
+
+The domain weekly workout renderer, schedule policy, plan reads and writes,
+generation, schema, migrations, Telegram provider, authentication policy, daily
+and trainer summaries, Telegram listener, web generic-message migration, and all
+other CLI families remain explicitly deferred.
