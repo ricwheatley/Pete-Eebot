@@ -135,6 +135,7 @@ coverage report --fail-under=100 \
 coverage report --fail-under=100 pete_e/domain/metric_trends.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
+coverage report --fail-under=100 pete_e/application/daily_summary.py
 coverage report --fail-under=100 \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
@@ -151,7 +152,8 @@ boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope includes the typed body-age history reader and pure trend
 analyzer, the Steps/Sleep metric-trend boundary, the weekly narrative module,
 the typed weekly-plan presentation
-boundary, the three pure Apple parser boundary modules, and the pure Apple
+boundary, the application-owned daily-summary construction boundary, the three
+pure Apple parser boundary modules, and the pure Apple
 ingest outcome/checkpoint coordinator. It also covers the domain-owned plan
 repository port and typed full-plan normalization/cursor-writer boundary:
 
@@ -172,6 +174,7 @@ ruff format --check \
   pete_e/domain/metric_trends.py \
   pete_e/domain/weekly_narrative.py \
   pete_e/domain/weekly_plan_presentation.py \
+  pete_e/application/daily_summary.py \
   pete_e/infrastructure/apple_parser.py \
   pete_e/infrastructure/apple_parser_normalization.py \
   pete_e/infrastructure/apple_parser_stages.py \
@@ -185,6 +188,12 @@ ruff format --check \
   tests/domain/test_metric_trend_characterization.py \
   tests/application/test_metric_trend_consumers.py \
   tests/application/test_body_age_trend_consumers.py \
+  tests/application/test_daily_summary.py \
+  tests/application/test_daily_summary_characterization.py \
+  tests/application/test_daily_summary_dependencies.py \
+  tests/application/test_daily_summary_orchestrator_contract.py \
+  tests/application/test_daily_sync_workflow_characterization.py \
+  tests/cli/test_daily_summary_cli.py \
   tests/domain/test_weekly_narrative_analysis.py \
   tests/domain/test_weekly_narrative_characterization.py \
   tests/domain/test_weekly_plan_presentation.py \

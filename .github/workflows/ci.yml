@@ -53,6 +53,7 @@ jobs:
           pete_e/domain/metric_trends.py
           pete_e/domain/weekly_narrative.py
           pete_e/domain/weekly_plan_presentation.py
+          pete_e/application/daily_summary.py
           pete_e/application/github_deploy_webhook.py
           pete_e/infrastructure/apple_parser.py
           pete_e/infrastructure/apple_parser_normalization.py
@@ -70,6 +71,12 @@ jobs:
           tests/domain/test_metric_trend_characterization.py
           tests/application/test_metric_trend_consumers.py
           tests/application/test_body_age_trend_consumers.py
+          tests/application/test_daily_summary.py
+          tests/application/test_daily_summary_characterization.py
+          tests/application/test_daily_summary_dependencies.py
+          tests/application/test_daily_summary_orchestrator_contract.py
+          tests/application/test_daily_sync_workflow_characterization.py
+          tests/cli/test_daily_summary_cli.py
           tests/test_github_deploy_webhook.py
           tests/test_github_webhook_contract.py
           tests/test_apple_ingest_adapter_contract.py
@@ -103,6 +110,7 @@ jobs:
           .venv/bin/coverage report --fail-under=100 pete_e/domain/metric_trends.py
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
+          .venv/bin/coverage report --fail-under=100 pete_e/application/daily_summary.py
           .venv/bin/coverage report --fail-under=100 \
           pete_e/application/github_deploy_webhook.py
           .venv/bin/coverage report --fail-under=100 \

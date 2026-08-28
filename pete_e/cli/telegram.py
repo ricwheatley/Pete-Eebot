@@ -23,12 +23,24 @@ def _build_listener(
     limit: int,
     timeout: int,
 ) -> "TelegramCommandListener":
+    from pete_e.application.daily_summary import FactoryDailySummaryMessageBuilder
+    from pete_e.application.orchestrator import Orchestrator
     from pete_e.application.telegram_listener import TelegramCommandListener
+
+    orchestrator: Orchestrator | None = None
+
+    def get_orchestrator() -> Orchestrator:
+        nonlocal orchestrator
+        if orchestrator is None:
+            orchestrator = Orchestrator()
+        return orchestrator
 
     return TelegramCommandListener(
         offset_path=offset_path,
         poll_limit=limit,
         poll_timeout=timeout,
+        orchestrator_factory=get_orchestrator,
+        summary_builder=FactoryDailySummaryMessageBuilder(get_orchestrator),
     )
     """Perform build listener."""
 

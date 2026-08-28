@@ -2,58 +2,23 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Callable, Dict, Optional, cast
 
 from typing_extensions import Protocol
 
+from pete_e.application.daily_summary import (
+    CompatibleDailySummaryMessageBuilder,
+    DailySummaryMessageBuilder,
+)
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.di_container import get_container
 from pete_e.infrastructure.telegram_client import TelegramClient
 
-
-class _LazyModuleProxy:
-    """Provides attribute access to a module loaded only when required."""
-
-    def __init__(self, module_name: str) -> None:
-        object.__setattr__(self, "_module_name", module_name)
-        object.__setattr__(self, "_module", None)
-        """Initialize this object."""
-
-    def _load(self):
-        module = object.__getattribute__(self, "_module")
-        if module is None:
-            module = importlib.import_module(object.__getattribute__(self, "_module_name"))
-            object.__setattr__(self, "_module", module)
-        return module
-        """Perform load."""
-
-    def __getattribute__(self, item):
-        if item in {"_module_name", "_module", "_load", "__dict__", "__class__", "__setattr__", "__getattribute__"}:
-            return object.__getattribute__(self, item)
-
-        data = object.__getattribute__(self, "__dict__")
-        if item in data:
-            return data[item]
-
-        module = object.__getattribute__(self, "_load")()
-        return getattr(module, item)
-        """Implement the `__getattribute__` dunder method behavior."""
-
-    def __setattr__(self, key, value):
-        if key in {"_module_name", "_module"}:
-            object.__setattr__(self, key, value)
-        else:
-            object.__getattribute__(self, "__dict__")[key] = value
-        """Implement the `__setattr__` dunder method behavior."""
-
-
-messenger = cast(Any, _LazyModuleProxy("pete_e.cli.messenger"))
 
 _LISTEN_LOCK_STALE_SECONDS = 15 * 60
 
@@ -80,6 +45,7 @@ class TelegramCommandListener:
         poll_limit: int = 5,
         poll_timeout: int = 2,
         telegram_client: TelegramClient | None = None,
+        summary_builder: DailySummaryMessageBuilder | None = None,
     ) -> None:
         self._offset_path = Path(offset_path) if offset_path else self._default_offset_path()
         self._offset_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +55,7 @@ class TelegramCommandListener:
         self._poll_timeout = max(0, int(poll_timeout))
         self._orchestrator: _OrchestratorProtocol | None = None
         self._telegram_client = telegram_client or get_container().resolve(TelegramClient)
+        self._summary_builder = summary_builder
         """Initialize this object."""
 
     @staticmethod
@@ -185,16 +152,26 @@ class TelegramCommandListener:
         """Perform get orchestrator."""
 
     def _handle_summary(self) -> str:
-        build_summary = messenger.__dict__.get("build_daily_summary")
-        if not callable(build_summary):
-            build_summary = messenger.build_daily_summary
-
-        summary = build_summary(orchestrator=self._get_orchestrator())
+        summary = self._get_summary_builder().build_daily_summary_message()
         summary_text = (summary or "").strip()
         if not summary_text:
             return "No summary is available yet."
         return summary_text
         """Perform handle summary."""
+
+    def _get_summary_builder(self) -> DailySummaryMessageBuilder:
+        if self._summary_builder is not None:
+            return self._summary_builder
+        orchestrator = self._get_orchestrator()
+        authoritative = getattr(orchestrator, "build_daily_summary_message", None)
+        if callable(authoritative):
+            self._summary_builder = cast(DailySummaryMessageBuilder, orchestrator)
+        else:
+            self._summary_builder = CompatibleDailySummaryMessageBuilder(
+                orchestrator,
+                warning_sink=lambda message: log_utils.log_message(message, "WARN"),
+            )
+        return self._summary_builder
 
     def _handle_sync(self) -> str:
         try:

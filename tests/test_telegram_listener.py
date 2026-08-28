@@ -10,7 +10,6 @@ import pytest
 
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
 
-from pete_e.application import telegram_listener
 from pete_e.application.telegram_listener import TelegramCommandListener
 from pete_e.config import settings
 
@@ -73,6 +72,75 @@ class OffsetAwareTelegramClient(StubTelegramClient):
     """Represent OffsetAwareTelegramClient."""
 
 
+class StubSummaryBuilder:
+    def __init__(self, callback=None) -> None:
+        self.callback = callback or (lambda target_date: "Daily summary ready")
+        self.targets: list[date | None] = []
+
+    def build_daily_summary_message(self, target_date: date | None = None) -> str:
+        self.targets.append(target_date)
+        return self.callback(target_date)
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        (None, "No summary is available yet."),
+        (" \n", "No summary is available yet."),
+        ("  Daily summary ready \n", "Daily summary ready"),
+    ],
+)
+def test_summary_handler_trims_and_uses_exact_empty_fallback(
+    tmp_path: Path,
+    summary: object,
+    expected: str,
+) -> None:
+    builder = StubSummaryBuilder(lambda target_date: summary)
+    listener = TelegramCommandListener(
+        offset_path=tmp_path / "offset.json",
+        telegram_client=StubTelegramClient(),
+        summary_builder=builder,
+    )
+
+    assert listener._handle_summary() == expected
+    assert builder.targets == [None]
+
+
+def test_summary_handler_defaults_to_the_orchestrator_builder(tmp_path: Path) -> None:
+    calls: list[date | None] = []
+    orchestrator = SimpleNamespace(
+        build_daily_summary_message=lambda target_date=None: calls.append(target_date)
+        or "orchestrated summary"
+    )
+    listener = TelegramCommandListener(
+        offset_path=tmp_path / "offset.json",
+        telegram_client=StubTelegramClient(),
+        orchestrator_factory=lambda: orchestrator,
+    )
+
+    assert listener._handle_summary() == "orchestrated summary"
+    assert calls == [None]
+
+
+def test_summary_handler_retains_duck_typed_orchestrator_fallback(
+    tmp_path: Path,
+) -> None:
+    requested: list[date | None] = []
+    orchestrator = SimpleNamespace(
+        dal=None,
+        get_daily_summary=lambda target_date=None: requested.append(target_date)
+        or "legacy summary",
+    )
+    listener = TelegramCommandListener(
+        offset_path=tmp_path / "offset.json",
+        telegram_client=StubTelegramClient(),
+        orchestrator_factory=lambda: orchestrator,
+    )
+
+    assert listener._handle_summary() == "legacy summary"
+    assert requested == [None]
+
+
 def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     updates = [_make_update(42, "/summary", chat_id=42)]
     client = StubTelegramClient(updates=updates)
@@ -80,13 +148,7 @@ def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest
     # Patch settings so this chat is authorised
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
 
-    monkeypatch.setattr(
-        telegram_listener,
-        "messenger",
-        SimpleNamespace(
-            build_daily_summary=lambda orchestrator=None, target_date=None: "Daily summary ready"
-        ),
-    )
+    summary_builder = StubSummaryBuilder()
 
     listener = TelegramCommandListener(
         offset_path=tmp_path / "offset.json",
@@ -94,12 +156,14 @@ def test_listen_once_handles_summary_command(tmp_path: Path, monkeypatch: pytest
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=client,
+        summary_builder=summary_builder,
     )
 
     processed = listener.listen_once()
 
     assert processed == 1
     assert client.sent_messages == ["Daily summary ready"]
+    assert summary_builder.targets == [None]
     stored = json.loads((tmp_path / "offset.json").read_text())
     assert stored["last_update_id"] == 42
     """Perform test listen once handles summary command."""
@@ -210,15 +274,11 @@ def test_summary_offset_is_persisted_before_slow_handler_runs(
 
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
 
-    def slow_summary(orchestrator=None, target_date=None):
+    def slow_summary(target_date=None):
         observed["stored_before_handler"] = json.loads(offset_file.read_text())["last_update_id"]
         return "Daily summary ready"
 
-    monkeypatch.setattr(
-        telegram_listener,
-        "messenger",
-        SimpleNamespace(build_daily_summary=slow_summary),
-    )
+    summary_builder = StubSummaryBuilder(slow_summary)
 
     listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -226,6 +286,7 @@ def test_summary_offset_is_persisted_before_slow_handler_runs(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=client,
+        summary_builder=summary_builder,
     )
 
     processed = listener.listen_once()
@@ -247,13 +308,7 @@ def test_second_listener_uses_advanced_offset_and_does_not_rehandle_summary(
     second_client = OffsetAwareTelegramClient(updates=updates)
 
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
-    monkeypatch.setattr(
-        telegram_listener,
-        "messenger",
-        SimpleNamespace(
-            build_daily_summary=lambda orchestrator=None, target_date=None: "Daily summary ready"
-        ),
-    )
+    summary_builder = StubSummaryBuilder()
 
     first_listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -261,6 +316,7 @@ def test_second_listener_uses_advanced_offset_and_does_not_rehandle_summary(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=first_client,
+        summary_builder=summary_builder,
     )
     second_listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -268,6 +324,7 @@ def test_second_listener_uses_advanced_offset_and_does_not_rehandle_summary(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=second_client,
+        summary_builder=summary_builder,
     )
 
     assert first_listener.listen_once() == 1
@@ -332,15 +389,11 @@ def test_handler_exception_advances_offset_and_sends_failure_response(
 
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
 
-    def failing_summary(orchestrator=None, target_date=None):
+    def failing_summary(target_date=None):
         assert json.loads(offset_file.read_text())["last_update_id"] == 701
         raise RuntimeError("slow summary failed")
 
-    monkeypatch.setattr(
-        telegram_listener,
-        "messenger",
-        SimpleNamespace(build_daily_summary=failing_summary),
-    )
+    summary_builder = StubSummaryBuilder(failing_summary)
 
     listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -348,6 +401,7 @@ def test_handler_exception_advances_offset_and_sends_failure_response(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=client,
+        summary_builder=summary_builder,
     )
 
     assert listener.listen_once() == 1
@@ -367,13 +421,7 @@ def test_send_failure_does_not_leave_update_reprocessable(
     second_client = OffsetAwareTelegramClient(updates=updates)
 
     monkeypatch.setattr(settings, "TELEGRAM_CHAT_ID", "42")
-    monkeypatch.setattr(
-        telegram_listener,
-        "messenger",
-        SimpleNamespace(
-            build_daily_summary=lambda orchestrator=None, target_date=None: "Daily summary ready"
-        ),
-    )
+    summary_builder = StubSummaryBuilder()
 
     first_listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -381,6 +429,7 @@ def test_send_failure_does_not_leave_update_reprocessable(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=first_client,
+        summary_builder=summary_builder,
     )
     second_listener = TelegramCommandListener(
         offset_path=offset_file,
@@ -388,6 +437,7 @@ def test_send_failure_does_not_leave_update_reprocessable(
         poll_timeout=0,
         orchestrator_factory=lambda: SimpleNamespace(),
         telegram_client=second_client,
+        summary_builder=summary_builder,
     )
 
     assert first_listener.listen_once() == 1

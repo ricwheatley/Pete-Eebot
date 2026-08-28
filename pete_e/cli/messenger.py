@@ -96,10 +96,19 @@ from pete_e.application.plan_duration import (
     validate_plan_weeks,
 )
 from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest
+from pete_e.application.daily_summary import (
+    HRV_METRIC_KEYS,
+    CompatibleDailySummaryMessageBuilder,
+    DailySummaryRenderProfile,
+    DailySummarySupplementalBuilder,
+    append_summary_line,
+    coerce_summary_date,
+    render_body_age,
+)
 from pete_e.application.user_service import UserService, normalize_login
 from pete_e.application.sync import run_sync_with_retries, run_withings_only_with_retries
 from pete_e.application.wger_workout_sync import run_wger_workout_sync
-from pete_e.domain import body_age, narrative_builder
+from pete_e.domain import body_age
 from pete_e.domain.prescription_validation import PrescriptionValidationError
 from pete_e.cli.status import DEFAULT_TIMEOUT_SECONDS, render_results, run_status_checks
 from pete_e.infrastructure import log_utils
@@ -256,185 +265,58 @@ def _run_cli_application_job(
 
 
 def _format_body_age_line(trend) -> str | None:
-    if trend is None:
-        return None
-    value = getattr(trend, "value", None)
-    delta = getattr(trend, "delta", None)
-    if value is None:
-        return "Body Age: n/a"
-    line = f"Body Age: {value:.1f}y"
-    if delta is None:
-        return f"{line} (7d delta n/a)"
-    return f"{line} (7d delta {delta:+.1f}y)"
+    return render_body_age(trend, DailySummaryRenderProfile.LEGACY_CLI)
     """Perform format body age line."""
 
 
 def _coerce_summary_date(value: Any) -> date | None:
-    if isinstance(value, date):
-        return value
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError:
-            return None
-    return None
+    return coerce_summary_date(value)
     """Perform coerce summary date."""
 
 
+def _legacy_summary_warning(message: str) -> None:
+    log_utils.log_message(message, "WARN")
+
+
+def _legacy_body_age_trend(source: object, target_date: date) -> object:
+    return body_age.get_body_age_trend(source, target_date=target_date)
+
+
+def _legacy_supplemental_builder(dal: Any) -> DailySummarySupplementalBuilder:
+    return DailySummarySupplementalBuilder(
+        dal,
+        profile=DailySummaryRenderProfile.LEGACY_CLI,
+        warning_sink=_legacy_summary_warning,
+        body_age_loader=_legacy_body_age_trend,
+    )
+
+
 def _format_body_comp_line(dal: Any, target_date: date) -> str | None:
-    if dal is None or not hasattr(dal, "get_historical_metrics"):
-        return None
-    try:
-        rows = dal.get_historical_metrics(14)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log_utils.log_message(f"Failed to load body composition history: {exc}", "WARN")
-        return None
-
-    window_start = target_date - timedelta(days=13)
-    current_start = target_date - timedelta(days=6)
-
-    samples: List[tuple[date, float]] = []
-    for row in rows:
-        row_date = _coerce_summary_date(row.get("date"))
-        if row_date is None or row_date > target_date or row_date < window_start:
-            continue
-        muscle_value = row.get("muscle_pct")
-        try:
-            muscle_pct = float(muscle_value) if muscle_value is not None else None
-        except (TypeError, ValueError):
-            muscle_pct = None
-        if muscle_pct is not None:
-            samples.append((row_date, muscle_pct))
-
-    if not samples:
-        return None
-
-    samples.sort(key=lambda item: item[0])
-    current_values = [value for sample_date, value in samples if current_start <= sample_date <= target_date]
-    previous_values = [value for sample_date, value in samples if window_start <= sample_date < current_start]
-
-    if len(current_values) < 3:
-        return None
-
-    avg_current = round(sum(current_values) / len(current_values), 1)
-
-    if len(previous_values) >= 3:
-        avg_previous = round(sum(previous_values) / len(previous_values), 1)
-        diff = round(avg_current - avg_previous, 1)
-        if abs(diff) >= 0.5:
-            direction = "up" if diff > 0 else "down"
-            return f"Muscle trend: {avg_current:.1f}% avg this week ({direction} {abs(diff):.1f}% vs prior)."
-        return f"Muscle trend: {avg_current:.1f}% avg this week (steady vs prior)."
-
-    return f"Muscle trend: {avg_current:.1f}% avg this week."
+    return _legacy_supplemental_builder(dal).format_body_composition_line(
+        target_date
+    )
     """Perform format body comp line."""
 
 
 def _format_hrv_line(dal: Any, target_date: date) -> str | None:
-    if dal is None or not hasattr(dal, "get_historical_metrics"):
-        return None
-    try:
-        rows = dal.get_historical_metrics(14)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log_utils.log_message(f"Failed to load HRV history: {exc}", "WARN")
-        return None
-
-    window_start = target_date - timedelta(days=6)
-    samples: List[tuple[date, float]] = []
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        row_date = _coerce_summary_date(row.get("date"))
-        if row_date is None or row_date < window_start or row_date > target_date:
-            continue
-        hrv_value: float | None = None
-        for key in _HRV_METRIC_KEYS:
-            raw_value = row.get(key)
-            if raw_value is None:
-                continue
-            try:
-                hrv_value = float(raw_value)
-            except (TypeError, ValueError):
-                hrv_value = None
-            if hrv_value is not None:
-                break
-        if hrv_value is not None and hrv_value > 0:
-            samples.append((row_date, hrv_value))
-
-    if not samples:
-        return None
-
-    samples.sort(key=lambda item: item[0])
-    current_date = target_date
-    current_value = next((value for sample_date, value in samples if sample_date == target_date), None)
-    if current_value is None:
-        current_date, current_value = samples[-1]
-
-    previous_values = [value for sample_date, value in samples if sample_date < current_date]
-    avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
-
-    arrow = "→"
-    if avg_previous is not None:
-        delta = current_value - avg_previous
-        if delta >= 2.0:
-            arrow = "↗"
-        elif delta <= -2.0:
-            arrow = "↘"
-
-    line = f"HRV: {current_value:.0f} ms {arrow}"
-    if avg_previous is not None:
-        line += f" (7d avg {avg_previous:.0f} ms)"
-    return line
+    return _legacy_supplemental_builder(dal).format_hrv_line(target_date)
     """Perform format hrv line."""
 
 
 def _collect_trend_samples(dal: Any, target_date: date) -> List[tuple[date, dict]]:
-    if dal is None or not hasattr(dal, "get_historical_data"):
-        return []
-    start = target_date - timedelta(days=89)
-    try:
-        rows = dal.get_historical_data(start, target_date)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        log_utils.log_message(f"Failed to load trend history: {exc}", "WARN")
-        return []
-    samples: List[tuple[date, dict]] = []
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        row_date = _coerce_summary_date(row.get("date"))
-        if row_date is None or row_date > target_date:
-            continue
-        samples.append((row_date, row))
-    samples.sort(key=lambda item: item[0])
-    return samples
+    return _legacy_supplemental_builder(dal).collect_trend_samples(target_date)
     """Perform collect trend samples."""
 
 
 def _build_trend_paragraph(dal: Any, target_date: date) -> str | None:
-    samples = _collect_trend_samples(dal, target_date)
-    if not samples:
-        return None
-    lines = narrative_builder.compute_trend_lines(samples, as_of=target_date, limit=2)
-    if not lines:
-        return None
-    sentences = ["Trend check: " + lines[0]] + lines[1:]
-    return " ".join(sentences)
+    return _legacy_supplemental_builder(dal).build_trend_paragraph(target_date)
     """Perform build trend paragraph."""
 
 def _append_line(base: str | None, addition: str) -> str:
-    base_text = "" if base is None else str(base)
-    if not addition:
-        return base_text
-    if not base_text:
-        return addition
-    if not base_text.endswith("\n"):
-        base_text = f"{base_text}\n"
-    return f"{base_text}{addition}"
+    return append_summary_line(base, addition)
     """Perform append line."""
 
-_HRV_METRIC_KEYS = ("hrv_sdnn_ms", "hrv_rmssd_ms", "hrv_daily_ms", "hrv")
+_HRV_METRIC_KEYS = HRV_METRIC_KEYS
 
 _DAY_NAMES = {
     1: "Monday",
@@ -457,37 +339,13 @@ def build_daily_summary(
 ) -> str:
     """Generate the daily summary narrative for the requested date."""
     orch = orchestrator or _build_orchestrator()
-    message_builder = getattr(orch, "build_daily_summary_message", None)
-    if callable(message_builder):
-        value = message_builder(target_date=target_date)
-        return "" if value is None else str(value)
-
-    summary_value = orch.get_daily_summary(target_date=target_date)
-    summary_text = "" if summary_value is None else str(summary_value)
-
-    target = target_date or (date.today() - timedelta(days=1))
-    dal = getattr(orch, "dal", None)
-    if dal is None:
-        return summary_text
-
-    trend = body_age.get_body_age_trend(dal, target_date=target)
-    body_age_line = _format_body_age_line(trend)
-    if body_age_line:
-        summary_text = _append_line(summary_text, body_age_line)
-
-    comp_line = _format_body_comp_line(dal, target)
-    if comp_line:
-        summary_text = _append_line(summary_text, comp_line)
-
-    hrv_line = _format_hrv_line(dal, target)
-    if hrv_line:
-        summary_text = _append_line(summary_text, hrv_line)
-
-    trend_paragraph = _build_trend_paragraph(dal, target)
-    if trend_paragraph:
-        summary_text = _append_line(summary_text, trend_paragraph)
-
-    return summary_text
+    builder = CompatibleDailySummaryMessageBuilder(
+        orch,
+        warning_sink=_legacy_summary_warning,
+        body_age_loader=_legacy_body_age_trend,
+        today=lambda: date.today(),
+    )
+    return builder.build_daily_summary_message(target_date=target_date)
 
 
 def send_daily_summary(

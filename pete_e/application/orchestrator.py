@@ -23,6 +23,11 @@ from pete_e.application.composition import (
     provide_validation_service,
 )
 from pete_e.application.coach_voice import CoachVoiceFact, CoachVoiceRequest, CoachVoiceService
+from pete_e.application.daily_summary import (
+    DailySummaryRenderProfile,
+    DailySummarySupplementalBuilder,
+    append_summary_line,
+)
 from pete_e.application.collaborator_contracts import (
     CycleContract,
     DataAccessContract,
@@ -46,7 +51,6 @@ from pete_e.application.workflows import (
 from pete_e.application.workflows.cycle_rollover import CycleRolloverResult
 from pete_e.application.workflows.daily_sync import DailyAutomationResult
 from pete_e.application.workflows.weekly_calibration import WeeklyCalibrationResult
-from pete_e.domain import body_age, narrative_builder
 from pete_e.domain.cycle_service import CycleService
 from pete_e.domain.daily_sync import DailySyncService
 from pete_e.domain.morning_coach import build_morning_training_adjustment
@@ -151,6 +155,7 @@ class Orchestrator:
         self.daily_sync_workflow = DailySyncWorkflow(
             daily_sync_service=self.daily_sync_service,
             send_message=self.send_telegram_message,
+            summary_builder=self,
         )
         self.trainer_message_workflow = TrainerMessageWorkflow(
             dal=self.dal,
@@ -701,169 +706,37 @@ class Orchestrator:
         )
 
     def _build_daily_supplemental_lines(self, target: date) -> List[str]:
-        lines: list[str] = []
-        body_age_line = self._format_body_age_line(target)
-        if body_age_line:
-            lines.append(body_age_line)
-        body_comp_line = self._format_body_comp_line(target)
-        if body_comp_line:
-            lines.append(body_comp_line)
-        hrv_line = self._format_hrv_line(target)
-        if hrv_line:
-            lines.append(hrv_line)
-        trend_line = self._build_trend_paragraph(target)
-        if trend_line:
-            lines.append(trend_line)
-        return lines
+        return list(self._daily_summary_supplemental_builder().build_lines(target))
+
+    def _daily_summary_supplemental_builder(
+        self,
+    ) -> DailySummarySupplementalBuilder:
+        return DailySummarySupplementalBuilder(
+            getattr(self, "dal", None),
+            profile=DailySummaryRenderProfile.PRODUCTION,
+            warning_sink=log_utils.warn,
+        )
 
     def _format_body_age_line(self, target: date) -> str | None:
-        try:
-            trend = body_age.get_body_age_trend(getattr(self, "dal", None), target_date=target)
-        except Exception as exc:  # pragma: no cover - defensive context only
-            log_utils.warn(f"Failed to load body age trend for voice context: {exc}")
-            return None
-        if trend is None:
-            return None
-        value = getattr(trend, "value", None)
-        delta = getattr(trend, "delta", None)
-        if value is None:
-            return None
-        line = f"Body Age: {value:.1f}y"
-        if delta is None:
-            return f"{line} (7d delta n/a)"
-        return f"{line} (7d delta {delta:+.1f}y)"
+        return self._daily_summary_supplemental_builder().format_body_age_line(target)
 
     def _format_body_comp_line(self, target: date) -> str | None:
-        dal = getattr(self, "dal", None)
-        loader = getattr(dal, "get_historical_metrics", None) if dal is not None else None
-        if not callable(loader):
-            return None
-        try:
-            rows = loader(14)
-        except Exception as exc:  # pragma: no cover - defensive context only
-            log_utils.warn(f"Failed to load body composition history for voice context: {exc}")
-            return None
-
-        window_start = target - timedelta(days=13)
-        current_start = target - timedelta(days=6)
-        samples: list[tuple[date, float]] = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            row_date = self._coerce_date(row.get("date"))
-            if row_date is None or row_date > target or row_date < window_start:
-                continue
-            muscle_pct = coerce_decimal_to_float(row.get("muscle_pct"))
-            if muscle_pct is not None:
-                samples.append((row_date, muscle_pct))
-
-        if not samples:
-            return None
-        samples.sort(key=lambda item: item[0])
-        current_values = [value for sample_date, value in samples if current_start <= sample_date <= target]
-        previous_values = [value for sample_date, value in samples if window_start <= sample_date < current_start]
-        if len(current_values) < 3:
-            return None
-        avg_current = round(sum(current_values) / len(current_values), 1)
-        if len(previous_values) >= 3:
-            avg_previous = round(sum(previous_values) / len(previous_values), 1)
-            diff = round(avg_current - avg_previous, 1)
-            if abs(diff) >= 0.5:
-                direction = "up" if diff > 0 else "down"
-                return f"Muscle trend: {avg_current:.1f}% avg this week ({direction} {abs(diff):.1f}% vs prior)."
-            return f"Muscle trend: {avg_current:.1f}% avg this week (steady vs prior)."
-        return f"Muscle trend: {avg_current:.1f}% avg this week."
+        return self._daily_summary_supplemental_builder().format_body_composition_line(
+            target
+        )
 
     def _format_hrv_line(self, target: date) -> str | None:
-        dal = getattr(self, "dal", None)
-        loader = getattr(dal, "get_historical_metrics", None) if dal is not None else None
-        if not callable(loader):
-            return None
-        try:
-            rows = loader(14)
-        except Exception as exc:  # pragma: no cover - defensive context only
-            log_utils.warn(f"Failed to load HRV history for voice context: {exc}")
-            return None
-
-        window_start = target - timedelta(days=6)
-        samples: list[tuple[date, float]] = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            row_date = self._coerce_date(row.get("date"))
-            if row_date is None or row_date < window_start or row_date > target:
-                continue
-            hrv_value = None
-            for key in ("hrv_sdnn_ms", "hrv_rmssd_ms", "hrv_daily_ms", "hrv"):
-                hrv_value = coerce_decimal_to_float(row.get(key))
-                if hrv_value is not None:
-                    break
-            if hrv_value is not None and hrv_value > 0:
-                samples.append((row_date, hrv_value))
-
-        if not samples:
-            return None
-        samples.sort(key=lambda item: item[0])
-        current_date = target
-        current_value = next((value for sample_date, value in samples if sample_date == target), None)
-        if current_value is None:
-            current_date, current_value = samples[-1]
-        previous_values = [value for sample_date, value in samples if sample_date < current_date]
-        avg_previous = sum(previous_values) / len(previous_values) if previous_values else None
-        direction = "steady"
-        if avg_previous is not None:
-            delta = current_value - avg_previous
-            if delta >= 2.0:
-                direction = "up"
-            elif delta <= -2.0:
-                direction = "down"
-        line = f"HRV: {current_value:.0f} ms ({direction})"
-        if avg_previous is not None:
-            line += f" vs 7d avg {avg_previous:.0f} ms"
-        return line
+        return self._daily_summary_supplemental_builder().format_hrv_line(target)
 
     def _build_trend_paragraph(self, target: date) -> str | None:
-        samples = self._collect_trend_samples(target)
-        if not samples:
-            return None
-        lines = narrative_builder.compute_trend_lines(samples, as_of=target, limit=2)
-        if not lines:
-            return None
-        sentences = ["Trend check: " + lines[0]] + lines[1:]
-        return " ".join(sentences)
+        return self._daily_summary_supplemental_builder().build_trend_paragraph(target)
 
     def _collect_trend_samples(self, target: date) -> list[tuple[date, dict]]:
-        dal = getattr(self, "dal", None)
-        loader = getattr(dal, "get_historical_data", None) if dal is not None else None
-        if not callable(loader):
-            return []
-        start = target - timedelta(days=89)
-        try:
-            rows = loader(start, target)
-        except Exception as exc:  # pragma: no cover - defensive context only
-            log_utils.warn(f"Failed to load trend history for voice context: {exc}")
-            return []
-        samples: list[tuple[date, dict]] = []
-        for row in rows or []:
-            if not isinstance(row, dict):
-                continue
-            row_date = self._coerce_date(row.get("date"))
-            if row_date is None or row_date > target:
-                continue
-            samples.append((row_date, row))
-        samples.sort(key=lambda item: item[0])
-        return samples
+        return self._daily_summary_supplemental_builder().collect_trend_samples(target)
 
     @staticmethod
     def _append_line(base: str | None, addition: str) -> str:
-        base_text = "" if base is None else str(base)
-        if not addition:
-            return base_text
-        if not base_text:
-            return addition
-        if not base_text.endswith("\n"):
-            base_text = f"{base_text}\n"
-        return f"{base_text}{addition}"
+        return append_summary_line(base, addition)
 
     def build_trainer_message(self, message_date: date | None = None) -> str:
         """Compose Pierre's trainer check-in for the supplied date."""

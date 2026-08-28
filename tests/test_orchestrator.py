@@ -338,8 +338,9 @@ def test_run_end_to_end_day_sends_summary(monkeypatch: pytest.MonkeyPatch):
     )
 
     monkeypatch.setattr(
-        "pete_e.cli.messenger.build_daily_summary",
-        lambda orchestrator=None, target_date=None: "Daily summary ready",
+        orch,
+        "build_daily_summary_message",
+        lambda target_date=None: "Daily summary ready",
     )
 
     result = orch.run_end_to_end_day(days=1, summary_date=date(2024, 5, 2))

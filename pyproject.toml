@@ -131,6 +131,7 @@ files = [
     "pete_e/domain/metric_trends.py",
     "pete_e/domain/weekly_narrative.py",
     "pete_e/domain/weekly_plan_presentation.py",
+    "pete_e/application/daily_summary.py",
     "pete_e/application/github_deploy_webhook.py",
     "pete_e/infrastructure/apple_parser_types.py",
     "pete_e/infrastructure/apple_parser_normalization.py",

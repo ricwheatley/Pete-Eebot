@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from typing import Dict, List
 
 from pete_e.application.collaborator_contracts import SyncContract
+from pete_e.application.daily_summary import DailySummaryMessageBuilder
 from pete_e.application.exceptions import ApplicationError
 from pete_e.infrastructure import log_utils
 
@@ -21,9 +22,16 @@ class DailyAutomationResult:
 
 
 class DailySyncWorkflow:
-    def __init__(self, *, daily_sync_service: SyncContract, send_message):
+    def __init__(
+        self,
+        *,
+        daily_sync_service: SyncContract,
+        send_message,
+        summary_builder: DailySummaryMessageBuilder,
+    ):
         self.daily_sync_service = daily_sync_service
         self.send_message = send_message
+        self.summary_builder = summary_builder
 
     def run_daily_sync(self, days: int):
         log_utils.info("Orchestrator running daily sync...")
@@ -38,9 +46,10 @@ class DailySyncWorkflow:
 
         if summary_attempted:
             try:
-                from pete_e.cli.messenger import build_daily_summary
-
-                summary_text = build_daily_summary(orchestrator=orchestrator, target_date=summary_target)
+                summary_value = self.summary_builder.build_daily_summary_message(
+                    target_date=summary_target
+                )
+                summary_text = "" if summary_value is None else str(summary_value)
                 if summary_text.strip():
                     summary_sent = self.send_message(summary_text)
                 else:

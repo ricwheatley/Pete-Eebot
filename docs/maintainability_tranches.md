@@ -740,3 +740,112 @@ paragraph consolidation, body-age trends, weekly metric/workout analysis,
 daily-from-days narrative construction, body age calculation, cycle narrative,
 Apple ingestion, PostgreSQL/DAL work, CLI commands, and Orchestrator behavior
 remain explicitly deferred.
+
+## 2026-08-28: application-owned daily-summary construction
+
+### Baseline and selected boundary
+
+This tranche started from a clean `main` worktree at
+`3510e12b6977da0fd73f4204b0b1b45c38b953b4`, aligned with `origin/main`.
+That commit included the completed typed Body Age history/trend and Steps/Sleep
+metric-trend prerequisites. The current baseline was remeasured rather than
+reusing the older supplied `b2faec2` measurements: `messenger.py` was 1,699
+physical / 1,446 token-bearing lines and `orchestrator.py` was 1,418 / 1,240.
+The CLI and Orchestrator each owned complexity-11 body-composition trees plus
+complexity-17 and complexity-15 HRV trees. The repository had 33 C901 findings.
+
+An AST graph over every `pete_e/**/*.py` file expanded project imports and
+constant `importlib.import_module` calls, then applied Tarjan's algorithm. It
+found one six-module summary component containing Orchestrator, application
+sync, the Telegram listener, `DailySyncWorkflow`, `cli.messenger`, and
+`cli.telegram`. `DailySyncWorkflow` imported the CLI summary builder inside
+`run`, while the listener held a lazy CLI-module proxy. The repository had two
+statically visible application-to-CLI edges, including the summary workflow
+edge; the other (`application.api_services` to `cli.status`) is unrelated.
+Messenger's project fan-out was 24 under this current graph method.
+
+The pre-edit unit/contract lane passed 1,224 tests with 7 skips at 71.135291%
+combined statement/branch coverage. Messenger, Orchestrator,
+`DailySyncWorkflow`, and the Telegram listener measured 49.283154%,
+63.927428%, 88.372093%, and 72.180451%, respectively. The configured strict
+mypy scope was clean in 12 files; isolated non-gating strict probes of the two
+legacy facades reported 50 messenger and 17 Orchestrator errors.
+
+### Typed construction and compatibility policies
+
+`application.daily_summary` now owns the `DailySummaryMessageBuilder` protocol,
+the supplemental history-loading service, immutable body-composition and HRV
+analysis results, pure analyzers, and explicit `PRODUCTION` and `LEGACY_CLI`
+render profiles. It consumes the completed `BodyAgeHistoryReader`/
+`analyze_body_age_trend` and `metric_trends.compute_trend_lines` boundaries.
+Loading, analysis, and rendering remain separate. The maximum complexity of a
+new function is 5.
+
+Orchestrator remains the authoritative production builder and retains its
+draft, structured `CoachVoiceRequest`, composer-versus-rewrite selection,
+fallback, target/action dates, training guidance, nutrition, logging, and
+application error semantics. Its supplemental methods are compatibility
+delegates to the production profile. `CompatibleDailySummaryMessageBuilder`
+preserves the public messenger wrapper's callable-authoritative delegation and
+duck-typed `get_daily_summary`/DAL fallback. `DailySyncWorkflow` receives the
+protocol explicitly. The Telegram listener also receives it explicitly and
+falls back to the same Orchestrator instance when composed without one. CLI is
+limited to presentation, transport, and legacy-profile adaptation.
+
+Characterization against identical 90-day data pinned the intentional prose
+differences instead of harmonizing them:
+
+| Case | Production profile | Legacy CLI profile |
+| --- | --- | --- |
+| Missing Body Age value | omit the line | `Body Age: n/a` |
+| HRV rise, 75 vs 70 ms | `HRV: 75 ms (up) vs 7d avg 70 ms` | `HRV: 75 ms ↗ (7d avg 70 ms)` |
+| Numeric strings | preserve the production Decimal-only behavior | accept through `float` |
+| Body-composition `None`/non-dict rows | defensive empty/skip behavior | retain observed `TypeError`/`AttributeError` |
+
+Both profiles retain Body Age delta wording, muscle windows/minimums/rounding
+and the +/-0.5 threshold, HRV key precedence/positive filtering/seven-day
+selection/rounding and the +/-2 threshold, Steps-before-Sleep ordering, warning
+text and levels, default-yesterday behavior, and newline appending. The
+date-before-datetime compatibility branch remains intentionally shadowed.
+
+### Tests and feedback ratchets
+
+The final focused suite has 133 cases covering pure analysis and rendering,
+production-versus-legacy snapshots, malformed history and loader errors,
+Orchestrator voice/fallback/error contracts, workflow injection and send
+outcomes, Telegram `/summary`, dependency direction, and genuine Typer/Click
+`message --summary` and `morning-report` parsing, output, sends, failures, and
+exit codes. The unit/contract lane now passes 1,326 tests with 7 skips. No
+PostgreSQL query changed, so no database integration was added.
+
+CI additively strict-checks the application module, enforces 100% combined
+statement/branch coverage for its 329 statements and 120 branches, and
+format-checks only the seven new source/test files. Repository-wide Ruff still
+passes and the coverage floor remains 66%.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Targeted duplicate body-composition/HRV decision trees | 4 | 0 (thin public/private delegates retained) |
+| Messenger / Orchestrator C901 findings | 7 / 3 | 5 / 1, all unrelated to daily-summary enrichment |
+| Repository C901 findings | 33 | 29 |
+| New helper maximum complexity | n/a | 5 |
+| `messenger.py` physical / token-bearing lines | 1,699 / 1,446 | 1,557 / 1,319 |
+| `orchestrator.py` physical / token-bearing lines | 1,418 / 1,240 | 1,291 / 1,116 |
+| New application boundary physical / token-bearing lines | n/a | 646 / 535 |
+| Messenger project fan-out | 24 | 24 |
+| Summary application-to-CLI edge | 1 | 0 |
+| Summary SCC | 6 modules | none |
+| New application boundary branch-aware coverage | n/a | 100% |
+| Messenger branch-aware coverage | 49.283154% | 49.215247% |
+| Orchestrator branch-aware coverage | 63.927428% | 73.233696% |
+| Daily workflow / Telegram listener coverage | 88.372093% / 72.180451% | 100% / 80.991736% |
+| Repository unit/contract branch-aware coverage | 71.135291% | 72.329850% |
+| Unit/contract lane | 1,224 passed, 7 skipped | 1,326 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 12 files | 0 errors in 13 files |
+| Isolated legacy messenger / Orchestrator strict probes | 50 / 17 | 57 / 22 (non-gating legacy backlog) |
+
+The remaining nontrivial component contains only application composition,
+infrastructure DI, and the Telegram notification channel. The unrelated
+`application.api_services` to `cli.status` edge also remains. Web
+morning-report and generic-message routes continue to use the compatibility CLI
+facade and are deferred, as are trainer summaries and weekly-plan presentation.
