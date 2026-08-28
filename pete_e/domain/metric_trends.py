@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
+from math import isclose
 from typing import Any, Callable, Final
 
 
@@ -251,7 +252,13 @@ def calculate_window_statistics(
 def classify_direction(delta: float, significance: float) -> TrendDirection:
     """Apply the inclusive significance threshold to a signed delta."""
 
-    if abs(delta) >= significance:
+    magnitude = abs(delta)
+    if magnitude >= significance or isclose(
+        magnitude,
+        significance,
+        rel_tol=1e-12,
+        abs_tol=0.0,
+    ):
         if delta > 0:
             return TrendDirection.UP
         return TrendDirection.DOWN
