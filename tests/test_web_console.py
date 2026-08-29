@@ -10,6 +10,7 @@ import pytest
 from pete_e import api
 from pete_e.api_routes import dependencies, web
 from pete_e.application.exceptions import ValidationError
+from pete_e.application.morning_report import MorningReportResult
 from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR, ROLE_OWNER, ROLE_READ_ONLY
@@ -1965,21 +1966,26 @@ def test_console_morning_report_preview_generates_without_confirmation(monkeypat
     job_service = _JobService()
     captured: dict[str, object] = {}
 
-    class _MorningReportOrchestrator:
-        def get_daily_summary(self, target_date=None):
+    class _MorningReportOperation:
+        def execute(self, *, target_date=None, send=False):
             captured["target_date"] = target_date
-            return "Morning report text"
-
-        def send_telegram_message(self, message: str) -> bool:
-            captured["sent"] = message
-            return True
+            captured["send"] = send
+            return MorningReportResult(
+                report="Morning report text",
+                target_date=target_date.isoformat() if target_date else None,
+                sent=False,
+            )
 
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
     monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
     monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
     monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "morning-preview-job")
     monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
-    monkeypatch.setattr(web, "_build_morning_report_orchestrator", lambda: _MorningReportOrchestrator())
+    monkeypatch.setattr(
+        dependencies,
+        "get_morning_report_operation",
+        lambda: _MorningReportOperation(),
+    )
 
     payload = web.console_preview_morning_report(
         _Request(
@@ -1995,7 +2001,7 @@ def test_console_morning_report_preview_generates_without_confirmation(monkeypat
     )
 
     assert captured["target_date"] == date(2026, 5, 15)
-    assert "sent" not in captured
+    assert captured["send"] is False
     assert payload["status"] == "completed"
     assert payload["report"] == "Morning report text"
     assert payload["sent"] is False
@@ -2011,21 +2017,26 @@ def test_console_morning_report_send_requires_confirmation_and_sends(monkeypatch
     job_service = _JobService()
     captured: dict[str, object] = {}
 
-    class _MorningReportOrchestrator:
-        def get_daily_summary(self, target_date=None):
+    class _MorningReportOperation:
+        def execute(self, *, target_date=None, send=False):
             captured["target_date"] = target_date
-            return "Morning report to send"
-
-        def send_telegram_message(self, message: str) -> bool:
-            captured["sent"] = message
-            return True
+            captured["send"] = send
+            return MorningReportResult(
+                report="Morning report to send",
+                target_date=target_date.isoformat() if target_date else None,
+                sent=True,
+            )
 
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
     monkeypatch.setattr(dependencies, "enforce_command_rate_limit", lambda request, command: None)
     monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
     monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "morning-send-job")
     monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
-    monkeypatch.setattr(web, "_build_morning_report_orchestrator", lambda: _MorningReportOrchestrator())
+    monkeypatch.setattr(
+        dependencies,
+        "get_morning_report_operation",
+        lambda: _MorningReportOperation(),
+    )
 
     payload = web.console_send_morning_report(
         _Request(
@@ -2041,7 +2052,7 @@ def test_console_morning_report_send_requires_confirmation_and_sends(monkeypatch
     )
 
     assert captured["target_date"] is None
-    assert captured["sent"] == "Morning report to send"
+    assert captured["send"] is True
     assert payload["sent"] is True
     assert payload["summary"] == "Morning report sent."
     assert payload["job_id"] == "morning-send-job"
@@ -2082,8 +2093,8 @@ def test_console_morning_report_failure_includes_request_and_job_ids(monkeypatch
     csrf_token = dependencies.generate_csrf_token(service.token)
     job_service = _JobService()
 
-    class _FailingMorningReportOrchestrator:
-        def get_daily_summary(self, target_date=None):
+    class _FailingMorningReportOperation:
+        def execute(self, *, target_date=None, send=False):
             raise RuntimeError("narrative builder failed")
 
     monkeypatch.setattr(dependencies, "get_user_service", lambda: service)
@@ -2091,7 +2102,11 @@ def test_console_morning_report_failure_includes_request_and_job_ids(monkeypatch
     monkeypatch.setattr(dependencies, "audit_command_event", lambda request, **event: None)
     monkeypatch.setattr(dependencies, "prepare_job_context", lambda request, operation: "morning-failure-job")
     monkeypatch.setattr(dependencies, "get_job_service", lambda: job_service)
-    monkeypatch.setattr(web, "_build_morning_report_orchestrator", lambda: _FailingMorningReportOrchestrator())
+    monkeypatch.setattr(
+        dependencies,
+        "get_morning_report_operation",
+        lambda: _FailingMorningReportOperation(),
+    )
 
     with pytest.raises(web.HTTPException) as exc:
         web.console_preview_morning_report(
@@ -2112,6 +2127,8 @@ def test_console_morning_report_failure_includes_request_and_job_ids(monkeypatch
     assert exc.value.detail["message"] == "narrative builder failed"
     assert exc.value.detail["job_id"] == "morning-failure-job"
     assert exc.value.detail["request_id"] == "req-morning-failure"
+    assert isinstance(exc.value.__cause__, RuntimeError)
+    assert str(exc.value.__cause__) == "narrative builder failed"
 
 
 def test_web_routes_are_mounted_once_outside_api_v1_namespace() -> None:

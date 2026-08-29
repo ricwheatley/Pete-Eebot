@@ -21,6 +21,7 @@ from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.jobs import ApplicationJobService
 from pete_e.application.github_deploy_webhook import GitHubDeliveryLedger
+from pete_e.application.morning_report import MorningReportOperation
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.user_service import UserService, normalize_login
@@ -364,6 +365,19 @@ def get_job_service() -> ApplicationJobService:
                     recovery_interval_seconds=settings.PETEEEBOT_JOB_RECOVERY_SECONDS,
                 )
     return _job_service
+
+
+def get_morning_report_operation() -> MorningReportOperation:
+    """Build a fresh operation at the synchronous callback boundary."""
+
+    from pete_e.application.composition import provide_morning_report_operation
+    from pete_e.application.orchestrator import Orchestrator
+
+    orchestrator = Orchestrator()
+    return provide_morning_report_operation(
+        summary_builder=orchestrator,
+        telegram_client=orchestrator.telegram_client,
+    )
 
 
 def get_edge_security_repository() -> PostgresEdgeSecurityRepository:

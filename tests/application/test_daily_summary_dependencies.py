@@ -141,6 +141,7 @@ def test_application_summary_modules_do_not_import_cli_messenger() -> None:
     graph = _dependency_graph()
     summary_application_modules = {
         "pete_e.application.daily_summary",
+        "pete_e.application.morning_report",
         "pete_e.application.orchestrator",
         "pete_e.application.telegram_listener",
         "pete_e.application.workflows.daily_sync",

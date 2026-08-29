@@ -925,3 +925,99 @@ The domain weekly workout renderer, schedule policy, plan reads and writes,
 generation, schema, migrations, Telegram provider, authentication policy, daily
 and trainer summaries, Telegram listener, web generic-message migration, and all
 other CLI families remain explicitly deferred.
+
+## 2026-08-29: typed morning-report operation and thin FastAPI adapters
+
+### Baseline and prerequisite completion
+
+This tranche started from a clean `main` worktree at
+`a9b242fe0dad0d1550fd9959a63a3a9d7c1a4f42`, aligned with `origin/main`.
+The intended application prerequisite was only partly complete: the previous
+daily-summary tranche supplied `DailySummaryMessageBuilder` and application-owned
+summary construction, and `NotificationChannel` already described notification
+delivery, but no typed application build/send operation or result existed.
+`api_routes.web` still owned `MorningReportResult`, constructed `Orchestrator`,
+imported `cli.messenger.build_daily_summary` inside the morning-report callback,
+and decided whether Telegram should be invoked.
+
+The current baseline was remeasured rather than reusing the historical
+`b2faec2` figures. `web.py` measured 1,928 physical, 1,701 token-bearing, and
+768 logical lines, with 86 functions and three classes. The AST import graph
+found 14 direct and two lazy unique project-module imports (16 combined). The
+morning build, result-summary, generation, failure, preview-route, and send-route
+complexities were 1, 1, 3, 3, 2, and 2; the file had zero configured C901
+findings. The unit/contract lane passed 1,386 tests with seven skips at
+72.739558% repository and 76.843318% web branch-aware coverage.
+
+### Characterized HTTP and job contract
+
+Before production ownership moved, 56 genuine `TestClient` cases passed against
+the original routes through the installed FastAPI, Starlette, and Pydantic
+stack. They cover operator/owner success, read-only and anonymous denial, real
+session and CSRF cookies/headers, confirmation auditing, missing/null/object and
+wrong-top-level JSON, date coercion and failures, success/blank/unusual builder
+values, delivery success/false/raise, application/domain/general/HTTP errors,
+empty exception messages, rate and job failures, audit failure quirks, request
+and correlation propagation, synchronous callback arguments, exact responses,
+and single mounting outside `/api/v1`.
+
+The characterization deliberately retains observed compatibility details:
+falsey date values such as `false`, `[]`, and `{}` mean no override; numeric
+`20260823` is accepted by `date.fromisoformat`; confirmation input is stripped;
+wrong JSON top-level values fail FastAPI validation before route authorization;
+and the existing morning-report HTTP remapper does not retain a source
+`Retry-After` header.
+
+### Typed operation, composition, and adapter boundary
+
+`application.morning_report.MorningReportOperation` receives the existing
+`DailySummaryMessageBuilder` and `NotificationChannel` ports explicitly. It
+owns `None`/string conversion, the preview-versus-send decision, blank-message
+suppression, the exact false-delivery error, and the frozen result's report,
+ISO target date, sent/success values, and summary sentence. It imports no API,
+FastAPI, Starlette, CLI, job, audit, concrete Telegram, persistence, or HTTP
+type. Transport and builder exceptions continue to propagate to the API
+mapping boundary.
+
+Production composition receives the established Orchestrator-backed summary
+builder and Telegram client explicitly, wraps the client in the established
+Telegram notification adapter, and creates a fresh operation inside the
+synchronous job callback. No operation or collaborator is stored in mutable
+application global state, and no new dependency cycle was introduced. The
+characterized web resource lifetime remains unchanged: this path does not close
+the constructed Orchestrator.
+
+The two route functions now retain only operator/CSRF/confirmation enforcement
+and call one morning-report-specific HTTP/job helper. That helper retains job and
+ID allocation, date parsing, audit, throttling, synchronous `run_callback`,
+response serialization, and HTTP failure mapping. Generic message preview and
+resend still own their existing CLI imports and behavior; no other web command
+family changed.
+
+### Feedback ratchets and final measurements
+
+Twenty new pure/composition/dependency cases cover every operation line and
+branch plus production wiring and framework/import exclusions. CI additively
+strict-checks the operation, enforces its 100% statement/branch coverage, and
+format-checks only the changed tranche files. The final unit/contract lane
+passes 1,462 tests with seven skips.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `web.py` physical / token-bearing / logical lines | 1,928 / 1,701 / 768 | 1,877 / 1,661 / 733 |
+| `web.py` functions / classes | 86 / 3 | 84 / 2 |
+| Morning helper/route maximum complexity | 3 | 3 |
+| Configured web C901 findings | 0 | 0 |
+| New operation maximum complexity | n/a | 3 |
+| Web direct / lazy / combined unique project imports | 14 / 2 / 16 | 15 / 2 / 17 |
+| Morning web-to-CLI edge | `web -> cli.messenger` | removed; generic message routes retain their separate edge |
+| Typed operation branch-aware coverage | n/a | 100% (32 statements, 6 branches) |
+| Web branch-aware coverage | 76.843318% | 77.388150% |
+| Repository unit/contract branch-aware coverage | 72.739558% | 72.827831% |
+| Unit/contract lane | 1,386 passed, 7 skipped | 1,462 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 15 files | 0 errors in 16 files |
+
+Daily-summary calculation/prose/voice/date policy, CLI commands, generic message
+preview/resend, trainer and weekly-plan operations, sync/ingest/plan/deploy
+families, job repository/worker semantics, security policy, persistence,
+templates, JavaScript, and all other web routes remain explicitly deferred.

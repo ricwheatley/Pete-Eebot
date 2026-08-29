@@ -5,6 +5,8 @@ from typing import Callable, cast
 
 from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.coach_voice import CoachVoiceService
+from pete_e.application.daily_summary import DailySummaryMessageBuilder
+from pete_e.application.morning_report import MorningReportOperation
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.services import PlanService, WgerExportService
 from pete_e.application.user_service import UserService
@@ -59,6 +61,21 @@ def provide_telegram_client() -> TelegramClient:
 
 def provide_telegram_notification_channel(*, client: TelegramClient) -> NotificationChannel:
     return TelegramNotificationChannel(client=client)
+
+
+def provide_morning_report_operation(
+    *,
+    summary_builder: DailySummaryMessageBuilder,
+    telegram_client: TelegramClient,
+) -> MorningReportOperation:
+    """Compose the production summary builder and Telegram notification adapter."""
+
+    return MorningReportOperation(
+        summary_builder=summary_builder,
+        notification_channel=provide_telegram_notification_channel(
+            client=telegram_client
+        ),
+    )
 
 
 def provide_apple_health_ingestor(*, dal: PostgresDal, client: AppleDropboxClient) -> AppleHealthIngestor:

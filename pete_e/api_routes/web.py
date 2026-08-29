@@ -18,6 +18,7 @@ from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user, require_role
 from pete_e.application.exceptions import ApplicationError
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.morning_report import MorningReportResult
 from pete_e.application.plan_duration import (
     DEFAULT_PLAN_WEEKS,
     PLAN_DURATION_HELP,
@@ -112,21 +113,6 @@ class NavItem:
     label: str
     href: str
     min_role: RoleName
-
-
-@dataclass(frozen=True)
-class MorningReportResult:
-    report: str
-    target_date: str | None
-    sent: bool
-    success: bool = True
-
-    def summary_line(self) -> str:
-        if not self.report.strip():
-            return "No morning report is available yet. Give the sync a minute."
-        action = "sent" if self.sent else "generated"
-        date_fragment = f" for {self.target_date}" if self.target_date else ""
-        return f"Morning report {action}{date_fragment}."
 
 
 @dataclass(frozen=True)
@@ -728,37 +714,8 @@ def _audit_command_failure(request: Request, command: str, exc: Exception) -> No
     )
 
 
-def _build_morning_report_orchestrator():
-    from pete_e.application.orchestrator import Orchestrator
-
-    return Orchestrator()
-
-
 def _morning_report_result_summary(result: MorningReportResult) -> str:
     return result.summary_line()
-
-
-def _generate_morning_report_result(*, target_date: date | None, send: bool) -> MorningReportResult:
-    orchestrator = _build_morning_report_orchestrator()
-    from pete_e.cli.messenger import build_daily_summary
-
-    report_value = build_daily_summary(orchestrator=orchestrator, target_date=target_date)
-    report = "" if report_value is None else str(report_value)
-
-    if send and report.strip():
-        if not orchestrator.send_telegram_message(report):
-            raise RuntimeError("Telegram send for morning report failed.")
-        return MorningReportResult(
-            report=report,
-            target_date=target_date.isoformat() if target_date else None,
-            sent=True,
-        )
-
-    return MorningReportResult(
-        report=report,
-        target_date=target_date.isoformat() if target_date else None,
-        sent=False,
-    )
 
 
 def _build_console_message_orchestrator():
@@ -1657,22 +1614,34 @@ def console_resend_message(request: Request, payload: dict[str, Any] | None = No
     return response
 
 
-@router.post("/console/operations/morning-report-preview")
-def console_preview_morning_report(request: Request, payload: dict[str, Any] | None = None):
-    command = "morning_report_preview"
-    user = _require_operator_command_user(request, command)
+def _run_morning_report_command(
+    request: Request,
+    payload: dict[str, Any] | None,
+    *,
+    command: str,
+    user: AuthUser,
+    send: bool,
+    default_code: str,
+    default_message: str,
+) -> dict[str, Any]:
     job_id = dependencies.prepare_job_context(request, command)
     correlation_id = get_or_create_correlation_id(request)
 
     try:
         target_date = _payload_optional_date(payload, "target_date")
-        summary = {"target_date": target_date.isoformat() if target_date else None, "send": False}
+        summary = {
+            "target_date": target_date.isoformat() if target_date else None,
+            "send": send,
+        }
         _audit_command_start(request, command, summary)
         dependencies.enforce_command_rate_limit(request, command)
         result = dependencies.get_job_service().run_callback(
             job_id=job_id,
             operation=command,
-            callback=lambda: _generate_morning_report_result(target_date=target_date, send=False),
+            callback=lambda: dependencies.get_morning_report_operation().execute(
+                target_date=target_date,
+                send=send,
+            ),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,
@@ -1687,8 +1656,8 @@ def console_preview_morning_report(request: Request, payload: dict[str, Any] | N
             exc=exc,
             job_id=job_id,
             request_id=correlation_id,
-            default_code="morning_report_preview_failed",
-            default_message="Morning report preview failed.",
+            default_code=default_code,
+            default_message=default_message,
         ) from exc
 
     response = {
@@ -1705,6 +1674,21 @@ def console_preview_morning_report(request: Request, payload: dict[str, Any] | N
     }
     _audit_command_success(request, command, response)
     return response
+
+
+@router.post("/console/operations/morning-report-preview")
+def console_preview_morning_report(request: Request, payload: dict[str, Any] | None = None):
+    command = "morning_report_preview"
+    user = _require_operator_command_user(request, command)
+    return _run_morning_report_command(
+        request,
+        payload,
+        command=command,
+        user=user,
+        send=False,
+        default_code="morning_report_preview_failed",
+        default_message="Morning report preview failed.",
+    )
 
 
 @router.post("/console/operations/morning-report-send")
@@ -1712,50 +1696,15 @@ def console_send_morning_report(request: Request, payload: dict[str, Any] | None
     command = "morning_report_send"
     user = _require_operator_command_user(request, command)
     _require_command_confirmation(request, command, payload)
-    job_id = dependencies.prepare_job_context(request, command)
-    correlation_id = get_or_create_correlation_id(request)
-
-    try:
-        target_date = _payload_optional_date(payload, "target_date")
-        summary = {"target_date": target_date.isoformat() if target_date else None, "send": True}
-        _audit_command_start(request, command, summary)
-        dependencies.enforce_command_rate_limit(request, command)
-        result = dependencies.get_job_service().run_callback(
-            job_id=job_id,
-            operation=command,
-            callback=lambda: _generate_morning_report_result(target_date=target_date, send=True),
-            requester=user,
-            request_id=correlation_id,
-            correlation_id=correlation_id,
-            request_summary=summary,
-            timeout_seconds=dependencies.DEFAULT_PROCESS_TIMEOUT_SECONDS,
-            auth_scheme=getattr(getattr(request, "state", None), "auth_scheme", None),
-            result_summary_builder=_morning_report_result_summary,
-        )
-    except Exception as exc:
-        _audit_command_failure(request, command, exc)
-        raise _morning_report_failure(
-            exc=exc,
-            job_id=job_id,
-            request_id=correlation_id,
-            default_code="morning_report_send_failed",
-            default_message="Morning report send failed.",
-        ) from exc
-
-    response = {
-        "status": "completed",
-        "command": command,
-        "success": result.success,
-        "summary": result.summary_line(),
-        "report": result.report,
-        "sent": result.sent,
-        "target_date": result.target_date,
-        "job_id": job_id,
-        "request_id": correlation_id,
-        "status_url": f"/console/jobs/{job_id}",
-    }
-    _audit_command_success(request, command, response)
-    return response
+    return _run_morning_report_command(
+        request,
+        payload,
+        command=command,
+        user=user,
+        send=True,
+        default_code="morning_report_send_failed",
+        default_message="Morning report send failed.",
+    )
 
 
 @router.post("/console/operations/run-deploy")

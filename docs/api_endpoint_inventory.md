@@ -1,6 +1,6 @@
 # API Endpoint Inventory
 
-Last audited: 2026-05-15.
+Last audited: 2026-08-29.
 
 Versioning note: each path below is also mounted under `/api/v1` as the preferred API surface. For example, `/metrics_overview` is available as `/api/v1/metrics_overview`. Unversioned routes remain temporarily for backward compatibility and are deprecated from 2026-05-15; see `docs/api_v1_migration_note.md`.
 
@@ -66,6 +66,8 @@ The server-rendered operator console is mounted outside `/api/v1`. These routes 
 | POST | `/console/operations/run-sunday-review` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `sunday_review` job that starts `python -m scripts.run_sunday_review`. Confirmation phrase: `RUN SUNDAY REVIEW`. |
 | POST | `/console/operations/lets-begin` | Command | `operator`/`owner` browser session + CSRF + typed confirmation + start-date confirmation | `pete_e/api_routes/web.py` | Creates a durable `lets_begin` job that starts `pete lets-begin --start-date YYYY-MM-DD`. Requires the `start_date` field and an exact matching `start_date_confirmation`. Confirmation phrase: `BEGIN STRENGTH TEST`. |
 | POST | `/console/operations/resend-message` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Creates a durable `message_resend` job that starts `pete message --<type> --send`. Confirmation phrase: `RESEND MESSAGE`. |
+| POST | `/console/operations/morning-report-preview` | Command | `operator`/`owner` browser session + CSRF | `pete_e/api_routes/web.py` | Builds a morning report through a synchronous durable callback job without sending it; accepts an optional `target_date` in `YYYY-MM-DD` form. |
+| POST | `/console/operations/morning-report-send` | Command | `operator`/`owner` browser session + CSRF + typed confirmation | `pete_e/api_routes/web.py` | Builds and conditionally sends a non-blank morning report through a synchronous durable callback job. Confirmation phrase: `SEND MORNING REPORT`. |
 
 ## Error and Correlation Contract
 

@@ -55,6 +55,7 @@ jobs:
           pete_e/domain/weekly_plan_presentation.py
           pete_e/application/coach_voice_types.py
           pete_e/application/daily_summary.py
+          pete_e/application/morning_report.py
           pete_e/application/weekly_plan_context.py
           pete_e/application/weekly_plan_message.py
           pete_e/application/github_deploy_webhook.py
@@ -79,6 +80,10 @@ jobs:
           tests/application/test_daily_summary_dependencies.py
           tests/application/test_daily_summary_orchestrator_contract.py
           tests/application/test_daily_sync_workflow_characterization.py
+          tests/application/test_morning_report.py
+          tests/application/test_morning_report_composition.py
+          tests/application/test_morning_report_dependencies.py
+          tests/test_morning_report_fastapi_contract.py
           tests/application/test_coach_voice_types.py
           tests/application/test_weekly_plan_application.py
           tests/application/test_weekly_plan_message_dependencies.py
@@ -119,6 +124,7 @@ jobs:
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
           .venv/bin/coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
           .venv/bin/coverage report --fail-under=100 pete_e/application/daily_summary.py
+          .venv/bin/coverage report --fail-under=100 pete_e/application/morning_report.py
           .venv/bin/coverage report --fail-under=100 \
           pete_e/application/coach_voice_types.py \
           pete_e/application/weekly_plan_context.py \

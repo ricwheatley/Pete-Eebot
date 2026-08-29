@@ -47,7 +47,11 @@ python -m pytest -q -m contract
 This lane covers real ASGI request parsing and response serialization, FastAPI
 validation, Typer/Click parsing and help rendering, Pydantic Settings loading
 from temporary env files, real Tenacity retries with zero delay, psycopg import
-origins, and the dependency import guard.
+origins, and the dependency import guard. Morning-report browser operations are
+covered through the installed FastAPI/Starlette stack in
+`tests/test_morning_report_fastapi_contract.py`, including sessions, cookies,
+CSRF, RBAC, validation, middleware, job callbacks, audit, IDs, and error
+serialization.
 
 ### Disposable PostgreSQL integration
 
@@ -136,6 +140,7 @@ coverage report --fail-under=100 pete_e/domain/metric_trends.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
 coverage report --fail-under=100 pete_e/application/daily_summary.py
+coverage report --fail-under=100 pete_e/application/morning_report.py
 coverage report --fail-under=100 \
   pete_e/application/coach_voice_types.py \
   pete_e/application/weekly_plan_context.py \
@@ -156,7 +161,8 @@ boundary at a time rather than suppressing the existing repository backlog. The
 current strict scope includes the typed body-age history reader and pure trend
 analyzer, the Steps/Sleep metric-trend boundary, the weekly narrative module,
 the typed weekly-plan presentation
-boundary, the application-owned daily-summary construction boundary, the
+boundary, the application-owned daily-summary construction boundary, the typed
+morning-report build/send decision and result, the
 framework-free coach-voice request values, the weekly-plan message decision
 boundary, the three
 pure Apple parser boundary modules, and the pure Apple
@@ -182,6 +188,7 @@ ruff format --check \
   pete_e/domain/weekly_plan_presentation.py \
   pete_e/application/coach_voice_types.py \
   pete_e/application/daily_summary.py \
+  pete_e/application/morning_report.py \
   pete_e/application/weekly_plan_context.py \
   pete_e/application/weekly_plan_message.py \
   pete_e/infrastructure/apple_parser.py \
@@ -202,6 +209,9 @@ ruff format --check \
   tests/application/test_daily_summary_dependencies.py \
   tests/application/test_daily_summary_orchestrator_contract.py \
   tests/application/test_daily_sync_workflow_characterization.py \
+  tests/application/test_morning_report.py \
+  tests/application/test_morning_report_composition.py \
+  tests/application/test_morning_report_dependencies.py \
   tests/application/test_coach_voice_types.py \
   tests/application/test_weekly_plan_application.py \
   tests/application/test_weekly_plan_message_dependencies.py \
@@ -219,7 +229,8 @@ ruff format --check \
   tests/integration/test_plan_persistence_integration.py \
   tests/test_plan_persistence_characterization.py \
   tests/test_weekly_plan_message.py \
-  tests/test_weekly_plan_message_characterization.py
+  tests/test_weekly_plan_message_characterization.py \
+  tests/test_morning_report_fastapi_contract.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the
