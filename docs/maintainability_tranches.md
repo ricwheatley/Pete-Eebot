@@ -1021,3 +1021,73 @@ Daily-summary calculation/prose/voice/date policy, CLI commands, generic message
 preview/resend, trainer and weekly-plan operations, sync/ingest/plan/deploy
 families, job repository/worker semantics, security policy, persistence,
 templates, JavaScript, and all other web routes remain explicitly deferred.
+
+## 2026-08-29: typed generic-message preview and durable resend adapters
+
+### Current baseline and characterized contract
+
+This tranche started from a clean `main` worktree at
+`7999407a719888487f57a707a740c66788e46203`, aligned with `origin/main`. The
+application-owned daily-summary and weekly-plan builders and
+`Orchestrator.build_trainer_message` were verified before work began. On this
+branch, `web.py` measured 1,877 physical, 1,661 token-bearing, and 660 AST
+statement lines, with 84 functions and two classes. Its combined unique
+project-module fan-out was 17, including lazy imports of Orchestrator and
+`cli.messenger`; configured C901 remained clean.
+
+Before production edits, 83 genuine `TestClient` cases passed through the
+installed FastAPI, Starlette, and Pydantic stack. They pin all three preview and
+resend types; body, type, session, role, CSRF, and confirmation behavior; job,
+rate-limit, CLI-construction, application-builder, and audit failures; exact
+IDs, metadata, response keys, audit ordering, callback output persistence, and
+subprocess arguments; and single route mounting outside `/api/v1`. The tests
+also preserve the existing payload quirk that explicit JSON `null` for
+`message_type` selects the default `plan`, while blank, case variants, numbers,
+collections, booleans, and other invalid values receive the established scalar
+400 detail.
+
+### Typed selection and adapter boundary
+
+`application.message_preview` now owns `MessageType`, the frozen preview result,
+its exact summary sentences, and selection among the established
+`DailySummaryMessageBuilder`, trainer builder protocol, and
+`WeeklyPlanMessageBuilder`. The service converts builder `None` to an empty
+message and other values with `str`; blank handling and builder exceptions are
+unchanged. It has no Request, HTTP exception, FastAPI, Typer, CLI, concrete
+infrastructure, or persistence dependency.
+
+Composition receives all three builder ports explicitly. The web callback
+creates a fresh Orchestrator-backed service only when the queued callback runs,
+retaining the existing resource-lifetime behavior. FastAPI continues to own
+validation, security, audit, rate limiting, job metadata, and HTTP
+serialization. Resend remains a durable subprocess constructed as
+`pete message --<type> --send`; it does not call an in-process preview builder.
+No CLI code changed.
+
+### Feedback ratchets and final measurements
+
+The pure selection module has 100% statement/branch coverage. The complete
+unit/contract lane passes 1,583 tests with seven skips at 73.002615% repository
+and 80.251572% web branch-aware coverage. CI additively strict-checks the new
+application boundary, enforces its 100% coverage, and format-checks only the new
+tranche files.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| `web.py` physical / token-bearing / AST statement lines | 1,877 / 1,661 / 660 | 1,839 / 1,632 / 637 |
+| `web.py` functions / classes | 84 / 2 | 81 / 1 |
+| Message helper/route maximum complexity | 3 | 3 |
+| Configured web C901 findings | 0 | 0 |
+| New preview service maximum complexity | n/a | 3 |
+| Web direct / lazy / combined unique project imports | 15 / 2 / 17 | 16 / 0 / 16 |
+| Generic-message web-to-CLI builder edge | `web -> cli.messenger` | removed |
+| New preview-service branch-aware coverage | n/a | 100% (37 statements, 6 branches) |
+| Web branch-aware coverage | 77.388150% | 80.251572% |
+| Repository unit/contract branch-aware coverage | 72.827831% | 73.002615% |
+| Unit/contract lane | 1,462 passed, 7 skipped | 1,583 passed, 7 skipped |
+| Configured strict mypy scope | 0 errors in 16 files | 0 errors in 17 files |
+
+Morning reports, message content and builder policy, CLI semantics, Telegram,
+job repository/worker and subprocess machinery, security and rate limits,
+templates and JavaScript, data refresh, plan lifecycle, deploy, Apple, DAL, and
+all other web and CLI families remain explicitly deferred.

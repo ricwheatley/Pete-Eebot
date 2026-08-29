@@ -53,6 +53,10 @@ covered through the installed FastAPI/Starlette stack in
 CSRF, RBAC, validation, middleware, job callbacks, audit, IDs, and error
 serialization.
 
+Generic message preview/resend has the same installed-framework coverage in
+`tests/test_message_preview_fastapi_contract.py`, including deferred preview
+callbacks and the exact durable `pete message --<type> --send` subprocess.
+
 ### Disposable PostgreSQL integration
 
 The fixture invokes the guarded development reset and authoritative runner. Start
@@ -140,6 +144,7 @@ coverage report --fail-under=100 pete_e/domain/metric_trends.py
 coverage report --fail-under=100 pete_e/domain/weekly_narrative.py
 coverage report --fail-under=100 pete_e/domain/weekly_plan_presentation.py
 coverage report --fail-under=100 pete_e/application/daily_summary.py
+coverage report --fail-under=100 pete_e/application/message_preview.py
 coverage report --fail-under=100 pete_e/application/morning_report.py
 coverage report --fail-under=100 \
   pete_e/application/coach_voice_types.py \
@@ -162,7 +167,8 @@ current strict scope includes the typed body-age history reader and pure trend
 analyzer, the Steps/Sleep metric-trend boundary, the weekly narrative module,
 the typed weekly-plan presentation
 boundary, the application-owned daily-summary construction boundary, the typed
-morning-report build/send decision and result, the
+generic-message preview selection boundary, the typed morning-report build/send
+decision and result, the
 framework-free coach-voice request values, the weekly-plan message decision
 boundary, the three
 pure Apple parser boundary modules, and the pure Apple
@@ -188,6 +194,7 @@ ruff format --check \
   pete_e/domain/weekly_plan_presentation.py \
   pete_e/application/coach_voice_types.py \
   pete_e/application/daily_summary.py \
+  pete_e/application/message_preview.py \
   pete_e/application/morning_report.py \
   pete_e/application/weekly_plan_context.py \
   pete_e/application/weekly_plan_message.py \
@@ -209,6 +216,9 @@ ruff format --check \
   tests/application/test_daily_summary_dependencies.py \
   tests/application/test_daily_summary_orchestrator_contract.py \
   tests/application/test_daily_sync_workflow_characterization.py \
+  tests/application/test_message_preview.py \
+  tests/application/test_message_preview_composition.py \
+  tests/application/test_message_preview_dependencies.py \
   tests/application/test_morning_report.py \
   tests/application/test_morning_report_composition.py \
   tests/application/test_morning_report_dependencies.py \
@@ -230,7 +240,8 @@ ruff format --check \
   tests/test_plan_persistence_characterization.py \
   tests/test_weekly_plan_message.py \
   tests/test_weekly_plan_message_characterization.py \
-  tests/test_morning_report_fastapi_contract.py
+  tests/test_morning_report_fastapi_contract.py \
+  tests/test_message_preview_fastapi_contract.py
 ```
 
 See [Incremental maintainability tranches](maintainability_tranches.md) for the

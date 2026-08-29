@@ -18,6 +18,10 @@ from pete_e.api_errors import get_or_create_correlation_id
 from pete_e.api_routes.dependencies import current_user_from_session, require_browser_user, require_role
 from pete_e.application.exceptions import ApplicationError
 from pete_e.application.apple_dropbox_ingest import run_apple_health_ingest
+from pete_e.application.message_preview import (
+    MessagePreviewResult,
+    MessageType,
+)
 from pete_e.application.morning_report import MorningReportResult
 from pete_e.application.plan_duration import (
     DEFAULT_PLAN_WEEKS,
@@ -50,12 +54,7 @@ COMMAND_CONFIRMATIONS = {
     "lets_begin": "BEGIN STRENGTH TEST",
     "deploy": "RUN DEPLOY",
 }
-MESSAGE_TYPES = {"summary", "trainer", "plan"}
-MESSAGE_TYPE_LABELS = {
-    "summary": "Daily summary",
-    "trainer": "Trainer check-in",
-    "plan": "Weekly plan",
-}
+MESSAGE_TYPES = {message_type.value for message_type in MessageType}
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _LOGIN_CREDENTIAL_QUERY_KEYS = {
     "email",
@@ -113,19 +112,6 @@ class NavItem:
     label: str
     href: str
     min_role: RoleName
-
-
-@dataclass(frozen=True)
-class ConsoleMessagePreviewResult:
-    message_type: str
-    message: str
-    success: bool = True
-
-    def summary_line(self) -> str:
-        label = MESSAGE_TYPE_LABELS.get(self.message_type, self.message_type)
-        if not self.message.strip():
-            return f"No {label.lower()} message is available."
-        return f"{label} preview generated."
 
 
 NAV_ITEMS: tuple[NavItem, ...] = (
@@ -718,36 +704,11 @@ def _morning_report_result_summary(result: MorningReportResult) -> str:
     return result.summary_line()
 
 
-def _build_console_message_orchestrator():
-    from pete_e.application.orchestrator import Orchestrator
-
-    return Orchestrator()
+def _generate_console_message_preview(message_type: MessageType) -> MessagePreviewResult:
+    return dependencies.get_message_preview_service().preview(message_type)
 
 
-def _build_console_message_text(message_type: str, *, orchestrator=None) -> str:
-    from pete_e.cli.messenger import build_daily_summary, build_trainer_summary, build_weekly_plan_overview
-
-    orch = orchestrator or _build_console_message_orchestrator()
-    if message_type == "summary":
-        value = build_daily_summary(orchestrator=orch)
-    elif message_type == "trainer":
-        value = build_trainer_summary(orchestrator=orch)
-    elif message_type == "plan":
-        value = build_weekly_plan_overview(orchestrator=orch)
-    else:
-        raise HTTPException(status_code=400, detail="message_type must be summary, trainer, or plan")
-    return "" if value is None else str(value)
-
-
-def _generate_console_message_preview(message_type: str) -> ConsoleMessagePreviewResult:
-    orchestrator = _build_console_message_orchestrator()
-    return ConsoleMessagePreviewResult(
-        message_type=message_type,
-        message=_build_console_message_text(message_type, orchestrator=orchestrator),
-    )
-
-
-def _console_message_preview_summary(result: ConsoleMessagePreviewResult) -> str:
+def _console_message_preview_summary(result: MessagePreviewResult) -> str:
     return result.summary_line()
 
 
@@ -1533,6 +1494,7 @@ def console_preview_message(request: Request, payload: dict[str, Any] | None = N
     message_type = str(_payload_value(payload, "message_type", "plan")).strip()
     if message_type not in MESSAGE_TYPES:
         raise HTTPException(status_code=400, detail="message_type must be summary, trainer, or plan")
+    selected_message_type = MessageType(message_type)
 
     summary = {"message_type": message_type, "send": False}
     job_id = dependencies.prepare_job_context(request, command)
@@ -1543,7 +1505,7 @@ def console_preview_message(request: Request, payload: dict[str, Any] | None = N
         dependencies.get_job_service().enqueue_callback(
             job_id=job_id,
             operation=command,
-            callback=lambda: _generate_console_message_preview(message_type),
+            callback=lambda: _generate_console_message_preview(selected_message_type),
             requester=user,
             request_id=correlation_id,
             correlation_id=correlation_id,

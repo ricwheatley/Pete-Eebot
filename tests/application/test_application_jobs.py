@@ -10,6 +10,7 @@ import pytest
 
 from pete_e.application import jobs
 from pete_e.application.concurrency_guard import high_risk_operation_guard
+from pete_e.application.message_preview import MessagePreviewResult, MessageType
 from pete_e.domain.auth import AuthUser, ROLE_OPERATOR
 from pete_e.domain.jobs import ApplicationJob
 
@@ -310,7 +311,10 @@ def test_application_job_service_enqueues_callback_and_persists_output(monkeypat
     queued = service.enqueue_callback(
         job_id="preview-job-1",
         operation="message_preview",
-        callback=lambda: SimpleNamespace(success=True, message="Preview text", summary_line=lambda: "Preview generated."),
+        callback=lambda: MessagePreviewResult(
+            MessageType.SUMMARY,
+            "Preview text",
+        ),
         requester=None,
         request_id="req-preview",
         correlation_id="req-preview",
@@ -324,12 +328,42 @@ def test_application_job_service_enqueues_callback_and_persists_output(monkeypat
     assert repo.completed.wait(timeout=1)
     job = repo.get("preview-job-1")
     assert job.status == "succeeded"
-    assert job.result_summary == "Preview generated."
+    assert job.result_summary == "Daily summary preview generated."
     assert job.stdout_summary == "Preview text"
     deadline = time.monotonic() + 1
     while repo.active_lock is not None and time.monotonic() < deadline:
         time.sleep(0.01)
     assert repo.active_lock is None
+
+
+def test_message_preview_callback_failure_is_persisted_without_output(monkeypatch) -> None:
+    repo = _LockingRepo()
+    service = jobs.ApplicationJobService(repo)
+    monkeypatch.setattr(jobs.observability, "record_job_completed", lambda **kwargs: None)
+    monkeypatch.setattr(jobs.alerts, "record_operation_outcome", lambda **kwargs: None)
+
+    def _fail() -> MessagePreviewResult:
+        raise RuntimeError("builder failed")
+
+    service.enqueue_callback(
+        job_id="preview-job-failed",
+        operation="message_preview",
+        callback=_fail,
+        requester=None,
+        request_id="req-preview-failed",
+        correlation_id="req-preview-failed",
+        request_summary={"message_type": "trainer", "send": False},
+        timeout_seconds=30,
+        result_summary_builder=lambda result: result.summary_line(),
+        result_output_builder=lambda result: result.message,
+    )
+
+    assert repo.completed.wait(timeout=1)
+    job = repo.get("preview-job-failed")
+    assert job.status == "failed"
+    assert job.result_summary == "message_preview failed: builder failed"
+    assert job.stdout_summary is None
+    assert job.failure_reason == "builder failed"
 
 
 def test_application_job_service_rejects_overlap_from_repository_lock(monkeypatch) -> None:

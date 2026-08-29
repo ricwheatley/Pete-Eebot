@@ -10,6 +10,7 @@ import pytest
 from pete_e import api
 from pete_e.api_routes import dependencies, web
 from pete_e.application.exceptions import ValidationError
+from pete_e.application.message_preview import MessagePreviewResult, MessageType
 from pete_e.application.morning_report import MorningReportResult
 from pete_e.application.sync import SyncResult
 from pete_e.application.api_services import StatusService
@@ -1846,14 +1847,16 @@ def test_console_message_preview_generates_without_confirmation(
         "audit_command_event",
         lambda request, **event: audit_events.append(event),
     )
-    monkeypatch.setattr(web, "_build_console_message_orchestrator", lambda: object())
+    class _PreviewService:
+        def preview(self, selected_type: MessageType) -> MessagePreviewResult:
+            captured["message_type"] = selected_type
+            return MessagePreviewResult(selected_type, expected_text)
 
-    def _build_message_text(selected_type: str, *, orchestrator=None) -> str:
-        captured["message_type"] = selected_type
-        captured["orchestrator"] = orchestrator
-        return expected_text
-
-    monkeypatch.setattr(web, "_build_console_message_text", _build_message_text)
+    monkeypatch.setattr(
+        dependencies,
+        "get_message_preview_service",
+        lambda: _PreviewService(),
+    )
 
     payload = web.console_preview_message(
         _Request(
@@ -1878,8 +1881,7 @@ def test_console_message_preview_generates_without_confirmation(
     assert job_service.enqueued[0]["operation"] == "message_preview"
     assert job_service.enqueued[0]["request_summary"] == {"message_type": message_type, "send": False}
     result = job_service.enqueued[0]["callback"]()
-    assert captured["message_type"] == message_type
-    assert captured["orchestrator"] is not None
+    assert captured["message_type"] == MessageType(message_type)
     assert job_service.enqueued[0]["result_summary_builder"](result) == result.summary_line()
     assert job_service.enqueued[0]["result_output_builder"](result) == expected_text
     assert [event["outcome"] for event in audit_events] == ["started", "succeeded"]

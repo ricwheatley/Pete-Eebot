@@ -6,6 +6,10 @@ from typing import Callable, cast
 from pete_e.application.adapter_contracts import NotificationChannel
 from pete_e.application.coach_voice import CoachVoiceService
 from pete_e.application.daily_summary import DailySummaryMessageBuilder
+from pete_e.application.message_preview import (
+    MessagePreviewService,
+    TrainerMessageBuilder,
+)
 from pete_e.application.morning_report import MorningReportOperation
 from pete_e.application.profile_service import ProfileService
 from pete_e.application.services import PlanService, WgerExportService
@@ -75,6 +79,21 @@ def provide_morning_report_operation(
         notification_channel=provide_telegram_notification_channel(
             client=telegram_client
         ),
+    )
+
+
+def provide_message_preview_service(
+    *,
+    summary_builder: DailySummaryMessageBuilder,
+    trainer_builder: TrainerMessageBuilder,
+    weekly_builder: WeeklyPlanMessageBuilder,
+) -> MessagePreviewService:
+    """Compose the three established application message builders."""
+
+    return MessagePreviewService(
+        summary_builder=summary_builder,
+        trainer_builder=trainer_builder,
+        weekly_builder=weekly_builder,
     )
 
 

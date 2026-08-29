@@ -21,6 +21,7 @@ from pete_e.application import alerts
 from pete_e.application.concurrency_guard import OperationInProgress, high_risk_operation_guard
 from pete_e.application.jobs import ApplicationJobService
 from pete_e.application.github_deploy_webhook import GitHubDeliveryLedger
+from pete_e.application.message_preview import MessagePreviewService
 from pete_e.application.morning_report import MorningReportOperation
 from pete_e.application.nutrition_service import NutritionService
 from pete_e.application.profile_service import ProfileService
@@ -377,6 +378,20 @@ def get_morning_report_operation() -> MorningReportOperation:
     return provide_morning_report_operation(
         summary_builder=orchestrator,
         telegram_client=orchestrator.telegram_client,
+    )
+
+
+def get_message_preview_service() -> MessagePreviewService:
+    """Build a fresh preview service at the asynchronous callback boundary."""
+
+    from pete_e.application.composition import provide_message_preview_service
+    from pete_e.application.orchestrator import Orchestrator
+
+    orchestrator = Orchestrator()
+    return provide_message_preview_service(
+        summary_builder=orchestrator,
+        trainer_builder=orchestrator,
+        weekly_builder=orchestrator.weekly_plan_message_builder,
     )
 
 
