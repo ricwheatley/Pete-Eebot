@@ -150,6 +150,7 @@ app/pydantic_settings/
 app/requests/
 repo-review*
 xrepo-review*
+config-and-settings-plan*
 
 # =================================================================
 
