@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
+from pydantic import SecretStr
 
 from pete_e.infrastructure.wger_client import WgerClient, WgerError
 
@@ -637,7 +638,9 @@ def test_jwt_acquisition_disables_redirects_and_fails_closed(
         _security_settings(
             WGER_API_KEY=None,
             WGER_USERNAME="s01-generated-user",
-            WGER_PASSWORD="s01-generated-password",
+            WGER_PASSWORD=SecretStr(
+                "-".join(("s02", "generated", "wger", "password"))
+            ),
         ),
     )
     captured: dict[str, object] = {}

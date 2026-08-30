@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 from types import SimpleNamespace
 from dropbox.exceptions import DropboxException
 from dropbox.files import FileMetadata
+from pydantic import SecretStr
+import pytest
 
+from pete_e.infrastructure import apple_dropbox_client
 from pete_e.infrastructure.apple_dropbox_client import AppleDropboxClient
+
+
+def _s02_sentinel(*parts: str) -> str:
+    return "-".join(("s02", "generated", *parts))
 
 
 def _make_file(path: str, modified: datetime) -> FileMetadata:
@@ -81,6 +88,85 @@ def _build_client(fake_dbx: FakeDropbox) -> AppleDropboxClient:
     client._folder_latest_sync = {}
     return client
     """Perform build client."""
+
+
+def test_constructor_unwraps_credentials_only_for_dropbox_sdk(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    sentinels = {
+        "app_key": _s02_sentinel("dropbox", "app", "key"),
+        "app_secret": _s02_sentinel("dropbox", "app", "secret"),
+        "oauth2_refresh_token": _s02_sentinel("dropbox", "refresh"),
+    }
+    fake_settings = SimpleNamespace(
+        DROPBOX_APP_KEY=SecretStr(sentinels["app_key"]),
+        DROPBOX_APP_SECRET=SecretStr(sentinels["app_secret"]),
+        DROPBOX_REFRESH_TOKEN=SecretStr(sentinels["oauth2_refresh_token"]),
+        DROPBOX_HEALTH_METRICS_DIR="health",
+        DROPBOX_WORKOUTS_DIR="workouts",
+    )
+    captured: dict[str, Any] = {}
+
+    class CapturingDropbox:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def users_get_current_account(self) -> SimpleNamespace:
+            return SimpleNamespace(
+                name=SimpleNamespace(display_name="S02 Test Account"),
+                email="s02@example.invalid",
+            )
+
+    monkeypatch.setattr(apple_dropbox_client, "settings", fake_settings)
+    monkeypatch.setattr(apple_dropbox_client.dropbox, "Dropbox", CapturingDropbox)
+
+    client = AppleDropboxClient(request_timeout=12.5)
+
+    assert captured == {**sentinels, "timeout": 12.5}
+    assert client.health_metrics_path == "/health"
+    assert client.workouts_path == "/workouts"
+    assert all(sentinel not in caplog.text for sentinel in sentinels.values())
+
+
+@pytest.mark.parametrize(
+    "empty_field",
+    ("DROPBOX_APP_KEY", "DROPBOX_APP_SECRET", "DROPBOX_REFRESH_TOKEN"),
+)
+def test_constructor_rejects_empty_secret_credentials_before_sdk_call(
+    monkeypatch: pytest.MonkeyPatch,
+    empty_field: str,
+) -> None:
+    credential_values = {
+        "DROPBOX_APP_KEY": SecretStr(_s02_sentinel("dropbox", "app", "key")),
+        "DROPBOX_APP_SECRET": SecretStr(
+            _s02_sentinel("dropbox", "app", "secret")
+        ),
+        "DROPBOX_REFRESH_TOKEN": SecretStr(_s02_sentinel("dropbox", "refresh")),
+    }
+    credential_values[empty_field] = SecretStr("")
+    fake_settings = SimpleNamespace(
+        **credential_values,
+        DROPBOX_HEALTH_METRICS_DIR="health",
+        DROPBOX_WORKOUTS_DIR="workouts",
+    )
+    sdk_calls = 0
+
+    def unexpected_dropbox(**kwargs: Any) -> None:
+        del kwargs
+        nonlocal sdk_calls
+        sdk_calls += 1
+
+    monkeypatch.setattr(apple_dropbox_client, "settings", fake_settings)
+    monkeypatch.setattr(apple_dropbox_client.dropbox, "Dropbox", unexpected_dropbox)
+
+    with pytest.raises(
+        ValueError,
+        match="^Dropbox app key, secret, and refresh token must be set in config\\.$",
+    ):
+        AppleDropboxClient()
+
+    assert sdk_calls == 0
 
 
 def test_find_new_export_files_uses_incremental_listing() -> None:

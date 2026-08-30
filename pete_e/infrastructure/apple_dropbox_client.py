@@ -12,13 +12,25 @@ from pete_e.infrastructure import log_utils
 # British English comments and docstrings.
 
 
+def _secret_to_str(value: object) -> str:
+    """Reveal a configured secret only for the immediate Dropbox SDK call."""
+
+    getter = getattr(value, "get_secret_value", None)
+    if callable(getter):
+        return str(getter())
+    return "" if value is None else str(value)
+
+
 class AppleDropboxClient:
     """A robust client for finding and downloading HealthAutoExport files from Dropbox."""
 
     def __init__(self, request_timeout: float = 30.0):
         """Initialises the client and authenticates with Dropbox."""
 
-        if not all([settings.DROPBOX_APP_KEY, settings.DROPBOX_APP_SECRET, settings.DROPBOX_REFRESH_TOKEN]):
+        app_key = _secret_to_str(settings.DROPBOX_APP_KEY)
+        app_secret = _secret_to_str(settings.DROPBOX_APP_SECRET)
+        refresh_token = _secret_to_str(settings.DROPBOX_REFRESH_TOKEN)
+        if not all([app_key, app_secret, refresh_token]):
             raise ValueError("Dropbox app key, secret, and refresh token must be set in config.")
 
         health_path = settings.DROPBOX_HEALTH_METRICS_DIR.strip()
@@ -42,9 +54,9 @@ class AppleDropboxClient:
 
         try:
             self.dbx = dropbox.Dropbox(
-                app_key=settings.DROPBOX_APP_KEY,
-                app_secret=settings.DROPBOX_APP_SECRET,
-                oauth2_refresh_token=settings.DROPBOX_REFRESH_TOKEN,
+                app_key=app_key,
+                app_secret=app_secret,
+                oauth2_refresh_token=refresh_token,
                 timeout=self._request_timeout,
             )
             account = self.dbx.users_get_current_account()

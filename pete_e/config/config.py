@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 from urllib.parse import quote
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from psycopg.conninfo import conninfo_to_dict
 
@@ -73,7 +73,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="forbid",
+        hide_input_in_errors=True,
     )
+
+    def __init__(self, **values: Any) -> None:
+        try:
+            super().__init__(**values)
+        except ValidationError as exc:
+            raise _validation_error_without_inputs(exc) from None
 
     # --- CORE APP SETTINGS ---
     PROJECT_ROOT: Path = Path(__file__).resolve().parents[3]
@@ -105,14 +112,14 @@ class Settings(BaseSettings):
     WGER_API_KEY: SecretStr
     WGER_BASE_URL: str = "https://wger.de/api/v2"
     WGER_USERNAME: str | None = None
-    WGER_PASSWORD: str | None = None
+    WGER_PASSWORD: SecretStr | None = None
 
     # --- DROPBOX (from environment) ---
     DROPBOX_HEALTH_METRICS_DIR: str
     DROPBOX_WORKOUTS_DIR: str
-    DROPBOX_APP_KEY: str
-    DROPBOX_APP_SECRET: str
-    DROPBOX_REFRESH_TOKEN: str
+    DROPBOX_APP_KEY: SecretStr
+    DROPBOX_APP_SECRET: SecretStr
+    DROPBOX_REFRESH_TOKEN: SecretStr
     DROPBOX_BACKUP_DIR: str = "/Pete-Eebot Backups"
     DROPBOX_BACKUP_TIMEOUT: float = 60.0
 
@@ -138,7 +145,7 @@ class Settings(BaseSettings):
     SUDO_BIN: str = "sudo"
 
     # --- API KEYS (from environment) ---
-    PETEEEBOT_API_KEY: str | None = None
+    PETEEEBOT_API_KEY: SecretStr | None = None
     PETEEEBOT_SESSION_COOKIE_NAME: str = "peteeebot_session"
     PETEEEBOT_CSRF_COOKIE_NAME: str = "peteeebot_csrf"
     PETEEEBOT_SESSION_COOKIE_DOMAIN: str | None = None
@@ -429,6 +436,16 @@ def _database_component_conflicts(
         if explicit_value != component_value:
             conflicts.append(field_name)
     return conflicts
+
+
+def _validation_error_without_inputs(error: ValidationError) -> ValidationError:
+    """Preserve validation diagnostics without retaining credential inputs."""
+
+    return ValidationError.from_exception_data(
+        title=error.title,
+        line_errors=error.errors(include_input=False),
+        hide_input=True,
+    )
 
 
 settings = Settings()

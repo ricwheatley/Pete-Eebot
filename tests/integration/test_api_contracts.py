@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from pete_e import api
 from pete_e.api_routes import dependencies, metrics, nutrition, plan
 
 
 pytestmark = pytest.mark.contract
+
+
+def _s02_sentinel(*parts: str) -> str:
+    return "-".join(("s02", "generated", *parts))
 
 
 class _MetricsServiceFake:
@@ -60,13 +65,58 @@ class _NutritionServiceFake:
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", "test-key")
+    monkeypatch.setattr(
+        dependencies.settings,
+        "PETEEEBOT_API_KEY",
+        SecretStr("test-key"),
+    )
     with TestClient(api.app) as test_client:
         yield test_client
 
 
 def _auth_headers() -> dict[str, str]:
     return {"X-API-Key": "test-key"}
+
+
+def test_api_key_failure_does_not_expose_configured_or_supplied_secret(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configured = _s02_sentinel("configured", "api", "key")
+    supplied = _s02_sentinel("supplied", "api", "key")
+    monkeypatch.setattr(
+        dependencies.settings,
+        "PETEEEBOT_API_KEY",
+        SecretStr(configured),
+    )
+
+    response = client.get(
+        "/api/v1/status",
+        headers={"X-API-Key": supplied},
+    )
+
+    assert response.status_code == 401
+    assert configured not in response.text
+    assert supplied not in response.text
+
+
+def test_missing_api_key_configuration_preserves_safe_503_contract(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    supplied = _s02_sentinel("supplied", "api", "key")
+    monkeypatch.setattr(dependencies.settings, "PETEEEBOT_API_KEY", None)
+
+    response = client.get(
+        "/api/v1/status",
+        headers={"X-API-Key": supplied},
+    )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "service_unavailable"
+    assert error["message"] == "PETEEEBOT_API_KEY is not configured"
+    assert supplied not in response.text
 
 
 def test_api_v1_mounts_key_read_routes():

@@ -74,6 +74,10 @@ Notes:
 - `DATABASE_URL` is authoritative when present; otherwise the settings layer builds a percent-encoded URL from the complete `POSTGRES_*` set
 - if both database sources are present they must describe the same decoded user, password, effective host, port, and database; partial or conflicting component configuration fails startup
 - `DB_HOST_OVERRIDE` is an optional typed replacement for `POSTGRES_HOST` in component mode
+- configured credentials are secret-typed and redacted from ordinary settings
+  representations, model dumps, logs, and validation errors; only provider and
+  authentication boundaries explicitly unwrap them, and operators must never log
+  an unwrapped value
 - the API now fails closed if `PETEEEBOT_API_KEY` is not set
 - the webhook/deployer fail closed if the HMAC secret, immutable repository ID,
   expected remote URL, or deploy script is unset

@@ -677,7 +677,7 @@ STRETCH_ROUTINES: Dict[str, Dict[str, Any]] = {
     "limber_11": {
         "display_name": "Limber 11",
         "source": "Joe DeFranco",
-        "estimated_duration_min": 15,
+        "estimated_duration_min": 20,
         "sequence_order": 30,
         "steps": LIMBER_11_STEPS,
     }

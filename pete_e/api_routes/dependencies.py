@@ -116,7 +116,7 @@ def _secret_to_str(value) -> str:
 
 
 def configured_api_key() -> str:
-    configured = (settings.PETEEEBOT_API_KEY or "").strip()
+    configured = _secret_to_str(settings.PETEEEBOT_API_KEY).strip()
     if not configured:
         raise HTTPException(status_code=503, detail="PETEEEBOT_API_KEY is not configured")
     return configured
