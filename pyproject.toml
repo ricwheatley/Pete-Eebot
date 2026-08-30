@@ -142,6 +142,7 @@ files = [
     "pete_e/infrastructure/apple_parser_stages.py",
     "pete_e/infrastructure/apple_ingest_coordinator.py",
     "pete_e/infrastructure/plan_persistence.py",
+    "pete_e/infrastructure/wger_url_policy.py",
 ]
 python_version = "3.11"
 show_error_codes = true

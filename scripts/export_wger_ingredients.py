@@ -10,19 +10,32 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
 
 import requests
+
+from pete_e.infrastructure.wger_url_policy import (
+    INVALID_NEXT_URL,
+    MAX_PAGES,
+    PAGE_LIMIT_EXCEEDED,
+    PAGINATION_CYCLE,
+    REDIRECT_REJECTED,
+    WgerUrlPolicy,
+    WgerUrlPolicyError,
+)
 
 
 RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
 
 
 def normalize_base_url(raw_url: str) -> str:
-    base_url = raw_url.rstrip("/")
-    if base_url.endswith("/api/v2"):
-        return base_url
-    return f"{base_url}/api/v2"
+    return _url_policy(raw_url).api_root
+
+
+def _url_policy(raw_url: str) -> WgerUrlPolicy:
+    try:
+        return WgerUrlPolicy.from_base(raw_url)
+    except WgerUrlPolicyError as exc:
+        raise RuntimeError(str(exc)) from None
 
 
 def build_headers(auth_header: str | None) -> dict[str, str]:
@@ -59,7 +72,15 @@ def request_json(
     for attempt in range(retries + 1):
         response: requests.Response | None = None
         try:
-            response = session.get(url, headers=headers, params=params, timeout=timeout)
+            response = session.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+            if 300 <= response.status_code < 400:
+                raise RuntimeError(REDIRECT_REJECTED)
             if response.status_code not in RETRY_STATUSES:
                 response.raise_for_status()
                 data = response.json()
@@ -85,6 +106,19 @@ def request_json(
     raise RuntimeError(f"Request failed for {url}")
 
 
+def resolve_next_page(policy: WgerUrlPolicy, current_url: str, next_value: object) -> str:
+    """Return the next safe page URL, or an empty string at pagination end."""
+    if next_value is None or next_value == "":
+        return ""
+    if not isinstance(next_value, str):
+        raise RuntimeError(INVALID_NEXT_URL)
+
+    try:
+        return policy.resolve_pagination(current_url, next_value)
+    except WgerUrlPolicyError as exc:
+        raise RuntimeError(str(exc)) from None
+
+
 def export_ingredients(
     *,
     base_url: str,
@@ -97,8 +131,11 @@ def export_ingredients(
     retries: int,
     max_pages: int | None,
 ) -> int:
-    api_root = normalize_base_url(base_url)
-    url = f"{api_root}/ingredientinfo/"
+    if max_pages is not None and max_pages > MAX_PAGES:
+        raise RuntimeError(PAGE_LIMIT_EXCEEDED)
+
+    policy = _url_policy(base_url)
+    url = policy.resolve_endpoint("/ingredientinfo/")
     params: dict[str, Any] | None = {
         "language": language,
         "limit": limit,
@@ -114,11 +151,19 @@ def export_ingredients(
     page_number = 0
     expected_total: int | None = None
     first_item = True
+    seen_urls: set[str] = set()
 
     with requests.Session() as session, tmp_output.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write("[\n")
 
         while url:
+            request_url = policy.request_url(url, params)
+            if request_url in seen_urls:
+                raise RuntimeError(PAGINATION_CYCLE)
+            if page_number >= MAX_PAGES:
+                raise RuntimeError(PAGE_LIMIT_EXCEEDED)
+            seen_urls.add(request_url)
+
             page_number += 1
             data = request_json(
                 session,
@@ -150,12 +195,8 @@ def export_ingredients(
             if max_pages is not None and page_number >= max_pages:
                 break
 
-            next_url = data.get("next")
-            if next_url:
-                url = urljoin(f"{api_root}/", str(next_url))
-                params = None
-            else:
-                url = ""
+            url = resolve_next_page(policy, request_url, data.get("next"))
+            params = None
 
         handle.write("\n]\n")
 
@@ -185,6 +226,8 @@ def main() -> int:
         raise SystemExit("--offset must be zero or greater")
     if args.max_pages is not None and args.max_pages <= 0:
         raise SystemExit("--max-pages must be greater than zero")
+    if args.max_pages is not None and args.max_pages > MAX_PAGES:
+        raise SystemExit(f"--max-pages cannot exceed {MAX_PAGES}")
 
     total = export_ingredients(
         base_url=args.base_url,

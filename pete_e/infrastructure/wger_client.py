@@ -15,6 +15,15 @@ import requests
 from pete_e.config import settings
 from pete_e.infrastructure import log_utils
 from pete_e.infrastructure.decorators import retry_on_network_error
+from pete_e.infrastructure.wger_url_policy import (
+    INVALID_NEXT_URL,
+    MAX_PAGES,
+    PAGE_LIMIT_EXCEEDED,
+    PAGINATION_CYCLE,
+    REDIRECT_REJECTED,
+    WgerUrlPolicy,
+    WgerUrlPolicyError,
+)
 
 
 def _unwrap_secret(value: Any) -> Any:
@@ -43,19 +52,13 @@ class WgerClient:
     DEFAULT_CUSTOM_EXERCISE_LANGUAGE = 2
 
     def __init__(self, *, timeout: float | None = None):
-        api_suffix = "/api/v2"
-        raw_base = settings.WGER_BASE_URL.rstrip("/")
+        try:
+            self._url_policy = WgerUrlPolicy.from_base(settings.WGER_BASE_URL)
+        except WgerUrlPolicyError as exc:
+            raise WgerError(str(exc)) from None
 
-        if raw_base.lower().endswith(api_suffix):
-            trimmed = raw_base[: -len(api_suffix)]
-        else:
-            trimmed = raw_base
-
-        self.base_url = trimmed.rstrip("/") or trimmed
-        if not self.base_url:
-            raise WgerError("WGER_BASE_URL must include scheme and host.")
-
-        self.api_root = f"{self.base_url}{api_suffix}"
+        self.base_url = self._url_policy.base_url
+        self.api_root = self._url_policy.api_root
 
         self.api_key = settings.WGER_API_KEY
         self.username = getattr(settings, "WGER_USERNAME", None)
@@ -80,9 +83,11 @@ class WgerClient:
         if not username or not password:
             raise WgerError("JWT auth requires WGER_USERNAME and WGER_PASSWORD.")
 
-        url = f"{self.api_root}/token"
+        url = self._url("/token")
         data = {"username": username, "password": password}
-        response = requests.post(url, data=data, timeout=self.timeout)
+        response = requests.post(url, data=data, timeout=self.timeout, allow_redirects=False)
+        if 300 <= response.status_code < 400:
+            raise WgerError(REDIRECT_REJECTED, response)
         response.raise_for_status()
 
         token_data = response.json()
@@ -111,29 +116,33 @@ class WgerClient:
         """Perform headers."""
 
     def _url(self, path: str) -> str:
-        if path.startswith("http://") or path.startswith("https://"):
-            return path
-
-        normalized = path if path.startswith("/") else f"/{path}"
-        return f"{self.api_root}{normalized}"
+        try:
+            return self._url_policy.resolve_endpoint(path)
+        except WgerUrlPolicyError as exc:
+            raise WgerError(str(exc)) from None
         """Perform url."""
 
     def _should_retry(self, status: int) -> bool:
         return status in (408, 429, 500, 502, 503, 504)
         """Perform should retry."""
 
-    @retry_on_network_error(lambda self, status: self._should_retry(status), exception_types=(WgerError,))
     def _request(self, method: str, path: str, **kwargs) -> Any:
-        """Internal request handler with retry logic."""
+        """Validate a request target before authentication, logging, or retries."""
         url = self._url(path)
+        return self._request_validated(method, url, **kwargs)
+
+    @retry_on_network_error(lambda self, status: self._should_retry(status), exception_types=(WgerError,))
+    def _request_validated(self, method: str, path: str, **kwargs) -> Any:
+        """Send an already-validated same-origin request with retry logic."""
 
         if self.debug_api:
-            log_utils.debug(f"[wger.api] {method} {url} kwargs={kwargs}")
+            log_utils.debug(f"[wger.api] {method} {path} kwargs={kwargs}")
 
         try:
+            kwargs["allow_redirects"] = False
             response = requests.request(
                 method=method.upper(),
-                url=url,
+                url=path,
                 headers=self._headers(),
                 timeout=self.timeout,
                 **kwargs,
@@ -144,6 +153,8 @@ class WgerClient:
         if self.debug_api:
             log_utils.debug(f"[wger.api] <- {response.status_code} {response.text[:500]}")
 
+        if 300 <= response.status_code < 400:
+            raise WgerError(REDIRECT_REJECTED, response)
         if response.status_code in (200, 201):
             return response.json()
         if response.status_code == 204:
@@ -164,25 +175,37 @@ class WgerClient:
     def get_all_pages(self, path: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """Fetches and aggregates results from all pages of a paginated endpoint."""
         items: List[Dict[str, Any]] = []
-        current_path = path
+        current_url = self._url(path)
         current_params = params.copy() if params else {}
+        seen_urls: set[str] = set()
+        page_count = 0
 
-        while current_path:
-            data = self._request("GET", current_path, params=current_params)
+        while current_url:
+            request_url = self._url_policy.request_url(current_url, current_params)
+            if request_url in seen_urls:
+                raise WgerError(PAGINATION_CYCLE)
+            if page_count >= MAX_PAGES:
+                raise WgerError(PAGE_LIMIT_EXCEEDED)
+            seen_urls.add(request_url)
+
+            data = self._request("GET", current_url, params=current_params)
+            page_count += 1
             if not isinstance(data, dict):
                 break
 
             items.extend(data.get("results", []))
             next_url = data.get("next")
 
-            if next_url:
-                if next_url.startswith(self.api_root):
-                    current_path = next_url.replace(self.api_root, "", 1)
-                else:
-                    current_path = next_url
-                current_params = {}
-            else:
+            if next_url is None or next_url == "":
                 break
+            if not isinstance(next_url, str):
+                raise WgerError(INVALID_NEXT_URL)
+
+            try:
+                current_url = self._url_policy.resolve_pagination(request_url, next_url)
+            except WgerUrlPolicyError as exc:
+                raise WgerError(str(exc)) from None
+            current_params = {}
         return items
 
     def find_exercise_translation(

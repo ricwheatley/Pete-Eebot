@@ -48,6 +48,11 @@ python scripts\export_wger_ingredients.py `
   --output docs\postman\out\wger_ingredientinfo_language_2_sample.json
 ```
 
+The streaming helper accepts only an absolute HTTP(S) base URL. It follows only
+relative or same-origin pagination links, never follows redirects, detects
+pagination cycles, and will not request more than 1,000 pages. `--max-pages`
+may set a smaller limit but cannot exceed that security ceiling.
+
 If you still want Newman to accumulate a small test run into an exported Postman environment, set `wger_accumulate_results=true` and `wger_max_pages` to a low number:
 
 ```powershell
