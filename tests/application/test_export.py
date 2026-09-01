@@ -502,11 +502,6 @@ def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
         """Represent StubClient."""
 
     monkeypatch.setattr("pete_e.application.services.log_utils.warn", warnings.append)
-    monkeypatch.setattr(
-        "pete_e.application.services.WgerExportService._fallback_routine_name",
-        staticmethod(lambda base_name: f"{base_name} retry test"),
-    )
-
     client = StubClient()
     service = WgerExportService(
         dal=StubDal(),
@@ -524,10 +519,9 @@ def test_export_plan_week_uses_fallback_routine_when_cleanup_fails(
     )
 
     assert result == {"status": "exported", "routine_id": 1002}
-    assert client.routine_names == [
-        "Pete-E Week 2026-04-27",
-        "Pete-E Week 2026-04-27 retry test",
-    ]
+    assert client.routine_names[0] == "Pete-E Week 2026-04-27"
+    assert len(client.routine_names[1]) == 25
+    assert client.routine_names[1].startswith("PE 2026-04-27 R")
     assert recorded and recorded[0]["routine_id"] == 1002
     assert any("Creating fallback routine" in warning for warning in warnings)
     """Perform test export plan week uses fallback routine when cleanup fails."""

@@ -163,9 +163,17 @@ def test_replacement_stages_then_promotes_unchanged_stored_rows() -> None:
     assert dal.recorded[0]["response"]["deleted_existing"] is True
     assert client.calls[0][0] == "find_routine"
     assert client.calls[1][0] == "create_routine"
+    staging_name = client.calls[1][1]["name"]
+    assert len(staging_name) == 25
+    assert staging_name.startswith("PE 2026-08-24 S")
     assert any(call[0] == "create_day" for call in client.calls)
     assert ("delete_routine", 42) in client.calls
-    assert any(call[0] == "update_routine" and call[1] == 43 for call in client.calls)
+    assert any(
+        call[0] == "update_routine"
+        and call[1] == 43
+        and call[2]["name"] == "Pete-E Week 2026-08-24"
+        for call in client.calls
+    )
     assert not any(call[0] == "find_or_create_routine" for call in client.calls)
 
 

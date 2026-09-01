@@ -26,6 +26,9 @@ from pete_e.infrastructure.wger_url_policy import (
 )
 
 
+WGER_ROUTINE_NAME_MAX_LENGTH = 25
+
+
 def _unwrap_secret(value: Any) -> Any:
     """Return the plain value for SecretStr instances."""
     if hasattr(value, "get_secret_value"):
@@ -323,6 +326,7 @@ class WgerClient:
     def find_routine(self, name: str, start: date) -> Dict[str, Any] | None:
         """Return the exact routine for ``name`` and ``start``, if it exists."""
 
+        self._validate_routine_name(name)
         start_text = start.isoformat()
         response = self._request(
             "GET",
@@ -342,6 +346,7 @@ class WgerClient:
 
     def find_or_create_routine(self, name: str, description: str, start: date, end: date) -> Dict[str, Any]:
         """Finds a routine by name and start date, creating it if it doesn't exist."""
+        self._validate_routine_name(name)
         existing = self.find_routine(name, start)
         if existing is not None:
             return existing
@@ -356,6 +361,7 @@ class WgerClient:
     def create_routine(self, name: str, description: str, start: date, end: date) -> Dict[str, Any]:
         """Create a new routine without reusing an existing name/date match."""
 
+        self._validate_routine_name(name)
         payload = {"name": name, "description": description, "start": start.isoformat(), "end": end.isoformat()}
         return self._request("POST", "/routine/", json=payload)
 
@@ -370,6 +376,7 @@ class WgerClient:
     ) -> Dict[str, Any]:
         """Promote a fully-written staging routine to its canonical identity."""
 
+        self._validate_routine_name(name)
         payload = {
             "name": name,
             "description": description,
@@ -377,6 +384,14 @@ class WgerClient:
             "end": end.isoformat(),
         }
         return self._request("PATCH", f"/routine/{routine_id}/", json=payload)
+
+    @staticmethod
+    def _validate_routine_name(name: str) -> None:
+        if len(name) > WGER_ROUTINE_NAME_MAX_LENGTH:
+            raise WgerError(
+                "Wger routine name must be "
+                f"{WGER_ROUTINE_NAME_MAX_LENGTH} characters or fewer; got {len(name)}."
+            )
 
     def delete_routine(self, routine_id: int) -> None:
         """Delete a complete routine, tolerating an already-removed object."""

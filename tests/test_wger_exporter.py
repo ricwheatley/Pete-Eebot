@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from pete_e.infrastructure.wger_client import WgerClient
+import pytest
+
+from pete_e.infrastructure.wger_client import (
+    WGER_ROUTINE_NAME_MAX_LENGTH,
+    WgerClient,
+    WgerError,
+)
 
 
 def test_set_config_posts_payload(monkeypatch):
@@ -91,11 +97,13 @@ def test_routine_lifecycle_methods_use_canonical_api_resources(monkeypatch):
     client = WgerClient()
     start = date(2026, 8, 24)
     end = date(2026, 8, 30)
+    create_name = "s" * WGER_ROUTINE_NAME_MAX_LENGTH
+    update_name = "c" * WGER_ROUTINE_NAME_MAX_LENGTH
 
-    assert client.create_routine("staging", "desc", start, end) == {"id": 44}
+    assert client.create_routine(create_name, "desc", start, end) == {"id": 44}
     assert client.update_routine(
         44,
-        name="canonical",
+        name=update_name,
         description="desc",
         start=start,
         end=end,
@@ -108,7 +116,7 @@ def test_routine_lifecycle_methods_use_canonical_api_resources(monkeypatch):
             "/routine/",
             {
                 "json": {
-                    "name": "staging",
+                    "name": create_name,
                     "description": "desc",
                     "start": "2026-08-24",
                     "end": "2026-08-30",
@@ -120,7 +128,7 @@ def test_routine_lifecycle_methods_use_canonical_api_resources(monkeypatch):
             "/routine/44/",
             {
                 "json": {
-                    "name": "canonical",
+                    "name": update_name,
                     "description": "desc",
                     "start": "2026-08-24",
                     "end": "2026-08-30",
@@ -129,3 +137,29 @@ def test_routine_lifecycle_methods_use_canonical_api_resources(monkeypatch):
         ),
         ("DELETE", "/routine/44/", {}),
     ]
+
+
+def test_routine_writes_reject_overlong_names_before_request(monkeypatch):
+    calls: list[object] = []
+
+    monkeypatch.setattr(
+        WgerClient,
+        "_request",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    client = WgerClient()
+    start = date(2026, 8, 24)
+    overlong_name = "x" * (WGER_ROUTINE_NAME_MAX_LENGTH + 1)
+
+    with pytest.raises(WgerError, match="25 characters or fewer; got 26"):
+        client.create_routine(overlong_name, "desc", start, start)
+    with pytest.raises(WgerError, match="25 characters or fewer; got 26"):
+        client.update_routine(
+            44,
+            name=overlong_name,
+            description="desc",
+            start=start,
+            end=start,
+        )
+
+    assert calls == []

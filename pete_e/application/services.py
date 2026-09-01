@@ -5,10 +5,11 @@ This layer is responsible for coordinating tasks like plan creation and export.
 """
 
 from __future__ import annotations
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from typing import Any, Dict, List
 import json
 import math
+import uuid
 
 from pete_e.application.exceptions import ConflictError
 from pete_e.application.validation_service import ValidationService
@@ -29,7 +30,7 @@ from pete_e.domain import schedule_rules
 from pete_e.config import settings
 from pete_e.infrastructure.mappers import PlanMapper, WgerPayloadMapper
 from pete_e.infrastructure.postgres_dal import PostgresDal
-from pete_e.infrastructure.wger_client import WgerClient
+from pete_e.infrastructure.wger_client import WGER_ROUTINE_NAME_MAX_LENGTH, WgerClient
 from pete_e.infrastructure import log_utils
 
 class PlanService:
@@ -546,14 +547,31 @@ class WgerExportService:
 
     @staticmethod
     def _fallback_routine_name(base_name: str) -> str:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return f"{base_name} retry {stamp}"
+        return WgerExportService._transient_routine_name(base_name, marker="R")
         """Perform fallback routine name."""
 
     @staticmethod
     def _staging_routine_name(base_name: str) -> str:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        return f"{base_name} staging {stamp}"
+        return WgerExportService._transient_routine_name(base_name, marker="S")
+
+    @staticmethod
+    def _transient_routine_name(base_name: str, *, marker: str) -> str:
+        """Build a unique operator-readable name within Wger's 25-char limit."""
+
+        token = uuid.uuid4().hex[:10]
+        date_text = str(base_name).rsplit(" ", 1)[-1]
+        try:
+            date.fromisoformat(date_text)
+        except ValueError:
+            suffix = f" {marker}{token}"
+            prefix = str(base_name).strip()[: WGER_ROUTINE_NAME_MAX_LENGTH - len(suffix)].rstrip()
+            candidate = f"{prefix}{suffix}" if prefix else f"{marker}{token}"
+        else:
+            candidate = f"PE {date_text} {marker}{token}"
+
+        if len(candidate) > WGER_ROUTINE_NAME_MAX_LENGTH:  # pragma: no cover - invariant guard
+            raise ValueError("Generated Wger routine name exceeds the upstream limit.")
+        return candidate
 
     def _apply_running_backoff_to_payload(
         self,
