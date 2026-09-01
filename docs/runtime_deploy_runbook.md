@@ -89,7 +89,8 @@ python3 -m venv /opt/myapp/shared/venv
 ```bash
 /opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
-  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 /opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
 
@@ -230,7 +231,7 @@ Current deploy chain in repo:
 5. Wrapper executes tracked deploy script `pete_e/resources/deploy.sh` with `SKIP_GIT_UPDATE=1`.
 6. Tracked deploy script does:
    - validates `.env`, venv, pinned uv, `pyproject.toml`, and `uv.lock`
-   - rejects a stale `uv.lock`, then exact-syncs its frozen runtime subset into the shared venv with `--no-dev --no-editable`
+   - rejects a stale `uv.lock`, then exact-syncs its frozen runtime subset into the shared venv with `--no-dev --no-editable` and forces `pete-e` to reinstall from the selected commit
    - checks the installed dependency graph with `uv pip check`
    - runs a read-only schema preflight
    - creates a PostgreSQL backup unless explicitly disabled

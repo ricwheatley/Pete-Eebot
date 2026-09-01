@@ -96,7 +96,8 @@ Ubuntu production:
 python3 -m venv /opt/myapp/shared/venv
 /opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
-  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 /opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
 

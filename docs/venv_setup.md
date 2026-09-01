@@ -56,10 +56,13 @@ its current non-editable packaging form:
 cd /opt/myapp/current
 /opt/myapp/shared/uv-tool/bin/uv lock --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
-  /opt/myapp/shared/uv-tool/bin/uv sync --frozen --no-dev --no-editable
+  /opt/myapp/shared/uv-tool/bin/uv sync \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 ```
 
 This command builds and installs a normal distribution into the external venv.
+The targeted reinstall prevents an application-only commit from reusing a
+cached wheel with the unchanged project version.
 Application resources are loaded from the installed package, not from
 `/opt/myapp/current` or the process working directory. The checkout remains
 required separately for reviewed deployment/systemd helpers and operational
@@ -145,7 +148,8 @@ edit or regenerate the lock on the production host:
 cd /opt/myapp/current
 /opt/myapp/shared/uv-tool/bin/uv lock --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
-  /opt/myapp/shared/uv-tool/bin/uv sync --frozen --no-dev --no-editable
+  /opt/myapp/shared/uv-tool/bin/uv sync \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 /opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 ```
 

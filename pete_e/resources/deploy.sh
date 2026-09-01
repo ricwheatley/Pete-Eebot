@@ -142,7 +142,8 @@ UV_PROJECT_ENVIRONMENT="${VENV_ROOT}" "${UV_BIN}" sync \
     --project "${APP_ROOT}" \
     --frozen \
     --no-dev \
-    --no-editable
+    --no-editable \
+    --reinstall-package pete-e
 
 log "Checking installed dependency consistency..."
 "${UV_BIN}" pip check --python "${PYTHON_BIN}"

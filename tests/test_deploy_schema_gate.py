@@ -4,6 +4,7 @@ from pathlib import Path
 def test_deploy_gates_restart_on_preflight_backup_upgrade_and_verification() -> None:
     script = Path("pete_e/resources/deploy.sh").read_text(encoding="utf-8")
 
+    application_reinstall = script.index("--reinstall-package pete-e")
     preflight = script.index("-m pete_e.cli.schema preflight")
     backup = script.index("scripts/backup_db.sh")
     upgrade = script.index("-m pete_e.cli.schema upgrade")
@@ -12,7 +13,16 @@ def test_deploy_gates_restart_on_preflight_backup_upgrade_and_verification() -> 
     restart = script.index('restart_service\n')
 
     assert "set -Eeuo pipefail" in script
-    assert preflight < backup < upgrade < verify < cron < restart
+    assert application_reinstall < preflight < backup < upgrade < verify < cron < restart
+
+
+def test_deploy_reinstalls_unchanged_version_application_from_selected_commit() -> None:
+    script = Path("pete_e/resources/deploy.sh").read_text(encoding="utf-8")
+
+    assert '--project "${APP_ROOT}"' in script
+    assert "--frozen" in script
+    assert "--no-editable" in script
+    assert "--reinstall-package pete-e" in script
 
 
 def test_deploy_never_logs_migrator_connection_string() -> None:

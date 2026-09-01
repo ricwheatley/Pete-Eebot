@@ -54,15 +54,18 @@ cannot remove the tool that performs the sync:
   --project /opt/myapp/current --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
   /opt/myapp/shared/uv-tool/bin/uv sync \
-  --project /opt/myapp/current --frozen --no-dev --no-editable
+  --project /opt/myapp/current --frozen --no-dev --no-editable \
+  --reinstall-package pete-e
 /opt/myapp/shared/uv-tool/bin/uv pip check \
   --python /opt/myapp/shared/venv/bin/python
 ```
 
 Both paths consume the same `uv.lock`. CI additionally installs the locked
 development group; its runtime packages are the same exact versions used by
-production. Deployment must never resolve from the broad constraints or install
-the project editably.
+production. Production forces a reinstall of `pete-e` because application-only
+commits do not change the `1.0.0` package version and must not reuse an older
+cached wheel. Deployment must never resolve from the broad constraints or
+install the project editably.
 
 ## Updating dependencies
 

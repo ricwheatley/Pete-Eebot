@@ -31,7 +31,7 @@ Severity guidance:
 | [ ] Production layout matches the runbook: `.env`, `venv`, `deploy.sh`, `app`, and backup directories live outside the Git cleanup boundary where expected. | Blocker | Path listing or operator confirmation. |
 | [ ] `.env` is present only on the host, not committed, and has owner-only permissions where practical. | Blocker | `ls -l` output with secrets redacted. |
 | [ ] Required environment values are populated: providers, Postgres, `PETEEEBOT_API_KEY`, trusted proxy CIDRs, webhook secret/body bound/repository ID/main ref, expected Git remote URL, `DEPLOY_SCRIPT_PATH`, and job/dispatch settings. | Blocker | Redacted env inventory. |
-| [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
+| [ ] `uv lock --check` passes; uv 0.12.5 then frozen-syncs the committed `uv.lock` runtime subset with `--no-dev --no-editable --reinstall-package pete-e`, and `uv pip check` passes. | Blocker | Lock SHA, uv version, sync log, and check summary. |
 | [ ] `pete-schema preflight`, backup, `upgrade`, and runtime-role `verify` pass; the ledger equals manifest head with valid checksums. | Blocker | Redacted command output, backup artifact/checksum, head revision, and DB identity. |
 | [ ] Migration failure and restore paths are known before applying any migration that changes production data. | Blocker | Rollback section in release note and disposable restore rehearsal. |
 | [ ] `python -m scripts.check_auth` and `pete status` complete with expected provider status. | Blocker | Command output summary. |
@@ -140,7 +140,8 @@ git fetch --all --prune
 git reset --hard <previous-known-good-sha>
 /opt/myapp/shared/uv-tool/bin/uv lock --project /opt/myapp/current --check
 UV_PROJECT_ENVIRONMENT=/opt/myapp/shared/venv \
-  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current --frozen --no-dev --no-editable
+  /opt/myapp/shared/uv-tool/bin/uv sync --project /opt/myapp/current \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 /opt/myapp/shared/uv-tool/bin/uv pip check --python /opt/myapp/shared/venv/bin/python
 sudo systemctl restart peteeebot.service
 ```

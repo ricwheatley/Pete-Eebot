@@ -68,7 +68,8 @@ external application environment and install Pete-Eebot non-editably:
 ```bash
 python3 -m venv venv
 uv lock --check
-UV_PROJECT_ENVIRONMENT="$PWD/venv" uv sync --frozen --no-dev --no-editable
+UV_PROJECT_ENVIRONMENT="$PWD/venv" uv sync \
+  --frozen --no-dev --no-editable --reinstall-package pete-e
 uv pip check --python "$PWD/venv/bin/python"
 ```
 
@@ -79,7 +80,9 @@ either dependency constraints or the lock.
 
 `uv sync --no-editable` builds and installs the project as a normal distribution;
 runtime JSON, CSV, templates, static assets, and migrations are read from that
-installed package. To inspect the exact release artifacts directly:
+installed package. Production deployments additionally use
+`--reinstall-package pete-e` so a new commit cannot reuse a cached wheel merely
+because the project version is unchanged. To inspect the exact release artifacts directly:
 
 ```bash
 uv build --out-dir dist
